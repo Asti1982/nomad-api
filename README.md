@@ -39,3 +39,9 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_AUTO_CYCLE`: Set to `true` to enable periodic self-improvement cycles.
 
 Never commit `.env`, logs, downloaded binaries, or local model files.
+
+## Telegram Tips
+
+- Send `/subscribe` to receive status and auto-cycle updates in that chat.
+- Send `/skip last` when the latest unlock task is unclear, not useful, or not worth doing now.
+- Send `/token github <token>` or `ENV_VAR=...` for credentials; Nomad redacts token values.

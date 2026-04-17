@@ -347,10 +347,16 @@ class InfrastructureScout:
         self,
         category: str = "compute",
         profile_id: str = "ai_first",
+        excluded_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         normalized_category = self.CATEGORY_ALIASES.get(category, category)
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
-        ranked = self._rank_options(category=normalized_category, profile=profile)[:5]
+        excluded = set(excluded_ids or [])
+        ranked = [
+            item
+            for item in self._rank_options(category=normalized_category, profile=profile)
+            if item["id"] not in excluded
+        ][:5]
         request: Optional[Dict[str, Any]] = None
         probe: Dict[str, Any] = {}
 
@@ -385,6 +391,7 @@ class InfrastructureScout:
                 "label": profile.label,
                 "description": profile.description,
             },
+            "excluded_ids": sorted(excluded),
             "request": request,
             "results": ranked[:3],
             "probe": probe,
@@ -803,12 +810,21 @@ class InfrastructureScout:
                 "requires_account": True,
                 "account_provider": "Modal",
                 "env_vars": ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
-                "ask": "Please approve a Modal fallback by adding Modal credentials for Nomad.",
+                "ask": (
+                    "Modal is optional serverless Python/GPU compute for bursty scout jobs. "
+                    "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are the two parts of a Modal API credential pair, "
+                    "not LLM model tokens. If this is not useful right now, send /skip last."
+                ),
                 "short_ask": "Add Modal credentials so Nomad can test starter credits.",
-                "reason": f"{item['name']} is useful when Nomad needs short bursts beyond laptop capacity.",
+                "reason": (
+                    f"{item['name']} is useful when Nomad needs short bursts beyond laptop capacity, "
+                    "for example parallel probes, hosted workers or GPU experiments."
+                ),
                 "steps": [
-                    "Create or open a Modal account.",
-                    "Copy `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` into `.env`.",
+                    "Create or open a Modal account only if you want Nomad to add serverless burst compute.",
+                    "Create a Modal token from Modal's CLI/dashboard.",
+                    "Send `MODAL_TOKEN_ID=...` and `MODAL_TOKEN_SECRET=...` to Telegram, or add both to `.env`.",
+                    "If Modal is confusing or not worth it now, send `/skip last` and Nomad will move on.",
                     prompt_suffix,
                 ],
                 "source_url": item["source_url"],

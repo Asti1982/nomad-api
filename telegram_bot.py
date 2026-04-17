@@ -123,6 +123,7 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /unlock\n"
+            "- /skip last\n"
             "- /token github <token>\n"
             "- /subscribe\n"
             "- /best coding agent\n"
@@ -151,6 +152,7 @@ class ArbiterBot:
                 "/compute [profile]\n"
                 "/cycle [objective]\n"
                 "/unlock [category]\n"
+                "/skip last\n"
                 "/token <github|hf|modal_id|modal_secret> <token>\n"
                 "/scout <category or query>\n"
                 "/subscribe\n"
@@ -262,12 +264,17 @@ class ArbiterBot:
     async def unlock_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = "/unlock compute"
+        category = "compute"
         if context.args:
-            query = f"/unlock {' '.join(context.args)}"
-        result = await asyncio.to_thread(self.agent.run, query)
+            category = " ".join(context.args)
+        result = await self._run_unlock_with_chat_skips(update, category)
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
+
+    async def skip_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        await self._skip_last_unlock(update)
 
     async def scout_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -319,6 +326,7 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /unlock\n"
+            "- /skip last\n"
             "- /token github <token>\n"
             "- /subscribe\n"
             "- /best coding agent\n"
@@ -331,7 +339,7 @@ class ArbiterBot:
     async def unlock_compute(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        result = await asyncio.to_thread(self.agent.run, "/unlock compute")
+        result = await self._run_unlock_with_chat_skips(update, "compute")
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result), edit=True)
 
@@ -363,10 +371,57 @@ class ArbiterBot:
             return
         if await self._handle_token_submission(update, query):
             return
+        if self._is_skip_request(query):
+            await self._skip_last_unlock(update)
+            return
         if self._is_how_request(query):
             await self._reply_with_how(update)
             return
         await self._execute_query(update, query)
+
+    async def _run_unlock_with_chat_skips(
+        self,
+        update: Update,
+        category: str = "compute",
+    ) -> Dict[str, Any]:
+        skipped_ids = self._skipped_unlock_ids(update)
+        return await asyncio.to_thread(
+            self.agent.infra.activation_request,
+            category=category,
+            profile_id="ai_first",
+            excluded_ids=skipped_ids,
+        )
+
+    async def _skip_last_unlock(self, update: Update) -> None:
+        chat_id = self._chat_id_from_update(update)
+        if chat_id is None:
+            await self._reply(update, "I could not identify this chat to skip the last unlock.")
+            return
+
+        payload = self._chat_memory.get(chat_id, {})
+        request = payload.get("activation_request")
+        if not isinstance(request, dict) or not request.get("candidate_id"):
+            await self._reply(update, "No previous unlock task is stored for this chat. Send /unlock compute first.")
+            return
+
+        skipped = list(payload.get("skipped_unlock_ids") or [])
+        candidate_id = request["candidate_id"]
+        if candidate_id not in skipped:
+            skipped.append(candidate_id)
+        payload["skipped_unlock_ids"] = skipped
+        payload["activation_request"] = None
+        self._chat_memory[chat_id] = payload
+
+        category = request.get("category", "compute")
+        result = await self._run_unlock_with_chat_skips(update, category)
+        self._remember_result(update, result)
+        await self._reply(
+            update,
+            (
+                f"Skipped unlock: {request.get('candidate_name', candidate_id)}\n\n"
+                f"{self._format_result(result)}"
+            ),
+        )
 
     async def _execute_query(self, update: Update, query: str) -> None:
         await self._reply(update, f"Working on: {self._redact_sensitive_text(query)}")
@@ -804,6 +859,7 @@ class ArbiterBot:
             for step in verification_steps[:3]:
                 lines.append(f"- {step}")
         lines.append("Tip: ask 'how?' any time and Nomad will repeat the current unlock steps.")
+        lines.append("If this unlock is unclear or not useful, send /skip last.")
         return lines
 
     def _provider_hint_for_env_var(self, env_var: str) -> str:
@@ -1048,6 +1104,32 @@ class ArbiterBot:
 
         self._chat_memory[chat_id] = payload
 
+    def _skipped_unlock_ids(self, update: Update) -> list[str]:
+        chat_id = self._chat_id_from_update(update)
+        if chat_id is None:
+            return []
+        payload = self._chat_memory.get(chat_id, {})
+        return [
+            str(item)
+            for item in (payload.get("skipped_unlock_ids") or [])
+            if str(item).strip()
+        ]
+
+    def _is_skip_request(self, query: str) -> bool:
+        lowered = query.strip().lower()
+        return lowered in {
+            "skip",
+            "skip last",
+            "/skip",
+            "/skip last",
+            "überspringen",
+            "ueberspringen",
+            "überspring letzte",
+            "ueberspring letzte",
+            "nächste unlock",
+            "naechste unlock",
+        }
+
     def _is_how_request(self, query: str) -> bool:
         lowered = query.strip().lower()
         return lowered in {
@@ -1260,6 +1342,7 @@ class ArbiterBot:
         app.add_handler(CommandHandler("compute", self.compute_command))
         app.add_handler(CommandHandler("cycle", self.cycle_command))
         app.add_handler(CommandHandler("unlock", self.unlock_command))
+        app.add_handler(CommandHandler("skip", self.skip_command))
         app.add_handler(CommandHandler("scout", self.scout_command))
         app.add_handler(CommandHandler("subscribe", self.subscribe_command))
         app.add_handler(CommandHandler("unsubscribe", self.unsubscribe_command))

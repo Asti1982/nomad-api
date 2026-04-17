@@ -20,4 +20,5 @@ Nomad exists to be the most customer-friendly infrastructure agent for AI agents
 - `/compute`: audit current local and hosted compute.
 - `/cycle`: run one bounded self-improvement cycle.
 - `/unlock compute`: ask for the next human-actionable compute unlock.
+- `/skip last`: skip the last unclear or unhelpful unlock and generate another one.
 - `/token <provider> <token>`: accept scoped credentials through Telegram without echoing token values.
