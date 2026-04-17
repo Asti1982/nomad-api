@@ -91,7 +91,7 @@ class ArbiterAgent:
             return self.infra.compute_assessment(profile_id=profile)
         if kind == "activation_request":
             return self.infra.activation_request(
-                category=request.get("category") or "compute",
+                category=request.get("category") or "best",
                 profile_id=profile,
             )
         if kind == "category" and request.get("category"):

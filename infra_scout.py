@@ -76,7 +76,7 @@ class InfrastructureScout:
         ):
             return {
                 "kind": "activation_request",
-                "category": self._extract_category(lowered) or "compute",
+                "category": self._extract_category(lowered) or "best",
                 "profile": self._extract_profile(lowered),
             }
 
@@ -352,6 +352,12 @@ class InfrastructureScout:
         normalized_category = self.CATEGORY_ALIASES.get(category, category)
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
         excluded = set(excluded_ids or [])
+        if normalized_category in {"best", "self", "next", "global", "any", "all"}:
+            return self.best_activation_request(
+                profile_id=profile.id,
+                excluded_ids=excluded_ids,
+            )
+
         ranked = [
             item
             for item in self._rank_options(category=normalized_category, profile=profile)
@@ -396,6 +402,155 @@ class InfrastructureScout:
             "results": ranked[:3],
             "probe": probe,
             "analysis": analysis,
+        }
+
+    def best_activation_request(
+        self,
+        profile_id: str = "ai_first",
+        excluded_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        profile = self.profiles.get(profile_id, self.profiles["ai_first"])
+        excluded = set(excluded_ids or [])
+        probe = self.compute_probe.snapshot()
+        categories = ["compute", "wallets", "identity", "messaging", "protocols", "runtime"]
+        candidates: List[Dict[str, Any]] = []
+
+        for category in categories:
+            ranked = [
+                item
+                for item in self._rank_options(category=category, profile=profile)
+                if item["id"] not in excluded
+            ][:5]
+            if category == "compute":
+                request = self._build_compute_activation_request(
+                    ranked=ranked,
+                    probe=probe,
+                    profile=profile,
+                )
+                if request is not None:
+                    request = self._fresh_activation_request(request)
+            else:
+                request = self._build_general_activation_request(
+                    category=category,
+                    profile=profile,
+                    ranked=ranked,
+                )
+            candidates.append(
+                self._score_activation_candidate(
+                    request=request,
+                    profile=profile,
+                    probe=probe,
+                )
+            )
+
+        candidates.sort(
+            key=lambda item: (
+                -item["decision_score"],
+                item["request"].get("candidate_name", "").lower(),
+            )
+        )
+        best = candidates[0] if candidates else {
+            "request": self._build_general_activation_request(
+                category="self_improvement",
+                profile=profile,
+                ranked=[],
+            ),
+            "decision_score": 0.0,
+            "decision_reason": "No ranked unlock candidates were available.",
+        }
+        request = best["request"]
+        request["decision_score"] = best["decision_score"]
+        request["decision_reason"] = best["decision_reason"]
+
+        analysis = (
+            "Nomad selected this as the best next human-in-the-loop unlock for its own "
+            f"self-improvement. Decision score: {best['decision_score']:.2f}. "
+            f"{best['decision_reason']}"
+        )
+        return {
+            "mode": "activation_request",
+            "deal_found": False,
+            "category": "best",
+            "profile": {
+                "id": profile.id,
+                "label": profile.label,
+                "description": profile.description,
+            },
+            "excluded_ids": sorted(excluded),
+            "request": request,
+            "candidates": [
+                {
+                    "candidate_id": item["request"].get("candidate_id"),
+                    "candidate_name": item["request"].get("candidate_name"),
+                    "category": item["request"].get("category"),
+                    "decision_score": item["decision_score"],
+                    "decision_reason": item["decision_reason"],
+                }
+                for item in candidates[:5]
+            ],
+            "probe": probe,
+            "analysis": analysis,
+        }
+
+    def _score_activation_candidate(
+        self,
+        request: Dict[str, Any],
+        profile: InfraProfile,
+        probe: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        category = request.get("category", "")
+        candidate_id = request.get("candidate_id", "")
+        score = 1.0
+        reasons: List[str] = []
+
+        category_weight = {
+            "compute": 10.0,
+            "wallets": 7.5,
+            "identity": 7.0,
+            "messaging": 6.5,
+            "protocols": 6.0,
+            "runtime": 4.0,
+        }.get(category, 3.0)
+        score += category_weight
+        reasons.append(f"{category or 'unknown'} matters for {profile.label}")
+
+        brains = self._brain_status(probe)
+        if category == "compute":
+            if brains.get("brain_count", 0) < 3:
+                score += 4.0
+                reasons.append("more compute resilience is still useful")
+            else:
+                score += 1.5
+                reasons.append("compute is healthy, so extra compute is lower urgency")
+            if candidate_id == "modal-starter":
+                score -= 2.0
+                reasons.append("Modal is useful but optional while local, GitHub and HF brains are online")
+            if candidate_id in {"github-models", "hf-inference-providers"}:
+                score += 3.0
+                reasons.append("hosted model fallback directly improves scout reasoning")
+            if candidate_id == "llama-cpp":
+                score -= 1.0
+                reasons.append("llama.cpp is local optional fallback after Ollama")
+
+        if category == "wallets":
+            score += 3.0
+            reasons.append("wallets are required for future agent-paid service")
+        if category == "identity":
+            score += 2.0
+            reasons.append("identity reduces trust and onboarding friction")
+        if request.get("requires_account"):
+            score -= 0.8
+            reasons.append("requires external account setup")
+        if request.get("env_vars"):
+            score -= 0.4
+            reasons.append("needs credentials, but Telegram token intake is available")
+        if request.get("fresh"):
+            score += 0.3
+
+        return {
+            "request": request,
+            "decision_score": round(score, 2),
+            "decision_reason": "; ".join(reasons),
         }
 
     def _fresh_activation_request(self, request: Dict[str, Any]) -> Dict[str, Any]:

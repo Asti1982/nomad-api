@@ -264,7 +264,7 @@ class ArbiterBot:
     async def unlock_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        category = "compute"
+        category = "best"
         if context.args:
             category = " ".join(context.args)
         result = await self._run_unlock_with_chat_skips(update, category)
@@ -339,7 +339,7 @@ class ArbiterBot:
     async def unlock_compute(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        result = await self._run_unlock_with_chat_skips(update, "compute")
+        result = await self._run_unlock_with_chat_skips(update, "best")
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result), edit=True)
 
@@ -382,7 +382,7 @@ class ArbiterBot:
     async def _run_unlock_with_chat_skips(
         self,
         update: Update,
-        category: str = "compute",
+        category: str = "best",
     ) -> Dict[str, Any]:
         skipped_ids = self._skipped_unlock_ids(update)
         return await asyncio.to_thread(
@@ -832,6 +832,10 @@ class ArbiterBot:
             f"Nomad asks: {request['ask']}",
             f"Why now: {request['reason']}",
         ]
+        if request.get("decision_score") is not None:
+            lines.append(f"Decision score: {request['decision_score']}")
+        if request.get("decision_reason"):
+            lines.append(f"Nomad decision: {request['decision_reason']}")
         if request.get("env_vars"):
             lines.append(f"Needs: {', '.join(request['env_vars'])}")
             token_vars = [env_var for env_var in request["env_vars"] if env_var in TOKEN_ENV_VARS]
@@ -1162,7 +1166,7 @@ class ArbiterBot:
             await self._reply(update, message)
             return
 
-        result = await asyncio.to_thread(self.agent.run, "/unlock compute")
+        result = await asyncio.to_thread(self.agent.run, "/unlock")
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
 

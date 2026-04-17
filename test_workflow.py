@@ -70,6 +70,15 @@ def test_unlock_compute_request_routes():
     assert result["request"]["candidate_name"] == "GitHub Models"
 
 
+def test_unlock_without_category_uses_nomad_best_decision():
+    agent = ArbiterAgent()
+    result = agent.run("/unlock")
+    assert result["mode"] == "activation_request"
+    assert result["category"] == "best"
+    assert result["request"].get("decision_score") is not None
+    assert result["request"].get("decision_reason")
+
+
 def test_unlock_compute_includes_fresh_task_metadata():
     agent = ArbiterAgent()
     agent.infra.compute_probe.snapshot = lambda: {

@@ -350,6 +350,12 @@ class SelfImprovementEngine:
     ) -> List[Dict[str, Any]]:
         unlocks: List[Dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
+        best_request = self.infra.best_activation_request().get("request")
+        if isinstance(best_request, dict) and best_request.get("candidate_name"):
+            key = (best_request.get("candidate_name", ""), best_request.get("short_ask", ""))
+            seen.add(key)
+            unlocks.append(self._freshen_unlock(best_request))
+
         for candidate in (
             compute.get("activation_request"),
             self_audit.get("activation_request"),
