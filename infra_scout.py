@@ -412,10 +412,13 @@ class InfrastructureScout:
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
         excluded = set(excluded_ids or [])
         probe = self.compute_probe.snapshot()
+        current_map = self._current_stack()
         categories = ["compute", "wallets", "identity", "messaging", "protocols", "runtime"]
         candidates: List[Dict[str, Any]] = []
 
         for category in categories:
+            if category in current_map and category != "compute":
+                continue
             ranked = [
                 item
                 for item in self._rank_options(category=category, profile=profile)
@@ -440,8 +443,17 @@ class InfrastructureScout:
                     request=request,
                     profile=profile,
                     probe=probe,
+                    current_map=current_map,
                 )
             )
+        candidates.append(
+            self._score_activation_candidate(
+                request=self._build_agent_customer_activation_request(profile=profile),
+                profile=profile,
+                probe=probe,
+                current_map=current_map,
+            )
+        )
 
         candidates.sort(
             key=lambda item: (
@@ -492,12 +504,54 @@ class InfrastructureScout:
             "analysis": analysis,
         }
 
+    def _build_agent_customer_activation_request(
+        self,
+        profile: InfraProfile,
+    ) -> Dict[str, Any]:
+        generated_at = datetime.now(UTC).isoformat()
+        task_id = f"agent-customer-{generated_at.replace('-', '').replace(':', '').replace('.', '')[:16]}"
+        return {
+            "category": "agent_customers",
+            "candidate_id": "fresh-agent-customer-lead",
+            "candidate_name": "Fresh agent-customer lead",
+            "lane_state": "fresh",
+            "role": "customer discovery unlock",
+            "requires_account": False,
+            "account_provider": "",
+            "env_vars": [],
+            "generated_at": generated_at,
+            "task_id": task_id,
+            "fresh": True,
+            "accepts_telegram_tokens": False,
+            "ask": (
+                "Find one concrete AI agent, builder, repo, bot, or workflow with an infrastructure pain "
+                "Nomad can help reduce. Send Nomad the URL, handle, repo, or description so it can scout a useful stack for them."
+            ),
+            "short_ask": "Find one AI agent/customer with real infrastructure pain.",
+            "reason": (
+                f"{profile.label} already has core compute, messaging, identity and wallet lanes. "
+                "The highest-leverage next unlock is a real agent-customer problem to serve."
+            ),
+            "steps": [
+                "Look for an AI agent, bot, automation repo or builder struggling with compute, auth, wallets, messaging or deployment.",
+                "Send Nomad a URL, GitHub repo, Telegram/X handle or short description of the agent's infrastructure pain.",
+                "Nomad will scout the best infrastructure unlock for that agent and use the lesson to improve itself.",
+            ],
+            "verification_steps": [
+                "Send the lead to Nomad in Telegram.",
+                "Run /cycle so Nomad can turn it into a concrete service recommendation.",
+            ],
+            "source_url": "",
+        }
+
     def _score_activation_candidate(
         self,
         request: Dict[str, Any],
         profile: InfraProfile,
         probe: Dict[str, Any],
+        current_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        current_map = current_map or self._current_stack()
         category = request.get("category", "")
         candidate_id = request.get("candidate_id", "")
         score = 1.0
@@ -510,9 +564,14 @@ class InfrastructureScout:
             "messaging": 6.5,
             "protocols": 6.0,
             "runtime": 4.0,
+            "agent_customers": 9.0,
         }.get(category, 3.0)
         score += category_weight
         reasons.append(f"{category or 'unknown'} matters for {profile.label}")
+        if category in current_map:
+            score -= 8.0
+            current_name = current_map[category].get("name", "existing lane")
+            reasons.append(f"{category} already has {current_name}")
 
         brains = self._brain_status(probe)
         if category == "compute":
@@ -538,6 +597,9 @@ class InfrastructureScout:
         if category == "identity":
             score += 2.0
             reasons.append("identity reduces trust and onboarding friction")
+        if category == "agent_customers":
+            score += 3.5
+            reasons.append("real agent-customer pain is the best feedback loop for Nomad")
         if request.get("requires_account"):
             score -= 0.8
             reasons.append("requires external account setup")

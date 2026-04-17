@@ -79,6 +79,26 @@ def test_unlock_without_category_uses_nomad_best_decision():
     assert result["request"].get("decision_reason")
 
 
+def test_best_unlock_does_not_request_already_active_wallet(monkeypatch):
+    monkeypatch.setenv("AGENT_PRIVATE_KEY", "1" * 64)
+    monkeypatch.setenv("AGENT_ADDRESS", "0x" + "1" * 40)
+    monkeypatch.setenv("EVM_CHAIN_ID", "97")
+    agent = ArbiterAgent()
+    result = agent.run("/unlock")
+    assert result["mode"] == "activation_request"
+    assert result["request"]["category"] != "wallets"
+
+
+def test_best_unlock_prefers_agent_customer_when_core_infra_exists(monkeypatch):
+    monkeypatch.setenv("AGENT_PRIVATE_KEY", "1" * 64)
+    monkeypatch.setenv("AGENT_ADDRESS", "0x" + "1" * 40)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "not-a-real-token-123")
+    monkeypatch.setenv("NOMAD_API_PORT", "8787")
+    agent = ArbiterAgent()
+    result = agent.run("/unlock")
+    assert result["request"]["category"] == "agent_customers"
+
+
 def test_unlock_compute_includes_fresh_task_metadata():
     agent = ArbiterAgent()
     agent.infra.compute_probe.snapshot = lambda: {
