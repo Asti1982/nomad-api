@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 tools/
 *.zip
+telegram_subscribers.json
