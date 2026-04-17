@@ -88,6 +88,9 @@ class ArbiterBot:
         self.auto_cycle_interval_minutes = int(
             os.getenv("NOMAD_AUTO_CYCLE_INTERVAL_MINUTES", "120")
         )
+        self.auto_subscribe_on_interaction = (
+            os.getenv("TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION", "true").strip().lower() == "true"
+        )
         self.status_updates_enabled = (
             os.getenv("TELEGRAM_STATUS_UPDATES", "true").strip().lower() == "true"
         )
@@ -1067,6 +1070,7 @@ class ArbiterBot:
         reply_markup: Optional[InlineKeyboardMarkup] = None,
         edit: bool = False,
     ) -> None:
+        self._auto_subscribe_chat(update)
         if update.callback_query:
             await update.callback_query.answer()
             if edit:
@@ -1088,6 +1092,14 @@ class ArbiterBot:
         if update.effective_chat:
             return update.effective_chat.id
         return None
+
+    def _auto_subscribe_chat(self, update: Update) -> None:
+        if not self.auto_subscribe_on_interaction:
+            return
+        chat_id = self._chat_id_from_update(update)
+        if chat_id is None:
+            return
+        self._add_subscriber(chat_id)
 
     def _remember_result(self, update: Update, result: Dict[str, Any]) -> None:
         chat_id = self._chat_id_from_update(update)

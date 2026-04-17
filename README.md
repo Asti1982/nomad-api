@@ -43,5 +43,6 @@ Never commit `.env`, logs, downloaded binaries, or local model files.
 ## Telegram Tips
 
 - Send `/subscribe` to receive status and auto-cycle updates in that chat.
+- By default, any chat that receives a bot reply is auto-subscribed through `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION=true`.
 - Send `/skip last` when the latest unlock task is unclear, not useful, or not worth doing now.
 - Send `/token github <token>` or `ENV_VAR=...` for credentials; Nomad redacts token values.
