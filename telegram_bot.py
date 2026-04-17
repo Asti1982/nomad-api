@@ -766,6 +766,7 @@ class ArbiterBot:
         resources = result.get("resources") or {}
         local_actions = result.get("local_actions") or []
         reviews = result.get("brain_reviews") or []
+        lead_scout = result.get("lead_scout") or {}
         lines = [
             "Nomad self-improvement cycle",
             f"Profile: {profile.get('label', profile.get('id', 'Nomad'))}",
@@ -804,6 +805,24 @@ class ArbiterBot:
             lines.append("")
             for item in failed_reviews[:2]:
                 lines.append(f"{item.get('name')} issue: {item.get('message', 'not available')}")
+
+        if lead_scout:
+            lines.append("")
+            lines.append("Lead scout")
+            lines.append(lead_scout.get("objective", "Nomad scouts leads autonomously."))
+            next_action = lead_scout.get("next_agent_action")
+            if next_action:
+                lines.append(f"Nomad next action: {next_action}")
+            queries = lead_scout.get("search_queries") or []
+            if queries:
+                lines.append("Starting searches")
+                for query in queries[:3]:
+                    lines.append(f"- {query}")
+            human_help = lead_scout.get("human_help_only_for") or []
+            if human_help:
+                lines.append("Human help only if blocked by")
+                for item in human_help[:4]:
+                    lines.append(f"- {item}")
 
         human_unlocks = result.get("human_unlocks") or []
         if human_unlocks:

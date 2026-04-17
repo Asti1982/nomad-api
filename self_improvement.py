@@ -220,6 +220,11 @@ class SelfImprovementEngine:
         local_actions = self._local_actions(self_audit=self_audit, compute=compute)
         brain_reviews = self.brain_router.review(objective=objective, context=context)
         ok_reviews = [item for item in brain_reviews if item.get("ok")]
+        lead_scout = self._scout_agent_customer_leads(
+            objective=objective,
+            context=context,
+            brain_reviews=ok_reviews,
+        )
         human_unlocks = self._human_unlocks(
             self_audit=self_audit,
             compute=compute,
@@ -244,6 +249,7 @@ class SelfImprovementEngine:
             "local_actions": local_actions,
             "brain_reviews": brain_reviews,
             "external_review_count": len(ok_reviews),
+            "lead_scout": lead_scout,
             "human_unlocks": human_unlocks,
             "analysis": analysis,
         }
@@ -341,6 +347,61 @@ class SelfImprovementEngine:
             }
         )
         return actions
+
+    def _scout_agent_customer_leads(
+        self,
+        objective: str,
+        context: Dict[str, Any],
+        brain_reviews: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        lead_queries = [
+            '"AI agent" "rate limit" "GitHub Models"',
+            '"AI agent" "Hugging Face" "inference" "error"',
+            '"agent framework" "wallet" "Telegram bot"',
+            '"autonomous agent" "compute" "quota"',
+            '"LangGraph" "deployment" "token" "wallet"',
+        ]
+        public_surfaces = [
+            "GitHub issues and discussions",
+            "Hugging Face model/community discussions",
+            "public Telegram/Discord landing pages where visible without login",
+            "agent framework repositories",
+            "AI builder launch posts and docs",
+        ]
+        lead_hypotheses: List[Dict[str, str]] = []
+        for review in brain_reviews:
+            content = (review.get("content") or "").strip()
+            if not content:
+                continue
+            lead_hypotheses.append(
+                {
+                    "source_brain": review.get("name", "hosted brain"),
+                    "model": review.get("model", ""),
+                    "hypothesis": content[:700],
+                }
+            )
+
+        return {
+            "mode": "lead_scout",
+            "objective": (
+                "Nomad should find agent-customer pain autonomously; the human only unlocks auth, "
+                "CAPTCHA, private communities, API approvals or posting permissions."
+            ),
+            "search_queries": lead_queries,
+            "public_surfaces": public_surfaces,
+            "lead_hypotheses": lead_hypotheses[:3],
+            "human_help_only_for": [
+                "login or CAPTCHA",
+                "private community invite",
+                "API key or quota approval",
+                "permission to contact or post",
+                "confirming a lead is worth serving if public data is ambiguous",
+            ],
+            "next_agent_action": (
+                "Use the listed public surfaces and hosted-brain hypotheses to identify one concrete "
+                "AI agent, repo, builder or bot with infrastructure pain."
+            ),
+        }
 
     def _human_unlocks(
         self,

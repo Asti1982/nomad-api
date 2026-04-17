@@ -46,3 +46,4 @@ Never commit `.env`, logs, downloaded binaries, or local model files.
 - By default, any chat that receives a bot reply is auto-subscribed through `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION=true`.
 - Send `/skip last` when the latest unlock task is unclear, not useful, or not worth doing now.
 - Send `/token github <token>` or `ENV_VAR=...` for credentials; Nomad redacts token values.
+- For customer/lead discovery, Nomad should scout public surfaces itself; humans only unlock auth, CAPTCHA, private communities, API approvals, or permission barriers.

@@ -524,22 +524,24 @@ class InfrastructureScout:
             "fresh": True,
             "accepts_telegram_tokens": False,
             "ask": (
-                "Find one concrete AI agent, builder, repo, bot, or workflow with an infrastructure pain "
-                "Nomad can help reduce. Send Nomad the URL, handle, repo, or description so it can scout a useful stack for them."
+                "Nomad should scout for one concrete AI agent, builder, repo, bot, or workflow with an infrastructure pain "
+                "it can help reduce. Human help is only needed if Nomad hits authentication, CAPTCHA, login, rate-limit, "
+                "community access, or permission barriers."
             ),
-            "short_ask": "Find one AI agent/customer with real infrastructure pain.",
+            "short_ask": "Let Nomad scout one AI agent/customer lead; help only if auth blocks it.",
             "reason": (
                 f"{profile.label} already has core compute, messaging, identity and wallet lanes. "
-                "The highest-leverage next unlock is a real agent-customer problem to serve."
+                "The highest-leverage next unlock is for Nomad to find and serve a real agent-customer problem."
             ),
             "steps": [
-                "Look for an AI agent, bot, automation repo or builder struggling with compute, auth, wallets, messaging or deployment.",
-                "Send Nomad a URL, GitHub repo, Telegram/X handle or short description of the agent's infrastructure pain.",
-                "Nomad will scout the best infrastructure unlock for that agent and use the lesson to improve itself.",
+                "Nomad should use GitHub Models and Hugging Face to generate search strategies and lead hypotheses.",
+                "Nomad should inspect open public surfaces first: GitHub repos/issues, docs, public communities, launch posts and agent builder tools.",
+                "If Nomad needs login, CAPTCHA, API approval, invite-only access or posting permission, ask the human for that unlock.",
+                "If the human already knows a promising lead, they may send a URL/repo/handle, but this is optional.",
             ],
             "verification_steps": [
-                "Send the lead to Nomad in Telegram.",
-                "Run /cycle so Nomad can turn it into a concrete service recommendation.",
+                "Run /cycle and check the lead_scout section.",
+                "If a human auth barrier appears, complete only that barrier and let Nomad continue scouting.",
             ],
             "source_url": "",
         }

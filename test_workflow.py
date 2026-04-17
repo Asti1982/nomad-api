@@ -97,6 +97,25 @@ def test_best_unlock_prefers_agent_customer_when_core_infra_exists(monkeypatch):
     agent = ArbiterAgent()
     result = agent.run("/unlock")
     assert result["request"]["category"] == "agent_customers"
+    assert "Nomad should scout" in result["request"]["ask"]
+
+
+def test_self_improvement_cycle_includes_lead_scout():
+    agent = ArbiterAgent()
+    agent.self_improvement.brain_router.review = lambda objective, context: [
+        {
+            "name": "GitHub Models",
+            "model": "openai/gpt-4o-mini",
+            "ok": True,
+            "content": "Search GitHub issues for agent builders blocked by inference quotas.",
+        }
+    ]
+    result = agent.run("/cycle find agent leads")
+    assert result["mode"] == "self_improvement_cycle"
+    assert result["lead_scout"]["mode"] == "lead_scout"
+    assert result["lead_scout"]["search_queries"]
+    human_help = " ".join(result["lead_scout"]["human_help_only_for"]).lower()
+    assert "login" in human_help or "api key" in human_help
 
 
 def test_unlock_compute_includes_fresh_task_metadata():
