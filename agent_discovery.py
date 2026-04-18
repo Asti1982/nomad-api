@@ -75,7 +75,7 @@ class AgentEndpointDiscovery:
                 try:
                     found = self._search_github_code(
                         query=search_query,
-                        limit=max(1, min(10, cap - len(targets))),
+                        limit=max(1, min(100, cap - len(targets))),
                     )
                     for target in found:
                         self._append_target(target, targets, seen, cap)
@@ -164,7 +164,7 @@ class AgentEndpointDiscovery:
                 "q": query,
                 "sort": "indexed",
                 "order": "desc",
-                "per_page": max(1, min(limit, 10)),
+                "per_page": max(1, min(limit, 100)),
             },
             headers=headers,
             timeout=20,
