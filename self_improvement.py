@@ -20,7 +20,7 @@ class HostedBrainRouter:
     """Routes bounded self-improvement prompts to hosted fallback brains."""
 
     def __init__(self) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.github_token = (
             os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
             or os.getenv("GITHUB_TOKEN")

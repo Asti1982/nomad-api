@@ -16,7 +16,7 @@ class X402PaymentAdapter:
     """Small x402 v2 adapter for Nomad's HTTP service surface."""
 
     def __init__(self, session: Optional[requests.Session] = None) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.session = session or requests.Session()
         self.facilitator_url = (
             os.getenv("NOMAD_X402_FACILITATOR_URL")

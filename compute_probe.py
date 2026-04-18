@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 
 class LocalComputeProbe:
     def __init__(self) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.ollama_base = (os.getenv("OLLAMA_API_BASE") or "http://127.0.0.1:11434").rstrip("/")
         self.github_token = (
             os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")

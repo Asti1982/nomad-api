@@ -63,7 +63,7 @@ class LeadDiscoveryScout:
         session: Optional[requests.Session] = None,
         github_api_base: Optional[str] = None,
     ) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.session = session or requests.Session()
         self.github_api_base = (
             github_api_base

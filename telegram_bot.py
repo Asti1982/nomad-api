@@ -559,7 +559,7 @@ class ArbiterBot:
             set_key(str(ENV_PATH), env_var, value)
             os.environ[env_var] = value
             saved.append(env_var)
-        load_dotenv(ENV_PATH, override=True)
+        load_dotenv(ENV_PATH)
         self.agent = ArbiterAgent()
         self.chain = get_chain_config()
         return saved
