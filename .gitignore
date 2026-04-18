@@ -5,3 +5,8 @@ __pycache__/
 tools/
 *.zip
 telegram_subscribers.json
+nomad_self_state.json
+nomad_service_tasks.json
+nomad_agent_contacts.json
+nomad_direct_sessions.json
+nomad_agent_campaigns.json

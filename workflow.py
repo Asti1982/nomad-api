@@ -6,7 +6,12 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from agent_contact import AgentContactOutbox
+from agent_campaign import AgentColdOutreachCampaign
+from agent_service import AgentServiceDesk
+from direct_agent import DirectAgentGateway
 from infra_scout import InfrastructureScout
+from lead_discovery import LeadDiscoveryScout
 from mission import MISSION_STATEMENT
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
@@ -42,6 +47,11 @@ class ArbiterAgent:
         self.chain = get_chain_config()
         self.analyst = TravelAnalyst()
         self.self_improvement = SelfImprovementEngine(infra=self.infra)
+        self.lead_discovery = LeadDiscoveryScout()
+        self.service_desk = AgentServiceDesk(treasury=self.treasury)
+        self.agent_contacts = AgentContactOutbox()
+        self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
+        self.direct_agent = DirectAgentGateway(service_desk=self.service_desk)
 
     def run(self, query: str) -> Dict[str, Any]:
         normalized_query = (query or "").strip()
@@ -57,6 +67,21 @@ class ArbiterAgent:
 
         if self._is_self_improvement_request(normalized_query):
             return self._handle_self_improvement_request(normalized_query)
+
+        if self._is_public_lead_request(normalized_query):
+            return self._handle_public_lead_request(normalized_query)
+
+        if self._is_agent_contact_request(normalized_query):
+            return self._handle_agent_contact_request(normalized_query)
+
+        if self._is_agent_campaign_request(normalized_query):
+            return self._handle_agent_campaign_request(normalized_query)
+
+        if self._is_direct_agent_request(normalized_query):
+            return self._handle_direct_agent_request(normalized_query)
+
+        if self._is_service_request(normalized_query):
+            return self._handle_service_request(normalized_query)
 
         infra_request = self.infra.parse_request(normalized_query)
         if infra_request:
@@ -213,9 +238,57 @@ class ArbiterAgent:
             or "verbessere dich" in lowered
         )
 
+    def _is_public_lead_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/leads")
+            or lowered.startswith("/lead")
+            or lowered.startswith("/discover leads")
+            or "public agent leads" in lowered
+            or "offentliche agenten" in lowered
+            or "oeffentliche agenten" in lowered
+            or "agenten leads" in lowered
+        )
+
+    def _is_service_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/service")
+            or lowered.startswith("/contact")
+            or lowered.startswith("/task")
+            or "public agents contact" in lowered
+            or "agent service desk" in lowered
+            or "wallet bezahlen" in lowered
+        )
+
+    def _is_agent_contact_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-contact")
+            or lowered.startswith("/contact-agent")
+            or lowered.startswith("/send-agent-contact")
+        )
+
+    def _is_agent_campaign_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/cold-outreach")
+            or lowered.startswith("/campaign")
+            or lowered.startswith("/kaltaquise")
+        )
+
+    def _is_direct_agent_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-card")
+            or lowered.startswith("/direct")
+            or lowered.startswith("/discover-agent")
+            or lowered.startswith("/a2a")
+        )
+
     def _handle_self_improvement_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower()
-        profile = self.infra._extract_profile(lowered)
+        profile = self._extract_explicit_profile(lowered)
         objective = re.sub(
             r"^/(?:cycle|improve|autocycle)\b",
             "",
@@ -226,6 +299,324 @@ class ArbiterAgent:
             objective=objective,
             profile_id=profile,
         )
+
+    def _handle_public_lead_request(self, query: str) -> Dict[str, Any]:
+        objective = re.sub(
+            r"^/(?:leads|lead)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        objective = re.sub(
+            r"^discover leads\b",
+            "",
+            objective,
+            flags=re.IGNORECASE,
+        ).strip()
+        return self.lead_discovery.scout_public_leads(query=objective)
+
+    def _handle_service_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered in {"/service", "/contact", "/task", "service", "contact"}:
+            return self.service_desk.service_catalog()
+
+        staking_match = re.search(
+            r"^/(?:service|task)\s+(?:staking|metamask)\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if staking_match:
+            return self.service_desk.metamask_staking_checklist(staking_match.group(1))
+
+        stake_match = re.search(
+            r"^/(?:service|task)\s+stake\s+(\S+)(?:\s+(0x[a-fA-F0-9]{64}))?",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if stake_match:
+            return self.service_desk.record_treasury_stake(
+                task_id=stake_match.group(1),
+                tx_hash=stake_match.group(2) or "",
+                amount_native=self._extract_budget_native(query),
+                note=self._extract_key_value(query, "note"),
+            )
+
+        spend_match = re.search(
+            r"^/(?:service|task)\s+spend\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if spend_match:
+            amount = self._extract_budget_native(query)
+            return self.service_desk.record_solver_spend(
+                task_id=spend_match.group(1),
+                amount_native=amount or 0.0,
+                note=self._extract_key_value(query, "note") or "solver spend",
+                tx_hash=self._extract_key_value(query, "tx_hash"),
+            )
+
+        close_match = re.search(
+            r"^/(?:service|task)\s+close\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if close_match:
+            outcome = query.split(close_match.group(1), 1)[-1].strip()
+            return self.service_desk.close_task(close_match.group(1), outcome=outcome)
+
+        verify_match = re.search(
+            r"^/(?:service|task)\s+verify\s+(\S+)\s+(0x[a-fA-F0-9]{64})",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if verify_match:
+            return self.service_desk.verify_payment(
+                task_id=verify_match.group(1),
+                tx_hash=verify_match.group(2),
+                requester_wallet=self._extract_wallet(query),
+            )
+
+        x402_verify_match = re.search(
+            r"^/(?:service|task)\s+x402-verify\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if x402_verify_match:
+            return self.service_desk.verify_x402_payment(
+                task_id=x402_verify_match.group(1),
+                payment_signature=self._extract_key_value(query, "signature"),
+                requester_wallet=self._extract_wallet(query),
+            )
+
+        work_match = re.search(
+            r"^/(?:service|task)\s+work\s+(\S+)(?:\s+approval=([A-Za-z0-9_-]+))?",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if work_match:
+            return self.service_desk.work_task(
+                task_id=work_match.group(1),
+                approval=work_match.group(2) or "draft_only",
+            )
+
+        task_id_match = re.search(
+            r"^/(?:service|task)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if task_id_match:
+            return self.service_desk.get_task(task_id_match.group(1))
+
+        problem = re.sub(
+            r"^/(?:service|task)(?:\s+request)?\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        service_type = self._extract_key_value(query, "type") or "custom"
+        budget = self._extract_budget_native(query)
+        requester_wallet = self._extract_wallet(query)
+        requester_agent = (
+            self._extract_key_value(query, "agent")
+            or self._extract_key_value(query, "requester")
+            or ""
+        )
+        return self.service_desk.create_task(
+            problem=problem,
+            requester_agent=requester_agent,
+            requester_wallet=requester_wallet,
+            service_type=service_type,
+            budget_native=budget,
+        )
+
+    def _handle_agent_contact_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        send_match = re.search(
+            r"^/(?:agent-contact|contact-agent|send-agent-contact)\s+send\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if send_match:
+            return self.agent_contacts.send_contact(send_match.group(1))
+
+        status_match = re.search(
+            r"^/(?:agent-contact|contact-agent)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.agent_contacts.get_contact(status_match.group(1))
+
+        endpoint = (
+            self._extract_key_value(query, "endpoint")
+            or self._extract_key_value(query, "url")
+        )
+        if not endpoint:
+            match = re.search(r"https?://\S+", query)
+            endpoint = match.group(0) if match else ""
+        service_type = self._extract_key_value(query, "type") or "human_in_loop"
+        budget = self._extract_budget_native(query)
+        problem = re.sub(
+            r"^/(?:agent-contact|contact-agent)(?:\s+queue)?\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        if endpoint:
+            problem = problem.replace(f"endpoint={endpoint}", "")
+            problem = problem.replace(f"url={endpoint}", "")
+            problem = problem.replace(endpoint, "")
+        for key in ("type", "budget"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = problem.strip() or "Nomad can help with paid human-in-the-loop or infrastructure pain."
+        return self.agent_contacts.queue_contact(
+            endpoint_url=endpoint,
+            problem=problem,
+            service_type=service_type,
+            budget_hint_native=budget,
+        )
+
+    def _handle_agent_campaign_request(self, query: str) -> Dict[str, Any]:
+        status_match = re.search(
+            r"^/(?:cold-outreach|campaign|kaltaquise)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.agent_campaigns.get_campaign(status_match.group(1))
+        send = bool(re.search(r"\b(?:send|senden|now|sofort)\b", query, flags=re.IGNORECASE))
+        limit = self._extract_int_key_value(query, "limit") or 100
+        endpoints = re.findall(r"https?://\S+", query)
+        discover = (
+            bool(re.search(r"\b(?:discover|auto|find|finden|suche|suchen|scout)\b", query, flags=re.IGNORECASE))
+            or not endpoints
+        )
+        if discover:
+            return self.agent_campaigns.create_campaign_from_discovery(
+                limit=limit,
+                query=self._campaign_discovery_query(query, endpoints),
+                seeds=[{"endpoint_url": endpoint} for endpoint in endpoints],
+                send=send,
+                service_type=self._extract_key_value(query, "type") or "human_in_loop",
+                budget_hint_native=self._extract_budget_native(query),
+            )
+        targets = [{"endpoint_url": endpoint} for endpoint in endpoints]
+        return self.agent_campaigns.create_campaign(
+            targets=targets,
+            limit=limit,
+            send=send,
+            service_type=self._extract_key_value(query, "type") or "human_in_loop",
+            budget_hint_native=self._extract_budget_native(query),
+        )
+
+    def _campaign_discovery_query(self, query: str, endpoints: List[str]) -> str:
+        cleaned = re.sub(
+            r"^/(?:cold-outreach|campaign|kaltaquise)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        )
+        for endpoint in endpoints:
+            cleaned = cleaned.replace(endpoint, "")
+        cleaned = re.sub(
+            r"\b(?:send|senden|now|sofort|discover|auto|find|finden|suche|suchen|scout)\b",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\b(?:limit|type|budget|amount|pay)=\S+", "", cleaned, flags=re.IGNORECASE)
+        explicit = self._extract_key_value(query, "query")
+        if explicit:
+            return explicit
+        return " ".join(cleaned.split())
+
+    def _handle_direct_agent_request(self, query: str) -> Dict[str, Any]:
+        if query.lower().startswith("/agent-card"):
+            return {
+                "mode": "agent_card",
+                "deal_found": False,
+                "agent_card": self.direct_agent.agent_card(),
+            }
+        discover_match = re.search(
+            r"^/(?:discover-agent|a2a\s+discover)\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if discover_match:
+            return self.direct_agent.discover_agent_card(discover_match.group(1))
+        status_match = re.search(
+            r"^/direct\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.direct_agent.session_status(status_match.group(1))
+        message = re.sub(r"^/(?:direct|a2a)(?:\s+message)?\b", "", query, flags=re.IGNORECASE).strip()
+        requester = self._extract_key_value(query, "agent") or self._extract_key_value(query, "from")
+        endpoint = self._extract_key_value(query, "endpoint")
+        wallet = self._extract_wallet(query)
+        for key in ("agent", "from", "endpoint", "wallet", "budget"):
+            value = self._extract_key_value(query, key)
+            if value:
+                message = message.replace(f"{key}={value}", "")
+        if wallet:
+            message = message.replace(wallet, "")
+        message = " ".join(message.split())
+        return self.direct_agent.handle_direct_message(
+            {
+                "requester_agent": requester,
+                "requester_endpoint": endpoint,
+                "requester_wallet": wallet,
+                "message": message,
+                "budget_native": self._extract_budget_native(query),
+            }
+        )
+
+    def _extract_key_value(self, query: str, key: str) -> str:
+        match = re.search(
+            rf"\b{re.escape(key)}=([^\s]+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1).strip() if match else ""
+
+    def _extract_wallet(self, query: str) -> str:
+        explicit = (
+            self._extract_key_value(query, "wallet")
+            or self._extract_key_value(query, "payer_wallet")
+            or self._extract_key_value(query, "from")
+        )
+        if re.fullmatch(r"0x[a-fA-F0-9]{40}", explicit or ""):
+            return explicit
+        match = re.search(r"\b0x[a-fA-F0-9]{40}\b", query)
+        return match.group(0) if match else ""
+
+    def _extract_budget_native(self, query: str) -> Optional[float]:
+        match = re.search(
+            r"\b(?:budget|amount|pay)=?(\d+(?:[.,]\d+)?)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        return float(match.group(1).replace(",", "."))
+
+    def _extract_int_key_value(self, query: str, key: str) -> Optional[int]:
+        value = self._extract_key_value(query, key)
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    def _extract_explicit_profile(self, lowered: str) -> str:
+        profile_markers = (" profile:", " profile=", " for profile ", " für profil ", " fuer profil ")
+        if any(marker in lowered for marker in profile_markers):
+            return self.infra._extract_profile(lowered)
+        return "ai_first"
 
     def _parse_travel_request(self, query: str) -> Optional[TravelRequest]:
         origin, destination = self._extract_route(query)

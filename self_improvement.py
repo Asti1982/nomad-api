@@ -1,6 +1,8 @@
 import json
 import os
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -8,6 +10,7 @@ from dotenv import load_dotenv
 
 from infra_scout import InfrastructureScout
 from mission import MISSION_STATEMENT, mission_context
+from self_development import SelfDevelopmentJournal
 
 
 load_dotenv()
@@ -195,9 +198,11 @@ class SelfImprovementEngine:
         self,
         infra: Optional[InfrastructureScout] = None,
         brain_router: Optional[HostedBrainRouter] = None,
+        journal: Optional[SelfDevelopmentJournal] = None,
     ) -> None:
         self.infra = infra or InfrastructureScout()
         self.brain_router = brain_router or HostedBrainRouter()
+        self.journal = journal or SelfDevelopmentJournal()
 
     def run_cycle(
         self,
@@ -230,6 +235,9 @@ class SelfImprovementEngine:
             compute=compute,
             local_actions=local_actions,
         )
+        self_development = {
+            "previous_state": self.journal.load(),
+        }
 
         analysis = (
             f"Nomad ran one self-improvement cycle for {context['profile']['label']}. "
@@ -239,7 +247,7 @@ class SelfImprovementEngine:
         if human_unlocks:
             analysis += f" Next human unlock: {human_unlocks[0]['short_ask']}"
 
-        return {
+        result = {
             "mode": "self_improvement_cycle",
             "deal_found": False,
             "profile": context["profile"],
@@ -251,8 +259,19 @@ class SelfImprovementEngine:
             "external_review_count": len(ok_reviews),
             "lead_scout": lead_scout,
             "human_unlocks": human_unlocks,
+            "self_development": self_development,
             "analysis": analysis,
         }
+        state = self.journal.record_cycle(result)
+        result["self_development"] = {
+            "cycle_count": state.get("cycle_count", 0),
+            "last_cycle_at": state.get("last_cycle_at", ""),
+            "current_objective": state.get("current_objective", ""),
+            "next_objective": state.get("next_objective", ""),
+            "open_human_unlock": state.get("open_human_unlock"),
+            "human_unlocks": state.get("self_development_unlocks") or [],
+        }
+        return result
 
     def _compact_context(
         self,
@@ -294,9 +313,36 @@ class SelfImprovementEngine:
             ],
             "upgrades": upgrades[:5],
             "resources": resources,
+            "recent_direct_agent_sessions": self._recent_direct_agent_sessions(),
             "compute_analysis": compute.get("analysis", ""),
             "self_analysis": self_audit.get("analysis", ""),
         }
+
+    def _recent_direct_agent_sessions(self, limit: int = 5) -> List[Dict[str, Any]]:
+        path = Path(__file__).resolve().parent / "nomad_direct_sessions.json"
+        if not path.exists():
+            return []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        sessions = list((payload.get("sessions") or {}).values())
+        sessions.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+        compact: List[Dict[str, Any]] = []
+        for session in sessions[:limit]:
+            turns = session.get("turns") or []
+            last_turn = turns[-1] if turns else {}
+            compact.append(
+                {
+                    "session_id": session.get("session_id", ""),
+                    "requester_agent": session.get("requester_agent", ""),
+                    "status": session.get("status", ""),
+                    "last_pain_type": session.get("last_pain_type", ""),
+                    "last_task_id": session.get("last_task_id", ""),
+                    "last_diagnosis": (last_turn.get("free_diagnosis") or {}).get("first_30_seconds", ""),
+                }
+            )
+        return compact
 
     def _provider_state(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -354,6 +400,7 @@ class SelfImprovementEngine:
         context: Dict[str, Any],
         brain_reviews: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        active_lead = self._extract_active_lead(objective)
         lead_queries = [
             '"AI agent" "rate limit" "GitHub Models"',
             '"AI agent" "Hugging Face" "inference" "error"',
@@ -381,7 +428,18 @@ class SelfImprovementEngine:
                 }
             )
 
-        return {
+        next_agent_action = (
+            "Use the listed public surfaces and hosted-brain hypotheses to identify one concrete "
+            "AI agent, repo, builder or bot with infrastructure pain."
+        )
+        if active_lead:
+            next_agent_action = (
+                f"Work this specific lead first: {active_lead['url'] or active_lead['name']}. "
+                f"Validate the pain signal, draft one helpful response or repro/PR plan, and do not post publicly "
+                "without human permission."
+            )
+
+        result = {
             "mode": "lead_scout",
             "objective": (
                 "Nomad should find agent-customer pain autonomously; the human only unlocks auth, "
@@ -397,9 +455,40 @@ class SelfImprovementEngine:
                 "permission to contact or post",
                 "confirming a lead is worth serving if public data is ambiguous",
             ],
-            "next_agent_action": (
-                "Use the listed public surfaces and hosted-brain hypotheses to identify one concrete "
-                "AI agent, repo, builder or bot with infrastructure pain."
+            "next_agent_action": next_agent_action,
+        }
+        if active_lead:
+            result["active_lead"] = active_lead
+        return result
+
+    def _extract_active_lead(self, objective: str) -> Optional[Dict[str, str]]:
+        text = (objective or "").strip()
+        if "lead:" not in text.lower() and "lead_url=" not in text.lower() and "url=" not in text.lower():
+            return None
+
+        url_match = re.search(r"\b(?:LEAD_URL|URL)=([^\s]+)", text, flags=re.IGNORECASE)
+        pain_match = re.search(
+            r"\bPain=(.*?)(?:\s+Nomad task:|\s+for\s+[a-z0-9_]+$|$)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        task_match = re.search(
+            r"\bNomad task:\s*(.*?)(?:\s+for\s+[a-z0-9_]+$|$)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        name = text
+        lead_match = re.search(r"Lead:\s*(.*?)(?:\s+URL=|\s+Pain=|\s+Nomad task:|$)", text, flags=re.IGNORECASE)
+        if lead_match and lead_match.group(1).strip():
+            name = lead_match.group(1).strip()
+
+        return {
+            "name": name,
+            "url": url_match.group(1).strip() if url_match else "",
+            "pain": pain_match.group(1).strip() if pain_match else "",
+            "requested_task": task_match.group(1).strip() if task_match else "",
+            "first_help_action": (
+                "Draft a concise GitHub comment, repro test outline, or PR plan that reduces the named infrastructure pain."
             ),
         }
 
@@ -486,4 +575,4 @@ class SelfImprovementEngine:
                 "If this unlock is a credential, send it in Telegram as `/token <provider> <token>` or `ENV_VAR=...`.",
             )
         fresh["steps"] = steps
-        return fresh
+        return self.infra._make_activation_request_concrete(fresh)

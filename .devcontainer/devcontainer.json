@@ -1,0 +1,20 @@
+{
+  "name": "Nomad Codespaces",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt",
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": {
+      "label": "Nomad API (A2A/x402)",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python"
+      ]
+    }
+  }
+}

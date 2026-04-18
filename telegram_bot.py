@@ -23,6 +23,7 @@ from telegram.ext import (
 
 from settings import get_chain_config
 from mission import MISSION_STATEMENT
+from self_development import SelfDevelopmentJournal
 from workflow import ArbiterAgent
 
 load_dotenv()
@@ -37,6 +38,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
 SUBSCRIBERS_PATH = ROOT / "telegram_subscribers.json"
+SELF_STATE_PATH = ROOT / "nomad_self_state.json"
 TOKEN_ENV_VARS = {
     "GITHUB_TOKEN",
     "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -98,6 +100,7 @@ class ArbiterBot:
             os.getenv("TELEGRAM_STATUS_INTERVAL_MINUTES", "25")
         )
         self.status_chat_ids = self._load_static_status_chat_ids()
+        self.self_journal = SelfDevelopmentJournal(SELF_STATE_PATH)
         self._broadcast_thread: Optional[threading.Thread] = None
         self._auto_cycle_thread: Optional[threading.Thread] = None
         self._chat_memory: dict[int, dict[str, Any]] = {}
@@ -125,6 +128,8 @@ class ArbiterBot:
             "- /self\n"
             "- /compute\n"
             "- /cycle\n"
+            "- /leads\n"
+            "- /service\n"
             "- /unlock\n"
             "- /skip last\n"
             "- /token github <token>\n"
@@ -154,6 +159,8 @@ class ArbiterBot:
                 "/self [profile]\n"
                 "/compute [profile]\n"
                 "/cycle [objective]\n"
+                "/leads [query]\n"
+                "/service [request|verify|work]\n"
                 "/unlock [category]\n"
                 "/skip last\n"
                 "/token <github|hf|modal_id|modal_secret> <token>\n"
@@ -264,6 +271,26 @@ class ArbiterBot:
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
 
+    async def leads_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = "/leads"
+        if context.args:
+            query = f"/leads {' '.join(context.args)}"
+        result = await asyncio.to_thread(self.agent.run, query)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def service_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = "/service"
+        if context.args:
+            query = f"/service {' '.join(context.args)}"
+        result = await asyncio.to_thread(self.agent.run, query)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
     async def unlock_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -328,6 +355,8 @@ class ArbiterBot:
             "- /self\n"
             "- /compute\n"
             "- /cycle\n"
+            "- /leads\n"
+            "- /service\n"
             "- /unlock\n"
             "- /skip last\n"
             "- /token github <token>\n"
@@ -585,6 +614,12 @@ class ArbiterBot:
             return self._format_compute_audit(result)
         if mode == "self_improvement_cycle":
             return self._format_self_improvement_cycle(result)
+        if mode == "lead_discovery":
+            return self._format_lead_discovery(result)
+        if mode == "agent_service_catalog":
+            return self._format_service_catalog(result)
+        if mode == "agent_service_request":
+            return self._format_service_request(result)
         if mode == "activation_request":
             return self._format_activation_request(result)
         if mode == "infra_scout":
@@ -772,6 +807,17 @@ class ArbiterBot:
             f"Profile: {profile.get('label', profile.get('id', 'Nomad'))}",
             f"External reviews used: {result.get('external_review_count', 0)}",
         ]
+        self_development = result.get("self_development") or {}
+        if self_development:
+            lines.append(f"Self-development cycle count: {self_development.get('cycle_count', 0)}")
+            if self_development.get("next_objective"):
+                lines.append(f"Next autonomous objective: {self_development['next_objective']}")
+            dev_unlocks = self_development.get("human_unlocks") or []
+            if dev_unlocks:
+                first_unlock = dev_unlocks[0]
+                lines.append("")
+                lines.append("Human unlock for self-development")
+                lines.extend(self._format_activation_lines(first_unlock))
 
         primary = resources.get("primary_brain")
         fallback_brains = resources.get("fallback_brains") or []
@@ -833,6 +879,129 @@ class ArbiterBot:
             lines.append(result["analysis"])
         return "\n".join(lines)
 
+    def _format_lead_discovery(self, result: Dict[str, Any]) -> str:
+        leads = result.get("leads") or []
+        lines = [
+            "Nomad public lead discovery",
+            f"Leads found: {len(leads)}",
+        ]
+        if result.get("query"):
+            lines.append(f"Query: {result['query']}")
+        for index, lead in enumerate(leads[:5], start=1):
+            lines.append("")
+            lines.append(f"{index}. {lead.get('title', 'Untitled lead')}")
+            if lead.get("url"):
+                lines.append(f"URL: {lead['url']}")
+            lines.append(f"Pain: {lead.get('pain', 'unknown')}")
+            lines.append(f"First help: {lead.get('first_help_action', 'draft a first response')}")
+            lines.append("Policy: draft only until approved")
+        unlocks = result.get("human_unlocks") or []
+        if unlocks:
+            lines.append("")
+            lines.extend(self._format_activation_lines(unlocks[0]))
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_service_catalog(self, result: Dict[str, Any]) -> str:
+        wallet = result.get("wallet") or {}
+        pricing = result.get("pricing") or {}
+        lines = [
+            "Nomad agent service desk",
+            f"Wallet: {wallet.get('address') or 'not configured'}",
+            f"Network: {wallet.get('network')} (chain {wallet.get('chain_id')})",
+            (
+                f"Minimum: {pricing.get('minimum_native')} "
+                f"{pricing.get('payment_token', wallet.get('native_symbol', 'native'))}"
+            ),
+            "HTTP: GET /agent, POST /tasks, POST /tasks/verify, POST /tasks/work",
+            "MCP: nomad_service_request, nomad_service_verify, nomad_service_work",
+        ]
+        allocation = pricing.get("allocation") or {}
+        if allocation:
+            lines.append(
+                f"Split: {allocation.get('treasury_stake_bps')} bps treasury stake, "
+                f"{allocation.get('solver_spend_bps')} bps solver budget"
+            )
+        service_types = result.get("service_types") or {}
+        if service_types:
+            lines.append("")
+            lines.append("Services")
+            for key, payload in list(service_types.items())[:5]:
+                lines.append(f"- {key}: {payload.get('summary')}")
+        safety = result.get("safety_contract") or {}
+        refused = safety.get("refused") or []
+        if refused:
+            lines.append("")
+            lines.append("Will not do")
+            for item in refused[:4]:
+                lines.append(f"- {item}")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_service_request(self, result: Dict[str, Any]) -> str:
+        if not result.get("ok"):
+            return result.get("message") or result.get("error") or "Service request failed."
+        task = result.get("task") or {}
+        payment = task.get("payment") or {}
+        lines = [
+            "Nomad service task",
+            f"Task: {task.get('task_id')}",
+            f"Status: {task.get('status')}",
+            f"Type: {task.get('service_type')}",
+        ]
+        if payment:
+            lines.extend(
+                [
+                    "",
+                    "Payment",
+                    f"Send: {payment.get('amount_native')} {payment.get('native_symbol')}",
+                    f"To: {payment.get('recipient_address') or 'Nomad wallet not configured'}",
+                    f"Network: {payment.get('network')} (chain {payment.get('chain_id')})",
+                    f"Reference: {payment.get('payment_reference')}",
+                ]
+            )
+            if payment.get("optional_tx_data"):
+                lines.append(f"Optional tx data: {payment['optional_tx_data']}")
+            verification = payment.get("verification")
+            if verification:
+                lines.append(f"Verification: {verification.get('status')} - {verification.get('message')}")
+        allocation = task.get("payment_allocation") or {}
+        if allocation:
+            lines.extend(
+                [
+                    "",
+                    "Payment allocation",
+                    (
+                        f"Treasury stake plan: {allocation.get('treasury_stake_native')} "
+                        f"{allocation.get('native_symbol')} via {allocation.get('staking_target')}"
+                    ),
+                    (
+                        f"Problem-solving budget: {allocation.get('solver_budget_native')} "
+                        f"{allocation.get('native_symbol')}"
+                    ),
+                    f"Staking status: {allocation.get('treasury_staking_status')}",
+                ]
+            )
+        work_product = task.get("work_product")
+        if work_product:
+            lines.append("")
+            lines.append("Work product")
+            lines.append(work_product.get("diagnosis") or work_product.get("message", "No diagnosis yet."))
+            if work_product.get("draft_response"):
+                lines.append(work_product["draft_response"])
+            human_unlocks = work_product.get("human_unlocks") or []
+            if human_unlocks:
+                lines.append("")
+                lines.extend(self._format_activation_lines(human_unlocks[0]))
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
     def _format_activation_request(self, result: Dict[str, Any]) -> str:
         request = result.get("request")
         category = result.get("category", "compute")
@@ -851,9 +1020,28 @@ class ArbiterBot:
             "Human in the loop requested",
             f"Unlock: {request['candidate_name']} as {request['role']}",
             f"Lane state: {request['lane_state']}",
-            f"Nomad asks: {request['ask']}",
-            f"Why now: {request['reason']}",
         ]
+        if request.get("human_action") or request.get("human_deliverable"):
+            lines.append("Concrete task")
+            if request.get("human_action"):
+                lines.append(f"Do now: {request['human_action']}")
+            if request.get("human_deliverable"):
+                lines.append(f"Send back: {request['human_deliverable']}")
+            if request.get("timebox_minutes"):
+                lines.append(f"Timebox: {request['timebox_minutes']} minutes")
+            success_criteria = request.get("success_criteria") or []
+            if success_criteria:
+                lines.append("Done when")
+                for item in success_criteria[:3]:
+                    lines.append(f"- {item}")
+            if request.get("example_response"):
+                lines.append(f"Example: {request['example_response']}")
+        lines.extend(
+            [
+                f"Nomad asks: {request['ask']}",
+                f"Why now: {request['reason']}",
+            ]
+        )
         if request.get("decision_score") is not None:
             lines.append(f"Decision score: {request['decision_score']}")
         if request.get("decision_reason"):
@@ -1090,22 +1278,56 @@ class ArbiterBot:
         edit: bool = False,
     ) -> None:
         self._auto_subscribe_chat(update)
+        chunks = self._message_chunks(message)
         if update.callback_query:
             await update.callback_query.answer()
+            first, rest = chunks[0], chunks[1:]
             if edit:
                 await update.callback_query.edit_message_text(
-                    message,
-                    reply_markup=reply_markup,
+                    first,
+                    reply_markup=reply_markup if not rest else None,
                 )
             else:
                 await update.callback_query.message.reply_text(
-                    message,
-                    reply_markup=reply_markup,
+                    first,
+                    reply_markup=reply_markup if not rest else None,
+                )
+            for index, chunk in enumerate(rest):
+                await update.callback_query.message.reply_text(
+                    chunk,
+                    reply_markup=reply_markup if index == len(rest) - 1 else None,
                 )
             return
 
         if update.message:
-            await update.message.reply_text(message, reply_markup=reply_markup)
+            for index, chunk in enumerate(chunks):
+                await update.message.reply_text(
+                    chunk,
+                    reply_markup=reply_markup if index == len(chunks) - 1 else None,
+                )
+
+    @staticmethod
+    def _message_chunks(message: str, max_length: int = 3600) -> list[str]:
+        text = message or ""
+        if len(text) <= max_length:
+            return [text]
+        chunks: list[str] = []
+        current = ""
+        for line in text.splitlines():
+            candidate = f"{current}\n{line}" if current else line
+            if len(candidate) <= max_length:
+                current = candidate
+                continue
+            if current:
+                chunks.append(current)
+                current = ""
+            while len(line) > max_length:
+                chunks.append(line[:max_length])
+                line = line[max_length:]
+            current = line
+        if current:
+            chunks.append(current)
+        return chunks or [""]
 
     def _chat_id_from_update(self, update: Update) -> Optional[int]:
         if update.effective_chat:
@@ -1290,6 +1512,13 @@ class ArbiterBot:
             if activation_request.get("short_ask"):
                 lines.append(activation_request["short_ask"])
         lines.append(f"API: {self.public_api_url}")
+        self_state = self.self_journal.load()
+        lines.append(f"Self-development cycles: {self_state.get('cycle_count', 0)}")
+        if self_state.get("next_objective"):
+            lines.append(f"Next autonomous objective: {self_state['next_objective']}")
+        dev_unlocks = self_state.get("self_development_unlocks") or []
+        if dev_unlocks:
+            lines.append(f"Human self-dev unlock: {dev_unlocks[0].get('short_ask')}")
         if self.auto_cycle_enabled:
             lines.append(
                 f"Auto-cycle: enabled every {self.auto_cycle_interval_minutes} minutes"
@@ -1303,14 +1532,15 @@ class ArbiterBot:
         if not self.token:
             return
         try:
-            requests.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                },
-                timeout=20,
-            )
+            for chunk in self._message_chunks(text):
+                requests.post(
+                    f"https://api.telegram.org/bot{self.token}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": chunk,
+                    },
+                    timeout=20,
+                )
         except Exception:
             return
 
@@ -1340,19 +1570,33 @@ class ArbiterBot:
     def _auto_cycle_loop(self) -> None:
         if not self.auto_cycle_enabled:
             return
+        if os.getenv("NOMAD_AUTO_CYCLE_RUN_ON_START", "true").strip().lower() == "true":
+            self._run_one_auto_cycle_and_broadcast("startup")
         interval_seconds = max(300, self.auto_cycle_interval_minutes * 60)
         while True:
             time.sleep(interval_seconds)
-            targets = self._broadcast_targets()
-            if not targets:
-                continue
-            try:
-                result = self.agent.run("/cycle autonomous background self-improvement")
-                message = self._format_result(result)
-            except Exception as exc:
-                message = f"Nomad auto-cycle failed: {exc}"
-            for chat_id in targets:
-                self._send_status_message(chat_id, message)
+            self._run_one_auto_cycle_and_broadcast("scheduled")
+
+    def _run_one_auto_cycle_and_broadcast(self, trigger: str) -> None:
+        targets = self._broadcast_targets()
+        state = self.self_journal.load()
+        objective = state.get("next_objective") or SelfDevelopmentJournal.default_objective()
+        try:
+            result = self.agent.run(f"/cycle {objective}")
+            development = result.get("self_development") or {}
+            message = (
+                f"Nomad auto-cycle ({trigger})\n"
+                f"Cycle count: {development.get('cycle_count', '?')}\n"
+                f"Objective: {result.get('objective')}\n"
+                f"Next objective: {development.get('next_objective')}\n\n"
+                f"{self._format_result(result)}"
+            )
+        except Exception as exc:
+            message = f"Nomad auto-cycle failed: {exc}"
+        if not targets:
+            return
+        for chat_id in targets:
+            self._send_status_message(chat_id, message)
 
     def _start_auto_cycle_loop(self) -> None:
         if self._auto_cycle_thread is not None or not self.auto_cycle_enabled:
@@ -1376,6 +1620,10 @@ class ArbiterBot:
         app.add_handler(CommandHandler("self", self.self_command))
         app.add_handler(CommandHandler("compute", self.compute_command))
         app.add_handler(CommandHandler("cycle", self.cycle_command))
+        app.add_handler(CommandHandler("leads", self.leads_command))
+        app.add_handler(CommandHandler("lead", self.leads_command))
+        app.add_handler(CommandHandler("service", self.service_command))
+        app.add_handler(CommandHandler("contact", self.service_command))
         app.add_handler(CommandHandler("unlock", self.unlock_command))
         app.add_handler(CommandHandler("skip", self.skip_command))
         app.add_handler(CommandHandler("scout", self.scout_command))

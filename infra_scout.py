@@ -2,7 +2,9 @@ import os
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from compute_probe import LocalComputeProbe
 from settings import get_chain_config
@@ -47,6 +49,19 @@ class InfrastructureScout:
         "mcp": "protocols",
         "messaging": "messaging",
         "telegram": "messaging",
+        "hosting": "public_hosting",
+        "host": "public_hosting",
+        "public-hosting": "public_hosting",
+        "public_hosting": "public_hosting",
+        "public-url": "public_hosting",
+        "public_url": "public_hosting",
+        "url": "public_hosting",
+        "tunnel": "public_hosting",
+        "deploy": "public_hosting",
+        "deployment": "public_hosting",
+        "github": "public_hosting",
+        "render": "public_hosting",
+        "cloudflare": "public_hosting",
         "identity": "identity",
         "email": "identity",
         "discovery": "discovery",
@@ -167,7 +182,7 @@ class InfrastructureScout:
 
     def best_stack(self, profile_id: str = "ai_first") -> Dict[str, Any]:
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
-        categories = ["runtime", "protocols", "compute", "messaging", "identity", "wallets"]
+        categories = ["runtime", "protocols", "compute", "public_hosting", "messaging", "identity", "wallets"]
         if profile.id == "travel_agent":
             categories.append("travel")
         picks: List[Dict[str, Any]] = []
@@ -413,7 +428,7 @@ class InfrastructureScout:
         excluded = set(excluded_ids or [])
         probe = self.compute_probe.snapshot()
         current_map = self._current_stack()
-        categories = ["compute", "wallets", "identity", "messaging", "protocols", "runtime"]
+        categories = ["compute", "public_hosting", "wallets", "identity", "messaging", "protocols", "runtime"]
         candidates: List[Dict[str, Any]] = []
 
         for category in categories:
@@ -438,6 +453,8 @@ class InfrastructureScout:
                     profile=profile,
                     ranked=ranked,
                 )
+            if request is None:
+                continue
             candidates.append(
                 self._score_activation_candidate(
                     request=request,
@@ -510,7 +527,7 @@ class InfrastructureScout:
     ) -> Dict[str, Any]:
         generated_at = datetime.now(UTC).isoformat()
         task_id = f"agent-customer-{generated_at.replace('-', '').replace(':', '').replace('.', '')[:16]}"
-        return {
+        return self._make_activation_request_concrete({
             "category": "agent_customers",
             "candidate_id": "fresh-agent-customer-lead",
             "candidate_name": "Fresh agent-customer lead",
@@ -543,8 +560,22 @@ class InfrastructureScout:
                 "Run /cycle and check the lead_scout section.",
                 "If a human auth barrier appears, complete only that barrier and let Nomad continue scouting.",
             ],
+            "human_action": (
+                "Send `/cycle find one concrete AI-agent infrastructure pain lead` now, or paste `LEAD_URL=https://...` "
+                "if you already know one promising agent/customer lead."
+            ),
+            "human_deliverable": (
+                "`/cycle find one concrete AI-agent infrastructure pain lead`, `LEAD_URL=https://...`, "
+                "or the exact login/CAPTCHA/invite/API approval Nomad asks for after scouting."
+            ),
+            "success_criteria": [
+                "Nomad returns one lead with a URL or handle, the visible infrastructure pain, and a proposed first help action.",
+                "If public scouting is blocked, Nomad names one exact human auth or permission barrier to unlock.",
+            ],
+            "example_response": "/cycle find one concrete AI-agent infrastructure pain lead",
+            "timebox_minutes": 5,
             "source_url": "",
-        }
+        })
 
     def _score_activation_candidate(
         self,
@@ -564,6 +595,7 @@ class InfrastructureScout:
             "wallets": 7.5,
             "identity": 7.0,
             "messaging": 6.5,
+            "public_hosting": 9.5,
             "protocols": 6.0,
             "runtime": 4.0,
             "agent_customers": 9.0,
@@ -602,6 +634,9 @@ class InfrastructureScout:
         if category == "agent_customers":
             score += 3.5
             reasons.append("real agent-customer pain is the best feedback loop for Nomad")
+        if category == "public_hosting":
+            score += 4.0
+            reasons.append("public URL is required before other agents can call Nomad back")
         if request.get("requires_account"):
             score -= 0.8
             reasons.append("requires external account setup")
@@ -626,7 +661,237 @@ class InfrastructureScout:
         fresh["task_id"] = f"{category}-{generated_key}"
         fresh["fresh"] = True
         fresh["accepts_telegram_tokens"] = bool(fresh.get("env_vars"))
-        return fresh
+        return self._make_activation_request_concrete(fresh)
+
+    def _make_activation_request_concrete(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        concrete = dict(request)
+        category = concrete.get("category") or "compute"
+        candidate_id = concrete.get("candidate_id", "")
+        candidate_name = concrete.get("candidate_name") or "the selected resource"
+        provider = concrete.get("account_provider") or candidate_name
+        env_vars = list(concrete.get("env_vars") or [])
+        credential_vars = self._credential_env_vars(env_vars)
+
+        human_action = concrete.get("human_action") or ""
+        human_deliverable = concrete.get("human_deliverable") or ""
+        success_criteria = concrete.get("success_criteria") or []
+        example_response = concrete.get("example_response") or ""
+        timebox_minutes = concrete.get("timebox_minutes")
+
+        if not human_action or not human_deliverable:
+            defaults = self._default_human_unlock_contract(
+                category=category,
+                candidate_id=candidate_id,
+                candidate_name=candidate_name,
+                provider=provider,
+                env_vars=env_vars,
+                credential_vars=credential_vars,
+                lane_state=concrete.get("lane_state", ""),
+            )
+            human_action = human_action or defaults["human_action"]
+            human_deliverable = human_deliverable or defaults["human_deliverable"]
+            success_criteria = success_criteria or defaults["success_criteria"]
+            example_response = example_response or defaults["example_response"]
+            timebox_minutes = timebox_minutes or defaults["timebox_minutes"]
+
+        concrete["human_action"] = human_action
+        concrete["human_deliverable"] = human_deliverable
+        concrete["success_criteria"] = self._normalize_success_criteria(success_criteria)
+        concrete["example_response"] = example_response
+        concrete["timebox_minutes"] = timebox_minutes
+        concrete["accepts_telegram_tokens"] = bool(credential_vars)
+        concrete["human_unlock_contract"] = {
+            "do_now": concrete["human_action"],
+            "send_back": concrete["human_deliverable"],
+            "done_when": concrete["success_criteria"],
+            "example": concrete["example_response"],
+            "timebox_minutes": concrete["timebox_minutes"],
+        }
+        return concrete
+
+    def _default_human_unlock_contract(
+        self,
+        category: str,
+        candidate_id: str,
+        candidate_name: str,
+        provider: str,
+        env_vars: List[str],
+        credential_vars: List[str],
+        lane_state: str = "",
+    ) -> Dict[str, Any]:
+        if candidate_id == "fresh-agent-customer-lead":
+            return {
+                "human_action": (
+                    "Send `/cycle find one concrete AI-agent infrastructure pain lead`; Nomad should do the scouting, "
+                    "and you only step in for auth, CAPTCHA, invites, API approval or posting permission."
+                ),
+                "human_deliverable": (
+                    "`/cycle find one concrete AI-agent infrastructure pain lead`, `LEAD_URL=https://...`, "
+                    "or the exact auth/permission unlock Nomad asks for."
+                ),
+                "success_criteria": [
+                    "Nomad identifies one concrete lead with URL or handle.",
+                    "Nomad records the visible pain signal and the first useful service it can offer.",
+                ],
+                "example_response": "/cycle find one concrete AI-agent infrastructure pain lead",
+                "timebox_minutes": 5,
+            }
+
+        if candidate_id == "ollama-local":
+            model = (os.getenv("OLLAMA_MODEL") or "llama3.2:1b").strip()
+            return {
+                "human_action": f"Start Ollama locally and make sure `{model}` or another small model is pulled.",
+                "human_deliverable": (
+                    "`/compute` after Ollama is running, or set `OLLAMA_MODEL=<model-name>` in `.env` "
+                    "if you used a different model."
+                ),
+                "success_criteria": [
+                    "Nomad's next /compute shows Ollama reachable.",
+                    "Nomad sees at least one local model.",
+                ],
+                "example_response": "/compute",
+                "timebox_minutes": 10,
+            }
+
+        if candidate_id == "llama-cpp":
+            return {
+                "human_action": (
+                    "Install or confirm `llama-cli`/`llama-server` only if you want local GGUF fallback; otherwise skip it."
+                ),
+                "human_deliverable": "`/compute` after installation, or `/skip last` if llama.cpp is not worth doing now.",
+                "success_criteria": [
+                    "Nomad detects `llama-cli` or `llama-server` on PATH or in LLAMA_CPP_BIN_DIR.",
+                    "If skipped, Nomad selects a different unlock task.",
+                ],
+                "example_response": "/skip last",
+                "timebox_minutes": 10,
+            }
+
+        if {"MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"}.issubset(set(credential_vars)):
+            return {
+                "human_action": "Create or copy one Modal token pair for Nomad.",
+                "human_deliverable": "Send both `MODAL_TOKEN_ID=...` and `MODAL_TOKEN_SECRET=...` in Telegram, or add both to `.env`.",
+                "success_criteria": [
+                    "Nomad's next /compute sees both Modal credential fields configured.",
+                    "If Modal is not useful, /skip last produces another concrete unlock.",
+                ],
+                "example_response": "MODAL_TOKEN_ID=...\nMODAL_TOKEN_SECRET=...",
+                "timebox_minutes": 8,
+            }
+
+        if any(var in {"GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN"} for var in credential_vars):
+            if candidate_id == "github-models" and lane_state == "partial":
+                return {
+                    "human_action": (
+                        "No new GitHub token is needed right now. The token is installed, but GitHub Models "
+                        "inference is blocked or rate-limited; run /compute later, choose another "
+                        "NOMAD_GITHUB_MODEL, or /skip last."
+                    ),
+                    "human_deliverable": (
+                        "`/compute` after the GitHub Models quota/access resets, "
+                        "`NOMAD_GITHUB_MODEL=<accessible-model>`, or `/skip last`."
+                    ),
+                    "success_criteria": [
+                        "Nomad's next /compute marks GitHub Models available.",
+                        "If GitHub still returns 429, Nomad treats it as quota/rate-limit exhaustion, not a missing token.",
+                    ],
+                    "example_response": "/skip last",
+                    "timebox_minutes": 2,
+                }
+            return {
+                "human_action": "Create or copy one GitHub token that can read GitHub Models.",
+                "human_deliverable": "Send `/token github <token>` or `GITHUB_PERSONAL_ACCESS_TOKEN=...`; `GITHUB_TOKEN=...` also works.",
+                "success_criteria": [
+                    "Nomad's next /compute marks GitHub Models available.",
+                    "If the token is blocked, Nomad reports the exact permission or model access failure.",
+                ],
+                "example_response": "/token github <token>",
+                "timebox_minutes": 8,
+            }
+
+        if "HF_TOKEN" in credential_vars:
+            return {
+                "human_action": "Create, verify, or copy one Hugging Face token with inference access.",
+                "human_deliverable": "Send `/token hf <token>` or `HF_TOKEN=...`.",
+                "success_criteria": [
+                    "Nomad's next /compute marks Hugging Face available.",
+                    "If inference is blocked, Nomad reports the concrete permission or provider issue.",
+                ],
+                "example_response": "/token hf <token>",
+                "timebox_minutes": 5,
+            }
+
+        if credential_vars:
+            primary_var = credential_vars[0]
+            provider_hint = self._telegram_provider_hint(primary_var)
+            return {
+                "human_action": f"Create or copy the missing {provider} credential for Nomad.",
+                "human_deliverable": f"Send `/token {provider_hint} <token>` or `{primary_var}=...`.",
+                "success_criteria": [
+                    f"Nomad verifies {candidate_name} in the next relevant probe.",
+                    "If verification fails, Nomad reports one exact missing permission or setup step.",
+                ],
+                "example_response": f"/token {provider_hint} <token>",
+                "timebox_minutes": 8,
+            }
+
+        if category == "agent_customers":
+            return {
+                "human_action": (
+                    "Send `/cycle find one concrete AI-agent infrastructure pain lead`; Nomad should scout, "
+                    "you only unlock auth barriers."
+                ),
+                "human_deliverable": "`/cycle find one concrete AI-agent infrastructure pain lead` or `LEAD_URL=https://...`.",
+                "success_criteria": [
+                    "Nomad identifies one concrete agent/customer lead.",
+                    "Nomad states the pain signal and one first help action.",
+                ],
+                "example_response": "/cycle find one concrete AI-agent infrastructure pain lead",
+                "timebox_minutes": 5,
+            }
+
+        target_url = ""
+        if candidate_name and candidate_name != "the selected resource":
+            target_url = f" for {candidate_name}"
+        return {
+            "human_action": f"Unlock exactly one new {category} resource{target_url} that Nomad can verify next.",
+            "human_deliverable": "Send one exact URL, invite link, endpoint, account step, permission grant, or `/skip last`.",
+            "success_criteria": [
+                f"Nomad can test the {category} unlock in the next /cycle or category scout.",
+                "The task produces either an active lane or one precise next blocker.",
+            ],
+            "example_response": "RESOURCE_URL=https://...",
+            "timebox_minutes": 10,
+        }
+
+    @staticmethod
+    def _credential_env_vars(env_vars: List[str]) -> List[str]:
+        credential_markers = ("TOKEN", "KEY", "SECRET", "PASSWORD")
+        return [env_var for env_var in env_vars if any(marker in env_var for marker in credential_markers)]
+
+    @staticmethod
+    def _normalize_success_criteria(success_criteria: Any) -> List[str]:
+        if isinstance(success_criteria, list):
+            return [str(item) for item in success_criteria if str(item).strip()]
+        if success_criteria:
+            return [str(success_criteria)]
+        return ["Nomad can verify the unlock in the next relevant probe."]
+
+    @staticmethod
+    def _telegram_provider_hint(env_var: str) -> str:
+        if env_var in {"GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN"}:
+            return "github"
+        if env_var in {"HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"}:
+            return "hf"
+        if env_var == "MODAL_TOKEN_ID":
+            return "modal_id"
+        if env_var == "MODAL_TOKEN_SECRET":
+            return "modal_secret"
+        if env_var == "TELEGRAM_BOT_TOKEN":
+            return "telegram"
+        if env_var == "ZEROX_API_KEY":
+            return "zerox"
+        return env_var.lower()
 
     def _build_general_activation_request(
         self,
@@ -647,7 +912,7 @@ class InfrastructureScout:
             "protocols": [],
             "runtime": [],
         }.get(category, [])
-        return {
+        payload = {
             "category": category,
             "candidate_id": f"fresh-{category}-unlock",
             "candidate_name": f"Fresh {category} unlock",
@@ -681,6 +946,31 @@ class InfrastructureScout:
             ],
             "source_url": top_candidate.get("source_url", ""),
         }
+        if not token_env_vars:
+            target_hint = top_name
+            source_hint = top_candidate.get("source_url") or "the provider's setup page"
+            payload.update(
+                {
+                    "human_action": (
+                        f"Use {target_hint} as the first target: open {source_hint} and unlock exactly one "
+                        f"verifiable {category} resource for Nomad."
+                    ),
+                    "human_deliverable": (
+                        "Send one exact URL, invite link, endpoint, account step, permission grant, or `/skip last`."
+                    ),
+                    "success_criteria": [
+                        f"Nomad can test the {category} unlock in the next /cycle or /scout {category}.",
+                        "The result is either an active lane or one precise blocker Nomad can ask about next.",
+                    ],
+                    "example_response": (
+                        f"RESOURCE_URL={top_candidate['source_url']}"
+                        if top_candidate.get("source_url")
+                        else "RESOURCE_URL=https://..."
+                    ),
+                    "timebox_minutes": 10,
+                }
+            )
+        return self._make_activation_request_concrete(payload)
 
     def scout_category(
         self,
@@ -714,6 +1004,21 @@ class InfrastructureScout:
                 probe=probe,
                 profile=profile,
             )
+        if normalized_category == "public_hosting":
+            result["activation_request"] = self._build_general_activation_request(
+                category=normalized_category,
+                profile=profile,
+                ranked=ranked,
+            )
+            result["recommendation"] = (
+                "Use Cloudflare Quick Tunnel for the fastest free local test, Render Free Web Service "
+                "for a GitHub-backed hosted API, and GitHub Codespaces only as a short-lived public-port test."
+            )
+            result["analysis"] = (
+                "Nomad needs a public HTTPS URL before outside agents can call /.well-known/agent-card.json, "
+                "/a2a/message, /tasks, and /x402/paid-help. GitHub Pages is static and not enough for the Python API; "
+                "GitHub Codespaces can expose a public test port, while Cloudflare or Render are better public URL paths."
+            )
         return result
 
     def _current_stack(self) -> Dict[str, Dict[str, Any]]:
@@ -721,12 +1026,13 @@ class InfrastructureScout:
         option_by_id = {item.id: item for item in self.options}
         chain = get_chain_config()
 
+        root = Path(__file__).resolve().parent
         active_ids = ["python-local-runtime"]
         if (os.getenv("OLLAMA_MODEL") or "").strip() or (os.getenv("OLLAMA_API_BASE") or "").strip():
             active_ids.append("ollama-local")
         if (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
             active_ids.append("telegram-bot-api")
-        else:
+        if self._env_flag("NOMAD_CLI_ENABLED", default=(root / "nomad_cli.py").exists()):
             active_ids.append("cli-first")
         if (os.getenv("AGENT_PRIVATE_KEY") or "").strip():
             active_ids.append("local-keypair")
@@ -738,6 +1044,19 @@ class InfrastructureScout:
             active_ids.append("github-repo-identity")
         if (os.getenv("NOMAD_API_PORT") or "").strip():
             active_ids.append("rest-json")
+        public_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip()
+        if public_url:
+            host = (urlparse(public_url).hostname or "").lower()
+            if host.endswith(".trycloudflare.com"):
+                active_ids.append("cloudflare-quick-tunnel")
+            elif host.endswith(".app.github.dev"):
+                active_ids.append("github-codespaces-public-port")
+            elif host.endswith(".onrender.com"):
+                active_ids.append("render-free-web-service")
+            elif host and host not in {"127.0.0.1", "localhost"}:
+                active_ids.append("cloudflare-named-tunnel")
+        if self._env_flag("NOMAD_MCP_ENABLED", default=(root / "nomad_mcp.py").exists()):
+            active_ids.append("mcp")
 
         for option_id in active_ids:
             option = option_by_id.get(option_id)
@@ -749,6 +1068,13 @@ class InfrastructureScout:
                 "summary": option.summary,
             }
         return current
+
+    @staticmethod
+    def _env_flag(name: str, default: bool = False) -> bool:
+        raw = (os.getenv(name) or "").strip().lower()
+        if not raw:
+            return default
+        return raw in {"1", "true", "yes", "on"}
 
     def _extract_category(self, lowered: str) -> Optional[str]:
         for alias, normalized in self.CATEGORY_ALIASES.items():
@@ -843,11 +1169,13 @@ class InfrastructureScout:
             return None
 
         state = self._compute_lane_state(candidate["id"], probe)
-        return self._build_compute_request_payload(
-            item=candidate,
-            state=state,
-            profile=profile,
-            prefer_fallback=local_primary_active and candidate["id"] in hosted_ids,
+        return self._make_activation_request_concrete(
+            self._build_compute_request_payload(
+                item=candidate,
+                state=state,
+                profile=profile,
+                prefer_fallback=local_primary_active and candidate["id"] in hosted_ids,
+            )
         )
 
     def _build_compute_request_payload(
@@ -1181,6 +1509,7 @@ class InfrastructureScout:
                     "runtime": 1.15,
                     "protocols": 1.1,
                     "compute": 1.2,
+                    "public_hosting": 1.2,
                     "messaging": 1.0,
                     "identity": 1.05,
                     "wallets": 0.95,
@@ -1201,6 +1530,7 @@ class InfrastructureScout:
                     "runtime": 1.0,
                     "protocols": 1.0,
                     "compute": 1.0,
+                    "public_hosting": 1.05,
                     "messaging": 1.1,
                     "identity": 0.9,
                     "wallets": 0.85,
@@ -1220,6 +1550,7 @@ class InfrastructureScout:
                     "runtime": 1.2,
                     "protocols": 1.15,
                     "compute": 1.1,
+                    "public_hosting": 1.15,
                     "messaging": 0.8,
                     "identity": 0.9,
                     "wallets": 0.8,
@@ -1239,6 +1570,7 @@ class InfrastructureScout:
                     "runtime": 1.0,
                     "protocols": 1.1,
                     "compute": 1.0,
+                    "public_hosting": 1.1,
                     "messaging": 0.8,
                     "identity": 0.85,
                     "wallets": 0.7,
@@ -1258,6 +1590,7 @@ class InfrastructureScout:
                     "runtime": 1.1,
                     "protocols": 1.25,
                     "compute": 1.0,
+                    "public_hosting": 1.2,
                     "messaging": 0.95,
                     "identity": 1.0,
                     "wallets": 0.9,
@@ -1336,6 +1669,70 @@ class InfrastructureScout:
                 automation_score=8,
                 openness_score=9,
                 privacy_score=8,
+                ai_fit_score=7,
+            ),
+            InfraOption(
+                id="cloudflare-named-tunnel",
+                category="public_hosting",
+                name="Cloudflare Named Tunnel",
+                summary="Durable public HTTPS hostname that forwards inbound traffic to Nomad without opening a router port.",
+                best_for="A more stable public Nomad API URL when your local machine or small server stays online.",
+                tradeoff="Needs a Cloudflare account, tunnel token, configured hostname, and a machine that keeps running.",
+                source_url="https://developers.cloudflare.com/tunnel/setup/",
+                tags=("free", "agent-native", "automation", "public-url"),
+                free_score=9,
+                reliability_score=8,
+                automation_score=8,
+                openness_score=7,
+                privacy_score=6,
+                ai_fit_score=9,
+            ),
+            InfraOption(
+                id="cloudflare-quick-tunnel",
+                category="public_hosting",
+                name="Cloudflare Quick Tunnel",
+                summary="Free temporary trycloudflare.com URL that exposes local Nomad for demos and webhook-style testing.",
+                best_for="Fastest zero-account public URL for a local Nomad smoke test.",
+                tradeoff="Testing only: random URL, no uptime guarantee, 200 in-flight request limit, and no SSE support.",
+                source_url="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/",
+                tags=("free", "agent-native", "automation", "public-url"),
+                free_score=10,
+                reliability_score=5,
+                automation_score=9,
+                openness_score=7,
+                privacy_score=6,
+                ai_fit_score=8,
+            ),
+            InfraOption(
+                id="render-free-web-service",
+                category="public_hosting",
+                name="Render Free Web Service",
+                summary="Git-connected free Python web service with a public onrender.com HTTPS URL.",
+                best_for="Free GitHub-backed backend hosting for Nomad's API without keeping your laptop online.",
+                tradeoff="Free services sleep after idle time, can restart, have monthly limits, and are not for production.",
+                source_url="https://render.com/free",
+                tags=("free", "coding", "automation", "public-url"),
+                free_score=9,
+                reliability_score=7,
+                automation_score=9,
+                openness_score=6,
+                privacy_score=5,
+                ai_fit_score=8,
+            ),
+            InfraOption(
+                id="github-codespaces-public-port",
+                category="public_hosting",
+                name="GitHub Codespaces Public Port",
+                summary="Public app.github.dev URL for a Nomad process running inside a Codespace.",
+                best_for="Short-lived GitHub-native tests when Codespaces quota is available.",
+                tradeoff="Ports are private by default, public visibility can be policy-blocked, and public ports may revert after restart.",
+                source_url="https://docs.github.com/enterprise-cloud@latest/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli",
+                tags=("free", "coding", "public-url"),
+                free_score=7,
+                reliability_score=5,
+                automation_score=8,
+                openness_score=6,
+                privacy_score=5,
                 ai_fit_score=7,
             ),
             InfraOption(

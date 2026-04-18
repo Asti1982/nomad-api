@@ -55,3 +55,9 @@ def test_redacts_github_personal_access_token_echo_text():
     )
     assert "not-a-real-token-123" not in redacted
     assert "GITHUB_PERSONAL_ACCESS_TOKEN=<redacted>" in redacted
+
+
+def test_long_telegram_messages_are_chunked():
+    chunks = ArbiterBot._message_chunks("a" * 3700 + "\n" + "b" * 3700)
+    assert len(chunks) >= 2
+    assert all(len(chunk) <= 3600 for chunk in chunks)
