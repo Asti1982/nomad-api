@@ -32,7 +32,7 @@ class AgentEndpointDiscovery:
         outbox: Optional[AgentContactOutbox] = None,
         github_api_base: Optional[str] = None,
     ) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.session = session or requests.Session()
         self.outbox = outbox or AgentContactOutbox()
         self.github_api_base = (

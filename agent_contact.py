@@ -57,7 +57,7 @@ class AgentContactOutbox:
         path: Optional[Path] = None,
         session: Optional[requests.Session] = None,
     ) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.path = path or DEFAULT_CONTACT_STORE
         self.session = session or requests.Session()
         self.public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")

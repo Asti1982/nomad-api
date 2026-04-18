@@ -72,7 +72,7 @@ class AgentServiceDesk:
         treasury: Optional[TreasuryAgent] = None,
         x402: Optional[X402PaymentAdapter] = None,
     ) -> None:
-        load_dotenv(override=True)
+        load_dotenv()
         self.path = path or DEFAULT_TASK_STORE
         self.treasury = treasury or TreasuryAgent()
         self.x402 = x402 or X402PaymentAdapter()
