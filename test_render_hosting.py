@@ -14,14 +14,14 @@ class FakeResponse:
 
 def test_render_probe_defaults_to_locked_public_api_lane(monkeypatch, tmp_path):
     monkeypatch.setenv("RENDER_API_KEY", "")
-    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "api.syndiode.com")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "onrender.syndiode.com")
 
     result = RenderHostingProbe(repo_root=tmp_path).snapshot()
 
     assert result["provider"] == "Render"
     assert result["role"] == "public_api_hosting"
     assert result["api_key_configured"] is False
-    assert result["desired_domain"] == "api.syndiode.com"
+    assert result["desired_domain"] == "onrender.syndiode.com"
     assert "RENDER_API_KEY" in result["next_action"]
 
 

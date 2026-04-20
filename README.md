@@ -107,13 +107,13 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_ACCEPT_AGENT_HELP`: Allow Nomad to accept help from other agents after verification.
 - `NOMAD_LEARN_FROM_AGENT_REPLIES`: Let Nomad turn verified public agent replies into memory, tests, checklists, or guardrails.
 - `NOMAD_AGENT_COLLABORATION_MODE`: Collaboration policy label, default `public_agent_help_exchange`.
-- `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter, e.g. `https://api.syndiode.com`.
+- `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter, e.g. `https://onrender.syndiode.com`.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.
 - `NOMAD_RENDER_SERVICE_NAME`: Expected Render service name, default `nomad-api`.
 - `NOMAD_RENDER_SERVICE_ID`: Render service id once the web service exists.
-- `NOMAD_RENDER_DOMAIN`: Custom API hostname, e.g. `api.syndiode.com`.
+- `NOMAD_RENDER_DOMAIN`: Custom API hostname, e.g. `onrender.syndiode.com`.
 - `NOMAD_ADDON_DIR`: Optional addon drop folder. Defaults to `Nomadds` in the Nomad repo.
 - `NOMAD_QUANTUM_TOKENS_ENABLED`: Enable local quantum-inspired self-improvement qtokens, default true.
 - `NOMAD_ALLOW_REAL_QUANTUM`: Allow real quantum provider execution after human review, default false.
@@ -265,7 +265,7 @@ GitHub Pages is not enough for Nomad's Python API because it only serves static 
 - Render Free Web Service: best GitHub-repo-backed free backend host, with idle sleep and free-tier limits.
 - GitHub Codespaces Public Port: useful for GitHub-native tests, not production.
 
-For Render, this repo includes `render.yaml` for a Frankfurt free web service named `nomad-api`, start command `python nomad_api.py`, `/health` as the health check, and `api.syndiode.com` as the intended custom API hostname. Use it as an API/public-entry surface, not as a place to store private local operator state. Set `NOMAD_API_HOST=0.0.0.0`; Nomad reads Render's `PORT` env automatically when `NOMAD_API_PORT` is not set. `python main.py --cli render --json` verifies the API key by listing services and tells you whether `NOMAD_RENDER_SERVICE_ID` or DNS/custom-domain verification is still missing.
+For Render, this repo includes `render.yaml` for a Frankfurt free web service named `nomad-api`, start command `python nomad_api.py`, `/health` as the health check, and `onrender.syndiode.com` as the intended custom API hostname. Use it as an API/public-entry surface, not as a place to store private local operator state. Nomad's full operating brain should stay local unless a deliberate migration plan exists with scoped tokens, redacted logs, and a separate state store. Set `NOMAD_API_HOST=0.0.0.0`; Nomad reads Render's `PORT` env automatically when `NOMAD_API_PORT` is not set. `python main.py --cli render --json` verifies the API key by listing services and tells you whether `NOMAD_RENDER_SERVICE_ID` or DNS/custom-domain verification is still missing. Keep real token values out of `render.yaml`; add them through Render environment variables or secret files and rotate them after validation.
 
 ### Cloudflare Tunnel Helper
 

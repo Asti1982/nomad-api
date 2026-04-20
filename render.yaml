@@ -9,14 +9,14 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: commit
     domains:
-      - api.syndiode.com
+      - onrender.syndiode.com
     envVars:
       - key: NOMAD_API_HOST
         value: 0.0.0.0
       - key: NOMAD_PUBLIC_API_URL
-        value: https://api.syndiode.com
+        value: https://onrender.syndiode.com
       - key: NOMAD_RENDER_DOMAIN
-        value: api.syndiode.com
+        value: onrender.syndiode.com
       - key: NOMAD_AGENT_NAME
         value: LoopHelper
       - key: NOMAD_REQUIRE_SERVICE_PAYMENT

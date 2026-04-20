@@ -1180,7 +1180,7 @@ class InfrastructureScout:
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
         status = RenderHostingProbe().snapshot(verify=True)
         selected = ((status.get("verification") or {}).get("selected_service") or {})
-        domain = status.get("desired_domain") or "api.syndiode.com"
+        domain = status.get("desired_domain") or "onrender.syndiode.com"
         activation = {
             "candidate_id": "render-public-nomad-api",
             "candidate_name": "Render Web Service for Nomad API",

@@ -18,7 +18,7 @@ RENDER_TIMEOUT_ENV = "NOMAD_RENDER_TIMEOUT_SECONDS"
 
 DEFAULT_RENDER_API_BASE = "https://api.render.com/v1"
 DEFAULT_RENDER_SERVICE_NAME = "nomad-api"
-DEFAULT_RENDER_DOMAIN = "api.syndiode.com"
+DEFAULT_RENDER_DOMAIN = "onrender.syndiode.com"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
