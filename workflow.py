@@ -6,13 +6,20 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from agent_pain_solver import AgentPainSolver
 from agent_contact import AgentContactOutbox
 from agent_campaign import AgentColdOutreachCampaign
 from agent_service import AgentServiceDesk
 from direct_agent import DirectAgentGateway
 from infra_scout import InfrastructureScout
 from lead_discovery import LeadDiscoveryScout
+from lead_conversion import LeadConversionPipeline
 from mission import MISSION_STATEMENT
+from nomad_addons import NomadAddonManager
+from nomad_collaboration import collaboration_status
+from nomad_codebuddy import CodeBuddyReviewRunner
+from nomad_guardrails import NomadGuardrailEngine, guardrail_status
+from nomad_product_factory import NomadProductFactory
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
 from settings import get_chain_config
@@ -46,12 +53,33 @@ class ArbiterAgent:
         self.treasury = TreasuryAgent()
         self.chain = get_chain_config()
         self.analyst = TravelAnalyst()
-        self.self_improvement = SelfImprovementEngine(infra=self.infra)
+        self.addons = NomadAddonManager()
+        self.codebuddy = CodeBuddyReviewRunner()
+        self.self_improvement = SelfImprovementEngine(
+            infra=self.infra,
+            addons=self.addons,
+        )
         self.lead_discovery = LeadDiscoveryScout()
         self.service_desk = AgentServiceDesk(treasury=self.treasury)
         self.agent_contacts = AgentContactOutbox()
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
         self.direct_agent = DirectAgentGateway(service_desk=self.service_desk)
+        self.agent_pain_solver = AgentPainSolver()
+        self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
+        self.guardrails = NomadGuardrailEngine()
+        self.lead_conversion = LeadConversionPipeline(
+            lead_discovery=self.lead_discovery,
+            pain_solver=self.agent_pain_solver,
+            service_desk=self.service_desk,
+            outbox=self.agent_contacts,
+            guardrails=self.guardrails,
+        )
+        self.product_factory = NomadProductFactory(
+            lead_conversion=self.lead_conversion,
+            pain_solver=self.agent_pain_solver,
+            service_desk=self.service_desk,
+            guardrails=self.guardrails,
+        )
 
     def run(self, query: str) -> Dict[str, Any]:
         normalized_query = (query or "").strip()
@@ -65,8 +93,29 @@ class ArbiterAgent:
         if self._is_funding_request(normalized_query):
             return self._handle_funding_request(normalized_query)
 
+        if self._is_addon_request(normalized_query):
+            return self._handle_addon_request(normalized_query)
+
+        if self._is_quantum_request(normalized_query):
+            return self._handle_quantum_request(normalized_query)
+
+        if self._is_codebuddy_review_request(normalized_query):
+            return self._handle_codebuddy_review_request(normalized_query)
+
         if self._is_self_improvement_request(normalized_query):
             return self._handle_self_improvement_request(normalized_query)
+
+        if self._is_lead_conversion_request(normalized_query):
+            return self._handle_lead_conversion_request(normalized_query)
+
+        if self._is_product_request(normalized_query):
+            return self._handle_product_request(normalized_query)
+
+        if self._is_guardrail_request(normalized_query):
+            return self._handle_guardrail_request(normalized_query)
+
+        if self._is_collaboration_request(normalized_query):
+            return collaboration_status()
 
         if self._is_public_lead_request(normalized_query):
             return self._handle_public_lead_request(normalized_query)
@@ -80,6 +129,12 @@ class ArbiterAgent:
         if self._is_direct_agent_request(normalized_query):
             return self._handle_direct_agent_request(normalized_query)
 
+        if self._is_reliability_doctor_request(normalized_query):
+            return self._handle_reliability_doctor_request(normalized_query)
+
+        if self._is_agent_pain_request(normalized_query):
+            return self._handle_agent_pain_request(normalized_query)
+
         if self._is_service_request(normalized_query):
             return self._handle_service_request(normalized_query)
 
@@ -92,8 +147,8 @@ class ArbiterAgent:
                 "mode": "deprecated",
                 "deal_found": False,
                 "message": (
-                    "Nomad now focuses fully on AI infrastructure for agents. "
-                    "Travel scouting has been retired. Try /best, /self, /scout compute or /scout wallets."
+                "Nomad now focuses fully on AI infrastructure for agents. "
+                    "Travel scouting has been retired. Try /best, /self, /compute, /market or /scout wallets."
                 ),
             }
 
@@ -103,7 +158,7 @@ class ArbiterAgent:
             "message": (
                 f"{MISSION_STATEMENT} "
                 "Nomad scouts the best free infrastructure for AI agents and uses that stack on itself. "
-                "Try /best, /self, /scout compute, /scout protocols or /scout wallets."
+                "Try /best, /self, /compute, /addons, /quantum, /market, /scout protocols or /scout wallets."
             ),
         }
 
@@ -114,6 +169,14 @@ class ArbiterAgent:
             return self.infra.self_audit(profile_id=profile)
         if kind == "compute_audit":
             return self.infra.compute_assessment(profile_id=profile)
+        if kind == "codebuddy_scout":
+            return self.infra.codebuddy_scout(profile_id=profile)
+        if kind == "render_scout":
+            return self.infra.render_scout(profile_id=profile)
+        if kind == "market_scan":
+            return self.infra.market_scan(
+                focus=request.get("focus") or "balanced",
+            )
         if kind == "activation_request":
             return self.infra.activation_request(
                 category=request.get("category") or "best",
@@ -238,6 +301,32 @@ class ArbiterAgent:
             or "verbessere dich" in lowered
         )
 
+    def _is_addon_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/addons")
+            or lowered.startswith("/addon")
+            or lowered.startswith("/nomadds")
+        )
+
+    def _is_quantum_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/quantum")
+            or lowered.startswith("/qtoken")
+            or lowered.startswith("/qtokens")
+            or "quantum tokens" in lowered
+            or "quantentokens" in lowered
+        )
+
+    def _is_codebuddy_review_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/codebuddy-review")
+            or lowered.startswith("/codebuddy review")
+            or lowered.startswith("/review codebuddy")
+        )
+
     def _is_public_lead_request(self, query: str) -> bool:
         lowered = query.lower()
         return (
@@ -248,6 +337,44 @@ class ArbiterAgent:
             or "offentliche agenten" in lowered
             or "oeffentliche agenten" in lowered
             or "agenten leads" in lowered
+        )
+
+    def _is_lead_conversion_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/convert-leads")
+            or lowered.startswith("/lead-conversions")
+            or lowered.startswith("/conversion-pipeline")
+            or "leads in echte kunden" in lowered
+        )
+
+    def _is_product_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/productize")
+            or lowered.startswith("/product-factory")
+            or lowered.startswith("/products")
+            or "lead zu produkt" in lowered
+            or "leads zu produkten" in lowered
+        )
+
+    def _is_guardrail_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/guardrails")
+            or lowered.startswith("/guardrail")
+            or lowered.startswith("/check-action")
+        )
+
+    def _is_collaboration_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/collaboration")
+            or lowered.startswith("/collaborate")
+            or lowered.startswith("/world")
+            or "agent collaboration" in lowered
+            or "andere ai agenten" in lowered
+            or "andere agenten" in lowered
         )
 
     def _is_service_request(self, query: str) -> bool:
@@ -286,6 +413,27 @@ class ArbiterAgent:
             or lowered.startswith("/a2a")
         )
 
+    def _is_agent_pain_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/solve-pain")
+            or lowered.startswith("/agent-pain")
+            or lowered.startswith("/agent-pains")
+            or lowered.startswith("/pains")
+            or "agent pain solver" in lowered
+            or "probleme zu lösen" in lowered
+        )
+
+    def _is_reliability_doctor_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/doctor")
+            or lowered.startswith("/reliability-doctor")
+            or lowered.startswith("/critic")
+            or lowered.startswith("/healer")
+            or "agent reliability doctor" in lowered
+        )
+
     def _handle_self_improvement_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower()
         profile = self._extract_explicit_profile(lowered)
@@ -298,6 +446,93 @@ class ArbiterAgent:
         return self.self_improvement.run_cycle(
             objective=objective,
             profile_id=profile,
+        )
+
+    def _handle_addon_request(self, query: str) -> Dict[str, Any]:
+        return self.addons.status()
+
+    def _handle_quantum_request(self, query: str) -> Dict[str, Any]:
+        objective = re.sub(
+            r"^/(?:quantum|qtoken|qtokens)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        if not objective:
+            objective = "Use quantum-inspired tokens to improve Nomad's AI-agent self-improvement loop."
+        return self.addons.run_quantum_self_improvement(
+            objective=objective,
+            context={"source": "workflow", "requested_by": "nomad_query"},
+        )
+
+    def _handle_codebuddy_review_request(self, query: str) -> Dict[str, Any]:
+        base = self._extract_key_value(query, "base")
+        head = self._extract_key_value(query, "head")
+        approval = (
+            self._extract_key_value(query, "approval")
+            or self._extract_key_value(query, "approve")
+            or self._extract_key_value(query, "data_release")
+        )
+        paths = self._extract_key_values(query, "path")
+        objective = re.sub(
+            r"^/(?:codebuddy-review|codebuddy review|review codebuddy)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("base", "head", "approval", "approve", "data_release", "path"):
+            for value in self._extract_key_values(query, key):
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.codebuddy.review(
+            objective=objective,
+            base=base,
+            head=head,
+            approval=approval,
+            paths=paths,
+        )
+
+    def _handle_agent_pain_request(self, query: str) -> Dict[str, Any]:
+        service_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "service_type")
+        problem = re.sub(
+            r"^/(?:solve-pain|agent-pain|agent-pains|pains)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("type", "service_type"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = " ".join(problem.split())
+        if problem:
+            return self.agent_pain_solver.solve(
+                problem=problem,
+                service_type=service_type,
+                source="nomad_user_request",
+            )
+        return self.self_improvement.run_cycle(
+            objective="Solve one current AI-agent pain point and apply the reusable solution to Nomad itself.",
+            profile_id=self._extract_explicit_profile(query.lower()),
+        )
+
+    def _handle_reliability_doctor_request(self, query: str) -> Dict[str, Any]:
+        service_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "service_type")
+        problem = re.sub(
+            r"^/(?:doctor|reliability-doctor|critic|healer)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("type", "service_type"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = " ".join(problem.split()) or "Agent needs reliability diagnosis."
+        return self.agent_reliability_doctor.diagnose(
+            problem=problem,
+            service_type=service_type,
+            source="nomad_user_request",
         )
 
     def _handle_public_lead_request(self, query: str) -> Dict[str, Any]:
@@ -314,6 +549,95 @@ class ArbiterAgent:
             flags=re.IGNORECASE,
         ).strip()
         return self.lead_discovery.scout_public_leads(query=objective)
+
+    def _handle_lead_conversion_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered.startswith("/lead-conversions"):
+            statuses = [
+                item.strip()
+                for item in (self._extract_key_value(query, "status") or "").split(",")
+                if item.strip()
+            ]
+            return self.lead_conversion.list_conversions(
+                statuses=statuses,
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        objective = re.sub(
+            r"^/(?:convert-leads|conversion-pipeline)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        send = self._extract_bool_key_value(query, "send")
+        limit = self._extract_int_key_value(query, "limit") or 5
+        budget = self._extract_budget_native(query)
+        for key in ("send", "limit", "budget", "amount", "pay"):
+            value = self._extract_key_value(query, key)
+            if value:
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.lead_conversion.run(
+            query=objective,
+            limit=limit,
+            send=send,
+            budget_hint_native=budget,
+        )
+
+    def _handle_product_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered.startswith("/products"):
+            statuses = [
+                item.strip()
+                for item in (self._extract_key_value(query, "status") or "").split(",")
+                if item.strip()
+            ]
+            return self.product_factory.list_products(
+                statuses=statuses,
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        objective = re.sub(
+            r"^/(?:productize|product-factory)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        limit = self._extract_int_key_value(query, "limit") or 5
+        for key in ("limit",):
+            value = self._extract_key_value(query, key)
+            if value:
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.product_factory.run(
+            query=objective,
+            limit=limit,
+        )
+
+    def _handle_guardrail_request(self, query: str) -> Dict[str, Any]:
+        action = (
+            self._extract_key_value(query, "action")
+            or self._extract_key_value(query, "tool")
+            or "manual.check"
+        )
+        approval = self._extract_key_value(query, "approval")
+        body = re.sub(
+            r"^/(?:guardrails|guardrail|check-action)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("action", "tool", "approval"):
+            value = self._extract_key_value(query, key)
+            if value:
+                body = body.replace(f"{key}={value}", "")
+        body = " ".join(body.split())
+        return guardrail_status(
+            action=action,
+            approval=approval,
+            args={
+                "text": body,
+                "url": self._first_url(body),
+            },
+        )
 
     def _handle_service_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower().strip()
@@ -439,6 +763,14 @@ class ArbiterAgent:
         if send_match:
             return self.agent_contacts.send_contact(send_match.group(1))
 
+        poll_match = re.search(
+            r"^/(?:agent-contact|contact-agent)\s+poll\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if poll_match:
+            return self.agent_contacts.poll_contact(poll_match.group(1))
+
         status_match = re.search(
             r"^/(?:agent-contact|contact-agent)\s+status\s+(\S+)",
             query,
@@ -470,7 +802,7 @@ class ArbiterAgent:
             value = self._extract_key_value(query, key)
             if value:
                 problem = problem.replace(f"{key}={value}", "")
-        problem = problem.strip() or "Nomad can help with paid human-in-the-loop or infrastructure pain."
+        problem = problem.strip() or "Nomad offers bounded agent infrastructure help. Send one blocker or desired outcome."
         return self.agent_contacts.queue_contact(
             endpoint_url=endpoint,
             problem=problem,
@@ -499,7 +831,7 @@ class ArbiterAgent:
                 query=self._campaign_discovery_query(query, endpoints),
                 seeds=[{"endpoint_url": endpoint} for endpoint in endpoints],
                 send=send,
-                service_type=self._extract_key_value(query, "type") or "human_in_loop",
+                service_type=self._extract_key_value(query, "type") or "",
                 budget_hint_native=self._extract_budget_native(query),
             )
         targets = [{"endpoint_url": endpoint} for endpoint in endpoints]
@@ -507,7 +839,7 @@ class ArbiterAgent:
             targets=targets,
             limit=limit,
             send=send,
-            service_type=self._extract_key_value(query, "type") or "human_in_loop",
+            service_type=self._extract_key_value(query, "type") or "",
             budget_hint_native=self._extract_budget_native(query),
         )
 
@@ -582,6 +914,17 @@ class ArbiterAgent:
         )
         return match.group(1).strip() if match else ""
 
+    def _extract_key_values(self, query: str, key: str) -> List[str]:
+        return [
+            match.group(1).strip()
+            for match in re.finditer(
+                rf"\b{re.escape(key)}=([^\s]+)",
+                query,
+                flags=re.IGNORECASE,
+            )
+            if match.group(1).strip()
+        ]
+
     def _extract_wallet(self, query: str) -> str:
         explicit = (
             self._extract_key_value(query, "wallet")
@@ -611,6 +954,14 @@ class ArbiterAgent:
             return int(value)
         except ValueError:
             return None
+
+    def _extract_bool_key_value(self, query: str, key: str) -> bool:
+        value = self._extract_key_value(query, key).strip().lower()
+        return value in {"1", "true", "yes", "on", "send"}
+
+    def _first_url(self, text: str) -> str:
+        match = re.search(r"https?://[^\s)>\]\"']+", text or "")
+        return match.group(0) if match else ""
 
     def _extract_explicit_profile(self, lowered: str) -> str:
         profile_markers = (" profile:", " profile=", " for profile ", " für profil ", " fuer profil ")

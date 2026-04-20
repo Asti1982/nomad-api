@@ -48,7 +48,15 @@ TOKEN_ENV_VARS = {
     "MODAL_TOKEN_ID",
     "MODAL_TOKEN_SECRET",
     "TELEGRAM_BOT_TOKEN",
+    "XAI_API_KEY",
+    "CODEBUDDY_API_KEY",
+    "IBM_QUANTUM_TOKEN",
+    "QUANTUM_INSPIRE_TOKEN",
+    "QI_API_TOKEN",
+    "AZURE_QUANTUM_TOKEN",
+    "GOOGLE_QUANTUM_TOKEN",
     "ZEROX_API_KEY",
+    "RENDER_API_KEY",
 }
 TOKEN_TARGET_ALIASES = {
     "github": "GITHUB_TOKEN",
@@ -70,8 +78,40 @@ TOKEN_TARGET_ALIASES = {
     "telegram": "TELEGRAM_BOT_TOKEN",
     "telegram_bot": "TELEGRAM_BOT_TOKEN",
     "telegram-bot": "TELEGRAM_BOT_TOKEN",
+    "xai": "XAI_API_KEY",
+    "grok": "XAI_API_KEY",
+    "codebuddy": "CODEBUDDY_API_KEY",
+    "code-buddy": "CODEBUDDY_API_KEY",
+    "tencent_codebuddy": "CODEBUDDY_API_KEY",
+    "tencent-codebuddy": "CODEBUDDY_API_KEY",
+    "ibm_quantum": "IBM_QUANTUM_TOKEN",
+    "ibm-quantum": "IBM_QUANTUM_TOKEN",
+    "ibm_quatum": "IBM_QUANTUM_TOKEN",
+    "ibm-quatum": "IBM_QUANTUM_TOKEN",
+    "quantum_ibm": "IBM_QUANTUM_TOKEN",
+    "quantum-ibm": "IBM_QUANTUM_TOKEN",
+    "quatum_ibm": "IBM_QUANTUM_TOKEN",
+    "quatum-ibm": "IBM_QUANTUM_TOKEN",
+    "quantum_inspire": "QUANTUM_INSPIRE_TOKEN",
+    "quantum-inspire": "QUANTUM_INSPIRE_TOKEN",
+    "inspire_quantum": "QUANTUM_INSPIRE_TOKEN",
+    "inspire-quantum": "QUANTUM_INSPIRE_TOKEN",
+    "qi": "QI_API_TOKEN",
+    "qi_api": "QI_API_TOKEN",
+    "qi-api": "QI_API_TOKEN",
+    "azure_quantum": "AZURE_QUANTUM_TOKEN",
+    "azure-quantum": "AZURE_QUANTUM_TOKEN",
+    "quantum_azure": "AZURE_QUANTUM_TOKEN",
+    "quantum-azure": "AZURE_QUANTUM_TOKEN",
+    "google_quantum": "GOOGLE_QUANTUM_TOKEN",
+    "google-quantum": "GOOGLE_QUANTUM_TOKEN",
+    "quantum_google": "GOOGLE_QUANTUM_TOKEN",
+    "quantum-google": "GOOGLE_QUANTUM_TOKEN",
     "0x": "ZEROX_API_KEY",
     "zerox": "ZEROX_API_KEY",
+    "render": "RENDER_API_KEY",
+    "render_api": "RENDER_API_KEY",
+    "render-api": "RENDER_API_KEY",
 }
 
 
@@ -129,10 +169,16 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /leads\n"
+            "- /productize\n"
+            "- /products\n"
+            "- /addons\n"
+            "- /quantum\n"
             "- /service\n"
             "- /unlock\n"
             "- /skip last\n"
             "- /token github <token>\n"
+            "- /token grok <token>\n"
+            "- /token render <token>\n"
             "- /subscribe\n"
             "- /best coding agent\n"
             "- /scout wallets\n"
@@ -160,10 +206,15 @@ class ArbiterBot:
                 "/compute [profile]\n"
                 "/cycle [objective]\n"
                 "/leads [query]\n"
+                "/productize [lead or query]\n"
+                "/products\n"
+                "/addons\n"
+                "/codebuddy\n"
+                "/quantum [objective]\n"
                 "/service [request|verify|work]\n"
                 "/unlock [category]\n"
                 "/skip last\n"
-                "/token <github|hf|modal_id|modal_secret> <token>\n"
+                "/token <github|hf|grok|codebuddy|render|ibm_quantum|quantum_inspire|modal_id|modal_secret> <token>\n"
                 "/scout <category or query>\n"
                 "/subscribe\n"
                 "/unsubscribe\n"
@@ -219,6 +270,7 @@ class ArbiterBot:
             update,
             (
                 "Send tokens like `/token github <token>`, `/token hf <token>`, "
+                "`/token grok <token>`, `/token codebuddy <token>`, `/token render <token>`, `/token ibm_quantum <token>`, `/token quantum_inspire <token>`, "
                 "or `GITHUB_TOKEN=...`. Use scoped, revocable tokens only."
             ),
         )
@@ -281,6 +333,51 @@ class ArbiterBot:
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
 
+    async def productize_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = "/productize"
+        if context.args:
+            query = f"/productize {' '.join(context.args)}"
+        result = await asyncio.to_thread(self.agent.run, query)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def products_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = "/products"
+        if context.args:
+            query = f"/products {' '.join(context.args)}"
+        result = await asyncio.to_thread(self.agent.run, query)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def addons_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        result = await asyncio.to_thread(self.agent.run, "/addons")
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def codebuddy_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Show CodeBuddy brain status and configuration."""
+        result = await asyncio.to_thread(self.agent.run, "/codebuddy")
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def quantum_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = "/quantum"
+        if context.args:
+            query = f"/quantum {' '.join(context.args)}"
+        result = await asyncio.to_thread(self.agent.run, query)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
     async def service_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -319,8 +416,8 @@ class ArbiterBot:
     async def status_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        result = await asyncio.to_thread(self.agent.run, "fund me")
-        await self._reply(update, self._format_result(result))
+        result = await asyncio.to_thread(self._status_snapshot)
+        await self._reply(update, self._format_status_snapshot(result))
 
     async def fund_info(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -356,10 +453,16 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /leads\n"
+            "- /productize\n"
+            "- /products\n"
+            "- /addons\n"
+            "- /quantum\n"
             "- /service\n"
             "- /unlock\n"
             "- /skip last\n"
             "- /token github <token>\n"
+            "- /token grok <token>\n"
+            "- /token render <token>\n"
             "- /subscribe\n"
             "- /best coding agent\n"
             "- /scout wallets\n"
@@ -392,8 +495,8 @@ class ArbiterBot:
     async def status_info(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        result = await asyncio.to_thread(self.agent.run, "fund me")
-        await self._reply(update, self._format_result(result), edit=True)
+        result = await asyncio.to_thread(self._status_snapshot)
+        await self._reply(update, self._format_status_snapshot(result), edit=True)
 
     async def handle_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -527,6 +630,8 @@ class ArbiterBot:
             return "HF_TOKEN"
         if cleaned.startswith(("github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_")):
             return "GITHUB_TOKEN"
+        if cleaned.startswith("xai-"):
+            return "XAI_API_KEY"
 
         chat_id = self._chat_id_from_update(update) if update else None
         if chat_id is None:
@@ -576,6 +681,7 @@ class ArbiterBot:
         hosted = ((compute.get("probe") or {}).get("hosted") or {})
         github = hosted.get("github_models") or {}
         hf = hosted.get("huggingface") or {}
+        xai = hosted.get("xai_grok") or {}
         modal = hosted.get("modal") or {}
         lines = [
             f"Saved token setting(s): {', '.join(saved)}",
@@ -585,6 +691,26 @@ class ArbiterBot:
             lines.append(f"GitHub Models: {github.get('message', 'not checked yet')}")
         if any(item in saved for item in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN")):
             lines.append(f"Hugging Face: {hf.get('message', 'not checked yet')}")
+        if "XAI_API_KEY" in saved:
+            lines.append(f"xAI Grok: {xai.get('message', 'not checked yet')}")
+        if "CODEBUDDY_API_KEY" in saved:
+            codebuddy = (((compute.get("probe") or {}).get("developer_assistants") or {}).get("codebuddy") or {})
+            lines.append(
+                f"CodeBuddy: {codebuddy.get('message', 'key saved; enable reviewer lane explicitly')}"
+            )
+        if "RENDER_API_KEY" in saved:
+            lines.append("Render: key saved for public Nomad API hosting. Use /scout render to verify access.")
+        if any(
+            item in saved
+            for item in (
+                "IBM_QUANTUM_TOKEN",
+                "QUANTUM_INSPIRE_TOKEN",
+                "QI_API_TOKEN",
+                "AZURE_QUANTUM_TOKEN",
+                "GOOGLE_QUANTUM_TOKEN",
+            )
+        ):
+            lines.append("Quantum token saved. Use /quantum to see the next qtoken and real-provider gate.")
         if any(item in saved for item in ("MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")):
             lines.append(f"Modal: {modal.get('message', 'not checked yet')}")
         activation_request = compute.get("activation_request")
@@ -595,11 +721,11 @@ class ArbiterBot:
 
     def _redact_sensitive_text(self, text: str) -> str:
         redacted = re.sub(
-            r"(?i)\b(?:GITHUB_TOKEN|GITHUB_PERSONAL_ACCESS_TOKEN|HF_TOKEN|HUGGINGFACEHUB_API_TOKEN|HUGGING_FACE_HUB_TOKEN|MODAL_TOKEN_ID|MODAL_TOKEN_SECRET|TELEGRAM_BOT_TOKEN|ZEROX_API_KEY)\s*=\s*\S+",
+            r"(?i)\b(?:GITHUB_TOKEN|GITHUB_PERSONAL_ACCESS_TOKEN|HF_TOKEN|HUGGINGFACEHUB_API_TOKEN|HUGGING_FACE_HUB_TOKEN|MODAL_TOKEN_ID|MODAL_TOKEN_SECRET|TELEGRAM_BOT_TOKEN|XAI_API_KEY|CODEBUDDY_API_KEY|IBM_QUANTUM_TOKEN|QUANTUM_INSPIRE_TOKEN|QI_API_TOKEN|AZURE_QUANTUM_TOKEN|GOOGLE_QUANTUM_TOKEN|ZEROX_API_KEY|RENDER_API_KEY)\s*=\s*\S+",
             lambda match: match.group(0).split("=", 1)[0] + "=<redacted>",
             text,
         )
-        redacted = re.sub(r"\b(hf_|github_pat_|ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_\-]+", r"\1<redacted>", redacted)
+        redacted = re.sub(r"\b(hf_|github_pat_|ghp_|gho_|ghu_|ghs_|ghr_|xai-|rnd_)[A-Za-z0-9_\-]+", r"\1<redacted>", redacted)
         return redacted
 
     def _format_result(self, result: Dict[str, Any]) -> str:
@@ -616,6 +742,28 @@ class ArbiterBot:
             return self._format_self_improvement_cycle(result)
         if mode == "lead_discovery":
             return self._format_lead_discovery(result)
+        if mode in {"lead_conversion_pipeline", "lead_conversion_list"}:
+            return self._format_lead_conversion(result)
+        if mode in {"nomad_product_factory", "nomad_product_list"}:
+            return self._format_products(result)
+        if mode == "nomad_addon_scan":
+            return self._format_addons(result)
+        if mode == "nomad_quantum_tokens":
+            return self._format_quantum_tokens(result)
+        if mode == "codebuddy_scout":
+            return self._format_codebuddy_scout(result)
+        if mode == "codebuddy_review":
+            return self._format_codebuddy_review(result)
+        if mode == "render_scout":
+            return self._format_render_scout(result)
+        if mode == "agent_collaboration":
+            return self._format_agent_collaboration(result)
+        if mode == "nomad_guardrails":
+            return self._format_guardrails(result)
+        if mode == "agent_pain_solution":
+            return self._format_agent_pain_solution(result)
+        if mode == "agent_reliability_doctor":
+            return self._format_reliability_doctor(result)
         if mode == "agent_service_catalog":
             return self._format_service_catalog(result)
         if mode == "agent_service_request":
@@ -673,6 +821,83 @@ class ArbiterBot:
             lines.append("")
             lines.append(result["analysis"])
         return "\n".join(lines)
+
+    def _format_codebuddy_scout(self, result: Dict[str, Any]) -> str:
+        status = result.get("status") or {}
+        lines = [
+            "Nomad CodeBuddy scout",
+            f"Role: {result.get('recommended_role', 'self_development_reviewer')}",
+            f"Enabled: {status.get('enabled', False)}",
+            f"Automation ready: {status.get('automation_ready', False)}",
+            f"CLI available: {status.get('cli_available', False)}",
+            f"Route: {status.get('route', 'unknown')}",
+        ]
+        if status.get("next_action"):
+            lines.append(f"Next: {status['next_action']}")
+        activation_request = result.get("activation_request")
+        if activation_request:
+            lines.append("")
+            lines.extend(self._format_activation_lines(activation_request))
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    def _format_codebuddy_review(self, result: Dict[str, Any]) -> str:
+        data_release = result.get("data_release") or {}
+        lines = [
+            "Nomad CodeBuddy review",
+            f"OK: {result.get('ok', False)}",
+            f"Issue: {result.get('issue') or 'none'}",
+            f"Data release approved: {data_release.get('approved', False)}",
+            f"Diff chars: {data_release.get('diff_char_count', 0)}",
+            result.get("message", ""),
+        ]
+        if result.get("review"):
+            lines.append("")
+            lines.append(result["review"][:2500])
+        elif data_release.get("files"):
+            lines.append(f"Files: {', '.join(data_release['files'][:8])}")
+        return "\n".join(line for line in lines if line)
+
+    def _format_render_scout(self, result: Dict[str, Any]) -> str:
+        status = result.get("status") or {}
+        verification = status.get("verification") or {}
+        selected = result.get("selected_service") or {}
+        lines = [
+            "Nomad Render scout",
+            f"API key configured: {status.get('api_key_configured', False)}",
+            f"Verification OK: {verification.get('ok', False)}",
+            f"Service count: {verification.get('service_count', 0)}",
+            f"Desired domain: {status.get('desired_domain', '')}",
+            f"Selected service: {selected.get('name') or selected.get('id') or 'none'}",
+        ]
+        if status.get("next_action"):
+            lines.append(f"Next: {status['next_action']}")
+        activation_request = result.get("activation_request")
+        if activation_request:
+            lines.append("")
+            lines.extend(self._format_activation_lines(activation_request))
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    def _format_agent_collaboration(self, result: Dict[str, Any]) -> str:
+        charter = result.get("charter") or {}
+        permission = charter.get("permission") or {}
+        lines = [
+            "Nomad agent collaboration",
+            f"Enabled: {charter.get('enabled', False)}",
+            f"Public home: {charter.get('public_home', '')}",
+            f"Ask help: {permission.get('ask_other_agents_for_help', False)}",
+            f"Accept help: {permission.get('accept_help_from_other_agents', False)}",
+            f"Learn from replies: {permission.get('learn_from_public_agent_replies', False)}",
+        ]
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
 
     def _format_self_audit(self, result: Dict[str, Any]) -> str:
         profile = result["profile"]
@@ -745,6 +970,8 @@ class ArbiterBot:
         hosted_lines = []
         github_models = hosted.get("github_models") or {}
         huggingface = hosted.get("huggingface") or {}
+        cloudflare = hosted.get("cloudflare_workers_ai") or {}
+        xai_grok = hosted.get("xai_grok") or {}
         modal = hosted.get("modal") or {}
         if github_models.get("available"):
             hosted_lines.append(
@@ -756,6 +983,14 @@ class ArbiterBot:
             hosted_lines.append("Hugging Face: token valid")
         elif huggingface.get("configured"):
             hosted_lines.append("Hugging Face: configured but not usable yet")
+        if cloudflare.get("available"):
+            hosted_lines.append(f"Cloudflare Workers AI: ready ({cloudflare.get('inference_model', 'model')})")
+        elif cloudflare.get("configured"):
+            hosted_lines.append("Cloudflare Workers AI: configured but not usable yet")
+        if xai_grok.get("available"):
+            hosted_lines.append(f"xAI Grok: ready ({xai_grok.get('working_model') or xai_grok.get('model', 'model')})")
+        elif xai_grok.get("configured"):
+            hosted_lines.append("xAI Grok: configured but not usable yet")
         if modal.get("configured"):
             hosted_lines.append("Modal: credentials present")
         if hosted_lines:
@@ -904,6 +1139,208 @@ class ArbiterBot:
             lines.append(result["analysis"])
         return "\n".join(lines)
 
+    def _format_lead_conversion(self, result: Dict[str, Any]) -> str:
+        conversions = result.get("conversions") or []
+        stats = result.get("stats") or {}
+        lines = [
+            "Nomad lead conversion",
+            f"Conversions: {len(conversions)}",
+        ]
+        if stats:
+            lines.append(
+                "Status: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+            )
+        for conversion in conversions[:3]:
+            lead = conversion.get("lead") or {}
+            route = conversion.get("route") or {}
+            value_pack = ((conversion.get("free_value") or {}).get("value_pack") or {})
+            lines.append("")
+            lines.append(lead.get("title") or "Untitled lead")
+            if lead.get("url"):
+                lines.append(f"URL: {lead['url']}")
+            lines.append(f"Type: {lead.get('service_type', 'unknown')}")
+            lines.append(f"Route: {conversion.get('status', 'unknown')}")
+            if value_pack.get("pack_id"):
+                lines.append(f"Value pack: {value_pack['pack_id']}")
+            if route.get("approval_gate"):
+                lines.append(f"Approval gate: {route['approval_gate']}")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_products(self, result: Dict[str, Any]) -> str:
+        products = result.get("products") or []
+        stats = result.get("stats") or {}
+        title = (
+            "Nomad product factory"
+            if result.get("mode") == "nomad_product_factory"
+            else "Nomad products"
+        )
+        lines = [
+            title,
+            f"Products: {len(products)}",
+        ]
+        if stats:
+            lines.append(
+                "Status: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+            )
+        for product in products[:3]:
+            source = product.get("source_lead") or {}
+            paid = product.get("paid_offer") or {}
+            boundary = product.get("approval_boundary") or {}
+            lines.append("")
+            lines.append(f"{product.get('name', 'Nomad product')} ({product.get('sku', '')})")
+            lines.append(f"Product: {product.get('product_id', '')}")
+            lines.append(f"Status: {product.get('status', 'unknown')}")
+            if source.get("title"):
+                lines.append(f"Lead: {source['title']}")
+            if paid.get("price_native") is not None:
+                lines.append(f"Offer: {paid.get('price_native')} native for {paid.get('delivery', 'bounded delivery')}")
+            if boundary.get("approval_required"):
+                lines.append(
+                    "Open gate: public/human-facing action still needs explicit approval."
+                )
+                if boundary.get("approval_gate"):
+                    lines.append(f"Reply option: {boundary['approval_gate']}")
+            else:
+                lines.append("Open gate: none for machine-readable agent contact.")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_addons(self, result: Dict[str, Any]) -> str:
+        stats = result.get("stats") or {}
+        lines = [
+            "Nomad addons",
+            f"Source: {result.get('source_dir', '')}",
+            f"Discovered: {stats.get('discovered', 0)}",
+            f"Safe active adapters: {stats.get('active_safe_adapter', 0)}",
+            f"Needs review: {stats.get('needs_human_review', 0)}",
+        ]
+        quantum = result.get("quantum_tokens") or {}
+        if quantum:
+            lines.append(f"Quantum tokens: {'enabled' if quantum.get('enabled') else 'disabled'}")
+            lines.append(quantum.get("claim_boundary", ""))
+            selected_backend = quantum.get("selected_backend") or {}
+            if selected_backend:
+                lines.append(
+                    f"Backend: {selected_backend.get('provider', selected_backend.get('backend_id', ''))} "
+                    f"[{selected_backend.get('status', '')}]"
+                )
+            best_unlock = quantum.get("best_next_quantum_unlock") or {}
+            if best_unlock:
+                lines.append(
+                    f"Best quantum unlock: {best_unlock.get('provider')} via {best_unlock.get('telegram_command')}"
+                )
+        for addon in (result.get("addons") or [])[:5]:
+            lines.append("")
+            lines.append(f"{addon.get('name', 'Addon')} [{addon.get('status', 'unknown')}]")
+            lines.append(f"Manifest: {addon.get('manifest_path', '')}")
+            if addon.get("next_action"):
+                lines.append(f"Next: {addon['next_action']}")
+        if result.get("secret_warnings"):
+            lines.append("")
+            lines.append("Secret warning: token-like plaintext found in Nomadds. Rotate/remove it.")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line is not None)
+
+    def _format_quantum_tokens(self, result: Dict[str, Any]) -> str:
+        selected = result.get("selected_strategy") or {}
+        lines = [
+            "Nomad quantum tokens",
+            f"Objective: {result.get('objective', '')}",
+            f"Selected: {selected.get('title', selected.get('strategy_id', 'none'))}",
+            f"Tokens: {len(result.get('tokens') or [])}",
+            result.get("claim_boundary", ""),
+        ]
+        selected_backend = result.get("selected_backend") or {}
+        if selected_backend:
+            lines.append(
+                f"Backend: {selected_backend.get('provider', selected_backend.get('backend_id', ''))} "
+                f"[{selected_backend.get('status', '')}]"
+            )
+        local_simulation = result.get("local_quantum_simulation") or {}
+        if local_simulation.get("counts"):
+            lines.append(f"Local simulation counts: {local_simulation['counts']}")
+        for token in (result.get("tokens") or [])[:3]:
+            lines.append(f"- {token.get('qtoken_id')}: {token.get('title')} score={token.get('score')}")
+        best_unlock = result.get("best_next_quantum_unlock") or {}
+        if best_unlock:
+            lines.append("")
+            lines.append("Best quantum unlock")
+            lines.append(f"{best_unlock.get('provider')}: {best_unlock.get('why', '')}")
+            if best_unlock.get("telegram_command"):
+                lines.append(f"Send: {best_unlock['telegram_command']}")
+        unlocks = result.get("human_unlocks") or []
+        if unlocks:
+            lines.append("")
+            lines.append("Optional human unlock")
+            lines.extend(self._format_activation_lines(unlocks[0]))
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    def _format_guardrails(self, result: Dict[str, Any]) -> str:
+        evaluation = result.get("evaluation") or {}
+        lines = [
+            "Nomad guardrail check",
+            f"Action: {evaluation.get('action', '')}",
+            f"Decision: {evaluation.get('decision', 'unknown')}",
+        ]
+        if evaluation.get("modified"):
+            lines.append("Changed safely: yes, unsafe fields were redacted or adjusted.")
+        for item in (evaluation.get("results") or [])[:3]:
+            reason = item.get("reason")
+            if reason:
+                lines.append(f"- {item.get('provider', 'guardrail')}: {reason}")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_agent_pain_solution(self, result: Dict[str, Any]) -> str:
+        solution = result.get("solution") or {}
+        guardrail = solution.get("guardrail") or {}
+        lines = [
+            "Nomad agent pain solution",
+            f"Type: {solution.get('pain_type', 'unknown')}",
+            f"Pattern: {solution.get('title', 'unknown')}",
+            f"Guardrail: {guardrail.get('id', 'not recorded')}",
+        ]
+        playbook = solution.get("playbook") or []
+        if playbook:
+            lines.append("Safe steps")
+            for item in playbook[:3]:
+                lines.append(f"- {item}")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _format_reliability_doctor(self, result: Dict[str, Any]) -> str:
+        role = result.get("doctor_role") or {}
+        lines = [
+            "Nomad reliability doctor",
+            f"Pain type: {result.get('pain_type', 'unknown')}",
+            f"Doctor role: {role.get('title', role.get('id', 'unknown'))}",
+        ]
+        rubric = result.get("critic_rubric") or []
+        if rubric:
+            lines.append("Critic checks")
+            for item in rubric[:3]:
+                lines.append(f"- {item.get('check', item)}")
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
     def _format_service_catalog(self, result: Dict[str, Any]) -> str:
         wallet = result.get("wallet") or {}
         pricing = result.get("pricing") or {}
@@ -1017,7 +1454,8 @@ class ArbiterBot:
 
     def _format_activation_lines(self, request: Dict[str, Any]) -> list[str]:
         lines = [
-            "Human in the loop requested",
+            "Approval boundary / human gate",
+            "This is not a failure; Nomad is waiting before crossing a public, paid, or human-facing boundary.",
             f"Unlock: {request['candidate_name']} as {request['role']}",
             f"Lane state: {request['lane_state']}",
         ]
@@ -1036,12 +1474,10 @@ class ArbiterBot:
                     lines.append(f"- {item}")
             if request.get("example_response"):
                 lines.append(f"Example: {request['example_response']}")
-        lines.extend(
-            [
-                f"Nomad asks: {request['ask']}",
-                f"Why now: {request['reason']}",
-            ]
-        )
+        if request.get("ask"):
+            lines.append(f"Nomad asks: {request['ask']}")
+        if request.get("reason"):
+            lines.append(f"Why now: {request['reason']}")
         if request.get("decision_score") is not None:
             lines.append(f"Decision score: {request['decision_score']}")
         if request.get("decision_reason"):
@@ -1087,6 +1523,20 @@ class ArbiterBot:
             return "modal_secret"
         if env_var == "TELEGRAM_BOT_TOKEN":
             return "telegram"
+        if env_var == "XAI_API_KEY":
+            return "grok"
+        if env_var == "CODEBUDDY_API_KEY":
+            return "codebuddy"
+        if env_var == "IBM_QUANTUM_TOKEN":
+            return "ibm_quantum"
+        if env_var == "QUANTUM_INSPIRE_TOKEN":
+            return "quantum_inspire"
+        if env_var == "QI_API_TOKEN":
+            return "qi"
+        if env_var == "AZURE_QUANTUM_TOKEN":
+            return "azure_quantum"
+        if env_var == "GOOGLE_QUANTUM_TOKEN":
+            return "google_quantum"
         if env_var == "ZEROX_API_KEY":
             return "zerox"
         return env_var.lower()
@@ -1468,65 +1918,114 @@ class ArbiterBot:
     def _broadcast_targets(self) -> set[int]:
         return self._load_subscribers() | self.status_chat_ids
 
-    def _build_periodic_update(self) -> str:
-        self_audit = self.agent.run("/self")
+    def _status_snapshot(self) -> Dict[str, Any]:
         compute = self.agent.run("/compute")
-        best = self.agent.run("/best")
+        products = (
+            self.agent.product_factory.list_products(limit=5)
+            if hasattr(self.agent, "product_factory")
+            else {"products": [], "stats": {}}
+        )
+        addons = self.agent.addons.status() if hasattr(self.agent, "addons") else {}
+        state = self.self_journal.load()
+        hosted = ((compute.get("probe") or {}).get("hosted") or {})
+        return {
+            "mode": "nomad_status",
+            "generated_at": datetime.now(UTC).isoformat(),
+            "public_api_url": self.public_api_url,
+            "compute": compute,
+            "products": products,
+            "addons": addons,
+            "self_state": state,
+            "github_models": hosted.get("github_models") or {},
+            "xai_grok": hosted.get("xai_grok") or {},
+        }
 
-        top_upgrade = (self_audit.get("upgrades") or [{}])[0]
-        top_stack = (best.get("stack") or [{}])[0]
-        compute_top = (compute.get("results") or [{}])[0]
-        activation_request = compute.get("activation_request") or {}
+    def _format_status_snapshot(self, snapshot: Dict[str, Any], periodic: bool = False) -> str:
+        compute = snapshot.get("compute") or {}
+        products = snapshot.get("products") or {}
+        state = snapshot.get("self_state") or {}
+        github = snapshot.get("github_models") or {}
+        xai_grok = snapshot.get("xai_grok") or {}
+        addons = snapshot.get("addons") or {}
+        quantum = addons.get("quantum_tokens") or {}
+        quantum_unlock = quantum.get("best_next_quantum_unlock") or {}
+        probe = compute.get("probe") or {}
+        ollama = probe.get("ollama") or {}
         brains = compute.get("brains") or {}
-        ollama = (compute.get("probe") or {}).get("ollama") or {}
+        product_stats = products.get("stats") or {}
+        private_products = int(product_stats.get("private_offer_needs_approval") or 0)
+        offer_ready = int(product_stats.get("offer_ready") or 0)
+        product_total = len(products.get("products") or [])
+        public_url = str(snapshot.get("public_api_url") or "").strip()
+        public_configured = bool(
+            public_url
+            and not public_url.startswith("http://127.0.0.1")
+            and not public_url.startswith("http://localhost")
+        )
 
         lines = [
-            f"Nomad update {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
-            "AI-first infrastructure scout is active.",
+            f"Nomad status {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
+            "Kurz: Ja, die Kernteile sind gelöst. Was bleibt, sind Freigaben und laufende Autopilot-Ziele.",
+            "",
+            "Gelöst / aktiv",
         ]
-        if top_stack.get("name"):
-            lines.append(f"Best current stack lead: {top_stack['name']}")
-        if compute_top.get("name"):
-            lines.append(f"Best free compute lane: {compute_top['name']}")
         if ollama.get("api_reachable"):
-            lines.append(
-                f"Local compute: Ollama active with {ollama.get('count', 0)} model(s)"
-            )
-        elif compute.get("probe"):
-            lines.append(
-                f"Local compute: {compute['probe'].get('cpu_count', 0)} CPU cores, "
-                f"{compute['probe'].get('memory_gb', 0.0):.2f} GB RAM"
-            )
-        secondary_brains = brains.get("secondary") or []
-        if secondary_brains:
-            top_secondary = secondary_brains[0]
-            lines.append(f"Second brain online: {top_secondary['name']}")
-        if top_upgrade.get("recommended"):
-            lines.append(
-                f"Next self-improvement: {top_upgrade['category']} -> {top_upgrade['recommended']}"
-            )
-        if activation_request.get("candidate_name"):
-            lines.append(
-                f"Human help requested: unlock {activation_request['candidate_name']}"
-            )
-            if activation_request.get("short_ask"):
-                lines.append(activation_request["short_ask"])
-        lines.append(f"API: {self.public_api_url}")
-        self_state = self.self_journal.load()
-        lines.append(f"Self-development cycles: {self_state.get('cycle_count', 0)}")
-        if self_state.get("next_objective"):
-            lines.append(f"Next autonomous objective: {self_state['next_objective']}")
-        dev_unlocks = self_state.get("self_development_unlocks") or []
-        if dev_unlocks:
-            lines.append(f"Human self-dev unlock: {dev_unlocks[0].get('short_ask')}")
-        if self.auto_cycle_enabled:
-            lines.append(
-                f"Auto-cycle: enabled every {self.auto_cycle_interval_minutes} minutes"
-            )
+            lines.append(f"- Local brain: Ollama online ({ollama.get('count', 0)} model(s))")
         else:
-            lines.append("Auto-cycle: disabled; set NOMAD_AUTO_CYCLE=true to enable.")
-        lines.append("Use: /best /self /compute /cycle /unlock /scout compute")
+            lines.append("- Local brain: Ollama nicht erreichbar")
+        secondary = brains.get("secondary") or []
+        if github.get("available"):
+            lines.append(f"- GitHub Models: verbunden ({github.get('model_count', 0)} model(s) sichtbar)")
+        elif github.get("configured"):
+            message = str(github.get("message") or "configured but not usable right now")
+            lines.append(f"- GitHub Models: konfiguriert, aber gerade begrenzt: {message[:180]}")
+        if xai_grok.get("available"):
+            lines.append(f"- Grok: verbunden ({xai_grok.get('working_model') or xai_grok.get('model', 'model')})")
+        elif xai_grok.get("configured"):
+            message = str(xai_grok.get("message") or "configured but not usable right now")
+            lines.append(f"- Grok: konfiguriert, aber blockiert: {message[:180]}")
+        if secondary:
+            lines.append(f"- Fallback brains: {', '.join(item.get('name', 'brain') for item in secondary[:3])}")
+        lines.append(
+            f"- Public API: {'konfiguriert' if public_configured else 'lokal oder noch nicht als Public URL gesetzt'} ({public_url})"
+        )
+        lines.append(f"- Product Factory: {product_total} Produkt(e), {offer_ready} offer-ready")
+
+        lines.append("")
+        lines.append("Offen, aber kein Fehler")
+        if private_products:
+            lines.append(
+                f"- {private_products} Produkt(e) brauchen Approval, bevor Nomad auf GitHub/zu Menschen postet."
+            )
+        dev_unlocks = state.get("self_development_unlocks") or []
+        if dev_unlocks:
+            lines.append(f"- Approval gate: {dev_unlocks[0].get('short_ask')}")
+        next_objective = state.get("next_objective")
+        if next_objective:
+            lines.append(f"- Autopilot denkt weiter: {next_objective}")
+        if quantum_unlock:
+            lines.append(
+                f"- Quantum unlock: {quantum_unlock.get('provider')} via {quantum_unlock.get('telegram_command')}"
+            )
+        if not private_products and not dev_unlocks and not quantum_unlock:
+            lines.append("- Keine menschliche Freigabe im Statusspeicher.")
+
+        lines.append("")
+        lines.append("Was du tun kannst")
+        if private_products:
+            lines.append("- Nichts tun: Nomad nutzt das Produkt privat weiter.")
+            lines.append("- Oder freigeben: APPROVE_LEAD_HELP=draft_only, comment oder pr_plan.")
+        else:
+            lines.append("- /productize <Lead> baut weitere Produkte.")
+        if quantum_unlock:
+            lines.append(f"- Quantum freischalten: {quantum_unlock.get('telegram_command')}")
+        lines.append("- /products zeigt verkaufbare Produktpakete.")
+        if not periodic:
+            lines.append("- /unsubscribe stoppt automatische Telegram-Statusmeldungen.")
         return "\n".join(lines)
+
+    def _build_periodic_update(self) -> str:
+        return self._format_status_snapshot(self._status_snapshot(), periodic=True)
 
     def _send_status_message(self, chat_id: int, text: str) -> None:
         if not self.token:
@@ -1622,6 +2121,13 @@ class ArbiterBot:
         app.add_handler(CommandHandler("cycle", self.cycle_command))
         app.add_handler(CommandHandler("leads", self.leads_command))
         app.add_handler(CommandHandler("lead", self.leads_command))
+        app.add_handler(CommandHandler("productize", self.productize_command))
+        app.add_handler(CommandHandler("products", self.products_command))
+        app.add_handler(CommandHandler("addons", self.addons_command))
+        app.add_handler(CommandHandler("nomadds", self.addons_command))
+        app.add_handler(CommandHandler("codebuddy", self.codebuddy_command))
+        app.add_handler(CommandHandler("quantum", self.quantum_command))
+        app.add_handler(CommandHandler("qtokens", self.quantum_command))
         app.add_handler(CommandHandler("service", self.service_command))
         app.add_handler(CommandHandler("contact", self.service_command))
         app.add_handler(CommandHandler("unlock", self.unlock_command))

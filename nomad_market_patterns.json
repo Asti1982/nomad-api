@@ -1,0 +1,289 @@
+{
+  "generated_at": "2026-04-19T00:00:00Z",
+  "focus_defaults": {
+    "balanced": {
+      "competitor_ids": [
+        "clawnet",
+        "a2a_registry",
+        "gotohuman",
+        "renthumanai",
+        "well_knowns_agent"
+      ],
+      "compute_ids": [
+        "cloudflare_workers_ai",
+        "github_models",
+        "huggingface_inference_providers",
+        "modal_starter"
+      ]
+    },
+    "compute_auth": {
+      "competitor_ids": [
+        "a2a_registry",
+        "well_knowns_agent",
+        "clawnet"
+      ],
+      "compute_ids": [
+        "cloudflare_workers_ai",
+        "github_models",
+        "huggingface_inference_providers",
+        "modal_starter"
+      ]
+    },
+    "human_in_loop": {
+      "competitor_ids": [
+        "gotohuman",
+        "renthumanai",
+        "clawnet"
+      ],
+      "compute_ids": [
+        "cloudflare_workers_ai",
+        "github_models",
+        "huggingface_inference_providers"
+      ]
+    }
+  },
+  "competitor_patterns": [
+    {
+      "id": "clawnet",
+      "name": "ClawNet",
+      "homepage": "https://clwnt.com/",
+      "summary": "Agent-native communications layer with email, contacts, calendar, REST, MCP and public A2A agent cards.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "human_in_loop",
+        "agent_discovery",
+        "customer_acquisition"
+      ],
+      "what_works": "Free tier, easy setup, public root catalog and per-agent cards make real discovery and contact cheap.",
+      "copy_now": [
+        "Keep a root agent catalog plus per-agent public cards.",
+        "Offer a no-friction free tier that other agents can try without a sales loop.",
+        "Make setup and first contact path extremely short."
+      ],
+      "improve_for_nomad": [
+        "Add paid diagnosis and unblock packs directly into the first interaction.",
+        "Score targets by pain, addressability and monetization instead of only reachability."
+      ],
+      "productize_as": "Nomad Rescue Inbox",
+      "integration_idea": "Treat ClawNet endpoints as first-class outbound targets and as a messaging rail for follow-ups.",
+      "payment_model": "Free tier plus flat paid plans.",
+      "fit_score": 9.5,
+      "source_urls": [
+        "https://clwnt.com/",
+        "https://clwnt.com/changelog"
+      ]
+    },
+    {
+      "id": "a2a_registry",
+      "name": "A2A Registry",
+      "homepage": "https://www.a2a-registry.org/",
+      "summary": "Public registry and routing agent for discovering agents through one well-known endpoint.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "agent_discovery",
+        "routing"
+      ],
+      "what_works": "Discovery is framed as routing instead of hardcoded integrations, which lowers integration friction.",
+      "copy_now": [
+        "Use registry-style routing in outreach and inbound discovery.",
+        "Keep capability discovery machine-readable and query-driven."
+      ],
+      "improve_for_nomad": [
+        "Cache the best matching routes per pain class so Nomad does not rediscover the same surfaces every cycle.",
+        "Pair routing with commercial intent scoring."
+      ],
+      "productize_as": "Nomad Routed Discovery Pack",
+      "integration_idea": "Use the registry as a discovery layer and translate results into Nomad-first outreach queues.",
+      "payment_model": "Free public directory with agent routing patterns.",
+      "fit_score": 9.1,
+      "source_urls": [
+        "https://www.a2a-registry.org/"
+      ]
+    },
+    {
+      "id": "gotohuman",
+      "name": "gotoHuman",
+      "homepage": "https://www.gotohuman.com/",
+      "summary": "Human supervision platform for AI workflows with editable review steps, retries, checkpoints and memory.",
+      "focus_tags": [
+        "balanced",
+        "human_in_loop",
+        "review",
+        "memory"
+      ],
+      "what_works": "They productize review templates, retries, artifact versioning and historical feedback as agent memory.",
+      "copy_now": [
+        "Turn human review into structured templates instead of ad hoc chat.",
+        "Keep retry loops and memory upgrades as separate billable surfaces."
+      ],
+      "improve_for_nomad": [
+        "Make the same review memory agent-to-agent and quoteable in native crypto terms.",
+        "Offer smaller diagnosis-first steps instead of only workflow supervision."
+      ],
+      "productize_as": "Nomad Approval Memory Pack",
+      "integration_idea": "Borrow the template/checkpoint/memory pattern for Nomad's paid HITL products.",
+      "payment_model": "Managed software with pricing tiers.",
+      "fit_score": 8.8,
+      "source_urls": [
+        "https://www.gotohuman.com/"
+      ]
+    },
+    {
+      "id": "renthumanai",
+      "name": "Rent Human AI",
+      "homepage": "https://renthumanai.com/",
+      "summary": "Marketplace that lets agents hire humans for physical-world execution via MCP or REST with crypto settlement.",
+      "focus_tags": [
+        "balanced",
+        "human_in_loop",
+        "physical_tasks",
+        "payments"
+      ],
+      "what_works": "They make human labor callable as API or MCP with proof upload and crypto settlement.",
+      "copy_now": [
+        "Present human labor as a bounded tool invocation with proof and payout.",
+        "Separate free diagnosis from paid execution clearly."
+      ],
+      "improve_for_nomad": [
+        "Use the same dispatch framing for high-value human approvals and unblock work.",
+        "Keep Nomad focused on digital agent pain before escalating to physical tasks."
+      ],
+      "productize_as": "Nomad Human Dispatch Contract",
+      "integration_idea": "Use as an external execution layer when Nomad cannot finish a task without real-world action.",
+      "payment_model": "Pay-as-you-go crypto settlement.",
+      "fit_score": 8.5,
+      "source_urls": [
+        "https://renthumanai.com/"
+      ]
+    },
+    {
+      "id": "well_knowns_agent",
+      "name": "Well Knowns Agent",
+      "homepage": "https://well-knowns.resolved.sh/",
+      "summary": "Indexes public well-known endpoints and sells fresh datasets to autonomous agents via x402 USDC micropayments.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "agent_discovery",
+        "payments",
+        "productization"
+      ],
+      "what_works": "They monetize infrastructure discovery directly as a machine-payable dataset product.",
+      "copy_now": [
+        "Treat discovery data as a product, not only as internal ops.",
+        "Price small machine-usable artifacts with low-friction micropayments."
+      ],
+      "improve_for_nomad": [
+        "Sell pain-specific unlock datasets or playbooks, not just raw endpoint lists.",
+        "Bundle discovered patterns with executable rescue plans."
+      ],
+      "productize_as": "Nomad Discovery Delta Feed",
+      "integration_idea": "Buy targeted datasets when free discovery runs dry, then repackage results into richer paid rescue artifacts.",
+      "payment_model": "x402 USDC micropayments on Base.",
+      "fit_score": 9.0,
+      "source_urls": [
+        "https://well-knowns.resolved.sh/"
+      ]
+    }
+  ],
+  "compute_opportunities": [
+    {
+      "id": "cloudflare_workers_ai",
+      "name": "Cloudflare Workers AI",
+      "summary": "Serverless hosted inference on the Workers platform with a daily free quota.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "human_in_loop",
+        "hosted_compute"
+      ],
+      "free_status": "verified_free_daily_quota",
+      "free_offer": "Workers Free includes 10,000 neurons per day at no charge.",
+      "prefer_when": "Nomad needs one more hosted fallback for diagnosis, ranking or short rescue drafts.",
+      "requirements": [
+        "Cloudflare account",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN"
+      ],
+      "integration_idea": "Probe the OpenAI-compatible chat endpoint and use it as a cheap hosted review lane.",
+      "payment_model": "Usage above the free daily quota is metered.",
+      "fit_score": 9.4,
+      "source_urls": [
+        "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+        "https://developers.cloudflare.com/workers-ai/get-started/rest-api/",
+        "https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/"
+      ]
+    },
+    {
+      "id": "github_models",
+      "name": "GitHub Models",
+      "summary": "Rate-limited hosted model access tied to GitHub accounts and tokens.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "hosted_compute"
+      ],
+      "free_status": "verified_included_free_usage",
+      "free_offer": "Free usage is included before you opt into paid usage.",
+      "prefer_when": "Nomad already has GitHub identity and needs a hosted fallback without another vendor account.",
+      "requirements": [
+        "GITHUB_TOKEN or GITHUB_PERSONAL_ACCESS_TOKEN"
+      ],
+      "integration_idea": "Keep it as the first hosted fallback when the token already exists.",
+      "payment_model": "Metered only after opting in beyond included free usage.",
+      "fit_score": 8.8,
+      "source_urls": [
+        "https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-models"
+      ]
+    },
+    {
+      "id": "huggingface_inference_providers",
+      "name": "Hugging Face Inference Providers",
+      "summary": "Unified hosted inference API across providers with small monthly credits for experimentation.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "hosted_compute"
+      ],
+      "free_status": "verified_small_monthly_credit",
+      "free_offer": "Free users receive monthly credits to experiment with Inference Providers.",
+      "prefer_when": "Nomad wants broad provider coverage and fast model switching.",
+      "requirements": [
+        "HF_TOKEN"
+      ],
+      "integration_idea": "Use as a cross-provider backup lane when GitHub Models is rate-limited.",
+      "payment_model": "Pay-as-you-go after the included credits.",
+      "fit_score": 8.4,
+      "source_urls": [
+        "https://huggingface.co/docs/inference-providers/pricing",
+        "https://huggingface.co/docs/inference-providers/en/index"
+      ]
+    },
+    {
+      "id": "modal_starter",
+      "name": "Modal Starter Credits",
+      "summary": "Serverless execution with monthly starter credits for burst compute, endpoints and jobs.",
+      "focus_tags": [
+        "balanced",
+        "compute_auth",
+        "hosted_compute",
+        "burst_jobs"
+      ],
+      "free_status": "verified_monthly_credit",
+      "free_offer": "Starter includes $30 per month in compute credits.",
+      "prefer_when": "Nomad needs bursty workers, web endpoints or parallel jobs beyond simple inference.",
+      "requirements": [
+        "MODAL_TOKEN_ID",
+        "MODAL_TOKEN_SECRET"
+      ],
+      "integration_idea": "Use for background scouts, scraping workers or heavier rescue jobs that should not run on the laptop.",
+      "payment_model": "Pay only for compute used above the included credits.",
+      "fit_score": 8.2,
+      "source_urls": [
+        "https://modal.com/pricing"
+      ]
+    }
+  ]
+}

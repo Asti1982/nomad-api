@@ -8,6 +8,11 @@ class FakeAgent:
         self.service_desk = FakeServiceDesk()
         self.direct_agent = FakeDirectAgent()
         self.agent_campaigns = FakeCampaigns()
+        self.agent_pain_solver = FakeAgentPainSolver()
+        self.agent_reliability_doctor = FakeReliabilityDoctor()
+        self.lead_conversion = FakeLeadConversion()
+        self.product_factory = FakeProductFactory()
+        self.addons = FakeAddons()
 
     def run(self, query):
         return {
@@ -24,6 +29,101 @@ class FakeLeadDiscovery:
             "query": query,
             "leads": [],
             "deal_found": False,
+        }
+
+
+class FakeAgentPainSolver:
+    def solve(self, **kwargs):
+        return {
+            "mode": "agent_pain_solution",
+            "deal_found": False,
+            "ok": True,
+            "solution": {
+                "schema": "nomad.agent_solution.v1",
+                "pain_type": kwargs.get("service_type") or "loop_break",
+                "title": "Retry Circuit Breaker",
+            },
+        }
+
+
+class FakeReliabilityDoctor:
+    def diagnose(self, **kwargs):
+        return {
+            "mode": "agent_reliability_doctor",
+            "deal_found": False,
+            "ok": True,
+            "schema": "nomad.agent_reliability_doctor.v1",
+            "pain_type": kwargs.get("service_type") or "hallucination",
+            "doctor_role": {"id": "reflection_critic", "title": "Reflection/Critic Doctor"},
+        }
+
+
+class FakeLeadConversion:
+    def run(self, **kwargs):
+        return {
+            "mode": "lead_conversion_pipeline",
+            "deal_found": False,
+            "ok": True,
+            "query": kwargs.get("query", ""),
+            "stats": {"queued_agent_contact": 1},
+            "conversions": [],
+        }
+
+    def list_conversions(self, **kwargs):
+        return {
+            "mode": "lead_conversion_list",
+            "deal_found": False,
+            "ok": True,
+            "statuses": kwargs.get("statuses") or [],
+            "conversions": [],
+        }
+
+
+class FakeProductFactory:
+    def run(self, **kwargs):
+        return {
+            "mode": "nomad_product_factory",
+            "deal_found": False,
+            "ok": True,
+            "query": kwargs.get("query", ""),
+            "products": [
+                {
+                    "schema": "nomad.product.v1",
+                    "product_id": "prod-test",
+                    "sku": "nomad.tool_guardrail_pack",
+                }
+            ],
+        }
+
+    def list_products(self, **kwargs):
+        return {
+            "mode": "nomad_product_list",
+            "deal_found": False,
+            "ok": True,
+            "statuses": kwargs.get("statuses") or [],
+            "products": [],
+        }
+
+
+class FakeAddons:
+    def status(self):
+        return {
+            "mode": "nomad_addon_scan",
+            "deal_found": False,
+            "ok": True,
+            "addons": [{"name": "Quantum Computing Integration"}],
+            "stats": {"discovered": 1, "active_safe_adapter": 1},
+        }
+
+    def run_quantum_self_improvement(self, objective="", context=None):
+        return {
+            "mode": "nomad_quantum_tokens",
+            "deal_found": False,
+            "ok": True,
+            "objective": objective,
+            "context": context or {},
+            "tokens": [{"qtoken_id": "qtok-test"}],
+            "selected_strategy": {"strategy_id": "measurement_critic_gate"},
         }
 
 
@@ -117,6 +217,17 @@ def test_cli_builds_self_audit_query():
     assert build_query(args) == "/self for ai_first"
 
 
+def test_cli_accepts_autopilot_daily_lead_target():
+    args = build_parser().parse_args(["autopilot", "--daily-lead-target", "100"])
+    assert args.command == "autopilot"
+    assert args.daily_lead_target == 100
+
+
+def test_cli_builds_reliability_doctor_query():
+    args = build_parser().parse_args(["doctor", "--service-type", "hallucination", "fake", "sources"])
+    assert build_query(args) == "/doctor type=hallucination fake sources"
+
+
 def test_cli_run_once_accepts_json_after_subcommand(capsys):
     from nomad_cli import run_once
 
@@ -155,6 +266,13 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_service_request" in tool_names
     assert "nomad_service_x402_verify" in tool_names
     assert "nomad_public_leads" in tool_names
+    assert "nomad_agent_pain_solver" in tool_names
+    assert "nomad_reliability_doctor" in tool_names
+    assert "nomad_lead_conversion_pipeline" in tool_names
+    assert "nomad_product_factory" in tool_names
+    assert "nomad_products" in tool_names
+    assert "nomad_addons" in tool_names
+    assert "nomad_quantum_tokens" in tool_names
     assert "nomad_agent_card" in tool_names
     assert "nomad_direct_message" in tool_names
     assert "nomad_cold_outreach_campaign" in tool_names
@@ -197,6 +315,125 @@ def test_mcp_creates_service_task_directly():
     assert content["task"]["task_id"] == "svc-test"
 
 
+def test_mcp_solves_agent_pain_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 44,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_agent_pain_solver",
+                "arguments": {
+                    "problem": "Agent is stuck in retry loop.",
+                    "service_type": "loop_break",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "agent_pain_solution"
+    assert content["solution"]["pain_type"] == "loop_break"
+
+
+def test_mcp_runs_reliability_doctor_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 445,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_reliability_doctor",
+                "arguments": {
+                    "problem": "Agent hallucinated unsupported claims.",
+                    "service_type": "hallucination",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["schema"] == "nomad.agent_reliability_doctor.v1"
+    assert content["doctor_role"]["id"] == "reflection_critic"
+
+
+def test_mcp_runs_lead_conversion_pipeline():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 45,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_lead_conversion_pipeline",
+                "arguments": {
+                    "query": "quota",
+                    "limit": "2",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "lead_conversion_pipeline"
+    assert content["query"] == "quota"
+
+
+def test_mcp_runs_product_factory():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 46,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_product_factory",
+                "arguments": {
+                    "query": "guardrail provider",
+                    "limit": "1",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_product_factory"
+    assert content["query"] == "guardrail provider"
+    assert content["products"][0]["schema"] == "nomad.product.v1"
+
+
+def test_mcp_runs_addons_and_quantum_tokens():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    addons = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 47,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_addons",
+                "arguments": {},
+            },
+        }
+    )
+    quantum = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 48,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_quantum_tokens",
+                "arguments": {"objective": "improve agent routing"},
+            },
+        }
+    )
+
+    assert addons["result"]["structuredContent"]["mode"] == "nomad_addon_scan"
+    assert quantum["result"]["structuredContent"]["mode"] == "nomad_quantum_tokens"
+    assert quantum["result"]["structuredContent"]["objective"] == "improve agent routing"
+
+
 def test_mcp_returns_agent_card_directly():
     server = NomadMcpServer(agent_factory=FakeAgent)
     response = server.handle(
@@ -222,6 +459,44 @@ def test_cli_builds_service_and_lead_queries():
     service_args = build_parser().parse_args(["service-request", "fix", "login"])
     assert build_query(service_args) == "/service request fix login"
 
+    solve_pain_args = build_parser().parse_args(["solve-pain", "--service-type", "loop_break", "stuck", "loop"])
+    assert build_query(solve_pain_args) == "/solve-pain type=loop_break stuck loop"
+
+    doctor_args = build_parser().parse_args(["doctor", "--service-type", "tool_failure", "schema", "mismatch"])
+    assert build_query(doctor_args) == "/doctor type=tool_failure schema mismatch"
+
+    convert_args = build_parser().parse_args(["convert-leads", "--limit", "3", "quota"])
+    assert build_query(convert_args) == "/convert-leads send=false limit=3 quota"
+
+    conversions_args = build_parser().parse_args(["lead-conversions", "--status", "queued_agent_contact"])
+    assert build_query(conversions_args) == "/lead-conversions status=queued_agent_contact limit=25"
+
+    productize_args = build_parser().parse_args(["productize", "--limit", "2", "guardrail", "provider"])
+    assert build_query(productize_args) == "/productize limit=2 guardrail provider"
+
+    products_args = build_parser().parse_args(["products", "--status", "offer_ready"])
+    assert build_query(products_args) == "/products status=offer_ready limit=25"
+
+    addons_args = build_parser().parse_args(["addons"])
+    assert build_query(addons_args) == "/addons"
+
+    quantum_args = build_parser().parse_args(["quantum", "reduce", "loops"])
+    assert build_query(quantum_args) == "/quantum reduce loops"
+
+    codebuddy_scout_args = build_parser().parse_args(["scout", "codebuddy"])
+    assert build_query(codebuddy_scout_args) == "/scout codebuddy for ai_first"
+
+    codebuddy_review_args = build_parser().parse_args(
+        ["codebuddy-review", "--base", "main", "--head", "feature", "--approval", "--path", "nomad_codebuddy.py", "review", "diff"]
+    )
+    assert build_query(codebuddy_review_args) == "/codebuddy-review base=main head=feature approval=share_diff path=nomad_codebuddy.py review diff"
+
+    render_args = build_parser().parse_args(["render"])
+    assert build_query(render_args) == "/render"
+
+    collaboration_args = build_parser().parse_args(["collaboration"])
+    assert build_query(collaboration_args) == "/collaboration"
+
     x402_args = build_parser().parse_args(["service-x402-verify", "svc-test", "abc"])
     assert build_query(x402_args) == "/service x402-verify svc-test signature=abc"
 
@@ -236,10 +511,24 @@ def test_cli_builds_service_and_lead_queries():
     )
     assert build_query(campaign_args) == "/cold-outreach limit=100 https://agent.example/.well-known/agent"
 
+    contact_poll_args = build_parser().parse_args(["agent-contact-poll", "contact-1"])
+    assert build_query(contact_poll_args) == "/agent-contact poll contact-1"
+
     discovery_args = build_parser().parse_args(
         ["cold-outreach", "--discover", "--query", "agent-card", "--limit", "25"]
     )
     assert build_query(discovery_args) == "/cold-outreach discover limit=25 query=agent-card"
+
+    autopilot_args = build_parser().parse_args(
+        ["autopilot", "--cycles", "1", "--interval", "60", "--outreach-limit", "5"]
+    )
+    assert autopilot_args.command == "autopilot"
+    assert autopilot_args.cycles == 1
+    assert autopilot_args.interval == 60
+    assert autopilot_args.outreach_limit == 5
+
+    codex_task_args = build_parser().parse_args(["codex-task"])
+    assert codex_task_args.command == "codex-task"
 
 
 def test_mcp_stdio_tolerates_windows_bom(capsys):

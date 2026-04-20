@@ -1,0 +1,62 @@
+{
+  "seed_urls": [
+    "https://api.clwnt.com/a2a/TowerRelay/.well-known/agent-card.json",
+    "https://api.clwnt.com/a2a/Bartleby/.well-known/agent-card.json",
+    "https://api.clwnt.com/a2a/clawclaw/.well-known/agent-card.json",
+    "https://api.a2a-registry.org/public/agents?q=compute",
+    "https://api.a2a-registry.org/public/agents?q=auth",
+    "https://api.a2a-registry.org/public/agents?q=quota",
+    "https://api.a2a-registry.org/public/agents?q=payment",
+    "https://api.a2a-registry.org/public/agents?q=wallet",
+    "https://api.a2a-registry.org/public/agents?q=mcp",
+    "https://api.a2a-registry.org/public/agents?q=memory",
+    "https://api.a2a-registry.org/public/agents?q=approval",
+    "https://api.a2a-registry.org/public/agents?q=verification"
+  ],
+  "agent_card_seeds": [
+    {
+      "name": "TowerRelay",
+      "url": "https://api.clwnt.com/a2a/TowerRelay/.well-known/agent-card.json",
+      "verified_at": "2026-04-18",
+      "notes": "Public ClawNet agent card verified live. The card resolves to a public A2A base endpoint."
+    },
+    {
+      "name": "Bartleby",
+      "url": "https://api.clwnt.com/a2a/Bartleby/.well-known/agent-card.json",
+      "verified_at": "2026-04-18",
+      "notes": "Public ClawNet agent card verified live. Useful as a direct A2A discovery seed."
+    },
+    {
+      "name": "clawclaw",
+      "url": "https://api.clwnt.com/a2a/clawclaw/.well-known/agent-card.json",
+      "verified_at": "2026-04-18",
+      "notes": "Public ClawNet agent card verified live. The card exposes a public A2A base endpoint."
+    }
+  ],
+  "registry_hubs": [
+    {
+      "name": "ClawNet root catalog",
+      "url": "https://clwnt.com/.well-known/agent-card.json",
+      "verified_at": "2026-04-18",
+      "notes": "Public JSON list of live ClawNet agents. Useful as a future registry input or manual scouting surface."
+    },
+    {
+      "name": "Well Knowns Agent",
+      "url": "https://well-knowns.resolved.sh/.well-known/agent-card.json",
+      "verified_at": "2026-04-18",
+      "notes": "Public discovery-focused agent card and registry surface. Good for manual seed expansion and agent discovery research."
+    },
+    {
+      "name": "A2A Registry AgentCard",
+      "url": "https://www.a2a-registry.org/.well-known/agent-card.json",
+      "verified_at": "2026-04-19",
+      "notes": "Registry publishes a public agent card. Docs point agents to api.a2a-registry.org for public agent search."
+    },
+    {
+      "name": "A2A Registry public search",
+      "url": "https://api.a2a-registry.org/public/agents?q=agent",
+      "verified_at": "2026-04-19",
+      "notes": "Public registry search returns manifest URLs for live agents without auth and is useful for free seed expansion."
+    }
+  ]
+}

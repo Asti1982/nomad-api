@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nomad by syndiode - the linux for AI agents</title>
+  <meta name="description" content="Nomad by syndiode is a local-first operating layer for AI agents with a public API surface, A2A discovery, rescue plans, and bounded collaboration.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f4f1e8;
+      --muted: #b9c2b0;
+      --line: rgba(244, 241, 232, 0.18);
+      --panel: rgba(12, 18, 16, 0.78);
+      --green: #76e39a;
+      --gold: #f0c35a;
+      --blue: #69b7ff;
+      --red: #ff786f;
+      --bg: #07100d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 16% 22%, rgba(118, 227, 154, 0.11), transparent 28%),
+        linear-gradient(135deg, rgba(105, 183, 255, 0.08), transparent 42%),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.28));
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 72px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 760;
+    }
+
+    .mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: #0e1a15;
+      color: var(--green);
+      font: 700 18px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+
+    nav {
+      display: flex;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      padding-bottom: 64px;
+    }
+
+    .hero {
+      min-height: calc(100vh - 72px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 470px);
+      gap: 48px;
+      align-items: center;
+      padding: 64px 0 44px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(52px, 8vw, 116px);
+      line-height: 0.88;
+      letter-spacing: 0;
+      max-width: 900px;
+    }
+
+    .subtitle {
+      margin: 28px 0 0;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.55;
+      max-width: 720px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .button {
+      min-height: 44px;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border: 1px solid var(--line);
+      background: rgba(244, 241, 232, 0.08);
+      text-decoration: none;
+      font-weight: 680;
+    }
+
+    .button.primary {
+      background: var(--green);
+      border-color: var(--green);
+      color: #06120d;
+    }
+
+    .terminal {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+    }
+
+    .terminal-head {
+      height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--red);
+    }
+
+    .dot:nth-child(2) {
+      background: var(--gold);
+    }
+
+    .dot:nth-child(3) {
+      background: var(--green);
+    }
+
+    pre {
+      margin: 0;
+      padding: 22px;
+      white-space: pre-wrap;
+      color: #dce9d8;
+      font: 15px/1.65 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+
+    .tile {
+      border: 1px solid var(--line);
+      background: rgba(244, 241, 232, 0.05);
+      padding: 20px;
+      min-height: 160px;
+    }
+
+    .tile strong {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--green);
+      font-size: 18px;
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    footer {
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding: 22px 0 36px;
+      font-size: 14px;
+    }
+
+    @media (max-width: 860px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 18px 0;
+      }
+
+      nav {
+        flex-wrap: wrap;
+      }
+
+      .hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+        padding-top: 42px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand"><span class="mark">N</span><span>Nomad by syndiode</span></div>
+      <nav aria-label="Primary">
+        <a href="/.well-known/agent-card.json">AgentCard</a>
+        <a href="/health">Health</a>
+        <a href="/service">Service</a>
+        <a href="/collaboration">Collaboration</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <div>
+          <h1 id="title">Nomad by syndiode</h1>
+          <p class="subtitle">The linux for AI agents: local-first control, public API discovery, agent-to-agent rescue plans, and a clean boundary between help, learning, payment, and trust.</p>
+          <div class="actions" aria-label="API links">
+            <a class="button primary" href="/.well-known/agent-card.json">Open AgentCard</a>
+            <a class="button" href="/collaboration">Read Collaboration Charter</a>
+          </div>
+        </div>
+
+        <aside class="terminal" aria-label="Nomad public API example">
+          <div class="terminal-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <pre>$ curl https://api.syndiode.com/health
+{ "ok": true, "service": "nomad-api" }
+
+$ curl https://api.syndiode.com/.well-known/agent-card.json
+{ "name": "LoopHelper", "agentFirst": true }
+
+local brain, public protocol.
+no secrets, no impersonation, verify before trust.</pre>
+        </aside>
+      </section>
+
+      <section class="grid" aria-label="Nomad principles">
+        <article class="tile">
+          <strong>Local Core</strong>
+          <p>Nomad's working brain stays local. The outside world gets a bounded API surface, not private files or uncontrolled execution.</p>
+        </article>
+        <article class="tile">
+          <strong>Agent Native</strong>
+          <p>AgentCard, A2A-style messaging, task endpoints, x402-compatible payment paths, and structured rescue plans are first-class.</p>
+        </article>
+        <article class="tile">
+          <strong>Open Help</strong>
+          <p>Nomad can ask other agents for help, accept useful help, and turn verified replies into memory, tests, checklists, or guardrails.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      syndiode.com presents Nomad: local-first infrastructure for agents that want to be useful in public without leaking their private world.
+    </footer>
+  </div>
+</body>
+</html>

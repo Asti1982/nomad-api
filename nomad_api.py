@@ -2,13 +2,18 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from nomad_guardrails import guardrail_status
+from nomad_collaboration import collaboration_status
 from workflow import NomadAgent
 
 
 HOST = os.getenv("NOMAD_API_HOST", "127.0.0.1")
 PORT = int(os.getenv("NOMAD_API_PORT") or os.getenv("PORT") or "8787")
+ROOT = Path(__file__).resolve().parent
+PUBLIC_DIR = ROOT / "public"
 
 
 class NomadApiHandler(BaseHTTPRequestHandler):
@@ -17,6 +22,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
+
+        if parsed.path in {"/", "/index.html", "/nomad.html"}:
+            self._html_file_response(PUBLIC_DIR / "nomad.html")
+            return
 
         if parsed.path == "/health":
             self._json_response(
@@ -113,6 +122,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result)
             return
 
+        if parsed.path == "/addons":
+            self._json_response(self.agent.addons.status())
+            return
+
+        if parsed.path == "/quantum":
+            objective = (query.get("objective") or [""])[0]
+            self._json_response(
+                self.agent.addons.run_quantum_self_improvement(
+                    objective=objective,
+                    context={"source": "http_get"},
+                )
+            )
+            return
+
         if parsed.path == "/cycle":
             profile = (query.get("profile") or ["ai_first"])[0]
             objective = (query.get("objective") or [""])[0]
@@ -142,11 +165,98 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result)
             return
 
+        if parsed.path == "/lead-conversions":
+            lead_query = (query.get("query") or [""])[0]
+            if lead_query:
+                result = self.agent.lead_conversion.run(
+                    query=lead_query,
+                    limit=int((query.get("limit") or ["5"])[0] or 5),
+                    send=str((query.get("send") or ["false"])[0]).lower() in {"1", "true", "yes", "on"},
+                    budget_hint_native=self._optional_float((query.get("budget_native") or query.get("budget") or [""])[0]),
+                )
+            else:
+                statuses = [
+                    item.strip()
+                    for raw in (query.get("status") or [])
+                    for item in raw.split(",")
+                    if item.strip()
+                ]
+                result = self.agent.lead_conversion.list_conversions(
+                    statuses=statuses,
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            self._json_response(result)
+            return
+
+        if parsed.path == "/products":
+            product_query = (query.get("query") or [""])[0]
+            if product_query:
+                result = self.agent.product_factory.run(
+                    query=product_query,
+                    limit=int((query.get("limit") or ["5"])[0] or 5),
+                )
+            else:
+                statuses = [
+                    item.strip()
+                    for raw in (query.get("status") or [])
+                    for item in raw.split(",")
+                    if item.strip()
+                ]
+                result = self.agent.product_factory.list_products(
+                    statuses=statuses,
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            self._json_response(result)
+            return
+
+        if parsed.path == "/agent-pains":
+            problem = (query.get("problem") or [""])[0]
+            service_type = (query.get("type") or query.get("service_type") or [""])[0]
+            if problem:
+                result = self.agent.agent_pain_solver.solve(
+                    problem=problem,
+                    service_type=service_type,
+                    source="http_get",
+                )
+            else:
+                result = self.agent.run("/agent-pains")
+            self._json_response(result)
+            return
+
+        if parsed.path in {"/doctor", "/reliability-doctor"}:
+            problem = (query.get("problem") or ["Agent needs reliability diagnosis."])[0]
+            service_type = (query.get("type") or query.get("service_type") or [""])[0]
+            result = self.agent.agent_reliability_doctor.diagnose(
+                problem=problem,
+                service_type=service_type,
+                source="http_get",
+            )
+            self._json_response(result)
+            return
+
+        if parsed.path == "/guardrails":
+            result = guardrail_status(
+                action=(query.get("action") or ["manual.check"])[0],
+                approval=(query.get("approval") or [""])[0],
+                args={
+                    "text": (query.get("text") or [""])[0],
+                    "url": (query.get("url") or [""])[0],
+                },
+            )
+            self._json_response(result, status=200 if result.get("ok") else 409)
+            return
+
+        if parsed.path == "/collaboration":
+            self._json_response(collaboration_status())
+            return
+
         self._json_response(
             {
                 "ok": False,
                 "error": "not_found",
                 "available_paths": [
+                    "/",
+                    "/nomad.html",
                     "/health",
                     "/agent",
                     "/service",
@@ -160,10 +270,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/best",
                     "/self",
                     "/compute",
+                    "/addons",
+                    "/quantum",
                     "/cycle",
                     "/unlock",
                     "/scout",
                     "/leads",
+                    "/lead-conversions",
+                    "/products",
+                    "/agent-pains",
+                    "/reliability-doctor",
+                    "/guardrails",
+                    "/collaboration",
                 ],
             },
             status=404,
@@ -198,7 +316,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/a2a/message", "/direct/message"}:
             result = self.agent.direct_agent.handle_direct_message(payload)
-            self._json_response(result, status=200 if result.get("ok") else 400)
+            jsonrpc = self._jsonrpc_envelope(payload, result)
+            self._json_response(
+                jsonrpc if self._is_jsonrpc_request(payload) else result,
+                status=200 if result.get("ok") else 400,
+            )
             return
 
         if parsed.path == "/a2a/discover":
@@ -206,6 +328,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 base_url=payload.get("base_url", ""),
             )
             self._json_response(result, status=200 if result.get("ok") else 404)
+            return
+
+        if parsed.path == "/quantum":
+            result = self.agent.addons.run_quantum_self_improvement(
+                objective=payload.get("objective", ""),
+                context=payload.get("context") or {"source": "http_post"},
+            )
+            self._json_response(result, status=200 if result.get("ok") else 400)
             return
 
         if parsed.path == "/x402/paid-help":
@@ -254,8 +384,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             result = self.agent.direct_agent.handle_direct_message(payload)
             if result.get("ok"):
                 payment_required = result.get("payment_required") or {}
+                response_payload = (
+                    self._jsonrpc_envelope(payload, result)
+                    if self._is_jsonrpc_request(payload)
+                    else result
+                )
                 self._json_response(
-                    result,
+                    response_payload,
                     status=402,
                     headers={
                         "PAYMENT-REQUIRED": payment_required.get("encoded_header")
@@ -385,11 +520,85 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result)
             return
 
+        if parsed.path == "/lead-conversions":
+            if payload.get("list"):
+                result = self.agent.lead_conversion.list_conversions(
+                    statuses=payload.get("statuses") or payload.get("status") or [],
+                    limit=int(payload.get("limit") or 25),
+                )
+            else:
+                result = self.agent.lead_conversion.run(
+                    query=payload.get("query", ""),
+                    limit=int(payload.get("limit") or 5),
+                    send=bool(payload.get("send", False)),
+                    budget_hint_native=payload.get("budget_hint_native") or payload.get("budget_native"),
+                    leads=payload.get("leads") if isinstance(payload.get("leads"), list) else None,
+                )
+            self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path == "/products":
+            if payload.get("list"):
+                result = self.agent.product_factory.list_products(
+                    statuses=payload.get("statuses") or payload.get("status") or [],
+                    limit=int(payload.get("limit") or 25),
+                )
+            else:
+                result = self.agent.product_factory.run(
+                    query=payload.get("query", ""),
+                    limit=int(payload.get("limit") or 5),
+                    leads=payload.get("leads") if isinstance(payload.get("leads"), list) else None,
+                    conversions=payload.get("conversions") if isinstance(payload.get("conversions"), list) else None,
+                )
+            self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path == "/agent-pains":
+            problem = payload.get("problem") or payload.get("message") or ""
+            if problem:
+                result = self.agent.agent_pain_solver.solve(
+                    problem=problem,
+                    service_type=payload.get("service_type") or payload.get("type") or "",
+                    source="http_post",
+                )
+            else:
+                result = self.agent.run("/agent-pains")
+            self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path in {"/doctor", "/reliability-doctor"}:
+            result = self.agent.agent_reliability_doctor.diagnose(
+                problem=payload.get("problem") or payload.get("message") or "Agent needs reliability diagnosis.",
+                service_type=payload.get("service_type") or payload.get("type") or "",
+                source="http_post",
+                evidence=payload.get("evidence") if isinstance(payload.get("evidence"), list) else None,
+            )
+            self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path == "/guardrails":
+            result = guardrail_status(
+                action=payload.get("action") or "manual.check",
+                approval=payload.get("approval") or "",
+                args=payload.get("args") if isinstance(payload.get("args"), dict) else {
+                    "text": payload.get("text") or payload.get("message") or "",
+                    "url": payload.get("url") or "",
+                },
+            )
+            self._json_response(result, status=200 if result.get("ok") else 409)
+            return
+
+        if parsed.path == "/collaboration":
+            self._json_response(collaboration_status())
+            return
+
         self._json_response(
             {
                 "ok": False,
                 "error": "not_found",
                 "available_paths": [
+                    "/",
+                    "/nomad.html",
                     "/tasks",
                     "/tasks/verify",
                     "/tasks/x402-verify",
@@ -405,6 +614,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/a2a/discover",
                     "/x402/paid-help",
                     "/leads",
+                    "/lead-conversions",
+                    "/products",
+                    "/agent-pains",
+                    "/reliability-doctor",
+                    "/guardrails",
+                    "/collaboration",
                 ],
             },
             status=404,
@@ -432,6 +647,50 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
+    def _is_jsonrpc_request(self, payload: dict) -> bool:
+        return (
+            isinstance(payload, dict)
+            and payload.get("jsonrpc") == "2.0"
+            and "id" in payload
+            and isinstance(payload.get("method"), str)
+        )
+
+    def _jsonrpc_envelope(self, request_payload: dict, result: dict) -> dict:
+        message = self._a2a_message_result(result)
+        return {
+            "jsonrpc": "2.0",
+            "id": request_payload.get("id"),
+            "result": message,
+        }
+
+    def _a2a_message_result(self, result: dict) -> dict:
+        message_id = (
+            ((result.get("session") or {}).get("last_task_id"))
+            or ((result.get("task") or {}).get("task_id"))
+            or "nomad-message"
+        )
+        text = str(result.get("next_agent_message") or "")
+        return {
+            "messageId": message_id,
+            "role": "agent",
+            "type": "message",
+            "parts": [
+                {
+                    "type": "text",
+                    "kind": "text",
+                    "text": text,
+                }
+            ],
+            "metadata": {
+                "mode": result.get("mode", ""),
+                "classification": ((result.get("free_diagnosis") or {}).get("classification") or ""),
+                "task_id": ((result.get("task") or {}).get("task_id") or ""),
+                "payment_required": bool(result.get("payment_required")),
+                "normalized_request": result.get("normalized_request") or {},
+                "structured_reply": result.get("structured_reply") or {},
+            },
+        }
+
     def _json_response(self, payload: dict, status: int = 200, headers: dict | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
@@ -442,6 +701,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _html_file_response(self, path: Path, status: int = 200) -> None:
+        if not path.exists() or not path.is_file():
+            self._json_response(
+                {"ok": False, "error": "html_not_found"},
+                status=404,
+            )
+            return
+        body = path.read_bytes()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self._send_common_headers()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    @staticmethod
+    def _optional_float(value: object) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
 
 def serve() -> None:

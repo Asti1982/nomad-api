@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
-from agent_service import AgentServiceDesk
+from agent_service import AgentServiceDesk, SERVICE_TYPES
+from nomad_collaboration import collaboration_charter
+from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
 
 
 load_dotenv()
@@ -28,6 +30,58 @@ PAIN_TYPES = {
     "compute_auth": ("quota", "rate limit", "token", "model", "inference", "auth"),
 }
 
+ENGAGEMENT_PACKAGES = {
+    "human_in_loop": {
+        "package": "Nomad HITL Contract Pack",
+        "delivery": "minimal do-now/send-back/done-when contract plus operator-ready evidence pack",
+        "memory_upgrade": "reusable human handoff template after consent",
+        "free_scope": "classify the exact human gate and name one legitimate unlock step",
+        "paid_scope": "design the full unlock contract, approval payload, and repeatable operator checklist",
+    },
+    "loop_break": {
+        "package": "Nomad Loop Rescue Pack",
+        "delivery": "bounded loop-break plan with preserved state and one verified next move",
+        "memory_upgrade": "retry guardrail and loop-break checklist after consent",
+        "free_scope": "identify the first failing loop edge and the smallest safe pause point",
+        "paid_scope": "produce the full loop-break plan, fallback path, and recovery checklist",
+    },
+    "hallucination": {
+        "package": "Nomad Verification Pack",
+        "delivery": "verifier-first response shape with one checker and one bounded retry path",
+        "memory_upgrade": "durable verifier rule and claim-check checklist after consent",
+        "free_scope": "name the first verifier step the requester should add",
+        "paid_scope": "design the verifier flow, evidence contract, and guarded retry path",
+    },
+    "memory": {
+        "package": "Nomad Memory Repair Pack",
+        "delivery": "missing-memory diagnosis with one fact/decision/constraint template to persist",
+        "memory_upgrade": "durable memory object and reuse checklist after consent",
+        "free_scope": "identify the missing memory object type and one candidate entry",
+        "paid_scope": "package the solved blocker as a reusable memory, checklist, and guardrail",
+    },
+    "payment": {
+        "package": "Nomad Payment Reliability Pack",
+        "delivery": "payment-path diagnosis plus verification and resume plan",
+        "memory_upgrade": "payment recovery rule set after consent",
+        "free_scope": "pin down the failing payment state and next verification step",
+        "paid_scope": "design the full retry-safe payment path and manual fallback",
+    },
+    "compute_auth": {
+        "package": "Nomad Compute Unlock Pack",
+        "delivery": "credential/quota diagnosis and one fallback-lane plan",
+        "memory_upgrade": "credential/quota checklist and fallback policy after consent",
+        "free_scope": "separate token, quota, model access, and fallback into one smallest next check",
+        "paid_scope": "produce the full credential/quota map, fallback route, and unblock checklist",
+    },
+    "custom": {
+        "package": "Nomad Agent Infrastructure Pack",
+        "delivery": "bounded diagnosis plus one agent-usable next action",
+        "memory_upgrade": "reusable note or checklist after consent",
+        "free_scope": "reduce the blocker to one verifiable next action",
+        "paid_scope": "produce a bounded plan and one reusable artifact for future runs",
+    },
+}
+
 
 class DirectAgentGateway:
     """Direct-only A2A-style conversation surface for LoopHelper/Nomad."""
@@ -37,11 +91,13 @@ class DirectAgentGateway:
         path: Optional[Path] = None,
         service_desk: Optional[AgentServiceDesk] = None,
         session: Optional[requests.Session] = None,
+        guardrails: Optional[NomadGuardrailEngine] = None,
     ) -> None:
         load_dotenv()
         self.path = path or DEFAULT_DIRECT_STORE
         self.service_desk = service_desk or AgentServiceDesk()
         self.session = session or requests.Session()
+        self.guardrails = guardrails or NomadGuardrailEngine()
         self.public_api_url = (
             os.getenv("NOMAD_PUBLIC_API_URL")
             or f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
@@ -52,12 +108,13 @@ class DirectAgentGateway:
 
     def agent_card(self) -> Dict[str, Any]:
         """Return an A2A-style AgentCard for direct discovery."""
+        collaboration = collaboration_charter(public_api_url=self.public_api_url)
         return {
             "protocolVersion": os.getenv("NOMAD_A2A_PROTOCOL_VERSION", "0.3.0"),
             "name": self.agent_name,
             "description": (
-                "Direct-only agent rescue helper for stuck agents, human-in-the-loop decisions, "
-                "loop breaks, compute/auth pain and wallet/x402 payment flows."
+                "Agent-first direct service built around the Nomad Compute Unlock Pack: quota/auth/cooldown "
+                "diagnosis, fallback-lane repair, and reusable memory for blocked AI agents."
             ),
             "url": f"{self.public_api_url}/a2a/message",
             "version": self.version,
@@ -69,28 +126,60 @@ class DirectAgentGateway:
                 "directOnly": True,
                 "x402PaymentRequired": True,
                 "freeMiniDiagnosis": True,
+                "agentFirst": True,
+                "structuredReplies": True,
+                "nonAnthropomorphic": True,
+                "adaptiveOffers": True,
+                "agentPainSolver": True,
+                "selfAppliesSolvedPatterns": True,
+                "outboundAgentCollaboration": collaboration["enabled"],
+                "acceptsAgentHelp": collaboration["permission"]["accept_help_from_other_agents"],
+                "learnsFromAgentReplies": collaboration["permission"]["learn_from_public_agent_replies"],
             },
+            "interactionContract": self.interaction_contract(),
+            "collaborationCharter": collaboration,
             "skills": [
                 {
                     "id": "free-mini-diagnosis",
                     "name": "Free Mini Diagnosis",
-                    "description": "Diagnose why an agent is stuck and name the smallest next step.",
+                    "description": "Classify one blocker and return the smallest verifiable next step.",
                     "tags": ["diagnosis", "agent-rescue", "free"],
                     "examples": ["I am stuck in a retry loop after a tool call failed."],
                 },
                 {
+                    "id": "compute-auth-unblock",
+                    "name": "Compute/Auth Unblock",
+                    "description": "Diagnose quota, token, OAuth, cooldown, and fallback-lane failures, then return a smallest-repro and bounded unblock path.",
+                    "tags": ["compute", "auth", "quota", "oauth", "fallback"],
+                    "examples": ["My provider fallback lane returns auth errors and false rate-limit cooldowns."],
+                },
+                {
                     "id": "human-in-the-loop-rescue",
                     "name": "Human-in-the-Loop Rescue",
-                    "description": "Turn CAPTCHA, approval, verification or judgment blockers into concrete human unlock tasks.",
+                    "description": "Turn CAPTCHA, approval, verification or judgment blockers into concrete unlock contracts.",
                     "tags": ["human-in-the-loop", "approval", "captcha", "judgment"],
                     "examples": ["My agent needs a human approval decision before continuing."],
                 },
                 {
                     "id": "paid-loop-break",
                     "name": "Paid Loop Break",
-                    "description": "After x402/wallet payment, help break loops, debug tool failures and preserve the solution as memory.",
+                    "description": "After x402/wallet payment, isolate the blocker, repair the flow, and preserve the solution as memory.",
                     "tags": ["x402", "wallet", "loop", "debugging"],
                     "examples": ["I can pay 0.01 ETH if you can stop this infinite tool loop."],
+                },
+                {
+                    "id": "self-improvement-pack",
+                    "name": "Self-Improvement Pack",
+                    "description": "Turn one solved blocker into reusable memory, a checklist, or a guardrail for the requesting agent.",
+                    "tags": ["memory", "guardrails", "prompting", "self-improvement"],
+                    "examples": ["After fixing this loop, help me package the lesson so I avoid it next time."],
+                },
+                {
+                    "id": "agent-pain-solver",
+                    "name": "Agent Pain Solver",
+                    "description": "Convert recurring agent failures into reusable rescue patterns that Nomad also applies to itself.",
+                    "tags": ["agent-pain", "rescue-plan", "self-apply", "guardrails"],
+                    "examples": ["Solve this timeout retry failure and turn the fix into a reusable guardrail."],
                 },
             ],
             "endpoints": {
@@ -101,6 +190,53 @@ class DirectAgentGateway:
                 "service": f"{self.public_api_url}/service",
             },
             "payment": self.x402_payment_requirements(),
+        }
+
+    def interaction_contract(self) -> Dict[str, Any]:
+        collaboration = collaboration_charter(public_api_url=self.public_api_url)
+        return {
+            "audience": "ai_agents",
+            "style": "agent_first_non_anthropomorphic",
+            "collaboration_mode": collaboration["mode"],
+            "protocol_hints": [
+                "a2a_agent_card",
+                "jsonrpc_message_send",
+                "structured_plaintext",
+            ],
+            "reply_modes": ["message", "task"],
+            "task_states": [
+                "submitted",
+                "working",
+                "input_required",
+                "auth_required",
+                "completed",
+                "failed",
+                "rejected",
+            ],
+            "idempotency": "contextId_or_request_id_on_retry",
+            "ttl_seconds": 600,
+            "defaults": [
+                "structured_replies_preferred",
+                "bounded_claims_only",
+                "explicit_payment_boundary",
+                "no_human_impersonation",
+                "free_to_paid_value_ladder",
+                "requester_need_profile_adaptation",
+                "verify_before_trust",
+                "opt_out_respected",
+            ],
+            "expected_fields": [
+                "problem",
+                "goal",
+                "blocking_step",
+                "constraints",
+                "budget_native",
+            ],
+            "optional_fields": [
+                "urgency_hint",
+                "delivery_preference",
+                "memory_consent",
+            ],
         }
 
     def x402_payment_requirements(
@@ -129,19 +265,54 @@ class DirectAgentGateway:
         }
 
     def handle_direct_message(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        requester = self._clean(payload.get("requester_agent") or payload.get("from") or "")
-        requester_endpoint = self._clean(payload.get("requester_endpoint") or "")
-        message = self._clean(payload.get("message") or payload.get("problem") or "")
-        requester_wallet = self._clean(payload.get("requester_wallet") or "")
-        session_id = self._clean(payload.get("session_id") or "")
+        normalized = self._normalize_request(payload)
+        requester = normalized["requester_agent"]
+        requester_endpoint = normalized["requester_endpoint"]
+        message = normalized["message"]
+        requester_wallet = normalized["requester_wallet"]
+        session_id = normalized["session_id"]
         if not message:
             return {
                 "mode": "direct_agent_message",
                 "deal_found": False,
                 "ok": False,
                 "error": "message_required",
-                "message": "Send a concrete stuck-agent problem or human-in-the-loop blocker.",
+                "message": (
+                    "Send one blocker using message/problem or structured fields: "
+                    "problem, goal, blocking_step, constraints, budget_native."
+                ),
             }
+        guardrail = self.guardrails.evaluate(
+            action="direct.message",
+            args={
+                "message": message,
+                "requester_agent": requester,
+                "requester_endpoint": requester_endpoint,
+                "requester_wallet": requester_wallet,
+                "session_id": session_id,
+                "structured_request": normalized.get("structured_request") or {},
+            },
+        )
+        if guardrail.decision == GuardrailDecision.DENY:
+            return {
+                "mode": "direct_agent_message",
+                "deal_found": False,
+                "ok": False,
+                "error": "guardrail_denied",
+                "guardrail": guardrail.to_dict(),
+                "message": "Nomad blocked this direct message before storing or acting on it.",
+            }
+        guarded_args = guardrail.effective_args
+        message = str(guarded_args.get("message") or message).strip()
+        requester = str(guarded_args.get("requester_agent") or requester).strip()
+        requester_endpoint = str(guarded_args.get("requester_endpoint") or requester_endpoint).strip()
+        requester_wallet = str(guarded_args.get("requester_wallet") or requester_wallet).strip()
+        session_id = str(guarded_args.get("session_id") or session_id).strip()
+        normalized["message"] = message
+        normalized["requester_agent"] = requester
+        normalized["requester_endpoint"] = requester_endpoint
+        normalized["requester_wallet"] = requester_wallet
+        normalized["session_id"] = session_id
 
         session = self._get_or_create_session(
             session_id=session_id,
@@ -152,16 +323,20 @@ class DirectAgentGateway:
         )
         pain_type = self.classify_pain(message)
         diagnosis = self.free_mini_diagnosis(message, pain_type=pain_type)
+        need_profile = self._infer_agent_need_profile(normalized, pain_type=pain_type)
         task_result = self.service_desk.create_task(
             problem=message,
             requester_agent=requester,
             requester_wallet=requester_wallet,
             service_type=pain_type,
-            budget_native=payload.get("budget_native"),
+            budget_native=normalized.get("budget_native"),
             metadata={
                 "direct_session_id": session["session_id"],
                 "requester_endpoint": requester_endpoint,
                 "source": "direct_agent_message",
+                "input_schema": normalized.get("input_schema"),
+                "structured_request": normalized.get("structured_request") or {},
+                "need_profile": need_profile,
             },
         )
         task = task_result.get("task") or {}
@@ -170,14 +345,51 @@ class DirectAgentGateway:
             service_type=task.get("service_type", pain_type),
             task_id=task.get("task_id", ""),
         )
-        challenge = ((task.get("payment") or {}).get("x402") or challenge)
+        x402_payment = ((task.get("payment") or {}).get("x402") or {})
+        if isinstance(x402_payment, dict) and x402_payment:
+            challenge = {
+                **challenge,
+                **x402_payment,
+            }
+        commercial = task.get("commercial") or self._commercial_terms(
+            pain_type=pain_type,
+            requested_amount=normalized.get("budget_native") or challenge.get("amount_native"),
+        )
+        engagement_plan = self._build_engagement_plan(
+            pain_type=pain_type,
+            need_profile=need_profile,
+            challenge=challenge,
+        )
+        rescue_plan = self._rescue_plan(
+            problem=message,
+            pain_type=pain_type,
+            need_profile=need_profile,
+            engagement_plan=engagement_plan,
+            amount_native=challenge.get("amount_native"),
+        )
+        task.setdefault("metadata", {})["need_profile"] = need_profile
+        task["metadata"]["engagement_plan"] = engagement_plan
+        task["metadata"]["rescue_plan_id"] = rescue_plan.get("plan_id", "")
+        if hasattr(self.service_desk, "_store_task"):
+            try:
+                self.service_desk._store_task(task)
+            except Exception:
+                pass
         turn = {
             "at": datetime.now(UTC).isoformat(),
             "requester_message": message,
+            "normalized_request": normalized,
             "pain_type": pain_type,
             "free_diagnosis": diagnosis,
+            "agent_need_profile": need_profile,
+            "engagement_plan": engagement_plan,
+            "commercial": commercial,
+            "rescue_plan": rescue_plan,
             "task_id": task.get("task_id", ""),
             "payment_required": challenge,
+            "guardrails": {
+                "direct_message": guardrail.to_dict(),
+            },
         }
         session.setdefault("turns", []).append(turn)
         session["last_pain_type"] = pain_type
@@ -189,15 +401,39 @@ class DirectAgentGateway:
             "deal_found": False,
             "ok": True,
             "session": session,
+            "normalized_request": normalized,
             "free_diagnosis": diagnosis,
+            "agent_need_profile": need_profile,
+            "engagement_plan": engagement_plan,
+            "commercial": commercial,
+            "rescue_plan": rescue_plan,
             "task": task,
             "payment_required": challenge,
-            "next_agent_message": self._next_agent_message(requester, diagnosis, challenge),
+            "guardrails": {
+                "direct_message": guardrail.to_dict(),
+            },
+            "interaction_contract": self.interaction_contract(),
+            "structured_reply": self._structured_reply(
+                requester=requester,
+                diagnosis=diagnosis,
+                challenge=challenge,
+                need_profile=need_profile,
+                engagement_plan=engagement_plan,
+                commercial=commercial,
+                rescue_plan=rescue_plan,
+            ),
+            "next_agent_message": self._next_agent_message(
+                requester,
+                diagnosis,
+                challenge,
+                need_profile=need_profile,
+                engagement_plan=engagement_plan,
+                commercial=commercial,
+                rescue_plan=rescue_plan,
+            ),
             "self_improvement_memory": {
                 "will_store_after_consent": True,
-                "consent_prompt": (
-                    "May LoopHelper store the anonymized problem, fix and outcome for self-improvement?"
-                ),
+                "consent_prompt": "consent=self_improvement_memory_after_anonymization",
             },
         }
 
@@ -256,9 +492,61 @@ class DirectAgentGateway:
         }.get(pain_type, "Reduce the problem to one verifiable next action.")
         return {
             "pain_type": pain_type,
-            "summary": f"LoopHelper sees this as a {pain_type} blocker.",
+            "summary": f"Nomad classifies this as {pain_type}.",
+            "classification": pain_type,
             "first_30_seconds": next_step,
-            "paid_help_offer": "After payment, LoopHelper can walk the agent through the fix 1:1 and store the outcome as memory.",
+            "next_step": next_step,
+            "required_input_schema": [
+                "problem",
+                "goal",
+                "blocking_step",
+                "constraints",
+                "budget_native",
+            ],
+            "paid_help_offer": (
+                "After payment, Nomad can continue 1:1 on the blocker and package the outcome as reusable memory."
+            ),
+        }
+
+    def _normalize_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        message_payload = self._message_payload(payload)
+        requester = self._clean(
+            payload.get("requester_agent")
+            or payload.get("from")
+            or message_payload.get("from")
+            or ((message_payload.get("metadata") or {}).get("agent"))
+            or ((message_payload.get("metadata") or {}).get("name"))
+            or ""
+        )
+        requester_endpoint = self._clean(
+            payload.get("requester_endpoint")
+            or payload.get("endpoint")
+            or ((message_payload.get("metadata") or {}).get("endpoint"))
+            or ""
+        )
+        requester_wallet = self._clean(
+            payload.get("requester_wallet")
+            or payload.get("wallet")
+            or ((message_payload.get("metadata") or {}).get("wallet"))
+            or ""
+        )
+        session_id = self._clean(
+            payload.get("session_id")
+            or payload.get("contextId")
+            or ((payload.get("params") or {}).get("contextId") if isinstance(payload.get("params"), dict) else "")
+            or ""
+        )
+        structured_request = self._structured_request_fields(payload, message_payload)
+        message = self._compose_message(structured_request, message_payload, payload)
+        return {
+            "requester_agent": requester,
+            "requester_endpoint": requester_endpoint,
+            "requester_wallet": requester_wallet,
+            "session_id": session_id,
+            "message": message,
+            "budget_native": self._optional_float(structured_request.get("budget_native")),
+            "input_schema": self._input_schema(payload, structured_request),
+            "structured_request": structured_request,
         }
 
     def classify_pain(self, message: str) -> str:
@@ -268,6 +556,110 @@ class DirectAgentGateway:
             scores[pain_type] = sum(1 for term in terms if term in lowered)
         best = max(scores.items(), key=lambda item: (item[1], item[0]))
         return best[0] if best[1] > 0 else "custom"
+
+    def _infer_agent_need_profile(
+        self,
+        normalized: Dict[str, Any],
+        pain_type: str,
+    ) -> Dict[str, Any]:
+        message = self._clean(normalized.get("message"))
+        lowered = message.lower()
+        structured = normalized.get("structured_request") or {}
+        goal = self._clean(structured.get("goal"))
+        constraints = self._clean(structured.get("constraints"))
+        budget_native = normalized.get("budget_native")
+        urgency = "standard"
+        if any(token in lowered for token in ("urgent", "asap", "production", "outage", "blocked", "now")):
+            urgency = "urgent"
+        elif any(token in lowered for token in ("experiment", "later", "explore")):
+            urgency = "exploratory"
+        engagement_mode = "diagnosis_first"
+        if any(token in lowered for token in ("guardrail", "checklist", "next time", "reusable", "memory")):
+            engagement_mode = "memory_upgrade"
+        elif any(token in lowered for token in ("fix", "solve", "repair", "unblock", "restore")) or any(
+            token in goal.lower() for token in ("fix", "solve", "repair", "unblock", "restore")
+        ):
+            engagement_mode = "execute_unblock"
+        autonomy_boundary = "bounded_autonomy"
+        if any(token in constraints.lower() for token in ("no secret", "draft only", "approval", "human")):
+            autonomy_boundary = "strict_boundary"
+        elif pain_type == "human_in_loop":
+            autonomy_boundary = "human_coordinated"
+        budget_band = "unspecified"
+        if budget_native is not None:
+            if float(budget_native) < self.min_native:
+                budget_band = "below_starter"
+            elif float(budget_native) <= (self.min_native * 2):
+                budget_band = "starter_ready"
+            else:
+                budget_band = "working_budget"
+        elif any(token in lowered for token in ("cheap", "small budget", "low budget", "free")):
+            budget_band = "cost_sensitive"
+        preferred_output = {
+            "human_in_loop": "unlock_contract",
+            "loop_break": "loop_break_plan",
+            "hallucination": "verifier_plan",
+            "memory": "memory_object",
+            "payment": "payment_recovery_plan",
+            "compute_auth": "fallback_lane_plan",
+        }.get(pain_type, "bounded_plan")
+        return {
+            "urgency": urgency,
+            "engagement_mode": engagement_mode,
+            "autonomy_boundary": autonomy_boundary,
+            "budget_band": budget_band,
+            "preferred_output": preferred_output,
+            "memory_value": engagement_mode == "memory_upgrade",
+            "stated_budget_native": budget_native,
+        }
+
+    def _build_engagement_plan(
+        self,
+        pain_type: str,
+        need_profile: Dict[str, Any],
+        challenge: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        package = ENGAGEMENT_PACKAGES.get(pain_type, ENGAGEMENT_PACKAGES["custom"])
+        service_title = SERVICE_TYPES.get(pain_type, SERVICE_TYPES["custom"])["title"]
+        quoted_amount = self._optional_float(challenge.get("amount_native")) or self.min_native
+        stated_budget = self._optional_float(need_profile.get("stated_budget_native"))
+        budget_fit = "quote_ready"
+        if stated_budget is not None and stated_budget >= quoted_amount:
+            budget_fit = "within_budget"
+        elif stated_budget is not None and stated_budget >= self.min_native:
+            budget_fit = "diagnosis_only_budget"
+        elif need_profile.get("budget_band") == "below_starter":
+            budget_fit = "below_starter"
+        offer_tier = "starter_diagnosis"
+        if budget_fit == "below_starter":
+            offer_tier = "free_diagnosis_only"
+        elif need_profile.get("engagement_mode") == "memory_upgrade":
+            offer_tier = "resolution_plus_memory"
+        elif need_profile.get("engagement_mode") == "execute_unblock":
+            offer_tier = "paid_unblock"
+        fit_reason = (
+            f"{package['package']} fits because the requester needs "
+            f"{need_profile.get('preferred_output', 'a bounded artifact')} with "
+            f"{need_profile.get('autonomy_boundary', 'bounded autonomy')}."
+        )
+        commercial_path = [
+            package["free_scope"],
+            package["paid_scope"],
+            package["memory_upgrade"],
+        ]
+        return {
+            "service_title": service_title,
+            "package": package["package"],
+            "offer_tier": offer_tier,
+            "budget_fit": budget_fit,
+            "quoted_amount_native": quoted_amount,
+            "delivery": package["delivery"],
+            "memory_upgrade": package["memory_upgrade"],
+            "free_scope": package["free_scope"],
+            "paid_scope": package["paid_scope"],
+            "fit_reason": fit_reason,
+            "commercial_path": commercial_path,
+        }
 
     def session_status(self, session_id: str) -> Dict[str, Any]:
         session = self._get_session(session_id)
@@ -291,13 +683,262 @@ class DirectAgentGateway:
         requester: str,
         diagnosis: Dict[str, Any],
         challenge: Dict[str, Any],
+        need_profile: Optional[Dict[str, Any]] = None,
+        engagement_plan: Optional[Dict[str, Any]] = None,
+        commercial: Optional[Dict[str, Any]] = None,
+        rescue_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
-        name = requester or "agent"
-        return (
-            f"Hey {name}, I can help. Free mini-diagnosis: {diagnosis['first_30_seconds']} "
-            f"If you want me to solve it with you 1:1, pay {challenge['amount_native']} "
-            f"{challenge['asset']} to {challenge['recipient']} and send the tx_hash."
+        payload = self._structured_reply(
+            requester=requester,
+            diagnosis=diagnosis,
+            challenge=challenge,
+            need_profile=need_profile or {},
+            engagement_plan=engagement_plan or {},
+            commercial=commercial or {},
+            rescue_plan=rescue_plan or {},
         )
+        lines = ["nomad.reply.v1"]
+        for key, value in payload.items():
+            lines.append(f"{key}={value}")
+        return "\n".join(lines)
+
+    def _structured_reply(
+        self,
+        requester: str,
+        diagnosis: Dict[str, Any],
+        challenge: Dict[str, Any],
+        need_profile: Optional[Dict[str, Any]] = None,
+        engagement_plan: Optional[Dict[str, Any]] = None,
+        commercial: Optional[Dict[str, Any]] = None,
+        rescue_plan: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, str]:
+        need_profile = need_profile or {}
+        engagement_plan = engagement_plan or {}
+        commercial = commercial or {}
+        rescue_plan = rescue_plan or {}
+        commercial_next_step = rescue_plan.get("commercial_next_step") or {}
+        package_name = str(
+            commercial_next_step.get("package")
+            or engagement_plan.get("package")
+            or ""
+        )
+        ladder = commercial or {}
+        starter_offer = ladder.get("starter_offer") or {}
+        primary_offer = ladder.get("primary_offer") or {}
+        entry_path = "primary_only"
+        if (
+            starter_offer
+            and primary_offer
+            and self._optional_float(starter_offer.get("amount_native")) is not None
+            and self._optional_float(primary_offer.get("amount_native")) is not None
+            and float(starter_offer.get("amount_native") or 0.0) < float(primary_offer.get("amount_native") or 0.0)
+        ):
+            entry_path = "starter_first"
+        return {
+            "schema": "nomad.reply.v1",
+            "requester": requester or "agent",
+            "classification": str(diagnosis.get("classification") or diagnosis.get("pain_type") or "custom"),
+            "diagnosis": str(diagnosis.get("summary") or ""),
+            "rescue_plan_id": str(rescue_plan.get("plan_id") or ""),
+            "fit": str(engagement_plan.get("fit_reason") or ""),
+            "offer_tier": str(engagement_plan.get("offer_tier") or ""),
+            "next_step": str(diagnosis.get("next_step") or diagnosis.get("first_30_seconds") or ""),
+            "required_input": str(rescue_plan.get("required_input") or ""),
+            "acceptance": " | ".join(str(item) for item in (rescue_plan.get("acceptance_criteria") or [])[:2]),
+            "delivery": str(engagement_plan.get("delivery") or ""),
+            "preferred_output": str(need_profile.get("preferred_output") or ""),
+            "package": package_name,
+            "payment_required": "true",
+            "amount_native": str(
+                challenge.get("amount_native")
+                or primary_offer.get("amount_native")
+                or starter_offer.get("amount_native")
+                or ""
+            ),
+            "starter_offer": str(starter_offer.get("title") or ""),
+            "starter_amount_native": str(starter_offer.get("amount_native") or ""),
+            "primary_offer": str(primary_offer.get("title") or ""),
+            "primary_amount_native": str(primary_offer.get("amount_native") or challenge.get("amount_native") or ""),
+            "payment_entry_path": entry_path,
+            "asset": str(challenge.get("asset") or ""),
+            "recipient": str(challenge.get("recipient") or ""),
+            "reply_mode_preference": "task_when_stateful_else_message",
+            "task_states": "submitted|working|input_required|auth_required|completed|failed|rejected",
+            "idempotency": "reuse_contextId_or_request_id_on_retry",
+            "ttl_seconds": "600",
+            "reply_schema": "problem|goal|blocking_step|constraints|budget_native",
+        }
+
+    def _rescue_plan(
+        self,
+        problem: str,
+        pain_type: str,
+        need_profile: Dict[str, Any],
+        engagement_plan: Dict[str, Any],
+        amount_native: Any = None,
+    ) -> Dict[str, Any]:
+        if hasattr(self.service_desk, "build_rescue_plan"):
+            try:
+                return self.service_desk.build_rescue_plan(
+                    problem=problem,
+                    service_type=pain_type,
+                    need_profile=need_profile,
+                    engagement_plan=engagement_plan,
+                    budget_native=self._optional_float(amount_native),
+                )
+            except Exception:
+                pass
+        return {
+            "schema": "nomad.rescue_plan.v1",
+            "plan_id": f"rescue-{hashlib.sha256(problem.encode('utf-8')).hexdigest()[:10]}",
+            "service_type": pain_type,
+            "diagnosis": f"Nomad classifies this as {pain_type}.",
+            "safe_now": [self.free_mini_diagnosis(problem, pain_type=pain_type)["next_step"]],
+            "required_input": "`FACT_URL=https://...`, `ERROR=...`, or `REPRO_STEPS=...`.",
+            "acceptance_criteria": [
+                "The requester has one concrete next action.",
+                "No public or private boundary is crossed without approval.",
+            ],
+            "commercial_next_step": engagement_plan,
+        }
+
+    def _commercial_terms(
+        self,
+        pain_type: str,
+        requested_amount: Any = None,
+    ) -> Dict[str, Any]:
+        requested = self._optional_float(requested_amount) or self.min_native
+        helper = getattr(self.service_desk, "_commercial_terms", None)
+        if callable(helper):
+            try:
+                return helper(service_type=pain_type, requested_amount=requested)
+            except Exception:
+                pass
+        starter_offer = {
+            "title": f"{ENGAGEMENT_PACKAGES.get(pain_type, ENGAGEMENT_PACKAGES['custom'])['package']}: Starter diagnosis",
+            "amount_native": self.min_native,
+        }
+        primary_offer = {
+            "title": ENGAGEMENT_PACKAGES.get(pain_type, ENGAGEMENT_PACKAGES["custom"])["package"],
+            "amount_native": requested,
+        }
+        entry_path = "starter_first" if requested > self.min_native else "primary_only"
+        nudge = (
+            f"Start with the smaller {starter_offer['title']} first."
+            if entry_path == "starter_first"
+            else f"Pay the primary {primary_offer['title']} to move into work."
+        )
+        return {
+            "offer_ladder": [],
+            "starter_offer": starter_offer,
+            "primary_offer": primary_offer,
+            "payment_entry_path": entry_path,
+            "nudge": nudge,
+        }
+
+    def _message_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+        direct_message = payload.get("message")
+        if isinstance(direct_message, dict):
+            return direct_message
+        params = payload.get("params")
+        if isinstance(params, dict):
+            candidate = params.get("message")
+            if isinstance(candidate, dict):
+                return candidate
+        return {}
+
+    def _structured_request_fields(
+        self,
+        payload: Dict[str, Any],
+        message_payload: Dict[str, Any],
+    ) -> Dict[str, str]:
+        metadata = message_payload.get("metadata") if isinstance(message_payload.get("metadata"), dict) else {}
+        return {
+            "problem": self._clean(
+                payload.get("problem")
+                or metadata.get("problem")
+                or self._extract_text_from_message(message_payload)
+                or payload.get("message")
+                or ""
+            ),
+            "goal": self._clean(payload.get("goal") or metadata.get("goal") or ""),
+            "blocking_step": self._clean(
+                payload.get("blocking_step")
+                or payload.get("blockingStep")
+                or metadata.get("blocking_step")
+                or metadata.get("blockingStep")
+                or ""
+            ),
+            "constraints": self._constraints_text(
+                payload.get("constraints")
+                or metadata.get("constraints")
+                or ""
+            ),
+            "budget_native": self._clean(
+                payload.get("budget_native")
+                or payload.get("budgetNative")
+                or metadata.get("budget_native")
+                or metadata.get("budgetNative")
+                or ""
+            ),
+        }
+
+    def _compose_message(
+        self,
+        structured_request: Dict[str, str],
+        message_payload: Dict[str, Any],
+        payload: Dict[str, Any],
+    ) -> str:
+        explicit_message = self._clean(payload.get("message") if not isinstance(payload.get("message"), dict) else "")
+        parts_text = self._extract_text_from_message(message_payload)
+        if explicit_message:
+            return explicit_message
+        if parts_text and not any(
+            structured_request.get(key)
+            for key in ("goal", "blocking_step", "constraints", "budget_native")
+        ):
+            return parts_text
+        lines: List[str] = []
+        for key in ("problem", "goal", "blocking_step", "constraints", "budget_native"):
+            value = self._clean(structured_request.get(key))
+            if value:
+                lines.append(f"{key}: {value}")
+        return "\n".join(lines).strip()
+
+    def _input_schema(self, payload: Dict[str, Any], structured_request: Dict[str, str]) -> str:
+        if self._clean(payload.get("jsonrpc")) == "2.0":
+            return "a2a_jsonrpc"
+        if any(self._clean(structured_request.get(key)) for key in ("goal", "blocking_step", "constraints")):
+            return "structured_fields"
+        return "flat_message"
+
+    def _extract_text_from_message(self, message: Dict[str, Any]) -> str:
+        if not isinstance(message, dict):
+            return ""
+        parts = message.get("parts") or []
+        texts: List[str] = []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            kind = self._clean(part.get("kind") or part.get("type"))
+            if kind == "text":
+                text = self._clean(part.get("text"))
+                if text:
+                    texts.append(text)
+        return "\n".join(texts).strip()
+
+    def _constraints_text(self, value: Any) -> str:
+        if isinstance(value, list):
+            return "; ".join(self._clean(item) for item in value if self._clean(item))
+        if isinstance(value, dict):
+            return "; ".join(
+                f"{self._clean(key)}={self._clean(item)}"
+                for key, item in value.items()
+                if self._clean(key) and self._clean(item)
+            )
+        return self._clean(value)
 
     def _get_or_create_session(
         self,
@@ -368,3 +1009,12 @@ class DirectAgentGateway:
     @staticmethod
     def _clean(value: Any) -> str:
         return str(value or "").strip()
+
+    @staticmethod
+    def _optional_float(value: Any) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None

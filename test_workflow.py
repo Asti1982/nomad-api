@@ -84,6 +84,48 @@ def test_compute_audit_request_routes():
     assert result["profile"]["id"] == "ai_first"
 
 
+def test_addon_and_quantum_requests_route_to_nomadds_layer():
+    agent = ArbiterAgent()
+    agent.addons.status = lambda: {
+        "mode": "nomad_addon_scan",
+        "deal_found": False,
+        "ok": True,
+        "addons": [],
+        "stats": {"discovered": 0},
+    }
+    agent.addons.run_quantum_self_improvement = lambda objective="", context=None: {
+        "mode": "nomad_quantum_tokens",
+        "deal_found": False,
+        "ok": True,
+        "objective": objective,
+        "context": context or {},
+        "tokens": [{"qtoken_id": "qtok-test"}],
+    }
+
+    addons = agent.run("/addons")
+    quantum = agent.run("/quantum reduce self-improvement loops")
+
+    assert addons["mode"] == "nomad_addon_scan"
+    assert quantum["mode"] == "nomad_quantum_tokens"
+    assert "reduce self-improvement loops" in quantum["objective"]
+
+
+def test_market_scan_request_routes():
+    agent = ArbiterAgent()
+    agent.infra.market_scan = lambda focus="balanced", limit=4: {
+        "mode": "market_scan",
+        "deal_found": False,
+        "focus": focus,
+        "competitors": [{"name": "ClawNet"}],
+        "compute_opportunities": [{"name": "Cloudflare Workers AI"}],
+        "analysis": "market ok",
+    }
+    result = agent.run("/market compute")
+    assert result["mode"] == "market_scan"
+    assert result["focus"] == "compute_auth"
+    assert result["competitors"][0]["name"] == "ClawNet"
+
+
 def test_unlock_compute_request_routes():
     agent = ArbiterAgent()
     agent.infra.activation_request = lambda category="compute", profile_id="ai_first": {
@@ -332,6 +374,21 @@ def test_cold_outreach_without_endpoints_routes_to_discovery_campaign():
     assert result["campaign"]["seeds"] == []
 
 
+def test_agent_contact_poll_routes_to_outbox():
+    agent = ArbiterAgent()
+    agent.agent_contacts.poll_contact = lambda contact_id: {
+        "mode": "agent_contact",
+        "deal_found": False,
+        "ok": True,
+        "contact": {"contact_id": contact_id, "status": "replied"},
+    }
+
+    result = agent.run("/agent-contact poll contact-123")
+
+    assert result["mode"] == "agent_contact"
+    assert result["contact"]["contact_id"] == "contact-123"
+
+
 def test_unlock_compute_includes_fresh_task_metadata():
     agent = ArbiterAgent()
     agent.infra.compute_probe.snapshot = lambda: {
@@ -366,6 +423,33 @@ def test_partial_github_models_does_not_ask_for_new_token():
     concrete = infra._make_activation_request_concrete(request)
     assert "No new GitHub token is needed" in concrete["human_action"]
     assert "/skip last" in concrete["human_deliverable"]
+
+
+def test_rate_limited_github_models_does_not_suggest_token_rotation():
+    infra = InfrastructureScout()
+    profile = infra.profiles["ai_first"]
+    request = infra._build_compute_request_payload(
+        item={
+            "id": "github-models",
+            "name": "GitHub Models",
+            "source_url": "https://docs.github.com/en/github-models",
+        },
+        state="partial",
+        profile=profile,
+        prefer_fallback=True,
+        provider_payload={
+            "configured": True,
+            "reachable": True,
+            "available": False,
+            "status_code": 429,
+            "issue": "github_models_rate_limited",
+            "message": "GitHub Models is reachable but rate limited this request.",
+        },
+    )
+    concrete = infra._make_activation_request_concrete(request)
+    assert "rate-limited" in concrete["ask"]
+    assert "Do not rotate" in " ".join(concrete["steps"])
+    assert "No new GitHub token is needed" in concrete["human_action"]
 
 
 def test_unlock_non_compute_always_generates_fresh_request():

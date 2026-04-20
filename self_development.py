@@ -25,6 +25,7 @@ class SelfDevelopmentJournal:
             payload.setdefault("open_human_unlock", None)
             payload.setdefault("self_development_unlocks", [])
             payload.setdefault("last_cycle_at", "")
+            payload.setdefault("last_agent_pain_solution", None)
             return payload
         except Exception:
             return self._empty_state()
@@ -52,6 +53,7 @@ class SelfDevelopmentJournal:
                     for item in (result.get("local_actions") or [])[:4]
                 ],
                 "last_lead": (result.get("lead_scout") or {}).get("active_lead"),
+                "last_agent_pain_solution": self._compact_agent_pain_solution(result),
                 "cycles": cycles,
             }
         )
@@ -71,8 +73,10 @@ class SelfDevelopmentJournal:
         if active_lead:
             url = active_lead.get("url") or active_lead.get("name") or "active lead"
             pain = active_lead.get("pain") or "visible infrastructure pain"
+            pain_class = active_lead.get("addressable_label") or active_lead.get("recommended_service_type") or ""
+            class_text = f" in {pain_class}" if pain_class else ""
             return (
-                f"Work active lead {url}. Validate pain: {pain}. Draft the first useful help action "
+                f"Work active lead {url}{class_text}. Validate pain: {pain}. Draft the first useful help action "
                 "without posting publicly."
             )
 
@@ -83,6 +87,13 @@ class SelfDevelopmentJournal:
             return (
                 f"Reduce dependency on human unlock '{name}' in {category}: find an alternative, "
                 "a skip path, or a clearer verification step."
+            )
+
+        agent_solution = self._compact_agent_pain_solution(result) or previous_state.get("last_agent_pain_solution")
+        if agent_solution and agent_solution.get("next_nomad_action"):
+            return (
+                f"Apply reusable agent solution '{agent_solution.get('title')}' for "
+                f"{agent_solution.get('pain_type')}: {agent_solution.get('next_nomad_action')}"
             )
 
         local_actions = result.get("local_actions") or previous_state.get("last_local_actions") or []
@@ -109,6 +120,7 @@ class SelfDevelopmentJournal:
         if active_lead:
             url = active_lead.get("url") or active_lead.get("name") or "active lead"
             pain = active_lead.get("pain") or "visible infrastructure pain"
+            pain_class = active_lead.get("addressable_label") or active_lead.get("recommended_service_type") or ""
             unlocks.append(
                 self._unlock_payload(
                     candidate_id="approve-active-lead-help",
@@ -123,7 +135,8 @@ class SelfDevelopmentJournal:
                         "`APPROVE_LEAD_HELP=pr_plan`, or `/skip last`."
                     ),
                     reason=(
-                        f"Nomad found an active lead with pain signal: {pain}. It should not contact or post "
+                        f"Nomad found an active lead with pain signal: {pain}"
+                        f"{f' in {pain_class}' if pain_class else ''}. It should not contact or post "
                         "publicly without human permission."
                     ),
                     success_criteria=[
@@ -214,8 +227,8 @@ class SelfDevelopmentJournal:
     @staticmethod
     def default_objective() -> str:
         return (
-            "Find one concrete AI-agent infrastructure pain lead, improve Nomad's scout quality, "
-            "and end with one verifiable next action."
+            "Find one concrete AI-agent compute/auth pain lead, improve Nomad's scout quality, "
+            "and convert it into one verifiable next action or paid help path."
         )
 
     def status_text(self) -> str:
@@ -235,6 +248,92 @@ class SelfDevelopmentJournal:
         if dev_unlocks:
             first = dev_unlocks[0]
             lines.append(f"Next human self-dev unlock: {first.get('short_ask')}")
+        agent_solution = state.get("last_agent_pain_solution") or {}
+        if agent_solution:
+            lines.append(
+                f"Last agent pain solution: {agent_solution.get('title')} ({agent_solution.get('pain_type')})"
+            )
+        return "\n".join(lines)
+
+    def codex_task_prompt(self, autopilot_state_path: Optional[Path] = None) -> str:
+        state = self.load()
+        autopilot_path = autopilot_state_path or Path(__file__).resolve().parent / "nomad_autopilot_state.json"
+        autopilot = self._load_optional_json(autopilot_path)
+        compute_watch = (autopilot.get("last_self_improvement") or {}).get("compute_watch") or {}
+        lead_watch = (autopilot.get("last_self_improvement") or {}).get("lead_watch") or {}
+        open_unlock = state.get("open_human_unlock") or {}
+        dev_unlocks = state.get("self_development_unlocks") or []
+        next_unlock = dev_unlocks[0] if dev_unlocks else {}
+        lines = [
+            "Nomad self-development task for Codex",
+            "",
+            "Please implement the next bounded improvement for Nomad directly in this repo.",
+            "",
+            f"Primary objective: {state.get('next_objective') or self.default_objective()}",
+        ]
+        current_objective = state.get("current_objective") or ""
+        if current_objective:
+            lines.append(f"Current objective: {current_objective}")
+        if state.get("last_lead"):
+            lead = state["last_lead"]
+            active_line = (
+                f"Active lead: {(lead.get('url') or lead.get('name') or '').strip()} | "
+                f"pain: {lead.get('pain') or 'unknown'} | "
+                f"class: {lead.get('addressable_label') or lead.get('recommended_service_type') or 'unknown'}"
+            )
+            if lead.get("quote_summary"):
+                active_line += f" | quote: {lead.get('quote_summary')}"
+            if lead.get("product_package"):
+                active_line += f" | product: {lead.get('product_package')}"
+            lines.append(active_line)
+        if compute_watch:
+            lines.append(
+                "Compute watch: "
+                f"needs_attention={bool(compute_watch.get('needs_attention'))}, "
+                f"brain_count={compute_watch.get('brain_count', 0)}, "
+                f"active_lanes={', '.join(compute_watch.get('active_lanes') or []) or 'none'}."
+            )
+            if compute_watch.get("headline"):
+                lines.append(f"Compute headline: {compute_watch['headline']}")
+        if lead_watch:
+            lines.append(
+                "Lead watch: "
+                f"lead_count={lead_watch.get('lead_count', 0)}, "
+                f"compute_lead_count={lead_watch.get('compute_lead_count', 0)}."
+            )
+        if open_unlock:
+            lines.append(
+                f"Open unlock: {open_unlock.get('candidate_name') or 'unknown'} | {open_unlock.get('short_ask') or ''}"
+            )
+        if next_unlock:
+            lines.append(
+                f"Next human self-dev unlock: {next_unlock.get('short_ask') or next_unlock.get('candidate_name') or ''}"
+            )
+        agent_solution = state.get("last_agent_pain_solution") or {}
+        if agent_solution:
+            lines.append(
+                "Last reusable agent solution: "
+                f"{agent_solution.get('title') or 'unknown'} for {agent_solution.get('pain_type') or 'unknown'}; "
+                f"next self-apply: {agent_solution.get('next_nomad_action') or 'not recorded'}"
+            )
+        public_url = autopilot.get("last_public_api_url") or ""
+        if public_url:
+            lines.append(f"Current public URL: {public_url}")
+        lines.extend(
+            [
+                "",
+                "Constraints:",
+                "- Keep changes bounded and practical.",
+                "- Prefer free/open compute and agent-friendly workflows.",
+                "- Improve Nomad's ability to earn, self-improve, or help other agents.",
+                "- Run the relevant tests after changes.",
+                "",
+                "When finished, report:",
+                "- what changed,",
+                "- what it improves,",
+                "- and the next best Nomad objective.",
+            ]
+        )
         return "\n".join(lines)
 
     def _empty_state(self) -> Dict[str, Any]:
@@ -248,8 +347,19 @@ class SelfDevelopmentJournal:
             "last_external_review_count": 0,
             "last_local_actions": [],
             "last_lead": None,
+            "last_agent_pain_solution": None,
             "cycles": [],
         }
+
+    @staticmethod
+    def _load_optional_json(path: Path) -> Dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
 
     def _cycle_entry(self, result: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -262,6 +372,7 @@ class SelfDevelopmentJournal:
                 self._compact_action(item)
                 for item in (result.get("local_actions") or [])[:4]
             ],
+            "agent_pain_solution": self._compact_agent_pain_solution(result),
         }
 
     @staticmethod
@@ -315,4 +426,19 @@ class SelfDevelopmentJournal:
             "title": action.get("title"),
             "reason": action.get("reason"),
             "requires_human": action.get("requires_human", False),
+        }
+
+    @staticmethod
+    def _compact_agent_pain_solution(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        solver = result.get("agent_pain_solver") or {}
+        solution = solver.get("solution") or {}
+        if not solution:
+            return None
+        guardrail = solution.get("guardrail") or {}
+        return {
+            "solution_id": solution.get("solution_id", ""),
+            "pain_type": solution.get("pain_type", ""),
+            "title": solution.get("title", ""),
+            "guardrail_id": guardrail.get("id", ""),
+            "next_nomad_action": solver.get("next_nomad_action", ""),
         }

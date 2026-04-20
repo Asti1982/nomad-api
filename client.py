@@ -53,12 +53,23 @@ class ArbiterWeb3:
         if Web3 is None:
             return False
         private_key = os.getenv("AGENT_PRIVATE_KEY") or ""
-        rpc_url = os.getenv("RPC_URL") or ""
-        return bool(
+        rpc_url = os.getenv("RPC_URL") or get_chain_config().rpc_url or ""
+        configured = bool(
             rpc_url
             and private_key
             and private_key.lower() not in PLACEHOLDER_VALUES
         )
+        if not configured:
+            return False
+        try:
+            timeout_seconds = float(os.getenv("RPC_CONNECT_TIMEOUT_SECONDS", "1.0"))
+            provider = Web3.HTTPProvider(
+                rpc_url,
+                request_kwargs={"timeout": timeout_seconds},
+            )
+            return bool(Web3(provider).is_connected())
+        except Exception:
+            return False
         
     def record_arbitrage(self, deal_data: dict) -> str:
         """

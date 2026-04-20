@@ -10,3 +10,7 @@ nomad_service_tasks.json
 nomad_agent_contacts.json
 nomad_direct_sessions.json
 nomad_agent_campaigns.json
+nomad_active_lead_plan.json
+nomad_autopilot_state.json
+nomad_lead_conversions.json
+nomad_products.json

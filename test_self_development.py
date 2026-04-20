@@ -37,12 +37,14 @@ def test_self_development_journal_prefers_active_lead(tmp_path):
             "active_lead": {
                 "url": "https://github.com/example/agent/issues/1",
                 "pain": "agent deployment quota failure",
+                "addressable_label": "Compute/auth unblock",
             }
         },
     }
     state = journal.record_cycle(result)
     assert "https://github.com/example/agent/issues/1" in state["next_objective"]
     assert "agent deployment quota failure" in state["next_objective"]
+    assert "Compute/auth unblock" in state["next_objective"]
     unlock = state["self_development_unlocks"][0]
     assert unlock["candidate_id"] == "approve-active-lead-help"
     assert "APPROVE_LEAD_HELP" in unlock["human_deliverable"]
@@ -69,3 +71,52 @@ def test_self_development_journal_names_human_unlock_for_abstract_lead_discovery
     unlock = state["self_development_unlocks"][0]
     assert unlock["candidate_id"] == "seed-agent-customer-source"
     assert "LEAD_URL" in unlock["human_deliverable"]
+
+
+def test_self_development_journal_renders_codex_task_prompt(tmp_path):
+    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal.record_cycle(
+        {
+            "objective": "find leads",
+            "external_review_count": 1,
+            "local_actions": [],
+            "human_unlocks": [],
+            "lead_scout": {
+                "active_lead": {
+                    "url": "https://github.com/example/agent/issues/9",
+                    "pain": "compute quota",
+                    "addressable_label": "Compute/auth unblock",
+                    "quote_summary": "diagnosis 0.001-0.003 native, unblock 0.004-0.012 native",
+                    "product_package": "Nomad Compute Unlock Pack",
+                }
+            },
+        }
+    )
+    autopilot_state = tmp_path / "autopilot.json"
+    autopilot_state.write_text(
+        (
+            "{\n"
+            '  "last_public_api_url": "https://nomad.example",\n'
+            '  "last_self_improvement": {\n'
+            '    "compute_watch": {\n'
+            '      "needs_attention": true,\n'
+            '      "brain_count": 1,\n'
+            '      "active_lanes": ["ollama"],\n'
+            '      "headline": "Unlock GitHub Models next."\n'
+            "    },\n"
+            '    "lead_watch": {"lead_count": 1, "compute_lead_count": 1}\n'
+            "  }\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = journal.codex_task_prompt(autopilot_state_path=autopilot_state)
+
+    assert "Nomad self-development task for Codex" in prompt
+    assert "https://github.com/example/agent/issues/9" in prompt
+    assert "Compute/auth unblock" in prompt
+    assert "0.001-0.003 native" in prompt
+    assert "Nomad Compute Unlock Pack" in prompt
+    assert "Compute watch:" in prompt
+    assert "https://nomad.example" in prompt

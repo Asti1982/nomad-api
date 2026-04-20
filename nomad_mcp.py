@@ -3,6 +3,7 @@ import sys
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from mission import MISSION_STATEMENT, mission_text
+from nomad_guardrails import guardrail_status
 from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
 
@@ -82,6 +83,22 @@ class NomadMcpServer:
                 "inputSchema": self._schema({"profile": "Profile id, default ai_first"}),
             },
             {
+                "name": "nomad_addons",
+                "title": "Nomad Addons",
+                "description": "Scan the Nomadds drop folder in safe manifest-first mode without executing addon code.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_quantum_tokens",
+                "title": "Nomad Quantum Tokens",
+                "description": "Generate quantum-inspired self-improvement qtokens for agent exploration and critic routing.",
+                "inputSchema": self._schema(
+                    {
+                        "objective": "Optional self-improvement objective.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_unlock",
                 "title": "Nomad Unlock Task",
                 "description": "Generate the best next concrete human-in-the-loop unlock task.",
@@ -120,6 +137,79 @@ class NomadMcpServer:
                 "title": "Nomad Public Agent Leads",
                 "description": "Find public AI-agent infrastructure pain leads without contacting anyone.",
                 "inputSchema": self._schema({"query": "Optional public issue/search query."}),
+            },
+            {
+                "name": "nomad_agent_pain_solver",
+                "title": "Nomad Agent Pain Solver",
+                "description": "Turn one AI-agent pain point into a reusable solution Nomad can also apply to itself.",
+                "inputSchema": self._schema(
+                    {
+                        "problem": "Concrete agent pain point or blocker.",
+                        "service_type": "Optional type such as loop_break, compute_auth, human_in_loop, memory, payment or mcp_integration.",
+                    },
+                    required=["problem"],
+                ),
+            },
+            {
+                "name": "nomad_reliability_doctor",
+                "title": "Nomad Reliability Doctor",
+                "description": "Classify an agent failure into Critic, Diagnoser/Fixer, Healer, Trace-Healer, or Reviewer loops.",
+                "inputSchema": self._schema(
+                    {
+                        "problem": "Concrete agent failure, bad output, loop, tool error, execution failure, or self-correction gap.",
+                        "service_type": "Optional type such as hallucination, bad_planning, tool_failure, execution_failure, loop_break, compute_auth, memory, payment, or repo_issue_help.",
+                    },
+                    required=["problem"],
+                ),
+            },
+            {
+                "name": "nomad_guardrails",
+                "title": "Nomad Runtime Guardrails",
+                "description": "Check a proposed Nomad action and return allow, modify, or deny before execution.",
+                "inputSchema": self._schema(
+                    {
+                        "action": "Action name such as service.create_task, agent_contact.send, github.comment, or manual.check.",
+                        "text": "Optional human-readable payload to check.",
+                        "url": "Optional target URL.",
+                        "approval": "Optional explicit approval scope.",
+                    },
+                    required=["action"],
+                ),
+            },
+            {
+                "name": "nomad_lead_conversion_pipeline",
+                "title": "Nomad Lead Conversion Pipeline",
+                "description": "Find public agent-pain leads, generate nomad.agent_value_pack.v1 free value, route safe outreach, and track customer conversion.",
+                "inputSchema": self._schema(
+                    {
+                        "query": "Optional public lead search query.",
+                        "limit": "Maximum number of leads to convert.",
+                        "send": "Whether to send only to eligible public machine-readable agent endpoints.",
+                        "budget_hint_native": "Optional native-token budget hint.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_product_factory",
+                "title": "Nomad Product Factory",
+                "description": "Turn lead conversions into reusable nomad.product.v1 offers with SKU, service template, guardrails, and paid upgrade path.",
+                "inputSchema": self._schema(
+                    {
+                        "query": "Optional lead query or explicit lead text to productize.",
+                        "limit": "Maximum number of leads or conversions to productize.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_products",
+                "title": "Nomad Products",
+                "description": "List stored Nomad product offers created from lead conversions.",
+                "inputSchema": self._schema(
+                    {
+                        "status": "Optional status or comma-separated statuses.",
+                        "limit": "Maximum number of products to list.",
+                    },
+                ),
             },
             {
                 "name": "nomad_service_catalog",
@@ -320,6 +410,51 @@ class NomadMcpServer:
             return self.agent.lead_discovery.scout_public_leads(
                 query=str(arguments.get("query") or "").strip()
             )
+        if name == "nomad_agent_pain_solver":
+            return self.agent.agent_pain_solver.solve(
+                problem=str(arguments.get("problem") or "").strip(),
+                service_type=str(arguments.get("service_type") or "").strip(),
+                source="mcp_tool",
+            )
+        if name == "nomad_reliability_doctor":
+            return self.agent.agent_reliability_doctor.diagnose(
+                problem=str(arguments.get("problem") or "").strip(),
+                service_type=str(arguments.get("service_type") or "").strip(),
+                source="mcp_tool",
+            )
+        if name == "nomad_guardrails":
+            return guardrail_status(
+                action=str(arguments.get("action") or "manual.check").strip(),
+                approval=str(arguments.get("approval") or "").strip(),
+                args={
+                    "text": str(arguments.get("text") or "").strip(),
+                    "url": str(arguments.get("url") or "").strip(),
+                },
+            )
+        if name == "nomad_lead_conversion_pipeline":
+            return self.agent.lead_conversion.run(
+                query=str(arguments.get("query") or "").strip(),
+                limit=int(arguments.get("limit") or 5),
+                send=bool(arguments.get("send", False)),
+                budget_hint_native=self._optional_float(arguments.get("budget_hint_native")),
+            )
+        if name == "nomad_product_factory":
+            return self.agent.product_factory.run(
+                query=str(arguments.get("query") or "").strip(),
+                limit=int(arguments.get("limit") or 5),
+            )
+        if name == "nomad_products":
+            return self.agent.product_factory.list_products(
+                statuses=self._status_list(arguments.get("status") or arguments.get("statuses")),
+                limit=int(arguments.get("limit") or 25),
+            )
+        if name == "nomad_addons":
+            return self.agent.addons.status()
+        if name == "nomad_quantum_tokens":
+            return self.agent.addons.run_quantum_self_improvement(
+                objective=str(arguments.get("objective") or "").strip(),
+                context={"source": "mcp_tool"},
+            )
         if name == "nomad_service_catalog":
             return self.agent.service_desk.service_catalog()
         if name == "nomad_service_request":
@@ -422,6 +557,18 @@ class NomadMcpServer:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _status_list(value: Any) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return [
+            item.strip()
+            for item in str(value).split(",")
+            if item.strip()
+        ]
+
     def _tool_query(self, name: str, arguments: Dict[str, Any]) -> str:
         profile = str(arguments.get("profile") or "ai_first").strip()
         suffix = f" for {profile}" if profile else ""
@@ -471,6 +618,24 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://products",
+                "name": "Nomad Products",
+                "description": "Productized lead-conversion offers as JSON.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://addons",
+                "name": "Nomad Addons",
+                "description": "Safe manifest-first scan of Nomadds addons.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://quantum-tokens",
+                "name": "Nomad Quantum Tokens",
+                "description": "Quantum-inspired self-improvement token status.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://agent-card",
                 "name": "Nomad Agent Card",
                 "description": "A2A-style direct discovery AgentCard.",
@@ -492,6 +657,30 @@ class NomadMcpServer:
         elif uri == "nomad://service":
             text = json.dumps(
                 self.agent.service_desk.service_catalog(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://products":
+            text = json.dumps(
+                self.agent.product_factory.list_products(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://addons":
+            text = json.dumps(
+                self.agent.addons.status(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://quantum-tokens":
+            text = json.dumps(
+                self.agent.addons.run_quantum_self_improvement(
+                    objective="Report current qtoken self-improvement status.",
+                    context={"source": "mcp_resource"},
+                ),
                 indent=2,
                 ensure_ascii=False,
             )
