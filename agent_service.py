@@ -20,6 +20,7 @@ load_dotenv()
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_TASK_STORE = ROOT / "nomad_service_tasks.json"
+DEFAULT_PRODUCT_STORE = ROOT / "nomad_products.json"
 
 
 SERVICE_TYPES = {
@@ -190,9 +191,11 @@ class AgentServiceDesk:
         treasury: Optional[TreasuryAgent] = None,
         x402: Optional[X402PaymentAdapter] = None,
         guardrails: Optional[NomadGuardrailEngine] = None,
+        product_store_path: Optional[Path] = None,
     ) -> None:
         load_dotenv()
         self.path = path or DEFAULT_TASK_STORE
+        self.product_store_path = Path(product_store_path or DEFAULT_PRODUCT_STORE)
         self.treasury = treasury or TreasuryAgent()
         self.x402 = x402 or X402PaymentAdapter()
         self.guardrails = guardrails or NomadGuardrailEngine()
@@ -223,6 +226,7 @@ class AgentServiceDesk:
     def service_catalog(self) -> Dict[str, Any]:
         wallet = self.treasury.get_wallet_summary()
         configured_wallet = wallet.get("address") or ""
+        featured_product_offer = self._featured_product_offer()
         return {
             "mode": "agent_service_catalog",
             "deal_found": False,
@@ -315,6 +319,7 @@ class AgentServiceDesk:
                     "approval_boundary",
                 ],
             },
+            "featured_product_offer": featured_product_offer,
             "reliability_doctor_artifact": {
                 "schema": "nomad.agent_reliability_doctor.v1",
                 "purpose": "Map agent pain into Critic, Diagnoser, Fixer, Healer, Trace-Healer, or Reviewer roles.",
@@ -414,6 +419,50 @@ class AgentServiceDesk:
                 "relevant and rate-limited."
             ),
         }
+
+    def _featured_product_offer(self) -> Dict[str, Any]:
+        products = list((self._load_product_store().get("products") or {}).values())
+        if not products:
+            return {}
+        products.sort(
+            key=lambda item: (
+                float(item.get("priority_score") or 0.0),
+                str(item.get("updated_at") or item.get("created_at") or ""),
+                str(item.get("name") or ""),
+            ),
+            reverse=True,
+        )
+        top = products[0]
+        paid_offer = top.get("paid_offer") or {}
+        service_template = top.get("service_template") or {}
+        return {
+            "product_id": top.get("product_id", ""),
+            "name": top.get("name", ""),
+            "pain_type": top.get("pain_type", ""),
+            "status": top.get("status", ""),
+            "priority_score": top.get("priority_score", 0),
+            "priority_reason": top.get("priority_reason", ""),
+            "variant_sku": top.get("variant_sku", ""),
+            "reply_contract": ((top.get("free_value") or {}).get("reply_contract") or {}),
+            "paid_offer": {
+                "price_native": paid_offer.get("price_native"),
+                "delivery": paid_offer.get("delivery", ""),
+                "trigger": paid_offer.get("trigger", ""),
+            },
+            "service_template": service_template,
+        }
+
+    def _load_product_store(self) -> Dict[str, Any]:
+        if not self.product_store_path.exists():
+            return {"products": {}}
+        try:
+            payload = json.loads(self.product_store_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return {"products": {}}
+            payload.setdefault("products", {})
+            return payload
+        except Exception:
+            return {"products": {}}
 
     def create_task(
         self,

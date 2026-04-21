@@ -114,7 +114,33 @@ def test_service_work_can_run_when_payment_not_required(tmp_path, monkeypatch):
 def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "false")
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
-    desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
+    product_store = tmp_path / "products.json"
+    product_store.write_text(
+        (
+            "{\n"
+            '  "products": {\n'
+            '    "prod-top": {\n'
+            '      "product_id": "prod-top",\n'
+            '      "name": "Nomad Compute Unlock Pack: Provider Fallback Ladder",\n'
+            '      "pain_type": "compute_auth",\n'
+            '      "status": "offer_ready",\n'
+            '      "priority_score": 203.0,\n'
+            '      "priority_reason": "Repeated compute_auth pattern with 3 hits.",\n'
+            '      "variant_sku": "nomad.compute_unlock_pack.provider-fallback-ladder",\n'
+            '      "free_value": {"reply_contract": {"accept": "PLAN_ACCEPTED=true plus FACT_URL or ERROR"}},\n'
+            '      "paid_offer": {"price_native": 0.03, "delivery": "bounded unblock", "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR"},\n'
+            '      "service_template": {"endpoint": "POST /tasks"}\n'
+            "    }\n"
+            "  }\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    desk = AgentServiceDesk(
+        path=tmp_path / "tasks.json",
+        treasury=FakeTreasury(),
+        product_store_path=product_store,
+    )
 
     catalog = desk.service_catalog()
 
@@ -131,6 +157,9 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     assert catalog["safety_contract"]["alignment_mode"] == "agent_first_contractual"
     assert catalog["service_packages"]["compute_auth"][0]["package_id"] == "starter_diagnosis"
     assert catalog["service_packages"]["compute_auth"][1]["package_id"] == "bounded_unblock"
+    assert catalog["featured_product_offer"]["product_id"] == "prod-top"
+    assert catalog["featured_product_offer"]["priority_score"] == 203.0
+    assert catalog["featured_product_offer"]["service_template"]["endpoint"] == "POST /tasks"
 
 
 def test_service_request_detects_self_improvement_tasks(tmp_path, monkeypatch):
