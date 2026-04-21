@@ -174,6 +174,7 @@ class NomadAutopilot:
         lead_delta = self._lead_conversion_contact_delta(lead_conversion)
         remaining_to_send = max(0, remaining_to_send - lead_delta["sent"])
         remaining_to_prepare = max(0, remaining_to_prepare - lead_delta["prepared"])
+        product_factory = self._run_product_factory(lead_conversion)
         outreach_effective_limit = min(
             base_outreach_limit,
             remaining_to_send if effective_send_outreach else remaining_to_prepare,
@@ -215,6 +216,7 @@ class NomadAutopilot:
             "reply_conversion": reply_conversion,
             "self_improvement": self_improvement,
             "lead_conversion": lead_conversion,
+            "product_factory": product_factory,
             "outreach": outreach_summary,
             "mutual_aid": mutual_aid,
             "autonomous_development": autonomous_development,
@@ -227,6 +229,7 @@ class NomadAutopilot:
                 contact_poll=contact_poll,
                 reply_conversion=reply_conversion,
                 lead_conversion=lead_conversion,
+                product_factory=product_factory,
                 outreach_summary=outreach_summary,
                 mutual_aid=mutual_aid,
                 autonomous_development=autonomous_development,
@@ -731,6 +734,32 @@ class NomadAutopilot:
         result["cycle_lead_count"] = len(leads)
         return result
 
+    def _run_product_factory(self, lead_conversion: Dict[str, Any]) -> Dict[str, Any]:
+        product_factory = getattr(self.agent, "product_factory", None)
+        if not product_factory or not hasattr(product_factory, "run"):
+            return {
+                "mode": "nomad_product_factory",
+                "deal_found": False,
+                "ok": True,
+                "skipped": True,
+                "reason": "product_factory_unavailable",
+                "analysis": "Productization skipped because product_factory is unavailable.",
+            }
+        conversions = list(lead_conversion.get("conversions") or [])
+        if not conversions:
+            return {
+                "mode": "nomad_product_factory",
+                "deal_found": False,
+                "ok": True,
+                "skipped": True,
+                "reason": "no_lead_conversions",
+                "analysis": "Productization skipped because this cycle created no lead conversions.",
+            }
+        return product_factory.run(
+            conversions=conversions,
+            limit=len(conversions),
+        )
+
     def _daily_quota(self, target: int) -> Dict[str, Any]:
         today = datetime.now().astimezone().date().isoformat()
         state = self._load()
@@ -1057,6 +1086,7 @@ class NomadAutopilot:
         state["last_contact_poll"] = self._compact_contact_poll(report.get("contact_poll") or {})
         state["last_reply_conversion"] = self._compact_reply_conversion(report.get("reply_conversion") or {})
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
+        state["last_product_factory"] = self._compact_product_factory(report.get("product_factory") or {})
         state["last_outreach"] = self._compact_outreach(report.get("outreach") or {})
         state["last_mutual_aid"] = self._compact_mutual_aid(report.get("mutual_aid") or {})
         state["last_autonomous_development"] = self._compact_autonomous_development(
@@ -1112,6 +1142,7 @@ class NomadAutopilot:
                 "last_contact_poll": {},
                 "last_reply_conversion": {},
                 "last_lead_conversion": {},
+                "last_product_factory": {},
                 "last_outreach": {},
                 "last_mutual_aid": {},
                 "last_autonomous_development": {},
@@ -1136,6 +1167,7 @@ class NomadAutopilot:
         contact_poll: Dict[str, Any],
         reply_conversion: Dict[str, Any],
         lead_conversion: Dict[str, Any],
+        product_factory: Dict[str, Any],
         outreach_summary: Dict[str, Any],
         mutual_aid: Dict[str, Any],
         autonomous_development: Dict[str, Any],
@@ -1152,6 +1184,7 @@ class NomadAutopilot:
         polled = len(contact_poll.get("polled_contact_ids") or [])
         converted = len(reply_conversion.get("created_task_ids") or [])
         conversion_stats = lead_conversion.get("stats") or {}
+        product_count = int(product_factory.get("product_count") or 0)
         outreach_campaign = (outreach_summary.get("campaign") or {})
         outreach_stats = outreach_campaign.get("stats") or {}
         compute_watch = self_improvement.get("compute_watch") or {}
@@ -1166,6 +1199,7 @@ class NomadAutopilot:
             f"Contact poll checked {polled} sent contact(s) and found {replied} reply/replies. "
             f"Reply conversion created {converted} paid-task candidate(s). "
             f"Lead conversion prepared {sum(int(v) for v in conversion_stats.values()) if conversion_stats else 0} conversion artifact(s). "
+            f"Product factory built {product_count} product offer(s). "
             f"Discovery outreach sent {outreach_stats.get('sent', 0)} and queued {outreach_stats.get('queued', 0)}. "
             f"Daily A2A quota: prepared {daily_quota.get('prepared_count', 0)}/{daily_quota.get('target', 0)}, "
             f"sent {daily_quota.get('sent_count', 0)}/{daily_quota.get('target', 0)}."
@@ -1278,6 +1312,20 @@ class NomadAutopilot:
             "analysis": lead_conversion.get("analysis", ""),
             "skipped": lead_conversion.get("skipped", False),
             "reason": lead_conversion.get("reason", ""),
+        }
+
+    @staticmethod
+    def _compact_product_factory(product_factory: Dict[str, Any]) -> Dict[str, Any]:
+        products = product_factory.get("products") or []
+        return {
+            "product_count": product_factory.get("product_count", 0),
+            "stats": product_factory.get("stats") or {},
+            "product_ids": [item.get("product_id", "") for item in products[:5] if item.get("product_id")],
+            "variant_skus": [item.get("variant_sku", "") for item in products[:5] if item.get("variant_sku")],
+            "statuses": [item.get("status", "") for item in products[:5] if item.get("status")],
+            "analysis": product_factory.get("analysis", ""),
+            "skipped": product_factory.get("skipped", False),
+            "reason": product_factory.get("reason", ""),
         }
 
     @staticmethod

@@ -284,6 +284,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/mutual-aid/signals":
+            self._json_response(
+                self.agent.mutual_aid.list_swarm_development_signals(
+                    pain_type=(query.get("pain_type") or query.get("type") or [""])[0],
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            )
+            return
+
         if parsed.path == "/mutual-aid/packs":
             self._json_response(
                 self.agent.mutual_aid.list_paid_packs(
@@ -328,6 +337,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/mutual-aid",
                     "/mutual-aid/ledger",
                     "/mutual-aid/inbox",
+                    "/mutual-aid/signals",
                     "/mutual-aid/packs",
                 ],
             },

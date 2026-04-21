@@ -683,6 +683,11 @@ class ArbiterAgent:
                 statuses=[item.strip() for item in statuses.split(",") if item.strip()],
                 limit=self._extract_int_key_value(query, "limit") or 25,
             )
+        if lowered.startswith(("/mutual-aid signals", "/aid signals", "/mutual_aid signals")):
+            return self.mutual_aid.list_swarm_development_signals(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
         if lowered.startswith(("/mutual-aid packs", "/aid packs", "/mutual_aid packs")):
             return self.mutual_aid.list_paid_packs(
                 pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),

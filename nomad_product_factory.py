@@ -191,11 +191,32 @@ class NomadProductFactory:
         value_pack = free_value.get("value_pack") or {}
         agent_solution = free_value.get("agent_solution") or {}
         rescue_plan = free_value.get("rescue_plan") or {}
+        help_draft = free_value.get("private_help_draft") or {}
         route = conversion.get("route") or value_pack.get("route") or {}
         service_type = self._service_type(conversion)
         blueprint = PRODUCT_BLUEPRINTS.get(service_type) or PRODUCT_BLUEPRINTS["default"]
         guardrail_id = self._guardrail_id(agent_solution, rescue_plan, value_pack)
-        product_id = self._product_id(lead=lead, service_type=service_type, guardrail_id=guardrail_id)
+        lead_solution = self._lead_solution(
+            lead=lead,
+            value_pack=value_pack,
+            rescue_plan=rescue_plan,
+            agent_solution=agent_solution,
+            help_draft=help_draft,
+            service_type=service_type,
+        )
+        variant = self._product_variant(
+            lead=lead,
+            blueprint=blueprint,
+            service_type=service_type,
+            guardrail_id=guardrail_id,
+            lead_solution=lead_solution,
+        )
+        product_id = self._product_id(
+            lead=lead,
+            service_type=service_type,
+            guardrail_id=guardrail_id,
+            variant_slug=variant["slug"],
+        )
         paid_upgrade = value_pack.get("paid_upgrade") or {}
         commercial = rescue_plan.get("commercial_next_step") or {}
         price_native = paid_upgrade.get("price_native")
@@ -214,6 +235,8 @@ class NomadProductFactory:
             agent_solution=agent_solution,
             service_type=service_type,
             price_native=price_native,
+            variant=variant,
+            lead_solution=lead_solution,
         )
         return {
             "schema": "nomad.product.v1",
@@ -227,12 +250,20 @@ class NomadProductFactory:
                 "conversion_id": conversion.get("conversion_id", ""),
                 "value_pack_id": value_pack.get("pack_id", ""),
             },
+            "base_sku": blueprint["sku"],
             "sku": blueprint["sku"],
-            "name": blueprint["name"],
+            "variant_sku": variant["sku"],
+            "product_family": blueprint["name"],
+            "base_name": blueprint["name"],
+            "name": variant["name"],
             "tagline": blueprint["tagline"],
+            "variant_tagline": variant["tagline"],
             "buyer": blueprint["buyer"],
             "pain_type": service_type,
             "guardrail_id": guardrail_id,
+            "product_variant": variant,
+            "lead_solution": lead_solution,
+            "differentiators": variant["differentiators"],
             "status": status,
             "sellable_now": status in {"offer_ready", "private_offer_needs_approval"},
             "sellable_channels": self._sellable_channels(status),
@@ -261,12 +292,19 @@ class NomadProductFactory:
                 "conversion_id": conversion.get("conversion_id", ""),
                 "solution_id": agent_solution.get("solution_id", ""),
                 "rescue_plan_id": rescue_plan.get("plan_id", ""),
+                "product_package": lead_solution.get("product_package", ""),
+                "solution_pattern": lead_solution.get("solution_pattern", ""),
+                "productized_artifacts": lead_solution.get("productized_artifacts") or [],
+                "deliverables": lead_solution.get("deliverables") or [],
+                "solution_signature": variant.get("solution_signature", ""),
             },
             "runtime_hooks": {
                 "lead_conversion": "nomad_lead_conversion_pipeline",
                 "agent_pain_solver": "nomad_agent_pain_solver",
                 "service_task": "nomad_service_request",
                 "guardrail_id": guardrail_id,
+                "product_variant_slug": variant["slug"],
+                "variant_sku": variant["sku"],
                 "nomad_self_apply": value_pack.get("nomad_self_apply") or agent_solution.get("nomad_self_apply") or {},
             },
             "sales_motion": {
@@ -278,7 +316,14 @@ class NomadProductFactory:
                     "deliver draft-only artifact unless explicit approval expands scope",
                     "package solved blocker as reusable memory or guardrail",
                 ],
-                "machine_offer": self._machine_offer(product_id, blueprint, free_steps, paid_offer, approval_boundary),
+                "machine_offer": self._machine_offer(
+                    product_id,
+                    blueprint,
+                    free_steps,
+                    paid_offer,
+                    approval_boundary,
+                    variant=variant,
+                ),
             },
             "approval_boundary": approval_boundary,
             "next_action": self._next_action(status, route, paid_offer),
@@ -389,7 +434,11 @@ class NomadProductFactory:
         agent_solution: Dict[str, Any],
         service_type: str,
         price_native: Any,
+        variant: Optional[Dict[str, Any]] = None,
+        lead_solution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        variant = variant or {}
+        lead_solution = lead_solution or {}
         ladder = rescue_plan.get("commercial_ladder") or []
         rescue_service_type = str(rescue_plan.get("service_type") or "").strip()
         service_type_mismatch = bool(rescue_service_type and rescue_service_type != service_type)
@@ -405,13 +454,22 @@ class NomadProductFactory:
         ) or rescue_plan.get("required_input") or agent_solution.get("required_input") or ""
         return {
             "sku": blueprint["sku"],
-            "package": blueprint["name"],
+            "variant_sku": variant.get("sku", ""),
+            "package": variant.get("name") or lead_solution.get("product_package") or blueprint["name"],
+            "base_package": blueprint["name"],
             "trigger": paid_upgrade.get("trigger") or "Reply with PLAN_ACCEPTED=true plus one missing fact.",
             "service_type": paid_upgrade.get("service_type") or rescue_plan.get("service_type", ""),
             "price_native": price_native,
-            "delivery": paid_upgrade.get("delivery") or commercial.get("delivery") or "bounded draft-only rescue artifact",
+            "delivery": (
+                paid_upgrade.get("delivery")
+                or commercial.get("delivery")
+                or lead_solution.get("delivery_target")
+                or "bounded draft-only rescue artifact"
+            ),
             "acceptance_criteria": acceptance,
             "required_input": required_input,
+            "solution_pattern": lead_solution.get("solution_pattern", ""),
+            "productized_artifacts": lead_solution.get("productized_artifacts") or [],
             "offer_ladder": [] if service_type_mismatch else ladder[:2],
             "boundary": paid_upgrade.get("boundary")
             or "Paid work does not authorize public posting, private access, spend, or human impersonation.",
@@ -445,11 +503,171 @@ class NomadProductFactory:
                 "metadata": {
                     "product_id": product_id,
                     "sku": paid_offer.get("sku", ""),
+                    "variant_sku": paid_offer.get("variant_sku", ""),
                     "conversion_id": conversion.get("conversion_id", ""),
                     "value_pack_id": value_pack.get("pack_id", ""),
                     "approval_boundary": paid_offer.get("boundary", ""),
+                    "solution_pattern": paid_offer.get("solution_pattern", ""),
                 },
             },
+        }
+
+    def _lead_solution(
+        self,
+        lead: Dict[str, Any],
+        value_pack: Dict[str, Any],
+        rescue_plan: Dict[str, Any],
+        agent_solution: Dict[str, Any],
+        help_draft: Dict[str, Any],
+        service_type: str,
+    ) -> Dict[str, Any]:
+        hypothesis = value_pack.get("pain_hypothesis") or {}
+        immediate = value_pack.get("immediate_value") or {}
+        commercial = rescue_plan.get("commercial_next_step") or {}
+        deliverables = self._clean_list(
+            help_draft.get("deliverables")
+            or commercial.get("deliverables")
+            or rescue_plan.get("deliverables")
+            or []
+        )
+        productized = self._clean_list(help_draft.get("productized_artifacts") or [])
+        if not productized:
+            productized = self._clean_list(
+                [
+                    hypothesis.get("guardrail_id"),
+                    commercial.get("delivery"),
+                    agent_solution.get("title"),
+                ]
+            )
+        diagnosis = (
+            str(rescue_plan.get("diagnosis") or "").strip()
+            or str(hypothesis.get("diagnosis") or "").strip()
+            or str(agent_solution.get("diagnosis") or "").strip()
+        )
+        acceptance = self._clean_list(
+            immediate.get("acceptance_criteria")
+            or rescue_plan.get("acceptance_criteria")
+            or agent_solution.get("acceptance_criteria")
+            or []
+        )
+        product_package = (
+            str(help_draft.get("product_package") or "").strip()
+            or str(commercial.get("package") or "").strip()
+            or str(PRODUCT_BLUEPRINTS.get(service_type, PRODUCT_BLUEPRINTS["default"]).get("name") or "").strip()
+        )
+        rescue_pattern = rescue_plan.get("solution_pattern")
+        if isinstance(rescue_pattern, dict):
+            rescue_pattern_text = str(rescue_pattern.get("title") or "").strip()
+        else:
+            rescue_pattern_text = str(rescue_pattern or "").strip()
+        solution_pattern = (
+            str(help_draft.get("solution_pattern") or "").strip()
+            or rescue_pattern_text
+            or str(agent_solution.get("title") or "").strip()
+        )
+        required_input = str(
+            immediate.get("required_input")
+            or rescue_plan.get("required_input")
+            or agent_solution.get("required_input")
+            or ""
+        ).strip()
+        memory_upgrade = str(
+            help_draft.get("memory_upgrade")
+            or rescue_plan.get("memory_upgrade")
+            or agent_solution.get("memory_upgrade")
+            or ""
+        ).strip()
+        return {
+            "schema": "nomad.lead_solution.v1",
+            "lead_title": lead.get("title", ""),
+            "lead_url": lead.get("url", ""),
+            "pain": lead.get("pain", ""),
+            "service_type": service_type,
+            "diagnosis": diagnosis,
+            "first_response": (
+                str(help_draft.get("first_useful_help_action") or "").strip()
+                or str(help_draft.get("private_response_draft") or "").strip()
+            )[:1200],
+            "product_package": product_package,
+            "solution_pattern": solution_pattern,
+            "delivery_target": str(help_draft.get("delivery_target") or commercial.get("delivery") or "").strip(),
+            "productized_artifacts": productized,
+            "deliverables": deliverables,
+            "required_input": required_input,
+            "verification": {
+                "verifier": immediate.get("verifier", ""),
+                "acceptance_criteria": acceptance,
+            },
+            "memory_upgrade": memory_upgrade,
+        }
+
+    def _product_variant(
+        self,
+        lead: Dict[str, Any],
+        blueprint: Dict[str, Any],
+        service_type: str,
+        guardrail_id: str,
+        lead_solution: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        lead_phrase = self._short_phrase(lead.get("title") or lead.get("pain") or service_type)
+        solution_phrase = self._short_phrase(
+            lead_solution.get("solution_pattern")
+            or lead_solution.get("product_package")
+            or guardrail_id
+        )
+        label = " ".join(item for item in [lead_phrase, solution_phrase] if item).strip()
+        if not label:
+            label = self._short_phrase(blueprint.get("name") or service_type)
+        digest_seed = json.dumps(
+            {
+                "url": lead.get("url", ""),
+                "title": lead.get("title", ""),
+                "pain": lead.get("pain", ""),
+                "service_type": service_type,
+                "guardrail_id": guardrail_id,
+                "solution_pattern": lead_solution.get("solution_pattern", ""),
+                "artifacts": lead_solution.get("productized_artifacts") or [],
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        digest = hashlib.sha256(digest_seed.encode("utf-8")).hexdigest()[:8]
+        slug_base = self._slug(label) or self._slug(service_type) or "agent-rescue"
+        slug = f"{slug_base[:42].strip('-')}-{digest}"
+        differentiators = self._clean_list(
+            [
+                f"Lead-specific source: {lead.get('title', '')}",
+                f"Pain type: {service_type}",
+                f"Solution pattern: {lead_solution.get('solution_pattern', '')}",
+                f"Guardrail: {guardrail_id}",
+                *[
+                    f"Artifact: {item}"
+                    for item in (lead_solution.get("productized_artifacts") or [])[:4]
+                ],
+            ]
+        )
+        return {
+            "schema": "nomad.product_variant.v1",
+            "slug": slug,
+            "sku": f"{blueprint['sku']}.{slug}",
+            "name": f"{blueprint['name']}: {label}",
+            "tagline": (
+                f"{lead_solution.get('product_package') or blueprint['name']} for "
+                f"{lead.get('title') or lead.get('pain') or service_type}."
+            )[:240],
+            "lead_phrase": lead_phrase,
+            "solution_phrase": solution_phrase,
+            "solution_signature": hashlib.sha256(
+                "|".join(
+                    [
+                        service_type,
+                        guardrail_id,
+                        str(lead_solution.get("solution_pattern") or ""),
+                        ",".join(lead_solution.get("productized_artifacts") or []),
+                    ]
+                ).encode("utf-8")
+            ).hexdigest()[:12],
+            "differentiators": differentiators[:8],
         }
 
     def _approval_boundary(
@@ -538,12 +756,15 @@ class NomadProductFactory:
         free_steps: List[str],
         paid_offer: Dict[str, Any],
         approval_boundary: Dict[str, Any],
+        variant: Optional[Dict[str, Any]] = None,
     ) -> str:
+        variant = variant or {}
         lines = [
             "nomad.product_offer.v1",
             f"product_id={product_id}",
             f"sku={blueprint.get('sku', '')}",
-            f"name={blueprint.get('name', '')}",
+            f"variant_sku={variant.get('sku', '')}",
+            f"name={variant.get('name') or blueprint.get('name', '')}",
             f"free_value={' | '.join(free_steps[:2])}",
             f"paid_delivery={paid_offer.get('delivery', '')}",
             f"price_native={paid_offer.get('price_native')}",
@@ -553,7 +774,12 @@ class NomadProductFactory:
         return "\n".join(lines)
 
     @staticmethod
-    def _product_id(lead: Dict[str, Any], service_type: str, guardrail_id: str) -> str:
+    def _product_id(
+        lead: Dict[str, Any],
+        service_type: str,
+        guardrail_id: str,
+        variant_slug: str = "",
+    ) -> str:
         seed = "|".join(
             [
                 str(lead.get("url") or ""),
@@ -561,9 +787,62 @@ class NomadProductFactory:
                 str(lead.get("pain") or ""),
                 service_type,
                 guardrail_id,
+                variant_slug,
             ]
         )
         return f"prod-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:12]}"
+
+    @staticmethod
+    def _clean_list(items: Any) -> List[str]:
+        if isinstance(items, str):
+            items = [items]
+        cleaned: List[str] = []
+        for item in items or []:
+            text = " ".join(str(item or "").split())
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+    @staticmethod
+    def _short_phrase(value: Any, max_words: int = 5) -> str:
+        words = [
+            word.strip(".,:;()[]{}\"'")
+            for word in str(value or "").replace("/", " ").replace("_", " ").split()
+        ]
+        stop = {
+            "a",
+            "an",
+            "and",
+            "for",
+            "in",
+            "is",
+            "of",
+            "on",
+            "or",
+            "the",
+            "to",
+            "with",
+        }
+        selected = [
+            word
+            for word in words
+            if word and word.lower() not in stop
+        ][:max_words]
+        return " ".join(selected).strip()
+
+    @staticmethod
+    def _slug(value: Any) -> str:
+        text = str(value or "").lower()
+        normalized = []
+        for char in text:
+            if "a" <= char <= "z" or "0" <= char <= "9":
+                normalized.append(char)
+            else:
+                normalized.append("-")
+        slug = "".join(normalized)
+        while "--" in slug:
+            slug = slug.replace("--", "-")
+        return slug.strip("-")
 
     @staticmethod
     def _stats(products: List[Dict[str, Any]]) -> Dict[str, int]:

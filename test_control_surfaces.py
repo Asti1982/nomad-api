@@ -103,6 +103,15 @@ class FakeMutualAid:
             "stats": {"total": 1, "verified_pending_review": 1},
         }
 
+    def list_swarm_development_signals(self, **kwargs):
+        return {
+            "mode": "nomad_swarm_development_signals",
+            "deal_found": False,
+            "ok": True,
+            "signal_count": 1,
+            "signals": [{"signal_id": "sig-test"}],
+        }
+
     def receive_swarm_proposal(self, proposal):
         return {
             "mode": "nomad_swarm_inbox",
@@ -344,6 +353,7 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_mutual_aid_status" in tool_names
     assert "nomad_truth_density_ledger" in tool_names
     assert "nomad_swarm_inbox" in tool_names
+    assert "nomad_swarm_development_signals" in tool_names
     assert "nomad_swarm_proposal" in tool_names
     assert "nomad_mutual_aid_packs" in tool_names
     assert "nomad_reliability_doctor" in tool_names
@@ -460,6 +470,28 @@ def test_mcp_runs_swarm_proposal_directly():
     content = response["result"]["structuredContent"]
     assert content["mode"] == "nomad_swarm_inbox"
     assert content["item"]["status"] == "verified_pending_review"
+
+
+def test_mcp_lists_swarm_development_signals_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 447,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_swarm_development_signals",
+                "arguments": {
+                    "pain_type": "compute_auth",
+                    "limit": "2",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_swarm_development_signals"
+    assert content["signals"][0]["signal_id"] == "sig-test"
 
 
 def test_mcp_runs_reliability_doctor_directly():
@@ -619,6 +651,9 @@ def test_cli_builds_service_and_lead_queries():
 
     inbox_args = build_parser().parse_args(["swarm-inbox", "--status", "verified_pending_review", "--limit", "5"])
     assert build_query(inbox_args) == "/mutual-aid inbox status=verified_pending_review limit=5"
+
+    signals_args = build_parser().parse_args(["swarm-signals", "--pain-type", "compute_auth", "--limit", "3"])
+    assert build_query(signals_args) == "/mutual-aid signals type=compute_auth limit=3"
 
     pack_args = build_parser().parse_args(["mutual-aid-packs", "--pain-type", "compute_auth", "--limit", "5"])
     assert build_query(pack_args) == "/mutual-aid packs type=compute_auth limit=5"

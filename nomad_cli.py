@@ -88,6 +88,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         service = result.get("service") or {}
         outreach = result.get("outreach") or {}
         lead_conversion = result.get("lead_conversion") or {}
+        product_factory = result.get("product_factory") or {}
         reply_conversion = result.get("reply_conversion") or {}
         autonomous_development = result.get("autonomous_development") or {}
         campaign = outreach.get("campaign") or {}
@@ -101,6 +102,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"Draft-ready tasks: {len(service.get('draft_ready_task_ids') or [])}",
             f"Awaiting payment: {len(service.get('awaiting_payment_task_ids') or [])}",
             f"Lead conversions: {sum(int(value) for value in conversion_stats.values()) if conversion_stats else 0}",
+            f"Products built: {product_factory.get('product_count', 0)}",
             f"A2A replies converted: {len(reply_conversion.get('created_task_ids') or [])}",
             f"Outreach queued: {stats.get('queued', 0)}",
             f"Outreach sent: {stats.get('sent', 0)}",
@@ -310,6 +312,15 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_swarm_development_signals":
+        return "\n".join(
+            [
+                "Nomad Swarm Development Signals",
+                f"Signals: {result.get('signal_count', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
+
     if mode == "nomad_mutual_aid_packs":
         return "\n".join(
             [
@@ -381,6 +392,9 @@ def build_query(args: argparse.Namespace) -> str:
     if command == "swarm-inbox":
         status = f" status={','.join(args.status)}" if args.status else ""
         return f"/mutual-aid inbox{status} limit={args.limit}".strip()
+    if command == "swarm-signals":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return f"/mutual-aid signals{pain_type} limit={args.limit}".strip()
     if command == "mutual-aid-packs":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         return f"/mutual-aid packs{pain_type} limit={args.limit}".strip()
@@ -609,6 +623,10 @@ def build_parser() -> argparse.ArgumentParser:
     inbox = subparsers.add_parser("swarm-inbox", help="List inbound Swarm-to-Swarm proposals.")
     inbox.add_argument("--status", action="append", default=[])
     inbox.add_argument("--limit", type=int, default=25)
+
+    signals = subparsers.add_parser("swarm-signals", help="List inbound agent help converted into development/product signals.")
+    signals.add_argument("--pain-type", default="")
+    signals.add_argument("--limit", type=int, default=25)
 
     packs = subparsers.add_parser("mutual-aid-packs", help="List paid packs distilled from repeated Mutual-Aid patterns.")
     packs.add_argument("--pain-type", default="")

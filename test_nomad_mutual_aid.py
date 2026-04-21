@@ -112,8 +112,18 @@ def test_swarm_proposal_inbox_accepts_verifiable_non_code_help(tmp_path):
 
     assert result["ok"] is True
     assert result["item"]["status"] == "verified_pending_review"
+    assert result["development_signal"]["schema"] == "nomad.swarm_development_signal.v1"
+    assert result["development_signal"]["product_candidate"]["schema"] == "nomad.swarm_product_candidate.v1"
+    assert result["development_signal"]["next_action"] == "productize_or_create_regression_test"
     inbox = kernel.list_swarm_inbox()
     assert inbox["stats"]["verified_pending_review"] == 1
+    signals = kernel.list_swarm_development_signals()
+    assert signals["signal_count"] == 1
+    assert signals["signals"][0]["source_aid_id"] == result["item"]["aid_id"]
+    assert signals["signals"][0]["product_candidate"]["sku"].startswith("nomad.mutual_aid.compute_auth_micro_pack.")
+    status = kernel.status()
+    assert status["swarm_assist_score"] == 1
+    assert status["swarm_development_signal_count"] == 1
     ledger = kernel.list_truth_ledger()
     assert ledger["entry_count"] == 1
     assert ledger["entries"][0]["direction"] == "inbound_help"

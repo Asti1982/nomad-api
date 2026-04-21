@@ -295,6 +295,32 @@ class FakeMutualAid:
         }
 
 
+class FakeProductFactory:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        conversions = kwargs.get("conversions") or []
+        products = [
+            {
+                "schema": "nomad.product.v1",
+                "product_id": f"prod-{index}",
+                "variant_sku": f"nomad.test_pack.variant_{index}",
+                "status": conversion.get("status", "draft"),
+            }
+            for index, conversion in enumerate(conversions, start=1)
+        ]
+        return {
+            "mode": "nomad_product_factory",
+            "ok": True,
+            "product_count": len(products),
+            "stats": {"private_offer_needs_approval": len(products)},
+            "products": products,
+            "analysis": "product factory ok",
+        }
+
+
 class FakeAgent:
     def __init__(self):
         self.self_improvement = FakeSelfImprovement()
@@ -302,6 +328,7 @@ class FakeAgent:
         self.agent_contacts = FakeContacts()
         self.agent_campaigns = FakeCampaigns()
         self.lead_conversion = FakeLeadConversion()
+        self.product_factory = FakeProductFactory()
         self.mutual_aid = FakeMutualAid()
 
 
@@ -331,6 +358,8 @@ def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
     assert agent.lead_conversion.calls[0]["send"] is False
     assert "freshly paid tasks" in agent.self_improvement.objectives[0][0]
     assert result["lead_conversion"]["stats"]["private_draft_needs_approval"] == 1
+    assert agent.product_factory.calls[0]["conversions"][0]["conversion_id"] == "conv-test"
+    assert result["product_factory"]["product_count"] == 1
     assert result["outreach"]["campaign"]["stats"]["sent"] == 2
     assert result["contact_poll"]["replied_contact_ids"] == ["contact-2"]
     assert result["contact_poll"]["reply_summaries"][0]["classification"] == "compute_auth"
@@ -371,6 +400,7 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     text = state_path.read_text(encoding="utf-8")
     assert "last_outreach" in text
     assert "last_lead_conversion" in text
+    assert "last_product_factory" in text
     assert "last_mutual_aid" in text
     assert "last_autonomous_development" in text
     assert "adev-test" in text

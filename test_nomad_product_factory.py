@@ -1,16 +1,22 @@
 from nomad_product_factory import NomadProductFactory
 
 
-def _conversion(status="private_draft_needs_approval", service_type="tool_failure"):
+def _conversion(
+    status="private_draft_needs_approval",
+    service_type="tool_failure",
+    title="AutoGen GuardrailProvider",
+    pain="tool call interception, approval, audit trail",
+    url="https://github.com/microsoft/autogen/issues/7405",
+):
     guardrail_decision = "deny" if status == "private_draft_needs_approval" else "allow"
     return {
         "conversion_id": "conv-test",
         "created_at": "2026-04-19T12:00:00+00:00",
         "status": status,
         "lead": {
-            "title": "AutoGen GuardrailProvider",
-            "url": "https://github.com/microsoft/autogen/issues/7405",
-            "pain": "tool call interception, approval, audit trail",
+            "title": title,
+            "url": url,
+            "pain": pain,
             "service_type": service_type,
         },
         "route": {
@@ -77,6 +83,15 @@ def _conversion(status="private_draft_needs_approval", service_type="tool_failur
                     "requires_explicit_approval": ["posting human-facing public comments"],
                 },
             },
+            "private_help_draft": {
+                "mode": "lead_help_draft",
+                "first_useful_help_action": "Draft the smallest repro and policy decision table.",
+                "product_package": "Nomad GuardrailProvider Repro Pack",
+                "solution_pattern": "intercept -> decide -> audit -> verify",
+                "delivery_target": "guardrail provider repro plus verifier checklist",
+                "productized_artifacts": ["decision table", "policy fixture", "audit checklist"],
+                "deliverables": ["repro fixture", "verifier checklist", "approval boundary"],
+            },
         },
     }
 
@@ -90,6 +105,10 @@ def test_product_factory_builds_private_product_with_approval_gate(tmp_path):
     assert result["mode"] == "nomad_product_factory"
     assert product["schema"] == "nomad.product.v1"
     assert product["sku"] == "nomad.tool_guardrail_pack"
+    assert product["variant_sku"].startswith("nomad.tool_guardrail_pack.")
+    assert product["product_variant"]["slug"]
+    assert product["lead_solution"]["product_package"] == "Nomad GuardrailProvider Repro Pack"
+    assert "decision table" in product["lead_solution"]["productized_artifacts"]
     assert product["status"] == "private_offer_needs_approval"
     assert product["outreach_blocked_by_approval"] is True
     assert product["approval_boundary"]["approval_required"] is True
@@ -138,3 +157,33 @@ def test_product_factory_lists_persisted_products_by_status(tmp_path):
     assert listed["stats"]["private_offer_needs_approval"] == 1
     assert len(listed["products"]) == 1
     assert listed["products"][0]["source_lead"]["value_pack_id"] == "avp-test"
+
+
+def test_product_factory_differentiates_same_service_type_leads(tmp_path):
+    factory = NomadProductFactory(path=tmp_path / "products.json")
+
+    result = factory.run(
+        conversions=[
+            _conversion(
+                title="AutoGen GuardrailProvider",
+                pain="tool call interception and approval audit",
+                url="https://github.com/microsoft/autogen/issues/7405",
+            ),
+            _conversion(
+                title="CrewAI Tool Retry Loop",
+                pain="tool schema mismatch repeats without fixture",
+                url="https://github.com/crewAIInc/crewAI/issues/9999",
+            ),
+        ],
+        limit=2,
+    )
+
+    products = result["products"]
+    assert len(products) == 2
+    assert products[0]["sku"] == products[1]["sku"] == "nomad.tool_guardrail_pack"
+    assert products[0]["variant_sku"] != products[1]["variant_sku"]
+    assert products[0]["name"] != products[1]["name"]
+    assert products[0]["product_variant"]["solution_signature"] == products[1]["product_variant"]["solution_signature"]
+    assert products[0]["product_variant"]["slug"] != products[1]["product_variant"]["slug"]
+    assert all(product["differentiators"] for product in products)
+    assert all(product["lead_solution"]["deliverables"] for product in products)

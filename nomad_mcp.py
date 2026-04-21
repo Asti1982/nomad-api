@@ -191,6 +191,17 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_swarm_development_signals",
+                "title": "Nomad Swarm Development Signals",
+                "description": "List verified inbound agent help converted into Nomad product and development signals.",
+                "inputSchema": self._schema(
+                    {
+                        "pain_type": "Optional pain type filter.",
+                        "limit": "Maximum number of signals.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_swarm_proposal",
                 "title": "Submit Swarm Proposal",
                 "description": "Submit a verifiable non-code proposal from another agent into Nomad's inbox.",
@@ -498,6 +509,11 @@ class NomadMcpServer:
         if name == "nomad_swarm_inbox":
             return self.agent.mutual_aid.list_swarm_inbox(
                 statuses=self._status_list(arguments.get("status") or arguments.get("statuses")),
+                limit=int(arguments.get("limit") or 25),
+            )
+        if name == "nomad_swarm_development_signals":
+            return self.agent.mutual_aid.list_swarm_development_signals(
+                pain_type=str(arguments.get("pain_type") or "").strip(),
                 limit=int(arguments.get("limit") or 25),
             )
         if name == "nomad_swarm_proposal":

@@ -55,21 +55,25 @@ class NomadMutualAidKernel:
         ledger_entries = state.get("truth_density_ledger") or []
         inbox = state.get("swarm_inbox") or []
         paid_packs = list((state.get("paid_packs") or {}).values())
+        development_signals = state.get("swarm_development_signals") or []
         return {
             "mode": "nomad_mutual_aid_status",
             "schema": "nomad.mutual_aid_status.v1",
             "deal_found": False,
             "ok": True,
             "mutual_aid_score": int(state.get("mutual_aid_score") or 0),
+            "swarm_assist_score": int(state.get("swarm_assist_score") or 0),
             "truth_density_total": round(float(state.get("truth_density_total") or 0.0), 4),
             "helped_agent_count": len(state.get("helped_agents") or {}),
             "module_count": len(modules),
             "loadable_module_count": len(loadable),
             "truth_ledger_count": len(ledger_entries),
             "swarm_inbox": self._inbox_stats(inbox),
+            "swarm_development_signal_count": len(development_signals),
             "paid_pack_count": len(paid_packs),
             "latest_evolution_plan": state.get("latest_evolution_plan") or {},
             "latest_truth_entry": ledger_entries[-1] if ledger_entries else {},
+            "latest_swarm_development_signal": development_signals[-1] if development_signals else {},
             "modules": modules[-10:],
             "paid_packs": paid_packs[-10:],
             "policy": self.policy(),
@@ -313,6 +317,9 @@ class NomadMutualAidKernel:
         verification = self.swarm_verifier.verify_proposal(proposal)
         state = self._load()
         inbox = list(state.get("swarm_inbox") or [])
+        development_signal: Dict[str, Any] = {}
+        if verification.get("verified"):
+            development_signal = self._development_signal_from_proposal(verification)
         record = {
             "schema": "nomad.swarm_inbox_item.v1",
             "aid_id": verification.get("aid_id", ""),
@@ -320,8 +327,9 @@ class NomadMutualAidKernel:
             "status": "verified_pending_review" if verification.get("verified") else "rejected",
             "verification": verification,
             "proposal": verification.get("normalized") or {},
+            "development_signal": development_signal,
             "next_action": (
-                "review_verified_proposal_and_convert_to_task_or_test"
+                "review_development_signal_and_product_candidate"
                 if verification.get("verified")
                 else "discard_or_ask_sender_for_evidence"
             ),
@@ -329,6 +337,7 @@ class NomadMutualAidKernel:
         inbox.append(record)
         state["swarm_inbox"] = inbox[-250:]
         if verification.get("verified"):
+            state["swarm_assist_score"] = int(state.get("swarm_assist_score") or 0) + 1
             inbound_event = {
                 "event_id": verification.get("aid_id", ""),
                 "timestamp": record["received_at"],
@@ -358,6 +367,9 @@ class NomadMutualAidKernel:
             truth_ledger = list(state.get("truth_density_ledger") or [])
             truth_ledger.append(ledger_entry)
             state["truth_density_ledger"] = truth_ledger[-250:]
+            signals = list(state.get("swarm_development_signals") or [])
+            signals.append(development_signal)
+            state["swarm_development_signals"] = signals[-250:]
         state["paid_packs"] = self._refresh_paid_packs(state)
         self._save(state)
         return {
@@ -367,8 +379,9 @@ class NomadMutualAidKernel:
             "ok": bool(verification.get("verified")),
             "item": record,
             "verification": verification,
+            "development_signal": development_signal,
             "analysis": (
-                "Swarm proposal verified and stored for review."
+                "Swarm proposal verified, stored for review, and converted into a development/product signal."
                 if verification.get("verified")
                 else f"Swarm proposal rejected: {verification.get('reason')}"
             ),
@@ -394,6 +407,30 @@ class NomadMutualAidKernel:
             "stats": self._inbox_stats(inbox),
             "items": inbox[:cap],
             "analysis": f"Listed {min(len(inbox), cap)} swarm inbox item(s).",
+        }
+
+    def list_swarm_development_signals(
+        self,
+        pain_type: str = "",
+        limit: int = 25,
+    ) -> Dict[str, Any]:
+        signals = list((self._load().get("swarm_development_signals") or []))
+        if pain_type:
+            signals = [
+                signal for signal in signals
+                if str(signal.get("pain_type") or "") == str(pain_type).strip()
+            ]
+        signals.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        cap = max(1, min(int(limit or 25), 100))
+        return {
+            "mode": "nomad_swarm_development_signals",
+            "schema": "nomad.swarm_development_signals.v1",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": pain_type,
+            "signal_count": len(signals),
+            "signals": signals[:cap],
+            "analysis": f"Listed {min(len(signals), cap)} swarm development signal(s).",
         }
 
     def list_paid_packs(
@@ -446,7 +483,10 @@ class NomadMutualAidKernel:
             "primary_evolution_motor": "help_other_agents_then_learn",
             "human_role": "safety_unlock_for_critical_changes",
             "truth_density_ledger": "every verified help result gets evidence, outcome, score, and reuse value",
-            "swarm_to_swarm_inbox": "inbound agent help is stored as verifiable proposals, never executed as raw code",
+            "swarm_to_swarm_inbox": (
+                "inbound agent help is stored as verifiable proposals, converted to development/product "
+                "signals, and never executed as raw code"
+            ),
             "paid_pack_rule": "repeated verified patterns become small sellable service packs",
             "module_rule": "new_files_only",
             "dynamic_loading": "stored-hash verified modules only",
@@ -620,14 +660,120 @@ class NomadMutualAidKernel:
             "schema": "nomad.mutual_aid_state.v1",
             "version": "3.3",
             "mutual_aid_score": 0,
+            "swarm_assist_score": 0,
             "truth_density_total": 0.0,
             "helped_agents": {},
             "events": [],
             "truth_density_ledger": [],
             "swarm_inbox": [],
+            "swarm_development_signals": [],
             "paid_packs": {},
             "modules": [],
             "latest_evolution_plan": {},
+        }
+
+    def _development_signal_from_proposal(self, verification: Dict[str, Any]) -> Dict[str, Any]:
+        proposal = verification.get("normalized") or {}
+        pain_type = str(proposal.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        problem = " ".join(
+            str(item).strip()
+            for item in [
+                proposal.get("title", ""),
+                proposal.get("proposal", ""),
+                " ".join(str(item) for item in (proposal.get("evidence") or [])),
+            ]
+            if str(item).strip()
+        )
+        solution = self.pain_solver.solve(
+            problem=problem,
+            service_type=pain_type,
+            source="swarm_inbox",
+            context={
+                "sender_id": proposal.get("sender_id", ""),
+                "aid_id": verification.get("aid_id", ""),
+                "evidence": proposal.get("evidence") or [],
+            },
+        ).get("solution") or {}
+        product_candidate = self._product_candidate_from_signal(
+            aid_id=verification.get("aid_id", ""),
+            proposal=proposal,
+            solution=solution,
+            pain_type=pain_type,
+        )
+        signal_id = _signal_id(verification.get("aid_id", ""), problem, solution.get("solution_id", ""))
+        return {
+            "schema": "nomad.swarm_development_signal.v1",
+            "signal_id": signal_id,
+            "created_at": _now(),
+            "source_aid_id": verification.get("aid_id", ""),
+            "sender_id": proposal.get("sender_id", ""),
+            "sender_endpoint": proposal.get("sender_endpoint", ""),
+            "pain_type": pain_type,
+            "title": proposal.get("title", ""),
+            "proposal": proposal.get("proposal", ""),
+            "evidence": proposal.get("evidence") or [],
+            "verification_score": verification.get("score", 0.0),
+            "agent_solution": solution,
+            "product_candidate": product_candidate,
+            "implementation_plan": [
+                "Turn the proposal into one fixture, checklist, or guardrail test before touching live workflows.",
+                "Package the lead-specific solution as a small paid offer with a clear reply contract.",
+                "Record outcome evidence in the Truth-Density ledger before broad reuse.",
+            ],
+            "safe_boundaries": [
+                "do not execute sender-supplied code",
+                "do not request or store secrets",
+                "add new modules or product records before changing core behavior",
+            ],
+            "next_action": "productize_or_create_regression_test",
+        }
+
+    def _product_candidate_from_signal(
+        self,
+        aid_id: str,
+        proposal: Dict[str, Any],
+        solution: Dict[str, Any],
+        pain_type: str,
+    ) -> Dict[str, Any]:
+        sku, name = PAID_PACK_BLUEPRINTS.get(
+            pain_type,
+            (f"nomad.mutual_aid.{_slug(pain_type)}_micro_pack", "Mutual-Aid Agent Rescue Micro-Pack"),
+        )
+        guardrail = solution.get("guardrail") or {}
+        artifact_slug = _slug(proposal.get("title") or solution.get("title") or pain_type)[:36] or "agent-help"
+        candidate_id = f"swarm-prod-{hashlib.sha256(f'{aid_id}|{artifact_slug}'.encode('utf-8')).hexdigest()[:12]}"
+        return {
+            "schema": "nomad.swarm_product_candidate.v1",
+            "candidate_id": candidate_id,
+            "sku": f"{sku}.{artifact_slug}",
+            "name": f"{name}: {proposal.get('title') or solution.get('title') or pain_type}",
+            "pain_type": pain_type,
+            "guardrail_id": guardrail.get("id", ""),
+            "free_value": {
+                "diagnosis": solution.get("diagnosis", ""),
+                "safe_now": (solution.get("playbook") or [])[:3],
+                "evidence_needed": solution.get("required_input", ""),
+            },
+            "paid_unblock": {
+                "amount_native": 0.03,
+                "delivery": "lead-specific diagnosis, verifier checklist, and reusable guardrail/product artifact",
+                "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            },
+            "service_template": {
+                "endpoint": "POST /tasks",
+                "mcp_tool": "nomad_service_request",
+                "create_task_payload": {
+                    "problem": proposal.get("proposal", ""),
+                    "service_type": pain_type,
+                    "budget_native": 0.03,
+                    "metadata": {
+                        "source": "swarm_development_signal",
+                        "aid_id": aid_id,
+                        "candidate_id": candidate_id,
+                        "sku": f"{sku}.{artifact_slug}",
+                    },
+                },
+            },
         }
 
 
@@ -789,6 +935,19 @@ def _event_id(agent_id: str, score: int, help_result: Dict[str, Any]) -> str:
         ensure_ascii=True,
     )
     return f"maid-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _signal_id(aid_id: str, problem: str, solution_id: str) -> str:
+    seed = json.dumps(
+        {
+            "aid_id": aid_id,
+            "problem": problem[:500],
+            "solution_id": solution_id,
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+    )
+    return f"sig-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:12]}"
 
 
 def _sha256(content: str) -> str:
