@@ -16,6 +16,7 @@ AUTOPILOT_STATE = ROOT / "nomad_autopilot_state.json"
 AUTO_CYCLE_PID = ROOT / "tools" / "nomad-live" / "auto-cycle.pid"
 AUTO_CYCLE_STATUS = ROOT / "tools" / "nomad-live" / "auto-cycle-status.json"
 MUTUAL_AID_STATE = ROOT / "nomad_mutual_aid_state.json"
+AUTONOMOUS_DEVELOPMENT_STATE = ROOT / "nomad_autonomous_development.json"
 
 
 class NomadSystemMonitor:
@@ -92,6 +93,7 @@ class NomadSystemMonitor:
             },
             "tasks": task_stats,
             "autopilot": autopilot_status,
+            "autonomous_development": self._autonomous_development_status(),
             "mutual_aid": self._mutual_aid_status(),
             "operator": {
                 "grant": operator_grant(),
@@ -168,6 +170,18 @@ class NomadSystemMonitor:
             "swarm_inbox_count": len(inbox),
             "paid_pack_count": len(packs),
             "latest_module": (modules[-1] if modules else {}).get("module_id", ""),
+        }
+
+    def _autonomous_development_status(self) -> Dict[str, Any]:
+        state = self._read_json(AUTONOMOUS_DEVELOPMENT_STATE)
+        actions = state.get("actions") or []
+        latest = actions[-1] if actions else {}
+        return {
+            "schema": "nomad.autonomous_development_status.compact.v1",
+            "action_count": len(actions),
+            "updated_at": state.get("updated_at", ""),
+            "latest_action_id": latest.get("action_id", ""),
+            "latest_title": latest.get("title", ""),
         }
 
     @staticmethod

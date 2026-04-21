@@ -38,6 +38,18 @@ class FakeSelfImprovement:
                 "active_lead": {"url": "https://github.com/example/agent/issues/1", "title": "Agent blocked by quota"},
             },
             "self_development": {"next_objective": "Next objective"},
+            "autonomous_development": {
+                "mode": "nomad_autonomous_development",
+                "ok": True,
+                "skipped": False,
+                "action": {
+                    "action_id": "adev-test",
+                    "type": "lead_help_artifact",
+                    "title": "Drafted a bounded help artifact for an agent lead",
+                    "files": ["nomad_active_lead_plan.json"],
+                },
+                "action_count": 1,
+            },
             "analysis": "ok",
         }
 
@@ -360,6 +372,8 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     assert "last_outreach" in text
     assert "last_lead_conversion" in text
     assert "last_mutual_aid" in text
+    assert "last_autonomous_development" in text
+    assert "adev-test" in text
     assert "compute_watch" in text
 
 

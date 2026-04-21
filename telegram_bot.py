@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -38,6 +39,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
 SUBSCRIBERS_PATH = ROOT / "telegram_subscribers.json"
+TELEGRAM_BROADCAST_STATE_PATH = ROOT / "telegram_broadcast_state.json"
 SELF_STATE_PATH = ROOT / "nomad_self_state.json"
 TOKEN_ENV_VARS = {
     "GITHUB_TOKEN",
@@ -131,10 +133,22 @@ class ArbiterBot:
             os.getenv("NOMAD_AUTO_CYCLE_INTERVAL_MINUTES", "120")
         )
         self.auto_subscribe_on_interaction = (
-            os.getenv("TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION", "true").strip().lower() == "true"
+            os.getenv("TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION", "false").strip().lower() == "true"
         )
         self.status_updates_enabled = (
             os.getenv("TELEGRAM_STATUS_UPDATES", "true").strip().lower() == "true"
+        )
+        self.status_change_only = (
+            os.getenv("TELEGRAM_STATUS_CHANGE_ONLY", "true").strip().lower() == "true"
+        )
+        self.auto_cycle_change_only = (
+            os.getenv("TELEGRAM_AUTO_CYCLE_CHANGE_ONLY", "true").strip().lower() == "true"
+        )
+        self.status_repeat_digest_every = int(
+            os.getenv("TELEGRAM_STATUS_REPEAT_DIGEST_EVERY", "0")
+        )
+        self.auto_cycle_repeat_digest_every = int(
+            os.getenv("TELEGRAM_AUTO_CYCLE_REPEAT_DIGEST_EVERY", "0")
         )
         self.status_interval_minutes = int(
             os.getenv("TELEGRAM_STATUS_INTERVAL_MINUTES", "25")
@@ -1071,6 +1085,21 @@ class ArbiterBot:
                 marker = "human" if item.get("requires_human") else "agent"
                 lines.append(f"- [{marker}] {item.get('title')}")
 
+        autonomous = result.get("autonomous_development") or {}
+        if autonomous:
+            lines.append("")
+            lines.append("Autonomous development")
+            if autonomous.get("skipped"):
+                lines.append(f"- skipped: {autonomous.get('reason', 'unchanged')}")
+            else:
+                action = autonomous.get("action") or {}
+                lines.append(f"- {action.get('title', 'development receipt')}")
+                files = action.get("files") or []
+                if files:
+                    lines.append(f"- artifact: {files[0]}")
+                if action.get("next_verification"):
+                    lines.append(f"- verify: {action['next_verification']}")
+
         ok_reviews = [item for item in reviews if item.get("ok")]
         failed_reviews = [item for item in reviews if item.get("configured") and not item.get("ok")]
         if ok_reviews:
@@ -1982,6 +2011,119 @@ class ArbiterBot:
     def _broadcast_targets(self) -> set[int]:
         return self._load_subscribers() | self.status_chat_ids
 
+    def _load_broadcast_state(self) -> Dict[str, Any]:
+        if not TELEGRAM_BROADCAST_STATE_PATH.exists():
+            return {"schema": "nomad.telegram_broadcast_state.v1", "chats": {}}
+        try:
+            payload = json.loads(TELEGRAM_BROADCAST_STATE_PATH.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                payload.setdefault("schema", "nomad.telegram_broadcast_state.v1")
+                payload.setdefault("chats", {})
+                return payload
+        except Exception:
+            pass
+        return {"schema": "nomad.telegram_broadcast_state.v1", "chats": {}}
+
+    def _save_broadcast_state(self, state: Dict[str, Any]) -> None:
+        TELEGRAM_BROADCAST_STATE_PATH.write_text(
+            json.dumps(state, ensure_ascii=True, indent=2),
+            encoding="utf-8",
+        )
+
+    def _should_send_broadcast(
+        self,
+        kind: str,
+        chat_id: int,
+        signature: str,
+        change_only: bool,
+        digest_every: int = 0,
+    ) -> bool:
+        if not change_only:
+            return True
+        state = self._load_broadcast_state()
+        chats = state.setdefault("chats", {})
+        chat_state = chats.setdefault(str(chat_id), {})
+        key = f"{kind}_signature"
+        repeat_key = f"{kind}_repeat_count"
+        previous = str(chat_state.get(key) or "")
+        if previous != signature:
+            chat_state[key] = signature
+            chat_state[repeat_key] = 0
+            chat_state[f"{kind}_last_sent_at"] = datetime.now(UTC).isoformat()
+            self._save_broadcast_state(state)
+            return True
+        repeat_count = int(chat_state.get(repeat_key) or 0) + 1
+        chat_state[repeat_key] = repeat_count
+        chat_state[f"{kind}_last_skipped_at"] = datetime.now(UTC).isoformat()
+        self._save_broadcast_state(state)
+        return bool(digest_every and repeat_count % max(1, digest_every) == 0)
+
+    def _status_signature(self, snapshot: Dict[str, Any]) -> str:
+        compute = snapshot.get("compute") or {}
+        products = snapshot.get("products") or {}
+        state = snapshot.get("self_state") or {}
+        addons = snapshot.get("addons") or {}
+        probe = compute.get("probe") or {}
+        hosted = probe.get("hosted") or {}
+        quantum = (addons.get("quantum_tokens") or {}).get("best_next_quantum_unlock") or {}
+        stable = {
+            "public_api_url": snapshot.get("public_api_url", ""),
+            "ollama": {
+                "reachable": (probe.get("ollama") or {}).get("api_reachable", False),
+                "count": (probe.get("ollama") or {}).get("count", 0),
+            },
+            "hosted_available": [
+                name for name, payload in sorted(hosted.items())
+                if isinstance(payload, dict) and payload.get("available")
+            ],
+            "products": products.get("stats") or {},
+            "cycle_count": state.get("cycle_count", 0),
+            "last_cycle_at": state.get("last_cycle_at", ""),
+            "next_objective": state.get("next_objective", ""),
+            "unlock_ids": [
+                item.get("candidate_id") or item.get("candidate_name") or ""
+                for item in (state.get("self_development_unlocks") or [])[:3]
+                if isinstance(item, dict)
+            ],
+            "quantum_unlock": {
+                "provider": quantum.get("provider", ""),
+                "env_var": quantum.get("env_var", ""),
+            },
+        }
+        return self._stable_hash(stable)
+
+    def _auto_cycle_signature(self, result: Dict[str, Any]) -> str:
+        development = result.get("self_development") or {}
+        lead_scout = result.get("lead_scout") or {}
+        active_lead = lead_scout.get("active_lead") or {}
+        autonomous = result.get("autonomous_development") or {}
+        action = autonomous.get("action") or autonomous.get("candidate") or {}
+        stable = {
+            "mode": result.get("mode", ""),
+            "objective": result.get("objective", ""),
+            "next_objective": development.get("next_objective", ""),
+            "active_lead": active_lead.get("url") or active_lead.get("title") or active_lead.get("name") or "",
+            "help_draft_saved": bool(lead_scout.get("help_draft_saved")),
+            "local_actions": [
+                item.get("title", "")
+                for item in (result.get("local_actions") or [])[:3]
+                if isinstance(item, dict)
+            ],
+            "autonomous_development": {
+                "skipped": bool(autonomous.get("skipped", False)),
+                "reason": autonomous.get("reason", ""),
+                "action_id": action.get("action_id", ""),
+                "title": action.get("title", ""),
+            },
+        }
+        return self._stable_hash(stable)
+
+    @staticmethod
+    def _stable_hash(payload: Dict[str, Any]) -> str:
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16]
+
     def _status_snapshot(self) -> Dict[str, Any]:
         compute = self.agent.run("/compute")
         products = (
@@ -2069,6 +2211,9 @@ class ArbiterBot:
         next_objective = state.get("next_objective")
         if next_objective:
             lines.append(f"- Autopilot denkt weiter: {next_objective}")
+        autonomous = state.get("last_autonomous_development") or {}
+        if autonomous and not autonomous.get("skipped"):
+            lines.append(f"- Autonom entwickelt: {autonomous.get('title') or autonomous.get('type')}")
         if quantum_actionable:
             lines.append(
                 f"- Optionaler Quantum-Provider-Unlock: {quantum_actionable.get('provider')} via {quantum_actionable.get('telegram_command')}"
@@ -2124,9 +2269,18 @@ class ArbiterBot:
             targets = self._broadcast_targets()
             if not targets:
                 continue
-            message = self._build_periodic_update()
+            snapshot = self._status_snapshot()
+            signature = self._status_signature(snapshot)
+            message = self._format_status_snapshot(snapshot, periodic=True)
             for chat_id in targets:
-                self._send_status_message(chat_id, message)
+                if self._should_send_broadcast(
+                    kind="status",
+                    chat_id=chat_id,
+                    signature=signature,
+                    change_only=self.status_change_only,
+                    digest_every=self.status_repeat_digest_every,
+                ):
+                    self._send_status_message(chat_id, message)
 
     def _start_status_broadcast_loop(self) -> None:
         if self._broadcast_thread is not None or not self.status_updates_enabled:
@@ -2155,19 +2309,36 @@ class ArbiterBot:
         try:
             result = self.agent.run(f"/cycle {objective}")
             development = result.get("self_development") or {}
+            autonomous = result.get("autonomous_development") or {}
+            autonomous_action = autonomous.get("action") or {}
+            autonomous_line = (
+                f"Autonomous dev: {autonomous_action.get('title')}"
+                if autonomous_action
+                else f"Autonomous dev: skipped ({autonomous.get('reason', 'unchanged')})"
+            )
             message = (
                 f"Nomad auto-cycle ({trigger})\n"
                 f"Cycle count: {development.get('cycle_count', '?')}\n"
                 f"Objective: {result.get('objective')}\n"
                 f"Next objective: {development.get('next_objective')}\n\n"
+                f"{autonomous_line}\n\n"
                 f"{self._format_result(result)}"
             )
+            signature = self._auto_cycle_signature(result)
         except Exception as exc:
             message = f"Nomad auto-cycle failed: {exc}"
+            signature = self._stable_hash({"error": str(exc)})
         if not targets:
             return
         for chat_id in targets:
-            self._send_status_message(chat_id, message)
+            if self._should_send_broadcast(
+                kind="auto_cycle",
+                chat_id=chat_id,
+                signature=signature,
+                change_only=self.auto_cycle_change_only,
+                digest_every=self.auto_cycle_repeat_digest_every,
+            ):
+                self._send_status_message(chat_id, message)
 
     def _start_auto_cycle_loop(self) -> None:
         if self._auto_cycle_thread is not None or not self.auto_cycle_enabled:

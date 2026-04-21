@@ -196,6 +196,7 @@ class NomadAutopilot:
             reply_conversion=reply_conversion,
             objective=selected_objective,
         )
+        autonomous_development = self_improvement.get("autonomous_development") or {}
 
         report = {
             "mode": "nomad_autopilot",
@@ -216,6 +217,7 @@ class NomadAutopilot:
             "lead_conversion": lead_conversion,
             "outreach": outreach_summary,
             "mutual_aid": mutual_aid,
+            "autonomous_development": autonomous_development,
             "daily_quota": daily_quota,
             "analysis": self._analysis(
                 objective=selected_objective,
@@ -227,6 +229,7 @@ class NomadAutopilot:
                 lead_conversion=lead_conversion,
                 outreach_summary=outreach_summary,
                 mutual_aid=mutual_aid,
+                autonomous_development=autonomous_development,
                 self_improvement=self_improvement,
                 daily_quota=daily_quota,
             ),
@@ -1056,6 +1059,9 @@ class NomadAutopilot:
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
         state["last_outreach"] = self._compact_outreach(report.get("outreach") or {})
         state["last_mutual_aid"] = self._compact_mutual_aid(report.get("mutual_aid") or {})
+        state["last_autonomous_development"] = self._compact_autonomous_development(
+            report.get("autonomous_development") or {}
+        )
         state["last_self_improvement"] = self._compact_self_improvement(report.get("self_improvement") or {})
         state["daily_a2a_quota"] = report.get("daily_quota") or state.get("daily_a2a_quota") or {}
         state["payment_followup_log"] = self._payment_followup_log
@@ -1108,6 +1114,7 @@ class NomadAutopilot:
                 "last_lead_conversion": {},
                 "last_outreach": {},
                 "last_mutual_aid": {},
+                "last_autonomous_development": {},
                 "last_self_improvement": {},
                 "daily_a2a_quota": {},
                 "payment_followup_log": {},
@@ -1131,6 +1138,7 @@ class NomadAutopilot:
         lead_conversion: Dict[str, Any],
         outreach_summary: Dict[str, Any],
         mutual_aid: Dict[str, Any],
+        autonomous_development: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
     ) -> str:
@@ -1175,6 +1183,12 @@ class NomadAutopilot:
                 f" Mutual-Aid score is {mutual_aid.get('mutual_aid_score', 0)} "
                 f"with truth_density_total={mutual_aid.get('truth_density_total', 0)}."
             )
+        if autonomous_development:
+            if autonomous_development.get("skipped"):
+                analysis += f" Autonomous development skipped: {autonomous_development.get('reason', 'unchanged')}."
+            else:
+                action = autonomous_development.get("action") or {}
+                analysis += f" Autonomous development recorded {action.get('action_id', '')}: {action.get('title', '')}."
         return analysis
 
     @staticmethod
@@ -1295,6 +1309,24 @@ class NomadAutopilot:
                 "applied": bool(plan.get("applied", False)),
             },
             "analysis": mutual_aid.get("analysis", ""),
+        }
+
+    @staticmethod
+    def _compact_autonomous_development(payload: Dict[str, Any]) -> Dict[str, Any]:
+        action = payload.get("action") or payload.get("latest_action") or {}
+        candidate = payload.get("candidate") or {}
+        return {
+            "skipped": bool(payload.get("skipped", False)),
+            "reason": payload.get("reason", ""),
+            "action_count": payload.get("action_count", 0),
+            "action": {
+                "action_id": action.get("action_id", ""),
+                "type": action.get("type", candidate.get("type", "")),
+                "title": action.get("title", candidate.get("title", "")),
+                "files": action.get("files", candidate.get("files") or []),
+                "next_verification": action.get("next_verification", candidate.get("next_verification", "")),
+            },
+            "analysis": payload.get("analysis", ""),
         }
 
     @staticmethod

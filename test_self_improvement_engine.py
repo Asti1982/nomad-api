@@ -1,3 +1,4 @@
+from nomad_autonomous_development import AutonomousDevelopmentLog
 from self_improvement import HostedBrainRouter, SelfImprovementEngine
 import requests
 
@@ -196,6 +197,7 @@ def test_self_improvement_runs_public_lead_scout_and_compute_watch(tmp_path):
         lead_discovery=lead_discovery,
         addons=FakeAddons(),
         lead_plan_path=tmp_path / "lead-plan.json",
+        autonomous_development=AutonomousDevelopmentLog(tmp_path / "autonomous.json"),
     )
 
     result = engine.run_cycle(objective="Find paid compute pain and improve Nomad.", profile_id="ai_first")
@@ -215,6 +217,8 @@ def test_self_improvement_runs_public_lead_scout_and_compute_watch(tmp_path):
     assert result["lead_scout"]["help_draft_saved"] is True
     assert result["lead_scout"]["help_draft_path"] == str(tmp_path / "lead-plan.json")
     assert result["agent_pain_solver"]["solution"]["pain_type"] == "compute_auth"
+    assert result["autonomous_development"]["skipped"] is False
+    assert result["autonomous_development"]["action"]["type"] == "lead_help_artifact"
     assert result["agent_pain_solver"]["solution"]["guardrail"]["id"] == "compute_fallback_ladder"
     assert any(action["type"] == "agent_pain_solution" for action in result["local_actions"])
     assert result["market_scan"]["compute_opportunities"][0]["name"] == "Cloudflare Workers AI"
@@ -233,6 +237,7 @@ def test_self_improvement_includes_quantum_tokens_in_cycle_context(tmp_path):
         lead_discovery=FakeLeadDiscovery(),
         addons=addons,
         lead_plan_path=tmp_path / "lead-plan.json",
+        autonomous_development=AutonomousDevelopmentLog(tmp_path / "autonomous.json"),
     )
 
     result = engine.run_cycle(
@@ -255,6 +260,7 @@ def test_self_improvement_prefers_focused_discovered_lead_when_objective_is_gene
         lead_discovery=lead_discovery,
         addons=FakeAddons(),
         lead_plan_path=tmp_path / "lead-plan.json",
+        autonomous_development=AutonomousDevelopmentLog(tmp_path / "autonomous.json"),
     )
 
     result = engine.run_cycle(
@@ -408,6 +414,7 @@ def test_self_improvement_ignores_question_style_brain_query_hint(tmp_path):
         lead_discovery=lead_discovery,
         addons=FakeAddons(),
         lead_plan_path=tmp_path / "lead-plan.json",
+        autonomous_development=AutonomousDevelopmentLog(tmp_path / "autonomous.json"),
     )
 
     result = engine.run_cycle(objective="Find compute pain and improve Nomad.", profile_id="ai_first")

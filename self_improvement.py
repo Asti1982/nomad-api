@@ -26,6 +26,7 @@ from compute_probe import (
 from infra_scout import InfrastructureScout
 from lead_discovery import LeadDiscoveryScout
 from mission import MISSION_STATEMENT, mission_context
+from nomad_autonomous_development import AutonomousDevelopmentLog
 from nomad_addons import NomadAddonManager
 from nomad_codebuddy import (
     CODEBUDDY_ACTIVE_SELF_REVIEW_ENV,
@@ -861,6 +862,7 @@ class SelfImprovementEngine:
         addons: Optional[NomadAddonManager] = None,
         codebuddy_runner: Optional[CodeBuddyReviewRunner] = None,
         lead_plan_path: Optional[Path] = None,
+        autonomous_development: Optional[AutonomousDevelopmentLog] = None,
     ) -> None:
         self.infra = infra or InfrastructureScout()
         self.brain_router = brain_router or HostedBrainRouter()
@@ -869,6 +871,7 @@ class SelfImprovementEngine:
         self.agent_pain_solver = agent_pain_solver or AgentPainSolver()
         self.addons = addons or NomadAddonManager()
         self.codebuddy_runner = codebuddy_runner or CodeBuddyReviewRunner()
+        self.autonomous_development = autonomous_development or AutonomousDevelopmentLog()
         self.lead_scout_limit = max(1, int(os.getenv("NOMAD_LEAD_SCOUT_LIMIT", "3")))
         self.lead_plan_path = Path(
             os.getenv("NOMAD_ACTIVE_LEAD_PLAN_PATH")
@@ -1023,6 +1026,14 @@ class SelfImprovementEngine:
             "self_development": self_development,
             "analysis": analysis,
         }
+        autonomous_development = self.autonomous_development.apply_cycle(
+            objective=objective,
+            self_improvement=result,
+        )
+        result["autonomous_development"] = autonomous_development
+        if autonomous_development.get("ok") and not autonomous_development.get("skipped"):
+            analysis += f" Autonomous development: {(autonomous_development.get('action') or {}).get('title', '')}."
+            result["analysis"] = analysis
         state = self.journal.record_cycle(result)
         result["self_development"] = {
             "cycle_count": state.get("cycle_count", 0),

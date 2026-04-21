@@ -12,6 +12,8 @@ nomad_direct_sessions.json
 nomad_agent_campaigns.json
 nomad_active_lead_plan.json
 nomad_autopilot_state.json
+nomad_autonomous_development.json
+telegram_broadcast_state.json
 nomad_lead_conversions.json
 nomad_products.json
 nomad_mutual_aid_state.json

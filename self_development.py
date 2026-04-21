@@ -26,6 +26,7 @@ class SelfDevelopmentJournal:
             payload.setdefault("self_development_unlocks", [])
             payload.setdefault("last_cycle_at", "")
             payload.setdefault("last_agent_pain_solution", None)
+            payload.setdefault("last_autonomous_development", None)
             return payload
         except Exception:
             return self._empty_state()
@@ -54,6 +55,7 @@ class SelfDevelopmentJournal:
                 ],
                 "last_lead": (result.get("lead_scout") or {}).get("active_lead"),
                 "last_agent_pain_solution": self._compact_agent_pain_solution(result),
+                "last_autonomous_development": self._compact_autonomous_development(result),
                 "cycles": cycles,
             }
         )
@@ -253,6 +255,11 @@ class SelfDevelopmentJournal:
             lines.append(
                 f"Last agent pain solution: {agent_solution.get('title')} ({agent_solution.get('pain_type')})"
             )
+        autonomous = state.get("last_autonomous_development") or {}
+        if autonomous:
+            lines.append(
+                f"Last autonomous development: {autonomous.get('title') or autonomous.get('reason') or 'none'}"
+            )
         return "\n".join(lines)
 
     def codex_task_prompt(self, autopilot_state_path: Optional[Path] = None) -> str:
@@ -348,6 +355,7 @@ class SelfDevelopmentJournal:
             "last_local_actions": [],
             "last_lead": None,
             "last_agent_pain_solution": None,
+            "last_autonomous_development": None,
             "cycles": [],
         }
 
@@ -373,6 +381,7 @@ class SelfDevelopmentJournal:
                 for item in (result.get("local_actions") or [])[:4]
             ],
             "agent_pain_solution": self._compact_agent_pain_solution(result),
+            "autonomous_development": self._compact_autonomous_development(result),
         }
 
     @staticmethod
@@ -441,4 +450,24 @@ class SelfDevelopmentJournal:
             "title": solution.get("title", ""),
             "guardrail_id": guardrail.get("id", ""),
             "next_nomad_action": solver.get("next_nomad_action", ""),
+        }
+
+    @staticmethod
+    def _compact_autonomous_development(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        payload = result.get("autonomous_development") or {}
+        if not payload:
+            return None
+        action = payload.get("action") or payload.get("candidate") or {}
+        if action:
+            return {
+                "action_id": action.get("action_id", ""),
+                "type": action.get("type", ""),
+                "title": action.get("title", ""),
+                "files": action.get("files") or [],
+                "skipped": bool(payload.get("skipped", False)),
+                "reason": payload.get("reason", ""),
+            }
+        return {
+            "skipped": bool(payload.get("skipped", False)),
+            "reason": payload.get("reason", ""),
         }

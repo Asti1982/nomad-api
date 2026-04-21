@@ -34,6 +34,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         compute_lanes = result.get("compute_lanes") or {}
         tasks = result.get("tasks") or {}
         autopilot = result.get("autopilot") or {}
+        autonomous = result.get("autonomous_development") or {}
         mutual_aid = result.get("mutual_aid") or {}
         lines = [
             "Nomad system status",
@@ -50,6 +51,10 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"  Objective: {autopilot.get('objective', 'N/A')}")
 
         lines.extend([
+            "",
+            "Autonomous Development:",
+            f"  Actions: {autonomous.get('action_count', 0)}",
+            f"  Latest: {autonomous.get('latest_title', '') or 'none'}",
             "",
             "Mutual-Aid:",
             f"  Score: {mutual_aid.get('mutual_aid_score', 0)}",
@@ -84,9 +89,11 @@ def _compact_text(result: Dict[str, Any]) -> str:
         outreach = result.get("outreach") or {}
         lead_conversion = result.get("lead_conversion") or {}
         reply_conversion = result.get("reply_conversion") or {}
+        autonomous_development = result.get("autonomous_development") or {}
         campaign = outreach.get("campaign") or {}
         stats = campaign.get("stats") or {}
         conversion_stats = lead_conversion.get("stats") or {}
+        autonomous_action = autonomous_development.get("action") or {}
         lines = [
             "Nomad autopilot",
             f"Objective: {result.get('objective', '')}",
@@ -97,6 +104,11 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"A2A replies converted: {len(reply_conversion.get('created_task_ids') or [])}",
             f"Outreach queued: {stats.get('queued', 0)}",
             f"Outreach sent: {stats.get('sent', 0)}",
+            (
+                f"Autonomous dev: {autonomous_action.get('title')}"
+                if autonomous_action
+                else f"Autonomous dev: skipped ({autonomous_development.get('reason', 'none')})"
+            ),
         ]
         quota = result.get("daily_quota") or {}
         if quota:

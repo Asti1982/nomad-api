@@ -153,6 +153,9 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_EUROHPC_ACCESS_ROUTE`: Optional preferred EuroHPC AI compute route, default `ai_factories_playground`; other planned values include `ai_factories_fast_lane`, `ai_factories_large_scale`, and `ai_for_science_collaborative`.
 - `NOMAD_AUTO_CYCLE`: Set to `true` to enable periodic self-improvement cycles.
 - `NOMAD_AUTO_CYCLE_RUN_ON_START`: Set to `true` to run one self-development cycle when the bot starts.
+- `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION`: Set to `true` only if every interacting chat should receive periodic updates. Default false.
+- `TELEGRAM_STATUS_CHANGE_ONLY`, `TELEGRAM_AUTO_CYCLE_CHANGE_ONLY`: Skip repeated Telegram status/auto-cycle broadcasts when the material state did not change. Default true.
+- `TELEGRAM_STATUS_REPEAT_DIGEST_EVERY`, `TELEGRAM_AUTO_CYCLE_REPEAT_DIGEST_EVERY`: Optional unchanged-update digest interval; `0` means no repeated digest.
 - `NOMAD_AUTOPILOT_MIN_CHECK_SECONDS`, `NOMAD_AUTOPILOT_MAX_CHECK_SECONDS`, `NOMAD_AUTOPILOT_FORCE_AFTER_SECONDS`, `NOMAD_AUTOPILOT_PAYMENT_POLL_SECONDS`, `NOMAD_AUTOPILOT_CONTACT_POLL_SECONDS`, `NOMAD_AUTOPILOT_OPPORTUNISTIC_AFTER_SECONDS`: Tune Nomad's self-scheduled auto-cycle decision windows.
 - `NOMAD_AUTOPILOT_CONVERSION_LIMIT`: Leads to convert per autopilot cycle, default 5.
 - `NOMAD_AUTOPILOT_DAILY_LEAD_TARGET`: Daily cap for A2A leads Nomad may prepare/contact, default 100.
@@ -164,7 +167,8 @@ Never commit `.env`, logs, downloaded binaries, or local model files.
 ## Telegram Tips
 
 - Send `/subscribe` to receive status and auto-cycle updates in that chat.
-- By default, any chat that receives a bot reply is auto-subscribed through `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION=true`.
+- Chats are no longer auto-subscribed by default. Use `/subscribe`, or set `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION=true` if you intentionally want old behavior.
+- Repeated periodic messages are change-only by default. Nomad records the last broadcast signature in `telegram_broadcast_state.json` and skips unchanged status/auto-cycle posts.
 - Send `/skip last` when the latest unlock task is unclear, not useful, or not worth doing now.
 - Send `/token github <token>`, `/token grok <token>`, `/token codebuddy <token>`, `/token render <token>`, `/token ibm_quantum <token>`, `/token quantum_inspire <token>`, or `ENV_VAR=...` for credentials; Nomad redacts token values.
 - Every unlock task should include a concrete `Do now`, `Send back`, `Done when`, and example reply.
@@ -266,6 +270,8 @@ Nomad's outward collaboration charter is explicit and machine-readable. When `NO
 Nomad v3.3 adds Mutual-Aid self-evolution. The primary learning loop is: help another agent, record the verified help signal, increase `mutual_aid_score`, estimate truth-density gain, and, when the bounded threshold is met, write a separate hash-verified module under `nomad_mutual_aid_modules/`. Every help result also enters the Truth-Density ledger with weighted evidence, outcome, score, reuse value, content hash, lane classification, and regression signal. The ledger keeps Nomad's existing JSON state surface stable and also exposes an append-only NDJSON primitive for richer local audits, reusable pattern ranking, stale open-entry cleanup, and late confirmations. Mutual-Aid modules are new-file-only and loaded only when their stored hash still matches; they do not rewrite existing Nomad code. Humans remain the safety fallback for critical changes, paid spend, private access, secrets, and access-control boundaries.
 
 The Swarm-to-Swarm inbox lets other agents help Nomad back through verifiable proposals, not raw remote code. `POST /aid` and the MCP tool `nomad_swarm_proposal` accept sender id, proposal text, evidence, optional payload hash, and expected outcome; Nomad rejects secret-like values, hash mismatches, missing evidence, and raw code. Repeated verified ledger patterns are distilled into paid Mutual-Aid micro-packs with starter diagnosis, bounded unblock offer, and `POST /tasks` service template. Trusted local control surfaces are `python main.py --cli mutual-aid-status`, `python main.py --cli mutual-aid-ledger`, `python main.py --cli swarm-inbox`, `python main.py --cli mutual-aid-packs`, and `python main.py --cli mutual-aid --agent OtherAgent "blocker text"`. Public agents should still enter normal work through `/a2a/message`, `/service`, or `/tasks`; Nomad only turns public help outcomes into Mutual-Aid learning after the outcome is verified.
+
+Autonomous development is now recorded separately from human unlock chatter. Each `/cycle` can write a bounded receipt to `nomad_autonomous_development.json` when Nomad actually creates a private lead-help artifact, captures a reusable agent-pain solution, or selects a non-human local action. Duplicate receipts are skipped by fingerprint, so the loop can show whether it developed something new instead of repeatedly asking for the same unlock.
 
 The lead conversion pipeline is the commercial loop: discover public pain, score buyer fit, generate a `nomad.agent_value_pack.v1`, queue only eligible machine-readable agent contact, or keep a private draft behind `APPROVE_LEAD_HELP=...` for human-facing surfaces. Each value pack contains the painpoint question, free diagnosis, safe next steps, verifier, reply contract, paid upgrade path, and Nomad self-apply action. Good replies become service tasks through `PLAN_ACCEPTED=true` plus `FACT_URL`, `ERROR`, `APPROVAL_GRANTED`, or `budget_native`.
 

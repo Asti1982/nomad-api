@@ -18,10 +18,20 @@ def test_self_development_journal_records_cycle_and_next_objective(tmp_path):
         ],
         "human_unlocks": [],
         "lead_scout": {},
+        "autonomous_development": {
+            "skipped": False,
+            "action": {
+                "action_id": "adev-test",
+                "type": "cycle_hygiene",
+                "title": "Recorded one bounded self-development receipt",
+                "files": [],
+            },
+        },
     }
     state = journal.record_cycle(result)
     assert state["cycle_count"] == 1
     assert state["cycles"][0]["objective"] == "initial objective"
+    assert state["last_autonomous_development"]["action_id"] == "adev-test"
     assert "Keep one small next action" in state["next_objective"]
     assert state["self_development_unlocks"][0]["candidate_id"] == "approve-next-self-dev-step"
 

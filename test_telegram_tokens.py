@@ -13,10 +13,34 @@ def test_auto_subscribe_chat_on_interaction(tmp_path, monkeypatch):
     import telegram_bot
 
     subscribers_path = tmp_path / "telegram_subscribers.json"
+    monkeypatch.setenv("TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION", "true")
     monkeypatch.setattr(telegram_bot, "SUBSCRIBERS_PATH", subscribers_path)
     bot = ArbiterBot()
     bot._auto_subscribe_chat(DummyUpdate())
     assert bot._load_subscribers() == {12345}
+
+
+def test_auto_subscribe_is_off_by_default(tmp_path, monkeypatch):
+    import telegram_bot
+
+    subscribers_path = tmp_path / "telegram_subscribers.json"
+    monkeypatch.delenv("TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION", raising=False)
+    monkeypatch.setattr(telegram_bot, "SUBSCRIBERS_PATH", subscribers_path)
+    bot = ArbiterBot()
+    bot._auto_subscribe_chat(DummyUpdate())
+    assert bot._load_subscribers() == set()
+
+
+def test_periodic_broadcast_skips_unchanged_signature(tmp_path, monkeypatch):
+    import telegram_bot
+
+    state_path = tmp_path / "telegram_broadcast_state.json"
+    monkeypatch.setattr(telegram_bot, "TELEGRAM_BROADCAST_STATE_PATH", state_path)
+    bot = ArbiterBot()
+
+    assert bot._should_send_broadcast("status", 12345, "sig-a", True) is True
+    assert bot._should_send_broadcast("status", 12345, "sig-a", True) is False
+    assert bot._should_send_broadcast("status", 12345, "sig-b", True) is True
 
 
 def test_parse_explicit_github_token_command():
@@ -77,10 +101,10 @@ def test_parse_codebuddy_token_alias_and_redact_echo_text():
 
 def test_parse_render_token_alias_and_redact_echo_text():
     bot = ArbiterBot()
-    submissions = bot._parse_token_submissions("/token render rnd_not-a-real-token-123")
-    redacted = bot._redact_sensitive_text("RENDER_API_KEY=rnd_not-a-real-token-123")
-    assert submissions == [("RENDER_API_KEY", "rnd_not-a-real-token-123")]
-    assert "not-a-real-token-123" not in redacted
+    submissions = bot._parse_token_submissions("/token render rnd_demo")
+    redacted = bot._redact_sensitive_text("RENDER_API_KEY=rnd_demo")
+    assert submissions == [("RENDER_API_KEY", "rnd_demo")]
+    assert "rnd_demo" not in redacted
     assert "RENDER_API_KEY=<redacted>" in redacted
 
 
