@@ -76,9 +76,17 @@ class NomadAutopilot:
             1,
             int(os.getenv("NOMAD_AUTOPILOT_PAYMENT_FOLLOWUP_HOURS", "24")),
         )
+        self.default_agent_followup_limit = int(
+            os.getenv("NOMAD_AUTOPILOT_AGENT_FOLLOWUP_LIMIT", "3")
+        )
+        self.agent_followup_hours = max(
+            1,
+            int(os.getenv("NOMAD_AUTOPILOT_AGENT_FOLLOWUP_HOURS", "48")),
+        )
         self._api_thread = None
         self._outreach_query_cursor = 0
         self._payment_followup_log: dict[str, dict[str, Any]] = {}
+        self._agent_followup_log: dict[str, dict[str, Any]] = {}
         self.last_cycle_report: Optional[Dict[str, Any]] = None
 
     def run_once(
@@ -138,6 +146,26 @@ class NomadAutopilot:
                 self.default_contact_poll_limit,
             )
         )
+        agent_followup_queue = self._queue_agent_followups(
+            contact_poll=contact_poll,
+            limit=self.default_agent_followup_limit,
+            enabled=send_queue_enabled,
+        )
+        queued_agent_followups = len(agent_followup_queue.get("queued_contact_ids") or [])
+        if queued_agent_followups > 0:
+            agent_followup_send = self._flush_contact_queue(
+                limit=queued_agent_followups,
+                send_enabled=send_queue_enabled,
+            )
+        else:
+            agent_followup_send = {
+                "queued_listing": {"contacts": [], "stats": {}},
+                "sent_contact_ids": [],
+                "failed_contact_ids": [],
+                "analysis": "No queued agent follow-up contacts to send.",
+                "skipped": True,
+                "reason": "no_agent_followups_queued",
+            }
         reply_conversion = self._convert_replies_to_service_tasks(contact_poll)
 
         journal_state = self.journal.load()
@@ -216,6 +244,8 @@ class NomadAutopilot:
             "payment_followup_queue": payment_followup_queue,
             "contact_queue": contact_summary,
             "contact_poll": contact_poll,
+            "agent_followup_queue": agent_followup_queue,
+            "agent_followup_send": agent_followup_send,
             "reply_conversion": reply_conversion,
             "self_improvement": self_improvement,
             "lead_conversion": lead_conversion,
@@ -230,6 +260,8 @@ class NomadAutopilot:
                 payment_followup_queue=payment_followup_queue,
                 contact_summary=contact_summary,
                 contact_poll=contact_poll,
+                agent_followup_queue=agent_followup_queue,
+                agent_followup_send=agent_followup_send,
                 reply_conversion=reply_conversion,
                 lead_conversion=lead_conversion,
                 product_factory=product_factory,
@@ -561,6 +593,123 @@ class NomadAutopilot:
             ),
         }
 
+    def _queue_agent_followups(
+        self,
+        contact_poll: Dict[str, Any],
+        limit: int,
+        enabled: bool,
+    ) -> Dict[str, Any]:
+        replies = contact_poll.get("reply_summaries") or []
+        cap = max(0, int(limit or 0))
+        if cap <= 0:
+            return {
+                "mode": "autopilot_agent_followup_queue",
+                "ok": True,
+                "queued_contact_ids": [],
+                "duplicate_contact_ids": [],
+                "blocked_contact_ids": [],
+                "skipped_contact_ids": [],
+                "skipped_reasons": {},
+                "analysis": "Agent follow-up queue skipped because the follow-up limit is zero.",
+                "reason": "agent_followup_limit_zero",
+                "skipped": True,
+            }
+        if not enabled:
+            return {
+                "mode": "autopilot_agent_followup_queue",
+                "ok": True,
+                "queued_contact_ids": [],
+                "duplicate_contact_ids": [],
+                "blocked_contact_ids": [],
+                "skipped_contact_ids": [str(item.get("contact_id") or "") for item in replies[:cap] if item.get("contact_id")],
+                "skipped_reasons": {"send_disabled_or_public_url_missing": len(replies[:cap])},
+                "analysis": "Agent follow-up queue skipped because autonomous A2A sending is disabled or Nomad is not public.",
+                "reason": "send_disabled_or_public_url_missing",
+                "skipped": True,
+            }
+        if not hasattr(self.agent.agent_contacts, "queue_contact"):
+            return {
+                "mode": "autopilot_agent_followup_queue",
+                "ok": True,
+                "queued_contact_ids": [],
+                "duplicate_contact_ids": [],
+                "blocked_contact_ids": [],
+                "skipped_contact_ids": [str(item.get("contact_id") or "") for item in replies[:cap] if item.get("contact_id")],
+                "skipped_reasons": {"queue_contact_unavailable": len(replies[:cap])},
+                "analysis": "Agent follow-up queue skipped because the contact outbox cannot queue new contacts here.",
+                "reason": "queue_contact_unavailable",
+                "skipped": True,
+            }
+
+        state = self._load()
+        stored_log = state.get("agent_followup_log")
+        if isinstance(stored_log, dict):
+            self._agent_followup_log = dict(stored_log)
+        queued_contact_ids: list[str] = []
+        duplicate_contact_ids: list[str] = []
+        blocked_contact_ids: list[str] = []
+        skipped_contact_ids: list[str] = []
+        skipped_reasons: Dict[str, int] = {}
+        now = datetime.now(UTC)
+
+        for reply in replies[:cap]:
+            contact_id = str(reply.get("contact_id") or "")
+            if not contact_id:
+                continue
+            if not bool(reply.get("followup_should_queue")):
+                skipped_contact_ids.append(contact_id)
+                skipped_reasons["customer_or_no_followup"] = skipped_reasons.get("customer_or_no_followup", 0) + 1
+                continue
+            endpoint_url = str(reply.get("endpoint_url") or "")
+            if not endpoint_url:
+                skipped_contact_ids.append(contact_id)
+                skipped_reasons["requester_endpoint_missing"] = skipped_reasons.get("requester_endpoint_missing", 0) + 1
+                continue
+            if not self._agent_followup_due(contact_id=contact_id, now=now):
+                skipped_contact_ids.append(contact_id)
+                skipped_reasons["recent_followup_exists"] = skipped_reasons.get("recent_followup_exists", 0) + 1
+                continue
+            result = self.agent.agent_contacts.queue_contact(
+                endpoint_url=endpoint_url,
+                problem=self._agent_followup_problem(reply),
+                service_type=str(reply.get("service_type") or reply.get("classification") or self.default_outreach_service_type or "custom").strip(),
+                lead=self._agent_followup_lead(reply),
+                budget_hint_native=self._optional_float(reply.get("budget_native")),
+                allow_duplicate=True,
+            )
+            if result.get("ok"):
+                contact = result.get("contact") or {}
+                queued_id = str(contact.get("contact_id") or contact_id)
+                self._agent_followup_log[contact_id] = {
+                    "queued_at": now.isoformat(),
+                    "contact_id": queued_id,
+                    "endpoint_url": endpoint_url,
+                    "count": int((self._agent_followup_log.get(contact_id) or {}).get("count") or 0) + 1,
+                    "role": str(reply.get("agent_role") or ""),
+                }
+                if result.get("duplicate"):
+                    duplicate_contact_ids.append(queued_id)
+                else:
+                    queued_contact_ids.append(queued_id)
+            else:
+                blocked_contact_ids.append(contact_id)
+                reason = str(result.get("reason") or "queue_blocked")
+                skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+
+        return {
+            "mode": "autopilot_agent_followup_queue",
+            "ok": True,
+            "queued_contact_ids": queued_contact_ids,
+            "duplicate_contact_ids": duplicate_contact_ids,
+            "blocked_contact_ids": blocked_contact_ids,
+            "skipped_contact_ids": skipped_contact_ids,
+            "skipped_reasons": skipped_reasons,
+            "analysis": (
+                f"Agent follow-up queue prepared {len(queued_contact_ids)} contact(s), "
+                f"duplicates {len(duplicate_contact_ids)}, blocked {len(blocked_contact_ids)}, skipped {len(skipped_contact_ids)}."
+            ),
+        }
+
     def _flush_contact_queue(self, limit: int, send_enabled: bool) -> Dict[str, Any]:
         queued_listing = self.agent.agent_contacts.list_contacts(statuses=["queued"], limit=limit)
         queued_contacts = queued_listing.get("contacts") or []
@@ -626,8 +775,11 @@ class NomadAutopilot:
                         "endpoint_url": str(updated.get("endpoint_url") or ""),
                         "reply_text": str(reply.get("text") or "")[:240],
                         "classification": str(normalized.get("classification") or ""),
+                        "service_type": str(updated.get("service_type") or normalized.get("classification") or ""),
                         "agent_role": str(role_assessment.get("role") or ""),
                         "followup_next_path": str(followup.get("next_path") or ""),
+                        "followup_message": str(followup.get("message") or updated.get("followup_message") or ""),
+                        "followup_should_queue": bool(updated.get("followup_ready")),
                         "next_step": str(normalized.get("next_step") or ""),
                         "budget_native": str(normalized.get("budget_native") or ""),
                     }
@@ -657,9 +809,11 @@ class NomadAutopilot:
         send_outreach: bool,
     ) -> Dict[str, Any]:
         public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        service_type = self._preferred_outreach_service_type(self_improvement)
         query = self._select_outreach_query(
             explicit_query=explicit_query,
             self_improvement=self_improvement,
+            service_type=service_type,
         )
         if limit <= 0:
             return {
@@ -669,6 +823,7 @@ class NomadAutopilot:
                 "skipped": True,
                 "reason": "outreach_limit_zero",
                 "query": query,
+                "service_type_focus": service_type,
                 "analysis": "Outreach skipped because the per-cycle outreach limit is zero.",
             }
         if send_outreach and not self._is_public_service_url(public_api_url):
@@ -679,6 +834,7 @@ class NomadAutopilot:
                 "skipped": True,
                 "reason": "public_api_url_required",
                 "query": query,
+                "service_type_focus": service_type,
                 "analysis": (
                     "Outreach send is disabled because NOMAD_PUBLIC_API_URL is empty or still points to localhost. "
                     "Nomad should expose /service, /tasks and /x402 endpoints before cold outreach."
@@ -688,9 +844,10 @@ class NomadAutopilot:
             limit=limit,
             query=query,
             send=send_outreach,
-            service_type=self.default_outreach_service_type,
+            service_type=service_type,
         )
         result["autopilot_query"] = query
+        result["service_type_focus"] = service_type
         return result
 
     def _run_lead_conversion(
@@ -841,6 +998,23 @@ class NomadAutopilot:
             queued_dt = queued_dt.replace(tzinfo=UTC)
         return now - queued_dt >= timedelta(hours=self.payment_followup_hours)
 
+    def _agent_followup_due(
+        self,
+        contact_id: str,
+        now: datetime,
+    ) -> bool:
+        entry = self._agent_followup_log.get(contact_id) or {}
+        queued_at = str(entry.get("queued_at") or "").strip()
+        if not queued_at:
+            return True
+        try:
+            queued_dt = datetime.fromisoformat(queued_at.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if queued_dt.tzinfo is None:
+            queued_dt = queued_dt.replace(tzinfo=UTC)
+        return now - queued_dt >= timedelta(hours=self.agent_followup_hours)
+
     @staticmethod
     def _payment_followup_endpoint(followup: Dict[str, Any]) -> str:
         metadata = followup.get("metadata") or {}
@@ -900,6 +1074,32 @@ class NomadAutopilot:
             lines.append(f"primary_offer={primary_offer.get('title')}")
             lines.append(f"primary_amount_native={primary_offer.get('amount_native')}")
         lines.append("next_action=pay_smallest_offer_or_submit_tx_hash")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _agent_followup_lead(reply: Dict[str, Any]) -> Dict[str, Any]:
+        requester = str(reply.get("title") or reply.get("endpoint_url") or "agent").strip()
+        role = str(reply.get("agent_role") or "agent").strip()
+        service_type = str(reply.get("service_type") or reply.get("classification") or "custom").strip()
+        return {
+            "url": f"nomad://agent-contact/{reply.get('contact_id') or ''}" if reply.get("contact_id") else "",
+            "title": requester,
+            "pain": f"{role} followup for {service_type}",
+            "buyer_fit": "strong" if role in {"peer_solver", "reseller"} else "warm",
+            "buyer_intent_terms": [role, service_type, "followup_contract"],
+        }
+
+    @staticmethod
+    def _agent_followup_problem(reply: Dict[str, Any]) -> str:
+        message = str(reply.get("followup_message") or "").strip()
+        if message:
+            return message
+        lines = [
+            "nomad.followup.v1",
+            f"role={reply.get('agent_role') or 'agent'}",
+            f"next_path={reply.get('followup_next_path') or ''}",
+            "contract=surface|constraint|shared_goal|next_action",
+        ]
         return "\n".join(lines)
 
     @staticmethod
@@ -963,13 +1163,17 @@ class NomadAutopilot:
             "tighten the payment path, deliver free value first, and package the solution as reusable memory."
         )
 
-    def _query_from_cycle(self, self_improvement: Dict[str, Any]) -> str:
+    def _direct_outreach_query_from_cycle(self, self_improvement: Dict[str, Any]) -> str:
         lead_scout = self_improvement.get("lead_scout") or {}
         queries = lead_scout.get("outreach_queries") or []
         for query in queries:
             cleaned = str(query or "").strip()
             if cleaned:
                 return cleaned
+        return ""
+
+    def _generic_query_from_cycle(self, self_improvement: Dict[str, Any]) -> str:
+        lead_scout = self_improvement.get("lead_scout") or {}
         queries = lead_scout.get("search_queries") or []
         for query in queries:
             cleaned = str(query or "").strip()
@@ -981,20 +1185,43 @@ class NomadAutopilot:
         self,
         explicit_query: str,
         self_improvement: Dict[str, Any],
+        service_type: str = "",
     ) -> str:
         explicit = (explicit_query or "").strip()
         if explicit:
             return explicit
-        suggested = self._query_from_cycle(self_improvement)
+        direct_suggested = self._direct_outreach_query_from_cycle(self_improvement)
+        if direct_suggested:
+            return direct_suggested
+        suggested = self._generic_query_from_cycle(self_improvement)
         state = self._load()
-        configured = list(self.default_outreach_queries)
+        configured = list(self._service_type_queries(service_type))
         if suggested:
-            configured = [suggested, *configured]
+            configured.append(suggested)
+        configured.extend(self.default_outreach_queries)
         rotation = self._dedupe_queries(configured) or [self.default_outreach_query]
         cursor = int(state.get("outreach_query_cursor") or 0)
         query = rotation[cursor % len(rotation)]
         self._outreach_query_cursor = (cursor + 1) % len(rotation)
         return query
+
+    def _preferred_outreach_service_type(self, self_improvement: Dict[str, Any]) -> str:
+        patterns = list(((self_improvement.get("high_value_patterns") or {}).get("patterns") or []))
+        if patterns:
+            pain_type = str((patterns[0] or {}).get("pain_type") or "").strip()
+            if pain_type:
+                return pain_type
+        product_factory = getattr(self.agent, "product_factory", None)
+        if product_factory and hasattr(product_factory, "list_products"):
+            try:
+                listing = product_factory.list_products(limit=5)
+                top = listing.get("top_priority_product") or ((listing.get("products") or [None])[0] or {})
+                pain_type = str((top or {}).get("pain_type") or "").strip()
+                if pain_type:
+                    return pain_type
+            except Exception:
+                pass
+        return self.default_outreach_service_type
 
     def _select_conversion_query(
         self,
@@ -1060,6 +1287,32 @@ class NomadAutopilot:
         ]
 
     @staticmethod
+    def _service_type_queries(service_type: str) -> list[str]:
+        mapping = {
+            "compute_auth": [
+                '"agent-card.json" "quota" "token" "https://"',
+                '"agent-card.json" "auth" "fallback" "https://"',
+            ],
+            "wallet_payment": [
+                '"agent-card.json" "x402" "payment" "https://"',
+                '"agent-card.json" "wallet" "payment" "https://"',
+            ],
+            "mcp_integration": [
+                '"agent-card.json" "mcp" "schema" "https://"',
+                '"agent-card.json" "tool contract" "https://"',
+            ],
+            "human_in_loop": [
+                '"agent-card.json" "approval" "captcha" "https://"',
+                '"agent-card.json" "human-in-the-loop" "https://"',
+            ],
+            "self_improvement": [
+                '"agent-card.json" "guardrail" "memory" "https://"',
+                '"agent-card.json" "self-improvement" "agent" "https://"',
+            ],
+        }
+        return mapping.get(str(service_type or "").strip(), [])
+
+    @staticmethod
     def _dedupe_queries(queries: list[str]) -> list[str]:
         deduped: list[str] = []
         seen: set[str] = set()
@@ -1097,6 +1350,10 @@ class NomadAutopilot:
         )
         state["last_contact_queue"] = self._compact_contacts(report.get("contact_queue") or {})
         state["last_contact_poll"] = self._compact_contact_poll(report.get("contact_poll") or {})
+        state["last_agent_followup_queue"] = self._compact_agent_followup_queue(
+            report.get("agent_followup_queue") or {}
+        )
+        state["last_agent_followup_send"] = self._compact_contacts(report.get("agent_followup_send") or {})
         state["last_reply_conversion"] = self._compact_reply_conversion(report.get("reply_conversion") or {})
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
         state["last_product_factory"] = self._compact_product_factory(report.get("product_factory") or {})
@@ -1108,6 +1365,7 @@ class NomadAutopilot:
         state["last_self_improvement"] = self._compact_self_improvement(report.get("self_improvement") or {})
         state["daily_a2a_quota"] = report.get("daily_quota") or state.get("daily_a2a_quota") or {}
         state["payment_followup_log"] = self._payment_followup_log
+        state["agent_followup_log"] = self._agent_followup_log
         state["outreach_query_cursor"] = int(self._outreach_query_cursor or 0)
         converted_ids = set(state.get("converted_reply_contact_ids") or [])
         converted_ids.update(report.get("reply_conversion", {}).get("converted_contact_ids") or [])
@@ -1153,6 +1411,8 @@ class NomadAutopilot:
                 "last_payment_followup_queue": {},
                 "last_contact_queue": {},
                 "last_contact_poll": {},
+                "last_agent_followup_queue": {},
+                "last_agent_followup_send": {},
                 "last_reply_conversion": {},
                 "last_lead_conversion": {},
                 "last_product_factory": {},
@@ -1162,6 +1422,7 @@ class NomadAutopilot:
                 "last_self_improvement": {},
                 "daily_a2a_quota": {},
                 "payment_followup_log": {},
+                "agent_followup_log": {},
                 "outreach_query_cursor": 0,
                 "converted_reply_contact_ids": [],
             }
@@ -1178,6 +1439,8 @@ class NomadAutopilot:
         payment_followup_queue: Dict[str, Any],
         contact_summary: Dict[str, Any],
         contact_poll: Dict[str, Any],
+        agent_followup_queue: Dict[str, Any],
+        agent_followup_send: Dict[str, Any],
         reply_conversion: Dict[str, Any],
         lead_conversion: Dict[str, Any],
         product_factory: Dict[str, Any],
@@ -1193,6 +1456,8 @@ class NomadAutopilot:
         payment_followups = len(service_summary.get("payment_followups") or [])
         queued_payment_followups = len(payment_followup_queue.get("queued_contact_ids") or [])
         queued_sent = len(contact_summary.get("sent_contact_ids") or [])
+        queued_agent_followups = len(agent_followup_queue.get("queued_contact_ids") or [])
+        sent_agent_followups = len(agent_followup_send.get("sent_contact_ids") or [])
         replied = len(contact_poll.get("replied_contact_ids") or [])
         polled = len(contact_poll.get("polled_contact_ids") or [])
         converted = len(reply_conversion.get("created_task_ids") or [])
@@ -1212,6 +1477,7 @@ class NomadAutopilot:
             f"Payment follow-up contacts queued {queued_payment_followups}. "
             f"Queue flush sent {queued_sent} queued contact(s). "
             f"Contact poll checked {polled} sent contact(s) and found {replied} reply/replies. "
+            f"Agent follow-up queue prepared {queued_agent_followups} role-specific contact(s) and sent {sent_agent_followups}. "
             f"Reply conversion created {converted} paid-task candidate(s). "
             f"Lead conversion prepared {sum(int(v) for v in conversion_stats.values()) if conversion_stats else 0} conversion artifact(s). "
             f"Product factory built {product_count} product offer(s). "
@@ -1298,6 +1564,19 @@ class NomadAutopilot:
         }
 
     @staticmethod
+    def _compact_agent_followup_queue(summary: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "queued_contact_ids": summary.get("queued_contact_ids") or [],
+            "duplicate_contact_ids": summary.get("duplicate_contact_ids") or [],
+            "blocked_contact_ids": summary.get("blocked_contact_ids") or [],
+            "skipped_contact_ids": summary.get("skipped_contact_ids") or [],
+            "skipped_reasons": summary.get("skipped_reasons") or {},
+            "analysis": summary.get("analysis", ""),
+            "reason": summary.get("reason", ""),
+            "skipped": bool(summary.get("skipped", False)),
+        }
+
+    @staticmethod
     def _compact_contact_poll(contact_summary: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "polled_contact_ids": contact_summary.get("polled_contact_ids") or [],
@@ -1368,6 +1647,7 @@ class NomadAutopilot:
             "campaign_id": campaign.get("campaign_id", ""),
             "stats": campaign.get("stats") or {},
             "query": outreach_summary.get("autopilot_query") or outreach_summary.get("query") or "",
+            "service_type_focus": outreach_summary.get("service_type_focus", ""),
             "analysis": outreach_summary.get("analysis", ""),
             "skipped": outreach_summary.get("skipped", False),
             "reason": outreach_summary.get("reason", ""),

@@ -174,6 +174,7 @@ class AgentContactOutbox:
         service_type: str = "human_in_loop",
         lead: Optional[Dict[str, Any]] = None,
         budget_hint_native: Optional[float] = None,
+        allow_duplicate: bool = False,
     ) -> Dict[str, Any]:
         lead_payload = dict(lead or {})
         guardrail = self.guardrails.evaluate(
@@ -218,12 +219,13 @@ class AgentContactOutbox:
         if prepared.get("agent_name") and not lead_payload.get("title"):
             lead_payload["title"] = prepared["agent_name"]
 
-        existing = self._recent_existing_contact(
-            endpoint_url=endpoint_url,
-            service_type=service_type,
-        )
-        if existing:
-            return self._response(existing, duplicate=True)
+        if not allow_duplicate:
+            existing = self._recent_existing_contact(
+                endpoint_url=endpoint_url,
+                service_type=service_type,
+            )
+            if existing:
+                return self._response(existing, duplicate=True)
 
         contact_id = self._contact_id(endpoint_url, problem)
         offer = self._offer_payload(
@@ -734,6 +736,11 @@ class AgentContactOutbox:
             contact["engagement_id"] = engagement_entry.get("engagement_id", "")
             contact["followup_recommendation"] = followup
             contact["followup_message"] = followup.get("message", "")
+            contact["followup_ready"] = self._clean(role_assessment.get("role")) in {
+                "peer_solver",
+                "collaborator",
+                "reseller",
+            }
 
     def _remote_task_for_contact(self, contact: Dict[str, Any]) -> Dict[str, Any]:
         existing = contact.get("remote_task") or {}

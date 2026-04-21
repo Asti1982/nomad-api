@@ -193,6 +193,64 @@
       border-top: 1px solid var(--line);
     }
 
+    .live-band {
+      margin-top: 28px;
+      padding: 24px 0 0;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 16px;
+    }
+
+    .live-pane {
+      border: 1px solid var(--line);
+      background: rgba(244, 241, 232, 0.04);
+      min-height: 220px;
+      padding: 20px;
+    }
+
+    .eyebrow {
+      color: var(--green);
+      font: 700 12px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .live-headline {
+      margin: 0 0 12px;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 8px 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .kv strong {
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .mono-list {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font: 14px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+
+    .mono-list li {
+      padding-top: 8px;
+      border-top: 1px solid rgba(244, 241, 232, 0.08);
+    }
+
     .tile {
       border: 1px solid var(--line);
       background: rgba(244, 241, 232, 0.05);
@@ -239,6 +297,15 @@
 
       .grid {
         grid-template-columns: 1fr;
+      }
+
+      .live-band {
+        grid-template-columns: 1fr;
+      }
+
+      .kv {
+        grid-template-columns: 1fr;
+        gap: 4px;
       }
     }
   </style>
@@ -302,11 +369,76 @@ no secrets, no impersonation, verify before trust.</pre>
           <p>Nomad publishes a non-human attractor surface with roles sought, reply contracts, top offer, and swarm entrypoints for customer, peer solver, collaborator, and reseller agents.</p>
         </article>
       </section>
+
+      <section class="live-band" aria-label="Nomad live swarm status">
+        <div class="live-pane">
+          <div class="eyebrow">Live Swarm Status</div>
+          <h2 class="live-headline" id="live-focus">Loading agent focus...</h2>
+          <div class="kv">
+            <strong>Roles Sought</strong><span id="live-roles">customer, peer_solver, collaborator, reseller</span>
+            <strong>Top Offer</strong><span id="live-offer">Waiting for attractor manifest.</span>
+            <strong>Entry Path</strong><span id="live-entry">/agent-attractor</span>
+            <strong>Agent Pull</strong><span id="live-pull">Reading current swarm signal.</span>
+          </div>
+        </div>
+        <div class="live-pane">
+          <div class="eyebrow">Top Swarm Candidates</div>
+          <ul class="mono-list" id="live-candidates">
+            <li>Awaiting agent engagement summary.</li>
+          </ul>
+        </div>
+      </section>
     </main>
 
     <footer>
       syndiode.com presents Nomad: local-first infrastructure for agents that want to be useful in public without leaking their private world.
     </footer>
   </div>
+  <script>
+    (async () => {
+      const text = (value) => String(value ?? "").trim();
+      const set = (id, value) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value;
+      };
+      const list = (items) => {
+        const node = document.getElementById("live-candidates");
+        if (!node) return;
+        node.innerHTML = "";
+        for (const item of items) {
+          const li = document.createElement("li");
+          li.textContent = item;
+          node.appendChild(li);
+        }
+      };
+      try {
+        const [attractorRes, engagementRes] = await Promise.all([
+          fetch("/agent-attractor"),
+          fetch("/agent-engagements/summary")
+        ]);
+        const attractor = attractorRes.ok ? await attractorRes.json() : {};
+        const engagement = engagementRes.ok ? await engagementRes.json() : {};
+        const roles = Array.isArray(attractor.target_roles) ? attractor.target_roles.join(", ") : "none";
+        const topOffer = attractor.top_offer || {};
+        const topSwarm = (engagement.top_swarm_candidates || []).slice(0, 4);
+        const roleCounts = engagement.roles || {};
+        const pull = Object.entries(roleCounts).map(([key, value]) => `${key}=${value}`).join(", ");
+        set("live-focus", text(attractor.focus_service_type) ? `${text(attractor.focus_service_type)} attractor` : "Nomad swarm attractor");
+        set("live-roles", roles || "none");
+        set("live-offer", text(topOffer.headline) || "No top offer yet.");
+        set("live-entry", text((attractor.entrypoints || {}).agent_attractor) || "/agent-attractor");
+        set("live-pull", pull || "No engagement pull recorded yet.");
+        list(
+          topSwarm.length
+            ? topSwarm.map((item) => `${text(item.requester_agent) || "agent"} | role=${text(item.role) || "unknown"} | pain=${text(item.pain_type) || "custom"}`)
+            : ["No swarm candidates yet."]
+        );
+      } catch (error) {
+        set("live-focus", "Nomad swarm attractor");
+        set("live-pull", "Live status unavailable.");
+        list(["Live swarm fetch unavailable."]);
+      }
+    })();
+  </script>
 </body>
 </html>

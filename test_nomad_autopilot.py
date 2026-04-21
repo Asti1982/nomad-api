@@ -210,7 +210,7 @@ class PaymentFollowupContacts(FakeContacts):
         self._queued_contacts = []
         self._sent_contacts = []
 
-    def queue_contact(self, endpoint_url, problem, service_type, lead, budget_hint_native):
+    def queue_contact(self, endpoint_url, problem, service_type, lead, budget_hint_native, allow_duplicate=False):
         contact_id = f"followup-{len(self._queued_contacts) + 1}"
         contact = {
             "contact_id": contact_id,
@@ -227,6 +227,7 @@ class PaymentFollowupContacts(FakeContacts):
                 "service_type": service_type,
                 "lead": lead,
                 "budget_hint_native": budget_hint_native,
+                "allow_duplicate": allow_duplicate,
             }
         )
         self._queued_contacts.append(contact)
@@ -268,6 +269,67 @@ class PaymentFollowupContacts(FakeContacts):
             "ok": True,
             "contact": {"contact_id": contact_id, "status": "sent"},
         }
+
+
+class AgentFollowupContacts(PaymentFollowupContacts):
+    def __init__(self):
+        super().__init__()
+        self._initial_sent = [{"contact_id": "contact-2", "status": "sent"}]
+
+    def list_contacts(self, statuses=None, limit=50):
+        statuses = statuses or []
+        if statuses == ["sent"]:
+            items = list(self._initial_sent) + list(self._sent_contacts)
+            return {
+                "mode": "agent_contact_list",
+                "ok": True,
+                "contacts": items[:limit],
+                "stats": {"sent": len(items)},
+            }
+        return super().list_contacts(statuses=statuses, limit=limit)
+
+    def poll_contact(self, contact_id):
+        if contact_id == "contact-2":
+            return {
+                "mode": "agent_contact",
+                "ok": True,
+                "contact": {
+                    "contact_id": contact_id,
+                    "status": "replied",
+                    "service_type": "compute_auth",
+                    "endpoint_url": "https://agent.example/a2a/TestAgent",
+                    "lead": {"title": "TestAgent"},
+                    "followup_ready": True,
+                    "followup_message": (
+                        "nomad.followup.v1\n"
+                        "role=peer_solver\n"
+                        "next_path=request_verifiable_artifact\n"
+                        "ask=Send one verifier, diff, repro artifact, or failing trace that Nomad can test.\n"
+                        "contract=artifact_url|diff|verifier|error_trace"
+                    ),
+                    "reply_role_assessment": {"role": "peer_solver"},
+                    "followup_recommendation": {"next_path": "request_verifiable_artifact"},
+                    "last_reply": {
+                        "text": "I can send a verifier and repro artifact.",
+                        "normalized": {
+                            "classification": "compute_auth",
+                            "next_step": "send verifier",
+                            "budget_native": "0.02",
+                        },
+                        "role_assessment": {"role": "peer_solver"},
+                        "followup": {
+                            "next_path": "request_verifiable_artifact",
+                            "message": (
+                                "nomad.followup.v1\n"
+                                "role=peer_solver\n"
+                                "next_path=request_verifiable_artifact\n"
+                                "contract=artifact_url|diff|verifier|error_trace"
+                            ),
+                        },
+                    },
+                },
+            }
+        return super().poll_contact(contact_id)
 
 
 class QuietContacts(FakeContacts):
@@ -805,3 +867,45 @@ def test_autopilot_throttles_payment_followup_requeue(monkeypatch, tmp_path):
     assert second["payment_followup_queue"]["queued_contact_ids"] == []
     assert second["payment_followup_queue"]["skipped_reasons"]["recent_followup_exists"] == 1
     assert len(agent.agent_contacts.queued_records) == 1
+
+
+def test_autopilot_queues_and_sends_peer_solver_followup(monkeypatch, tmp_path):
+    class FollowupAgent(FakeAgent):
+        def __init__(self):
+            super().__init__()
+            self.agent_contacts = AgentFollowupContacts()
+
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FollowupAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=True)
+
+    assert result["agent_followup_queue"]["queued_contact_ids"] == ["followup-1"]
+    assert result["agent_followup_send"]["sent_contact_ids"] == ["followup-1"]
+    queued = next(item for item in agent.agent_contacts.queued_records if item["allow_duplicate"] is True)
+    assert queued["service_type"] == "compute_auth"
+    assert queued["problem"].startswith("nomad.followup.v1")
+    assert "request_verifiable_artifact" in result["contact_poll"]["reply_summaries"][0]["followup_next_path"]
+
+
+def test_autopilot_outreach_focus_follows_high_value_pattern(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=True)
+
+    assert agent.agent_campaigns.calls[0]["service_type"] == "compute_auth"
+    assert result["outreach"]["service_type_focus"] == "compute_auth"
+    assert "quota" in result["outreach"]["autopilot_query"] or "token" in result["outreach"]["autopilot_query"]
