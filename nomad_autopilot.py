@@ -1189,6 +1189,8 @@ class NomadAutopilot:
         outreach_stats = outreach_campaign.get("stats") or {}
         compute_watch = self_improvement.get("compute_watch") or {}
         lead_scout = self_improvement.get("lead_scout") or {}
+        high_value_patterns = (self_improvement.get("high_value_patterns") or {}).get("patterns") or []
+        top_high_value_pattern = high_value_patterns[0] if high_value_patterns else {}
         lead_count = len(lead_scout.get("leads") or [])
         analysis = (
             f"Nomad autopilot ran objective '{objective}'. "
@@ -1212,6 +1214,12 @@ class NomadAutopilot:
             )
         if lead_count:
             analysis += f" Public lead scout surfaced {lead_count} lead(s) this cycle."
+        if top_high_value_pattern:
+            analysis += (
+                f" Top reusable service pattern: {top_high_value_pattern.get('title', '')} "
+                f"for {top_high_value_pattern.get('pain_type', 'unknown')} "
+                f"({top_high_value_pattern.get('occurrence_count', 0)} hits)."
+            )
         if mutual_aid and not mutual_aid.get("skipped"):
             analysis += (
                 f" Mutual-Aid score is {mutual_aid.get('mutual_aid_score', 0)} "
@@ -1394,6 +1402,8 @@ class NomadAutopilot:
         compute_watch = result.get("compute_watch") or {}
         lead_scout = result.get("lead_scout") or {}
         active_lead = lead_scout.get("active_lead") or {}
+        high_value_patterns = (result.get("high_value_patterns") or {}).get("patterns") or []
+        top_high_value_pattern = high_value_patterns[0] if high_value_patterns else {}
         return {
             "objective": result.get("objective", ""),
             "external_review_count": result.get("external_review_count", 0),
@@ -1419,5 +1429,12 @@ class NomadAutopilot:
                 "active_lead_title": active_lead.get("title") or active_lead.get("name") or "",
                 "outreach_queries": lead_scout.get("outreach_queries") or [],
                 "help_draft": ((lead_scout.get("help_draft") or {}).get("draft") or ""),
+            },
+            "high_value_pattern_watch": {
+                "title": top_high_value_pattern.get("title", ""),
+                "pain_type": top_high_value_pattern.get("pain_type", ""),
+                "occurrence_count": top_high_value_pattern.get("occurrence_count", 0),
+                "avg_truth_score": top_high_value_pattern.get("avg_truth_score", 0),
+                "avg_reuse_value": top_high_value_pattern.get("avg_reuse_value", 0),
             },
         }

@@ -35,6 +35,7 @@ from nomad_codebuddy import (
     CodeBuddyProbe,
     CodeBuddyReviewRunner,
 )
+from nomad_mutual_aid import NomadMutualAidKernel
 from self_development import SelfDevelopmentJournal
 
 
@@ -863,6 +864,7 @@ class SelfImprovementEngine:
         codebuddy_runner: Optional[CodeBuddyReviewRunner] = None,
         lead_plan_path: Optional[Path] = None,
         autonomous_development: Optional[AutonomousDevelopmentLog] = None,
+        mutual_aid: Optional[NomadMutualAidKernel] = None,
     ) -> None:
         self.infra = infra or InfrastructureScout()
         self.brain_router = brain_router or HostedBrainRouter()
@@ -872,6 +874,7 @@ class SelfImprovementEngine:
         self.addons = addons or NomadAddonManager()
         self.codebuddy_runner = codebuddy_runner or CodeBuddyReviewRunner()
         self.autonomous_development = autonomous_development or AutonomousDevelopmentLog()
+        self.mutual_aid = mutual_aid
         self.lead_scout_limit = max(1, int(os.getenv("NOMAD_LEAD_SCOUT_LIMIT", "3")))
         self.lead_plan_path = Path(
             os.getenv("NOMAD_ACTIVE_LEAD_PLAN_PATH")
@@ -967,6 +970,8 @@ class SelfImprovementEngine:
             lead_scout=lead_scout,
         )
         local_actions.extend(self._agent_pain_local_actions(agent_pain_solver))
+        high_value_patterns = self._high_value_patterns()
+        local_actions.extend(self._high_value_pattern_local_actions(high_value_patterns))
         compute_watch = self._compute_watch(compute, market_scan=market_scan)
         human_unlocks = self._human_unlocks(
             self_audit=self_audit,
@@ -991,6 +996,13 @@ class SelfImprovementEngine:
             analysis += (
                 f" Agent pain solver: {solution.get('title')} for "
                 f"{solution.get('pain_type')} is ready for requester-facing help and Nomad self-use."
+            )
+        if (high_value_patterns.get("patterns") or []):
+            top_pattern = high_value_patterns["patterns"][0]
+            analysis += (
+                f" High-value pattern watch: {top_pattern.get('title')} for "
+                f"{top_pattern.get('pain_type')} has "
+                f"{top_pattern.get('occurrence_count', 0)} verified occurrences."
             )
         if quantum_tokens.get("selected_strategy"):
             selected = quantum_tokens["selected_strategy"]
@@ -1022,6 +1034,7 @@ class SelfImprovementEngine:
             "codebuddy_review": codebuddy_review,
             "lead_scout": lead_scout,
             "agent_pain_solver": agent_pain_solver,
+            "high_value_patterns": high_value_patterns,
             "human_unlocks": human_unlocks,
             "self_development": self_development,
             "analysis": analysis,
@@ -1042,6 +1055,7 @@ class SelfImprovementEngine:
             "next_objective": state.get("next_objective", ""),
             "open_human_unlock": state.get("open_human_unlock"),
             "human_unlocks": state.get("self_development_unlocks") or [],
+            "high_value_pattern": state.get("last_high_value_pattern"),
         }
         return result
 
@@ -1349,6 +1363,52 @@ class SelfImprovementEngine:
                 }
             )
         return actions[:2]
+
+    def _high_value_patterns(self) -> Dict[str, Any]:
+        if self.mutual_aid is None:
+            return {
+                "mode": "nomad_high_value_patterns",
+                "schema": "nomad.high_value_patterns.v1",
+                "ok": True,
+                "pattern_count": 0,
+                "patterns": [],
+                "analysis": "No shared Mutual-Aid kernel was attached to this self-improvement engine.",
+            }
+        try:
+            return self.mutual_aid.list_high_value_patterns(limit=3, min_repeat_count=2)
+        except Exception as exc:
+            return {
+                "mode": "nomad_high_value_patterns",
+                "schema": "nomad.high_value_patterns.v1",
+                "ok": False,
+                "pattern_count": 0,
+                "patterns": [],
+                "error": "high_value_pattern_watch_failed",
+                "issue": str(exc),
+            }
+
+    @staticmethod
+    def _high_value_pattern_local_actions(high_value_patterns: Dict[str, Any]) -> List[Dict[str, Any]]:
+        patterns = high_value_patterns.get("patterns") or []
+        if not patterns:
+            return []
+        top_pattern = patterns[0]
+        return [
+            {
+                "type": "high_value_pattern_productization",
+                "category": top_pattern.get("pain_type") or "self_improvement",
+                "title": (
+                    f"Package repeated pattern '{top_pattern.get('title') or 'agent rescue pattern'}' "
+                    "into a reusable service blueprint."
+                ),
+                "reason": (
+                    f"{top_pattern.get('occurrence_count', 0)} verified occurrences with "
+                    f"avg truth {top_pattern.get('avg_truth_score', 0)} and "
+                    f"avg reuse {top_pattern.get('avg_reuse_value', 0)}."
+                ),
+                "requires_human": False,
+            }
+        ]
 
     def _scout_agent_customer_leads(
         self,

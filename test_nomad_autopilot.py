@@ -37,6 +37,17 @@ class FakeSelfImprovement:
                 "compute_leads": [{"url": "https://github.com/example/agent/issues/1"}],
                 "active_lead": {"url": "https://github.com/example/agent/issues/1", "title": "Agent blocked by quota"},
             },
+            "high_value_patterns": {
+                "patterns": [
+                    {
+                        "title": "Provider Fallback Ladder",
+                        "pain_type": "compute_auth",
+                        "occurrence_count": 3,
+                        "avg_truth_score": 0.82,
+                        "avg_reuse_value": 0.91,
+                    }
+                ]
+            },
             "self_development": {"next_objective": "Next objective"},
             "autonomous_development": {
                 "mode": "nomad_autonomous_development",
@@ -405,6 +416,7 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     assert "last_autonomous_development" in text
     assert "adev-test" in text
     assert "compute_watch" in text
+    assert "Provider Fallback Ladder" in text
 
 
 def test_autopilot_feeds_verified_help_signal_to_mutual_aid(monkeypatch, tmp_path):

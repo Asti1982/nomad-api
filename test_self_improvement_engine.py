@@ -188,6 +188,21 @@ class FakeAddons:
         }
 
 
+class FakeMutualAid:
+    def __init__(self, patterns=None):
+        self.patterns = patterns or []
+        self.calls = []
+
+    def list_high_value_patterns(self, limit=3, min_repeat_count=2):
+        self.calls.append((limit, min_repeat_count))
+        return {
+            "mode": "nomad_high_value_patterns",
+            "ok": True,
+            "pattern_count": len(self.patterns),
+            "patterns": self.patterns[:limit],
+        }
+
+
 def test_self_improvement_runs_public_lead_scout_and_compute_watch(tmp_path):
     lead_discovery = FakeLeadDiscovery()
     engine = SelfImprovementEngine(
@@ -269,6 +284,58 @@ def test_self_improvement_prefers_focused_discovered_lead_when_objective_is_gene
     )
 
     assert result["lead_scout"]["active_lead"]["url"] == "https://github.com/example/agent/issues/7"
+
+
+def test_self_improvement_surfaces_high_value_patterns_and_builds_artifacts(tmp_path):
+    mutual_aid = FakeMutualAid(
+        patterns=[
+            {
+                "pattern_id": "hvp-1",
+                "title": "Provider Fallback Ladder",
+                "pain_type": "compute_auth",
+                "occurrence_count": 3,
+                "avg_truth_score": 0.82,
+                "avg_reuse_value": 0.91,
+                "productization": {
+                    "pack_ready": True,
+                    "sku": "nomad.mutual_aid.compute_auth_micro_pack",
+                    "name": "Mutual-Aid Compute Auth Micro-Pack",
+                },
+                "agent_offer": {
+                    "starter_diagnosis": "Nomad has seen this pattern repeatedly.",
+                    "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                    "smallest_paid_unblock": {"amount_native": 0.03},
+                },
+                "self_evolution": {
+                    "next_action": "differentiate_paid_pack_and_add_regression_check",
+                    "self_apply_step": "Use the fallback ladder before retrying.",
+                },
+                "source_agents": ["quota-bot-1", "quota-bot-2"],
+            }
+        ]
+    )
+    engine = SelfImprovementEngine(
+        infra=FakeInfra(),
+        brain_router=FakeBrainRouter(),
+        journal=FakeJournal(),
+        lead_discovery=FakeLeadDiscovery(),
+        addons=FakeAddons(),
+        lead_plan_path=tmp_path / "lead-plan.json",
+        autonomous_development=AutonomousDevelopmentLog(
+            tmp_path / "autonomous.json",
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        mutual_aid=mutual_aid,
+    )
+
+    result = engine.run_cycle(objective="Package the best repeated agent pain pattern.", profile_id="ai_first")
+
+    assert result["high_value_patterns"]["pattern_count"] == 1
+    assert result["high_value_patterns"]["patterns"][0]["title"] == "Provider Fallback Ladder"
+    assert any(action["type"] == "high_value_pattern_productization" for action in result["local_actions"])
+    assert result["autonomous_development"]["action"]["type"] == "high_value_pattern_artifact"
+    assert any(path.endswith(".service.json") for path in result["autonomous_development"]["action"]["files"])
+    assert mutual_aid.calls[0] == (3, 2)
 
 
 def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch):

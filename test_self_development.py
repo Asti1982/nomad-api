@@ -201,3 +201,36 @@ def test_self_development_journal_packages_top_truth_pattern_when_same_lead_repe
     assert "Package reusable truth pattern" in second["next_objective"]
     assert "Provider Fallback Ladder" in second["next_objective"]
     assert second["last_truth_pattern"]["repeat_count"] == 3
+
+
+def test_self_development_journal_tracks_high_value_pattern_watch(tmp_path):
+    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+
+    state = journal.record_cycle(
+        {
+            "objective": "productize repeated help",
+            "external_review_count": 1,
+            "local_actions": [],
+            "human_unlocks": [],
+            "lead_scout": {},
+            "high_value_patterns": {
+                "patterns": [
+                    {
+                        "pattern_id": "hvp-1",
+                        "title": "Provider Fallback Ladder",
+                        "pain_type": "compute_auth",
+                        "occurrence_count": 3,
+                        "avg_truth_score": 0.82,
+                        "avg_reuse_value": 0.91,
+                        "agent_offer": {
+                            "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                        },
+                    }
+                ]
+            },
+        }
+    )
+
+    assert "Productize high-value pattern" in state["next_objective"]
+    assert state["last_high_value_pattern"]["title"] == "Provider Fallback Ladder"
+    assert state["last_high_value_pattern"]["occurrence_count"] == 3

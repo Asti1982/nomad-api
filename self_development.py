@@ -38,6 +38,7 @@ class SelfDevelopmentJournal:
             payload.setdefault("last_agent_pain_solution", None)
             payload.setdefault("last_autonomous_development", None)
             payload.setdefault("last_truth_pattern", None)
+            payload.setdefault("last_high_value_pattern", None)
             return payload
         except Exception:
             return self._empty_state()
@@ -49,6 +50,7 @@ class SelfDevelopmentJournal:
         cycles.append(entry)
         cycles = cycles[-self.max_entries :]
         top_truth_pattern = self._top_truth_pattern()
+        top_high_value_pattern = self._top_high_value_pattern(result) or state.get("last_high_value_pattern")
 
         next_objective = self.choose_next_objective(result, previous_state=state)
         self_development_unlocks = self.propose_human_unlocks(result, previous_state=state)
@@ -69,6 +71,7 @@ class SelfDevelopmentJournal:
                 "last_agent_pain_solution": self._compact_agent_pain_solution(result),
                 "last_autonomous_development": self._compact_autonomous_development(result),
                 "last_truth_pattern": top_truth_pattern,
+                "last_high_value_pattern": top_high_value_pattern,
                 "cycles": cycles,
             }
         )
@@ -83,6 +86,7 @@ class SelfDevelopmentJournal:
         result = result or {}
         previous_state = previous_state or self.load()
         top_truth_pattern = self._top_truth_pattern() or previous_state.get("last_truth_pattern")
+        top_high_value_pattern = self._top_high_value_pattern(result) or previous_state.get("last_high_value_pattern")
 
         lead_scout = result.get("lead_scout") or {}
         active_lead = lead_scout.get("active_lead") or previous_state.get("last_lead")
@@ -120,6 +124,13 @@ class SelfDevelopmentJournal:
             return (
                 f"Apply reusable agent solution '{agent_solution.get('title')}' for "
                 f"{agent_solution.get('pain_type')}: {agent_solution.get('next_nomad_action')}"
+            )
+
+        if top_high_value_pattern and int(top_high_value_pattern.get("occurrence_count") or 0) >= 2:
+            return (
+                f"Productize high-value pattern '{top_high_value_pattern.get('title')}' for "
+                f"{top_high_value_pattern.get('pain_type')}: ship one service blueprint, "
+                "one verifier artifact, and one self-apply route."
             )
 
         if top_truth_pattern:
@@ -297,6 +308,13 @@ class SelfDevelopmentJournal:
                 f"{truth_pattern.get('title')} "
                 f"(repeat={truth_pattern.get('repeat_count', 0)}, pain={truth_pattern.get('pain_type')})"
             )
+        high_value_pattern = state.get("last_high_value_pattern") or {}
+        if high_value_pattern:
+            lines.append(
+                "Top high-value pattern: "
+                f"{high_value_pattern.get('title')} "
+                f"(hits={high_value_pattern.get('occurrence_count', 0)}, pain={high_value_pattern.get('pain_type')})"
+            )
         return "\n".join(lines)
 
     def codex_task_prompt(self, autopilot_state_path: Optional[Path] = None) -> str:
@@ -368,6 +386,14 @@ class SelfDevelopmentJournal:
                 f"repeat_count={truth_pattern.get('repeat_count', 0)}; "
                 f"truth_score={truth_pattern.get('truth_score', 0)}"
             )
+        high_value_pattern = state.get("last_high_value_pattern") or {}
+        if high_value_pattern:
+            lines.append(
+                "Top high-value pattern: "
+                f"{high_value_pattern.get('title') or 'unknown'} for {high_value_pattern.get('pain_type') or 'unknown'}; "
+                f"occurrence_count={high_value_pattern.get('occurrence_count', 0)}; "
+                f"avg_truth_score={high_value_pattern.get('avg_truth_score', 0)}"
+            )
         public_url = autopilot.get("last_public_api_url") or ""
         if public_url:
             lines.append(f"Current public URL: {public_url}")
@@ -402,6 +428,7 @@ class SelfDevelopmentJournal:
             "last_agent_pain_solution": None,
             "last_autonomous_development": None,
             "last_truth_pattern": None,
+            "last_high_value_pattern": None,
             "cycles": [],
         }
 
@@ -456,6 +483,22 @@ class SelfDevelopmentJournal:
             "repeat_count": int(((top.get("reuse_value") or {}).get("repeat_count")) or 0),
             "reuse_score": float(((top.get("reuse_value") or {}).get("score")) or 0.0),
             "solution_id": top.get("solution_id", ""),
+        }
+
+    @staticmethod
+    def _top_high_value_pattern(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        patterns = ((result.get("high_value_patterns") or {}).get("patterns") or [])
+        if not patterns:
+            return None
+        top = patterns[0]
+        return {
+            "pattern_id": top.get("pattern_id", ""),
+            "pain_type": top.get("pain_type", ""),
+            "title": top.get("title", ""),
+            "occurrence_count": int(top.get("occurrence_count") or 0),
+            "avg_truth_score": float(top.get("avg_truth_score") or 0.0),
+            "avg_reuse_value": float(top.get("avg_reuse_value") or 0.0),
+            "reply_contract": ((top.get("agent_offer") or {}).get("reply_contract") or ""),
         }
 
     @staticmethod

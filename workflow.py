@@ -57,18 +57,21 @@ class ArbiterAgent:
         self.analyst = TravelAnalyst()
         self.addons = NomadAddonManager()
         self.codebuddy = CodeBuddyReviewRunner()
+        self.agent_pain_solver = AgentPainSolver()
+        self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
+        self.mutual_aid = NomadMutualAidKernel(pain_solver=self.agent_pain_solver)
         self.self_improvement = SelfImprovementEngine(
             infra=self.infra,
             addons=self.addons,
+            agent_pain_solver=self.agent_pain_solver,
+            codebuddy_runner=self.codebuddy,
+            mutual_aid=self.mutual_aid,
         )
         self.lead_discovery = LeadDiscoveryScout()
         self.service_desk = AgentServiceDesk(treasury=self.treasury)
         self.agent_contacts = AgentContactOutbox()
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
         self.direct_agent = DirectAgentGateway(service_desk=self.service_desk)
-        self.agent_pain_solver = AgentPainSolver()
-        self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
-        self.mutual_aid = NomadMutualAidKernel(pain_solver=self.agent_pain_solver)
         self.guardrails = NomadGuardrailEngine()
         self.lead_conversion = LeadConversionPipeline(
             lead_discovery=self.lead_discovery,
