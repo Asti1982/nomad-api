@@ -40,7 +40,7 @@ def test_category_scout_request():
 
 def test_public_hosting_scout_recommends_free_url_paths():
     agent = ArbiterAgent()
-    result = agent.run("/scout public_hosting")
+    result = agent.infra.scout_category("public_hosting", limit=8)
     names = {item["id"] for item in result["results"]}
 
     assert result["mode"] == "infra_scout"

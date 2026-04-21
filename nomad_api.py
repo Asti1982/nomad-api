@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 from nomad_guardrails import guardrail_status
 from nomad_collaboration import collaboration_status
+from nomad_monitor import NomadSystemMonitor
 from workflow import NomadAgent
 
 
@@ -18,6 +19,7 @@ PUBLIC_DIR = ROOT / "public"
 
 class NomadApiHandler(BaseHTTPRequestHandler):
     agent = NomadAgent()
+    monitor = NomadSystemMonitor(agent=agent)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -34,6 +36,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "service": "nomad-api",
                 }
             )
+            return
+
+        if parsed.path in {"/status", "/top"}:
+            self._json_response(self.monitor.snapshot())
             return
 
         if parsed.path in {"/agent", "/service"}:

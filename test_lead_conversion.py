@@ -185,7 +185,10 @@ def test_lead_conversion_can_send_only_after_queueing_machine_endpoint(tmp_path)
     assert outbox.sent == ["contact-test"]
 
 
-def test_lead_conversion_builds_private_draft_from_explicit_lead_when_search_has_no_results(tmp_path):
+def test_lead_conversion_builds_private_draft_from_explicit_lead_when_search_has_no_results(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_LEAD_APPROVAL_URLS", "")
+    monkeypatch.setenv("NOMAD_PUBLIC_LEAD_APPROVAL_SCOPE", "")
+
     class EmptyDiscovery(FakeLeadDiscovery):
         def scout_public_leads(self, query="", limit=5):
             return {

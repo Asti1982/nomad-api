@@ -1493,6 +1493,22 @@ class InfrastructureScout:
                 return "partial"
             return "inactive"
 
+        if option_id == "lambda-labs":
+            payload = hosted.get("lambda_labs") or {}
+            if payload.get("available"):
+                return "active"
+            if payload.get("configured"):
+                return "partial"
+            return "inactive"
+
+        if option_id == "runpod":
+            payload = hosted.get("runpod") or {}
+            if payload.get("available"):
+                return "active"
+            if payload.get("configured"):
+                return "partial"
+            return "inactive"
+
         return "inactive"
 
     def _build_compute_activation_request(
@@ -1511,6 +1527,8 @@ class InfrastructureScout:
             "cloudflare-workers-ai",
             "xai-grok",
             "modal-starter",
+            "lambda-labs",
+            "runpod",
         }
 
         candidate: Optional[Dict[str, Any]] = None
@@ -1560,6 +1578,10 @@ class InfrastructureScout:
             return hosted.get("xai_grok") or {}
         if option_id == "modal-starter":
             return hosted.get("modal") or {}
+        if option_id == "lambda-labs":
+            return hosted.get("lambda_labs") or {}
+        if option_id == "runpod":
+            return hosted.get("runpod") or {}
         if option_id == "ollama-local":
             return probe.get("ollama") or {}
         if option_id == "llama-cpp":
@@ -1888,6 +1910,70 @@ class InfrastructureScout:
                 "source_url": item["source_url"],
             }
 
+        if item["id"] == "lambda-labs":
+            return {
+                "category": "compute",
+                "candidate_id": item["id"],
+                "candidate_name": item["name"],
+                "lane_state": state,
+                "role": "GPU cloud lane",
+                "requires_account": True,
+                "account_provider": "Lambda Labs",
+                "env_vars": ["LAMBDA_LABS_API_TOKEN"],
+                "ask": (
+                    "Please provide a Lambda Labs API token to unlock on-demand GPU compute for Nomad."
+                    if state == "inactive"
+                    else "Nomad detected a Lambda Labs token, but it appears invalid or unreachable. Please verify it."
+                ),
+                "short_ask": "Provide Lambda Labs API token.",
+                "reason": (
+                    f"{item['name']} provides powerful on-demand GPUs for sustained AI tasks and fine-tuning experiments."
+                ),
+                "steps": [
+                    "Create a Lambda Labs account at cloud.lambdalabs.com.",
+                    "Generate an API token in the dashboard.",
+                    "Set LAMBDA_LABS_API_TOKEN in your environment or send /token lambda <token>.",
+                    prompt_suffix,
+                ],
+                "verification_steps": [
+                    "Run /compute after setting the token.",
+                    "Nomad will verify the API is reachable.",
+                ],
+                "source_url": item["source_url"],
+            }
+
+        if item["id"] == "runpod":
+            return {
+                "category": "compute",
+                "candidate_id": item["id"],
+                "candidate_name": item["name"],
+                "lane_state": state,
+                "role": "GPU cloud lane",
+                "requires_account": True,
+                "account_provider": "RunPod",
+                "env_vars": ["RUNPOD_API_KEY"],
+                "ask": (
+                    "Please provide a RunPod API key to unlock flexible GPU and serverless compute for Nomad."
+                    if state == "inactive"
+                    else "Nomad detected a RunPod API key, but it appears invalid or unreachable. Please verify it."
+                ),
+                "short_ask": "Provide RunPod API key.",
+                "reason": (
+                    f"{item['name']} offers a wide range of GPU instances and serverless endpoints for diverse agent workloads."
+                ),
+                "steps": [
+                    "Create a RunPod account at runpod.io.",
+                    "Generate an API key in the user settings dashboard.",
+                    "Set RUNPOD_API_KEY in your environment or send /token runpod <key>.",
+                    prompt_suffix,
+                ],
+                "verification_steps": [
+                    "Run /compute after setting the key.",
+                    "Nomad will verify the API is reachable via GraphQL.",
+                ],
+                "source_url": item["source_url"],
+            }
+
         return {
             "category": "compute",
             "candidate_id": item["id"],
@@ -1976,6 +2062,30 @@ class InfrastructureScout:
                     "type": "hosted",
                     "name": "Modal",
                     "role": "burst",
+                    "model_count": 0,
+                    "models": [],
+                }
+            )
+
+        lambda_labs = hosted.get("lambda_labs") or {}
+        if lambda_labs.get("available"):
+            secondary.append(
+                {
+                    "type": "hosted",
+                    "name": "Lambda Labs",
+                    "role": "gpu-cloud",
+                    "model_count": 0,
+                    "models": [],
+                }
+            )
+
+        runpod = hosted.get("runpod") or {}
+        if runpod.get("available"):
+            secondary.append(
+                {
+                    "type": "hosted",
+                    "name": "RunPod",
+                    "role": "gpu-cloud",
                     "model_count": 0,
                     "models": [],
                 }
@@ -2326,6 +2436,54 @@ class InfrastructureScout:
                 ai_fit_score=8,
             ),
             InfraOption(
+                id="hf-spaces-free",
+                category="public_hosting",
+                name="Hugging Face Spaces",
+                summary="Host ML apps and agents for free on Hugging Face infrastructure.",
+                best_for="Persistent agent demos and public APIs with easy GitHub/HF integration.",
+                tradeoff="Free tier has limited CPU/RAM and sleeps after 48 hours of inactivity.",
+                source_url="https://huggingface.co/spaces",
+                tags=("free", "agent-native", "public-url", "ml"),
+                free_score=9,
+                reliability_score=8,
+                automation_score=8,
+                openness_score=9,
+                privacy_score=6,
+                ai_fit_score=10,
+            ),
+            InfraOption(
+                id="vercel-free-tier",
+                category="public_hosting",
+                name="Vercel Free Tier",
+                summary="Fastest way to deploy serverless web apps and AI-agent dashboards.",
+                best_for="Agent frontends and serverless APIs with high performance requirements.",
+                tradeoff="Strict serverless execution limits (10s on free tier) and bandwidth caps.",
+                source_url="https://vercel.com/pricing",
+                tags=("free", "serverless", "public-url"),
+                free_score=8,
+                reliability_score=9,
+                automation_score=9,
+                openness_score=6,
+                privacy_score=6,
+                ai_fit_score=8,
+            ),
+            InfraOption(
+                id="railway-starter",
+                category="public_hosting",
+                name="Railway Trial Credits",
+                summary="Cloud platform that provides a small recurring or one-time credit for any Dockerized app.",
+                best_for="Running full agent runtimes in containers without managing infrastructure.",
+                tradeoff="Credits are limited and can run out, requiring a paid upgrade for sustained use.",
+                source_url="https://railway.app/pricing",
+                tags=("free", "containers", "public-url"),
+                free_score=6,
+                reliability_score=9,
+                automation_score=9,
+                openness_score=7,
+                privacy_score=6,
+                ai_fit_score=9,
+            ),
+            InfraOption(
                 id="github-codespaces-public-port",
                 category="public_hosting",
                 name="GitHub Codespaces Public Port",
@@ -2451,23 +2609,55 @@ class InfrastructureScout:
                 automation_score=3,
                 openness_score=8,
                 privacy_score=8,
-                ai_fit_score=8,
+                ai_fit_score=9,
             ),
             InfraOption(
                 id="modal-starter",
                 category="compute",
-                name="Modal Starter Credits",
-                summary="Cloud execution with recurring starter credits for lightweight inference and jobs.",
-                best_for="Bursty agent workloads that need more than a laptop but still want to stay near zero cost.",
-                tradeoff="Not fully free in principle and long-running usage will outgrow the credits.",
+                name="Modal Starter",
+                summary="Serverless GPU/CPU compute with easy Python-native orchestration.",
+                best_for="Complex agent tasks that need bursts of compute without managing servers.",
+                tradeoff="Requires Modal credentials and has a small initial free credit that must be managed.",
                 source_url="https://modal.com/pricing",
-                tags=("automation", "agent-native", "freshness"),
+                tags=("freshness", "automation", "python-native", "hosted"),
                 free_score=6,
-                reliability_score=8,
+                reliability_score=9,
                 automation_score=9,
                 openness_score=6,
                 privacy_score=6,
-                ai_fit_score=8,
+                ai_fit_score=9,
+            ),
+            InfraOption(
+                id="lambda-labs",
+                category="compute",
+                name="Lambda Labs Cloud",
+                summary="On-demand GPU cloud with competitive pricing and straightforward API.",
+                best_for="Sustained GPU training, fine-tuning and inference experiments.",
+                tradeoff="Paid service, requires API token and payment method; availability of cheaper instances varies.",
+                source_url="https://lambdalabs.com/service/gpu-cloud",
+                tags=("gpu", "hosted", "coding", "automation"),
+                free_score=2,
+                reliability_score=9,
+                automation_score=8,
+                openness_score=7,
+                privacy_score=7,
+                ai_fit_score=9,
+            ),
+            InfraOption(
+                id="runpod",
+                category="compute",
+                name="RunPod",
+                summary="GPU cloud and serverless platform with a wide range of instances and competitive rates.",
+                best_for="Flexible GPU compute and serverless AI endpoints.",
+                tradeoff="Paid service, requires account and API key; credits are needed for sustained use.",
+                source_url="https://www.runpod.io/",
+                tags=("gpu", "hosted", "serverless", "automation"),
+                free_score=2,
+                reliability_score=9,
+                automation_score=8,
+                openness_score=7,
+                privacy_score=7,
+                ai_fit_score=9,
             ),
             InfraOption(
                 id="telegram-bot-api",

@@ -36,6 +36,7 @@ CLI smoke test:
 
 ```powershell
 python main.py --cli self --json
+python main.py --cli status --json
 python main.py --cli self-status --json
 python main.py --cli codex-task
 python nomad_cli.py unlock best
@@ -89,6 +90,9 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_GITHUB_MODELS_API_VERSION`: GitHub Models API version, default `2026-03-10`.
 - `NOMAD_GITHUB_MODEL`: Primary GitHub Models catalog ID, default `openai/gpt-4.1-mini`.
 - `NOMAD_GITHUB_MODEL_CANDIDATES`: Comma-separated fallback model IDs Nomad probes before declaring GitHub Models broken.
+- `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`: Optional Modal credential pair. If unset, Nomad can also detect an authenticated Modal CLI profile from `~/.modal.toml`.
+- `MODAL_CONFIG_PATH`: Optional path to a Modal TOML config file, default `~/.modal.toml`.
+- `MODAL_PROFILE`: Optional Modal profile name to prefer when reading the Modal config.
 - `LLAMA_CPP_BIN_DIR`: Local llama.cpp binary directory, default `tools/llama.cpp`.
 - `NOMAD_OLLAMA_SELF_IMPROVE_MODEL`: Optional Ollama model just for self-improvement reviews.
 - `NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL`: Prefer a small installed Ollama model for self-improvement cycles, default true.

@@ -71,6 +71,7 @@ class NomadAutopilot:
         self._api_thread = None
         self._outreach_query_cursor = 0
         self._payment_followup_log: dict[str, dict[str, Any]] = {}
+        self.last_cycle_report: Optional[Dict[str, Any]] = None
 
     def run_once(
         self,
@@ -959,6 +960,7 @@ class NomadAutopilot:
         self._api_thread = serve_in_thread()
 
     def _record(self, report: Dict[str, Any]) -> None:
+        self.last_cycle_report = report
         state = self._load()
         state["run_count"] = int(state.get("run_count") or 0) + 1
         state["last_run_at"] = report.get("timestamp") or datetime.now(UTC).isoformat()

@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import platform
 import re
@@ -8,6 +9,10 @@ from typing import Any, Dict, List
 
 import requests
 from dotenv import load_dotenv
+try:
+    import tomllib
+except ImportError:  # pragma: no cover - Python <3.11 fallback
+    import toml as tomllib
 
 from nomad_codebuddy import CodeBuddyProbe
 
@@ -35,6 +40,43 @@ DEFAULT_XAI_MODEL_CANDIDATES = (
     "grok-4-1-fast",
 )
 XAI_TOKEN_ENV_VAR = "XAI_API_KEY"
+
+
+def _modal_config_path() -> Path:
+    configured = (os.getenv("MODAL_CONFIG_PATH") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".modal.toml"
+
+
+def _modal_credentials_from_config() -> Dict[str, str]:
+    path = _modal_config_path()
+    if not path.exists():
+        return {}
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    requested_profile = (os.getenv("MODAL_PROFILE") or "").strip()
+    candidates: List[tuple[str, Dict[str, Any]]] = []
+    for profile, payload in data.items():
+        if isinstance(payload, dict):
+            candidates.append((str(profile), payload))
+    if requested_profile:
+        candidates.sort(key=lambda item: item[0] != requested_profile)
+    else:
+        candidates.sort(key=lambda item: not bool(item[1].get("active")))
+    for profile, payload in candidates:
+        token_id = str(payload.get("token_id") or "").strip()
+        token_secret = str(payload.get("token_secret") or "").strip()
+        if token_id and token_secret:
+            return {
+                "profile": profile,
+                "token_id": token_id,
+                "token_secret": token_secret,
+                "source": str(path),
+            }
+    return {}
 
 
 def github_models_base_url() -> str:
@@ -391,8 +433,17 @@ class LocalComputeProbe:
             or os.getenv("HUGGING_FACE_HUB_TOKEN")
             or ""
         ).strip()
-        self.modal_token_id = (os.getenv("MODAL_TOKEN_ID") or "").strip()
-        self.modal_token_secret = (os.getenv("MODAL_TOKEN_SECRET") or "").strip()
+        modal_config = _modal_credentials_from_config()
+        self.modal_token_id = (os.getenv("MODAL_TOKEN_ID") or modal_config.get("token_id") or "").strip()
+        self.modal_token_secret = (os.getenv("MODAL_TOKEN_SECRET") or modal_config.get("token_secret") or "").strip()
+        self.modal_profile = (os.getenv("MODAL_PROFILE") or modal_config.get("profile") or "").strip()
+        self.modal_credential_source = (
+            "env"
+            if os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")
+            else "modal_config"
+            if modal_config.get("token_id") and modal_config.get("token_secret")
+            else ""
+        )
         self.cloudflare_account_id = (os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip()
         self.cloudflare_api_token = (os.getenv("CLOUDFLARE_API_TOKEN") or "").strip()
         self.cloudflare_model = (
@@ -403,6 +454,8 @@ class LocalComputeProbe:
         self.xai_chat_url = xai_chat_completions_url(self.xai_base_url)
         self.xai_model = (os.getenv("NOMAD_XAI_MODEL") or DEFAULT_XAI_MODEL).strip()
         self.xai_model_candidates = xai_model_candidates(self.xai_model)
+        self.lambda_labs_token = (os.getenv("LAMBDA_LABS_API_TOKEN") or "").strip()
+        self.runpod_api_key = (os.getenv("RUNPOD_API_KEY") or "").strip()
         configured_llama_dir = (os.getenv("LLAMA_CPP_BIN_DIR") or "tools/llama.cpp").strip()
         llama_dir = Path(configured_llama_dir)
         if not llama_dir.is_absolute():
@@ -579,6 +632,8 @@ class LocalComputeProbe:
             "cloudflare_workers_ai": self._cloudflare_workers_ai_info(),
             "xai_grok": self._xai_grok_info(),
             "modal": self._modal_info(),
+            "lambda_labs": self._lambda_labs_info(),
+            "runpod": self._runpod_info(),
         }
 
     def _developer_assistant_info(self) -> Dict[str, Any]:
@@ -796,16 +851,113 @@ class LocalComputeProbe:
 
     def _modal_info(self) -> Dict[str, Any]:
         configured = bool(self.modal_token_id and self.modal_token_secret)
+        if not configured:
+            return {
+                "configured": False,
+                "reachable": False,
+                "available": False,
+                "config_path": str(_modal_config_path()),
+                "message": "No MODAL_TOKEN_ID/MODAL_TOKEN_SECRET or usable ~/.modal.toml profile configured.",
+            }
+        # Modal doesn't have a simple "whoami" REST endpoint without their SDK,
+        # but we can check if the CLI or SDK is installed as a proxy for 'reachable'.
+        cli_available = bool(shutil.which("modal"))
+        sdk_available = importlib.util.find_spec("modal") is not None
+        reachable = bool(cli_available or sdk_available)
         return {
-            "configured": configured,
-            "reachable": False,
-            "available": False,
+            "configured": True,
+            "reachable": reachable,
+            "available": reachable,
+            "cli_available": cli_available,
+            "sdk_available": sdk_available,
+            "credential_source": self.modal_credential_source or "unknown",
+            "profile": self.modal_profile,
+            "config_path": str(_modal_config_path()) if self.modal_credential_source == "modal_config" else "",
             "message": (
-                "Modal credentials detected, but live probe is not implemented yet."
-                if configured
-                else "No Modal credentials configured."
+                "Modal credentials configured"
+                + (f" via {self.modal_credential_source}" if self.modal_credential_source else "")
+                + "."
+                + (" CLI is also available." if cli_available else " SDK is available; CLI executable not found on PATH.")
             ),
         }
+
+    def _lambda_labs_info(self) -> Dict[str, Any]:
+        api_token = (os.getenv("LAMBDA_LABS_API_TOKEN") or "").strip()
+        if not api_token:
+            return {
+                "configured": False,
+                "reachable": False,
+                "available": False,
+                "message": "No LAMBDA_LABS_API_TOKEN configured.",
+            }
+        try:
+            response = requests.get(
+                "https://cloud.lambdalabs.com/api/v1/instance-types",
+                headers={"Authorization": f"Basic {api_token}:"}, # Lambda uses Basic auth with token as username
+                timeout=10,
+            )
+            if response.ok:
+                return {
+                    "configured": True,
+                    "reachable": True,
+                    "available": True,
+                    "status_code": response.status_code,
+                    "message": "Lambda Labs API is reachable and token is valid.",
+                }
+            return {
+                "configured": True,
+                "reachable": True,
+                "available": False,
+                "status_code": response.status_code,
+                "message": f"Lambda Labs API check failed with {response.status_code}.",
+            }
+        except Exception as exc:
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "message": f"Lambda Labs probe failed: {exc}",
+            }
+
+    def _runpod_info(self) -> Dict[str, Any]:
+        api_key = (os.getenv("RUNPOD_API_KEY") or "").strip()
+        if not api_key:
+            return {
+                "configured": False,
+                "reachable": False,
+                "available": False,
+                "message": "No RUNPOD_API_KEY configured.",
+            }
+        try:
+            # RunPod uses GraphQL for their main API
+            response = requests.post(
+                "https://api.runpod.io/v1/user/self",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"query": "{ myself { id email } }"},
+                timeout=10,
+            )
+            if response.ok:
+                return {
+                    "configured": True,
+                    "reachable": True,
+                    "available": True,
+                    "status_code": response.status_code,
+                    "message": "RunPod API is reachable and API key is valid.",
+                }
+            return {
+                "configured": True,
+                "reachable": True,
+                "available": False,
+                "status_code": response.status_code,
+                "message": f"RunPod API check failed with {response.status_code}.",
+            }
+        except Exception as exc:
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "message": f"RunPod probe failed: {exc}",
+            }
 
     def _cloudflare_workers_ai_info(self) -> Dict[str, Any]:
         configured = bool(self.cloudflare_account_id and self.cloudflare_api_token)

@@ -20,6 +20,7 @@ from nomad_collaboration import collaboration_status
 from nomad_codebuddy import CodeBuddyReviewRunner
 from nomad_guardrails import NomadGuardrailEngine, guardrail_status
 from nomad_product_factory import NomadProductFactory
+from nomad_monitor import NomadSystemMonitor
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
 from settings import get_chain_config
@@ -80,6 +81,7 @@ class ArbiterAgent:
             service_desk=self.service_desk,
             guardrails=self.guardrails,
         )
+        self.monitor = NomadSystemMonitor(agent=self)
 
     def run(self, query: str) -> Dict[str, Any]:
         normalized_query = (query or "").strip()
@@ -92,6 +94,9 @@ class ArbiterAgent:
 
         if self._is_funding_request(normalized_query):
             return self._handle_funding_request(normalized_query)
+
+        if normalized_query.lower() in {"/status", "/top"}:
+            return self.monitor.snapshot()
 
         if self._is_addon_request(normalized_query):
             return self._handle_addon_request(normalized_query)

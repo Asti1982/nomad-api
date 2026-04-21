@@ -28,6 +28,39 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(result["analysis"])
         return "\n".join(lines)
 
+    if mode == "nomad_system_status":
+        os_info = result.get("os") or {}
+        resources = result.get("resources") or {}
+        compute_lanes = result.get("compute_lanes") or {}
+        tasks = result.get("tasks") or {}
+        lines = [
+            "Nomad system status",
+            f"Uptime: {result.get('uptime', 'unknown')}",
+            f"Platform: {os_info.get('platform', 'unknown')}",
+            f"CPU: {resources.get('cpu_count', 0)} cores",
+            f"RAM: {resources.get('memory_gb', 0):.2f} GB",
+            "",
+            "Compute Lanes:",
+            f"  Local Ollama: {'[ACTIVE]' if compute_lanes.get('local', {}).get('ollama') else '[INACTIVE]'}",
+            f"  Local llama.cpp: {'[ACTIVE]' if compute_lanes.get('local', {}).get('llama_cpp') else '[INACTIVE]'}",
+            f"  GitHub Models: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('github_models') else '[INACTIVE]'}",
+            f"  Hugging Face: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('huggingface') else '[INACTIVE]'}",
+            f"  xAI Grok: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('xai_grok') else '[INACTIVE]'}",
+            f"  Modal: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('modal') else '[INACTIVE]'}",
+            f"  Lambda Labs: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('lambda_labs') else '[INACTIVE]'}",
+            f"  RunPod: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('runpod') else '[INACTIVE]'}",
+            "",
+            "Tasks:",
+            f"  Total: {tasks.get('total', 0)}",
+            f"  Paid/Pending: {tasks.get('paid', 0)}",
+            f"  Awaiting Payment: {tasks.get('awaiting_payment', 0)}",
+            f"  Completed: {tasks.get('completed', 0)}",
+        ]
+        if result.get("analysis"):
+            lines.append("")
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
     if mode == "nomad_autopilot":
         service = result.get("service") or {}
         outreach = result.get("outreach") or {}
@@ -216,6 +249,8 @@ def build_query(args: argparse.Namespace) -> str:
     command = args.command
     profile_suffix = f" for {args.profile}" if getattr(args, "profile", None) else ""
 
+    if command == "status":
+        return "/status"
     if command == "best":
         return f"/best{profile_suffix}"
     if command == "self":
@@ -422,6 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
 
+    subparsers.add_parser("status", help="Show Nomad system status (uptime, compute, tasks).")
     subparsers.add_parser("best", help="Show the recommended AI-first stack.")
     subparsers.add_parser("self", help="Run Nomad self audit.")
     subparsers.add_parser("compute", help="Run compute audit.")
