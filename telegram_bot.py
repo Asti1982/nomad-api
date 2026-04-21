@@ -1232,10 +1232,12 @@ class ArbiterBot:
                     f"[{selected_backend.get('status', '')}]"
                 )
             best_unlock = quantum.get("best_next_quantum_unlock") or {}
-            if best_unlock:
+            if self._is_actionable_quantum_unlock(best_unlock):
                 lines.append(
                     f"Best quantum unlock: {best_unlock.get('provider')} via {best_unlock.get('telegram_command')}"
                 )
+            elif quantum.get("enabled"):
+                lines.append("Quantum provider unlock: none required now; local qtokens already run without a token.")
         for addon in (result.get("addons") or [])[:5]:
             lines.append("")
             lines.append(f"{addon.get('name', 'Addon')} [{addon.get('status', 'unknown')}]")
@@ -1269,19 +1271,23 @@ class ArbiterBot:
         if local_simulation.get("counts"):
             lines.append(f"Local simulation counts: {local_simulation['counts']}")
         for token in (result.get("tokens") or [])[:3]:
-            lines.append(f"- {token.get('qtoken_id')}: {token.get('title')} score={token.get('score')}")
+            lines.append(f"- local qtoken {token.get('qtoken_id')}: {token.get('title')} score={token.get('score')}")
         best_unlock = result.get("best_next_quantum_unlock") or {}
-        if best_unlock:
+        if self._is_actionable_quantum_unlock(best_unlock):
             lines.append("")
-            lines.append("Best quantum unlock")
+            lines.append("Optional provider unlock")
             lines.append(f"{best_unlock.get('provider')}: {best_unlock.get('why', '')}")
             if best_unlock.get("telegram_command"):
                 lines.append(f"Send: {best_unlock['telegram_command']}")
+        elif result.get("tokens"):
+            lines.append("")
+            lines.append("No quantum provider token is needed for these local qtokens.")
         unlocks = result.get("human_unlocks") or []
-        if unlocks:
+        actionable_unlocks = self._filter_actionable_unlocks(unlocks)
+        if actionable_unlocks:
             lines.append("")
             lines.append("Optional human unlock")
-            lines.extend(self._format_activation_lines(unlocks[0]))
+            lines.extend(self._format_activation_lines(actionable_unlocks[0]))
         if result.get("analysis"):
             lines.append("")
             lines.append(result["analysis"])
@@ -1483,13 +1489,16 @@ class ArbiterBot:
         if request.get("decision_reason"):
             lines.append(f"Nomad decision: {request['decision_reason']}")
         if request.get("env_vars"):
-            lines.append(f"Needs: {', '.join(request['env_vars'])}")
             token_vars = [env_var for env_var in request["env_vars"] if env_var in TOKEN_ENV_VARS]
+            config_vars = [env_var for env_var in request["env_vars"] if env_var not in TOKEN_ENV_VARS]
             if token_vars:
+                lines.append(f"Needs credential: {', '.join(token_vars)}")
                 provider_hint = self._provider_hint_for_env_var(token_vars[0])
                 lines.append(
                     f"Telegram: send `/token {provider_hint} <token>` or `{token_vars[0]}=...`."
                 )
+            if config_vars:
+                lines.append(f"Settings to verify: {', '.join(config_vars)}")
         if request.get("account_provider"):
             lines.append(f"Account: {request['account_provider']}")
         if request.get("setup_url"):
@@ -1511,6 +1520,61 @@ class ArbiterBot:
         lines.append("Tip: ask 'how?' any time and Nomad will repeat the current unlock steps.")
         lines.append("If this unlock is unclear or not useful, send /skip last.")
         return lines
+
+    @staticmethod
+    def _is_actionable_unlock_request(request: Dict[str, Any]) -> bool:
+        if not isinstance(request, dict):
+            return False
+        human_action = str(request.get("human_action") or "").strip()
+        human_deliverable = str(request.get("human_deliverable") or "").strip()
+        success_criteria = request.get("success_criteria") or []
+        if not human_action or not human_deliverable or not success_criteria:
+            return False
+        lowered = human_deliverable.lower()
+        concrete_markers = (
+            "/token",
+            "/compute",
+            "/cycle",
+            "/skip",
+            "approve_",
+            "lead_url=",
+            "scout_surface=",
+            "scout_permission=",
+            "compute_priority=",
+            "resource_url=",
+            "http://",
+            "https://",
+            "=",
+        )
+        if not any(marker in lowered for marker in concrete_markers):
+            return False
+        vague_phrases = (
+            "provider env vars or",
+            "permission grant, or",
+            "exact URL, invite link, endpoint, account step",
+        )
+        if any(phrase in lowered for phrase in vague_phrases) and "=" not in lowered and "/token" not in lowered:
+            return False
+        return True
+
+    @classmethod
+    def _filter_actionable_unlocks(cls, unlocks: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+        return [unlock for unlock in unlocks if cls._is_actionable_unlock_request(unlock)]
+
+    @staticmethod
+    def _is_actionable_quantum_unlock(unlock: Dict[str, Any]) -> bool:
+        if not isinstance(unlock, dict) or not unlock:
+            return False
+        provider = str(unlock.get("provider") or "").strip().lower()
+        command = str(unlock.get("telegram_command") or "").strip()
+        env_var = str(unlock.get("env_var") or "").strip()
+        if not command or command == "/quantum" or provider.startswith("local qtoken"):
+            return False
+        if env_var in TOKEN_ENV_VARS and "/token" in command:
+            return True
+        if env_var in {"NOMAD_ALLOW_REAL_QUANTUM", "NOMAD_ALLOW_HPC_SUBMIT"} and "=" in command:
+            return True
+        return False
 
     def _provider_hint_for_env_var(self, env_var: str) -> str:
         if env_var in {"GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN"}:
@@ -1956,6 +2020,9 @@ class ArbiterBot:
         private_products = int(product_stats.get("private_offer_needs_approval") or 0)
         offer_ready = int(product_stats.get("offer_ready") or 0)
         product_total = len(products.get("products") or [])
+        dev_unlocks = self._filter_actionable_unlocks(state.get("self_development_unlocks") or [])
+        hidden_dev_unlock_count = max(0, len(state.get("self_development_unlocks") or []) - len(dev_unlocks))
+        quantum_actionable = quantum_unlock if self._is_actionable_quantum_unlock(quantum_unlock) else {}
         public_url = str(snapshot.get("public_api_url") or "").strip()
         public_configured = bool(
             public_url
@@ -1997,28 +2064,33 @@ class ArbiterBot:
             lines.append(
                 f"- {private_products} Produkt(e) brauchen Approval, bevor Nomad auf GitHub/zu Menschen postet."
             )
-        dev_unlocks = state.get("self_development_unlocks") or []
         if dev_unlocks:
             lines.append(f"- Approval gate: {dev_unlocks[0].get('short_ask')}")
         next_objective = state.get("next_objective")
         if next_objective:
             lines.append(f"- Autopilot denkt weiter: {next_objective}")
-        if quantum_unlock:
+        if quantum_actionable:
             lines.append(
-                f"- Quantum unlock: {quantum_unlock.get('provider')} via {quantum_unlock.get('telegram_command')}"
+                f"- Optionaler Quantum-Provider-Unlock: {quantum_actionable.get('provider')} via {quantum_actionable.get('telegram_command')}"
             )
-        if not private_products and not dev_unlocks and not quantum_unlock:
+        elif quantum.get("enabled"):
+            lines.append("- Quantum: lokale qtokens laufen; kein Provider-Token ist dafuer noetig.")
+        if hidden_dev_unlock_count:
+            lines.append(
+                f"- {hidden_dev_unlock_count} unklare Unlock-Hinweis(e) ausgeblendet; /skip last oder /cycle erzeugt einen saubereren Auftrag."
+            )
+        if not private_products and not dev_unlocks and not quantum_actionable:
             lines.append("- Keine menschliche Freigabe im Statusspeicher.")
 
         lines.append("")
         lines.append("Was du tun kannst")
         if private_products:
             lines.append("- Nichts tun: Nomad nutzt das Produkt privat weiter.")
-            lines.append("- Oder freigeben: APPROVE_LEAD_HELP=draft_only, comment oder pr_plan.")
+            lines.append("- Nur wenn oeffentlich gewuenscht: APPROVE_LEAD_HELP=comment oder APPROVE_LEAD_HELP=pr_plan.")
         else:
             lines.append("- /productize <Lead> baut weitere Produkte.")
-        if quantum_unlock:
-            lines.append(f"- Quantum freischalten: {quantum_unlock.get('telegram_command')}")
+        if quantum_actionable:
+            lines.append(f"- Quantum-Provider freischalten: {quantum_actionable.get('telegram_command')}")
         lines.append("- /products zeigt verkaufbare Produktpakete.")
         if not periodic:
             lines.append("- /unsubscribe stoppt automatische Telegram-Statusmeldungen.")

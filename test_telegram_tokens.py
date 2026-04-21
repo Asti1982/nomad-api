@@ -155,6 +155,31 @@ def test_status_snapshot_explains_solved_and_open_gates():
     assert "APPROVE_LEAD_HELP" in text
 
 
+def test_status_snapshot_hides_non_actionable_quantum_unlock():
+    bot = ArbiterBot()
+    text = bot._format_status_snapshot(
+        {
+            "public_api_url": "https://nomad.example",
+            "compute": {"probe": {"ollama": {"api_reachable": True, "count": 1}}},
+            "products": {"products": [], "stats": {}},
+            "self_state": {},
+            "addons": {
+                "quantum_tokens": {
+                    "enabled": True,
+                    "best_next_quantum_unlock": {
+                        "provider": "Local qtokens",
+                        "env_var": "",
+                        "telegram_command": "/quantum",
+                    },
+                }
+            },
+        }
+    )
+
+    assert "Quantum freischalten" not in text
+    assert "kein Provider-Token" in text
+
+
 def test_telegram_formats_product_list():
     bot = ArbiterBot()
     text = bot._format_result(
@@ -203,6 +228,7 @@ def test_telegram_formats_addons_and_quantum_tokens():
                 "claim_boundary": "Local qtokens are quantum-inspired decision receipts.",
                 "best_next_quantum_unlock": {
                     "provider": "IBM Quantum",
+                    "env_var": "IBM_QUANTUM_TOKEN",
                     "telegram_command": "/token ibm_quantum <token>",
                 },
             },
@@ -218,6 +244,7 @@ def test_telegram_formats_addons_and_quantum_tokens():
             "tokens": [{"qtoken_id": "qtok-test", "title": "Measurement critic gate", "score": 0.9}],
             "best_next_quantum_unlock": {
                 "provider": "IBM Quantum",
+                "env_var": "IBM_QUANTUM_TOKEN",
                 "why": "Best first unlock.",
                 "telegram_command": "/token ibm_quantum <token>",
             },
@@ -232,3 +259,37 @@ def test_telegram_formats_addons_and_quantum_tokens():
     assert "Nomad quantum tokens" in quantum_text
     assert "qtok-test" in quantum_text
     assert "/token ibm_quantum <token>" in quantum_text
+
+
+def test_quantum_formatter_separates_local_qtokens_from_provider_tokens():
+    bot = ArbiterBot()
+    text = bot._format_result(
+        {
+            "mode": "nomad_quantum_tokens",
+            "objective": "test local qtokens",
+            "claim_boundary": "Local only.",
+            "selected_strategy": {"title": "Quantum interest"},
+            "tokens": [{"qtoken_id": "qtok-interest", "title": "Quantum interest", "score": 0.7}],
+            "best_next_quantum_unlock": {
+                "provider": "Local qtokens",
+                "env_var": "",
+                "telegram_command": "/quantum",
+            },
+            "human_unlocks": [
+                {
+                    "candidate_name": "Vague provider idea",
+                    "role": "optional",
+                    "lane_state": "pending",
+                    "human_action": "Think about quantum later.",
+                    "human_deliverable": "Provider env vars or /skip last.",
+                    "success_criteria": ["No concrete token exists."],
+                    "example_response": "/skip last",
+                }
+            ],
+        }
+    )
+
+    assert "local qtoken qtok-interest" in text
+    assert "No quantum provider token is needed" in text
+    assert "Send: /quantum" not in text
+    assert "Optional human unlock" not in text
