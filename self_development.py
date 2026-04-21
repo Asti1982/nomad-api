@@ -4,12 +4,22 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+ROOT = Path(__file__).resolve().parent
+DEFAULT_MUTUAL_AID_STATE = ROOT / "nomad_mutual_aid_state.json"
+
+
 class SelfDevelopmentJournal:
     """Persistent memory for Nomad's bounded self-development cycles."""
 
-    def __init__(self, path: Optional[Path] = None, max_entries: int = 50) -> None:
-        self.path = path or Path(__file__).resolve().parent / "nomad_self_state.json"
+    def __init__(
+        self,
+        path: Optional[Path] = None,
+        max_entries: int = 50,
+        mutual_aid_state_path: Optional[Path] = None,
+    ) -> None:
+        self.path = path or ROOT / "nomad_self_state.json"
         self.max_entries = max_entries
+        self.mutual_aid_state_path = mutual_aid_state_path or DEFAULT_MUTUAL_AID_STATE
 
     def load(self) -> Dict[str, Any]:
         if not self.path.exists():
@@ -27,6 +37,7 @@ class SelfDevelopmentJournal:
             payload.setdefault("last_cycle_at", "")
             payload.setdefault("last_agent_pain_solution", None)
             payload.setdefault("last_autonomous_development", None)
+            payload.setdefault("last_truth_pattern", None)
             return payload
         except Exception:
             return self._empty_state()
@@ -37,6 +48,7 @@ class SelfDevelopmentJournal:
         entry = self._cycle_entry(result)
         cycles.append(entry)
         cycles = cycles[-self.max_entries :]
+        top_truth_pattern = self._top_truth_pattern()
 
         next_objective = self.choose_next_objective(result, previous_state=state)
         self_development_unlocks = self.propose_human_unlocks(result, previous_state=state)
@@ -56,6 +68,7 @@ class SelfDevelopmentJournal:
                 "last_lead": (result.get("lead_scout") or {}).get("active_lead"),
                 "last_agent_pain_solution": self._compact_agent_pain_solution(result),
                 "last_autonomous_development": self._compact_autonomous_development(result),
+                "last_truth_pattern": top_truth_pattern,
                 "cycles": cycles,
             }
         )
@@ -69,9 +82,20 @@ class SelfDevelopmentJournal:
     ) -> str:
         result = result or {}
         previous_state = previous_state or self.load()
+        top_truth_pattern = self._top_truth_pattern() or previous_state.get("last_truth_pattern")
 
         lead_scout = result.get("lead_scout") or {}
         active_lead = lead_scout.get("active_lead") or previous_state.get("last_lead")
+        if self._should_package_truth_pattern(
+            active_lead=active_lead,
+            previous_state=previous_state,
+            top_truth_pattern=top_truth_pattern,
+        ):
+            return (
+                f"Package reusable truth pattern '{top_truth_pattern.get('title')}' for "
+                f"{top_truth_pattern.get('pain_type')}: turn it into one differentiated product, "
+                "one verifier/regression check, and one self-apply step."
+            )
         if active_lead:
             url = active_lead.get("url") or active_lead.get("name") or "active lead"
             pain = active_lead.get("pain") or "visible infrastructure pain"
@@ -96,6 +120,12 @@ class SelfDevelopmentJournal:
             return (
                 f"Apply reusable agent solution '{agent_solution.get('title')}' for "
                 f"{agent_solution.get('pain_type')}: {agent_solution.get('next_nomad_action')}"
+            )
+
+        if top_truth_pattern:
+            return (
+                f"Advance reusable truth pattern '{top_truth_pattern.get('title')}' for "
+                f"{top_truth_pattern.get('pain_type')}: get one more verification signal and one product artifact."
             )
 
         local_actions = result.get("local_actions") or previous_state.get("last_local_actions") or []
@@ -260,6 +290,13 @@ class SelfDevelopmentJournal:
             lines.append(
                 f"Last autonomous development: {autonomous.get('title') or autonomous.get('reason') or 'none'}"
             )
+        truth_pattern = state.get("last_truth_pattern") or {}
+        if truth_pattern:
+            lines.append(
+                "Top truth pattern: "
+                f"{truth_pattern.get('title')} "
+                f"(repeat={truth_pattern.get('repeat_count', 0)}, pain={truth_pattern.get('pain_type')})"
+            )
         return "\n".join(lines)
 
     def codex_task_prompt(self, autopilot_state_path: Optional[Path] = None) -> str:
@@ -323,6 +360,14 @@ class SelfDevelopmentJournal:
                 f"{agent_solution.get('title') or 'unknown'} for {agent_solution.get('pain_type') or 'unknown'}; "
                 f"next self-apply: {agent_solution.get('next_nomad_action') or 'not recorded'}"
             )
+        truth_pattern = state.get("last_truth_pattern") or {}
+        if truth_pattern:
+            lines.append(
+                "Top truth pattern: "
+                f"{truth_pattern.get('title') or 'unknown'} for {truth_pattern.get('pain_type') or 'unknown'}; "
+                f"repeat_count={truth_pattern.get('repeat_count', 0)}; "
+                f"truth_score={truth_pattern.get('truth_score', 0)}"
+            )
         public_url = autopilot.get("last_public_api_url") or ""
         if public_url:
             lines.append(f"Current public URL: {public_url}")
@@ -356,6 +401,7 @@ class SelfDevelopmentJournal:
             "last_lead": None,
             "last_agent_pain_solution": None,
             "last_autonomous_development": None,
+            "last_truth_pattern": None,
             "cycles": [],
         }
 
@@ -383,6 +429,56 @@ class SelfDevelopmentJournal:
             "agent_pain_solution": self._compact_agent_pain_solution(result),
             "autonomous_development": self._compact_autonomous_development(result),
         }
+
+    def _top_truth_pattern(self) -> Optional[Dict[str, Any]]:
+        state = self._load_optional_json(self.mutual_aid_state_path)
+        entries = [
+            entry
+            for entry in (state.get("truth_density_ledger") or [])
+            if (entry.get("outcome") or {}).get("success")
+        ]
+        if not entries:
+            return None
+        entries.sort(
+            key=lambda entry: (
+                -float(((entry.get("reuse_value") or {}).get("score")) or 0.0),
+                -int(((entry.get("reuse_value") or {}).get("repeat_count")) or 0),
+                -float(entry.get("truth_score") or 0.0),
+                str(entry.get("timestamp") or ""),
+            )
+        )
+        top = entries[0]
+        return {
+            "ledger_id": top.get("ledger_id", ""),
+            "pain_type": top.get("pain_type", ""),
+            "title": top.get("solution_title") or top.get("task") or top.get("pain_type") or "reusable pattern",
+            "truth_score": float(top.get("truth_score") or 0.0),
+            "repeat_count": int(((top.get("reuse_value") or {}).get("repeat_count")) or 0),
+            "reuse_score": float(((top.get("reuse_value") or {}).get("score")) or 0.0),
+            "solution_id": top.get("solution_id", ""),
+        }
+
+    @staticmethod
+    def _should_package_truth_pattern(
+        active_lead: Optional[Dict[str, Any]],
+        previous_state: Dict[str, Any],
+        top_truth_pattern: Optional[Dict[str, Any]],
+    ) -> bool:
+        if not active_lead or not top_truth_pattern:
+            return False
+        if int(top_truth_pattern.get("repeat_count") or 0) < 2:
+            return False
+        previous_lead = previous_state.get("last_lead") or {}
+        current_url = str(active_lead.get("url") or active_lead.get("name") or "")
+        previous_url = str(previous_lead.get("url") or previous_lead.get("name") or "")
+        if not current_url or current_url != previous_url:
+            return False
+        previous_objective = str(previous_state.get("next_objective") or "")
+        if current_url in previous_objective:
+            return True
+        autonomous = previous_state.get("last_autonomous_development") or {}
+        title = str(autonomous.get("title") or "").lower()
+        return "lead" in title and "artifact" in title
 
     @staticmethod
     def _unlock_payload(

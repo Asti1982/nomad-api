@@ -36,6 +36,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         autopilot = result.get("autopilot") or {}
         autonomous = result.get("autonomous_development") or {}
         mutual_aid = result.get("mutual_aid") or {}
+        top_truth_pattern = mutual_aid.get("top_truth_pattern") or {}
         lines = [
             "Nomad system status",
             f"Uptime: {result.get('uptime', 'unknown')}",
@@ -58,6 +59,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
             "",
             "Mutual-Aid:",
             f"  Score: {mutual_aid.get('mutual_aid_score', 0)}",
+            f"  Swarm Assist: {mutual_aid.get('swarm_assist_score', 0)}",
             f"  Modules: {mutual_aid.get('module_count', 0)}",
             f"  Ledger: {mutual_aid.get('truth_ledger_count', 0)}",
             f"  Inbox: {mutual_aid.get('swarm_inbox_count', 0)}",
@@ -79,6 +81,17 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"  Awaiting Payment: {tasks.get('awaiting_payment', 0)}",
             f"  Completed: {tasks.get('completed', 0)}",
         ])
+        if top_truth_pattern:
+            lines.extend([
+                "",
+                "Top Truth Pattern:",
+                (
+                    f"  {top_truth_pattern.get('title', '')} "
+                    f"[{top_truth_pattern.get('pain_type', 'unknown')}] "
+                    f"repeat={top_truth_pattern.get('repeat_count', 0)} "
+                    f"truth={top_truth_pattern.get('truth_score', 0)}"
+                ),
+            ])
         if result.get("analysis"):
             lines.append("")
             lines.append(result["analysis"])

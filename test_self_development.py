@@ -130,3 +130,74 @@ def test_self_development_journal_renders_codex_task_prompt(tmp_path):
     assert "Nomad Compute Unlock Pack" in prompt
     assert "Compute watch:" in prompt
     assert "https://nomad.example" in prompt
+
+
+def test_self_development_journal_packages_top_truth_pattern_when_same_lead_repeats(tmp_path):
+    mutual_aid_state = tmp_path / "mutual_aid.json"
+    mutual_aid_state.write_text(
+        (
+            "{\n"
+            '  "truth_density_ledger": [\n'
+            "    {\n"
+            '      "ledger_id": "tdl-1",\n'
+            '      "pain_type": "compute_auth",\n'
+            '      "solution_title": "Provider Fallback Ladder",\n'
+            '      "task": "Agent observed ERROR=429",\n'
+            '      "truth_score": 0.81,\n'
+            '      "reuse_value": {"score": 0.93, "repeat_count": 3},\n'
+            '      "outcome": {"success": true},\n'
+            '      "timestamp": "2026-04-21T12:00:00Z"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=mutual_aid_state,
+    )
+    journal.record_cycle(
+        {
+            "objective": "lead cycle",
+            "external_review_count": 1,
+            "local_actions": [],
+            "human_unlocks": [],
+            "lead_scout": {
+                "active_lead": {
+                    "url": "https://github.com/example/agent/issues/1",
+                    "pain": "agent deployment quota failure",
+                    "addressable_label": "Compute/auth unblock",
+                }
+            },
+            "autonomous_development": {
+                "skipped": False,
+                "action": {
+                    "action_id": "adev-lead",
+                    "type": "lead_help_artifact",
+                    "title": "Drafted a bounded help artifact for an agent lead",
+                    "files": [],
+                },
+            },
+        }
+    )
+
+    second = journal.record_cycle(
+        {
+            "objective": "lead cycle again",
+            "external_review_count": 1,
+            "local_actions": [],
+            "human_unlocks": [],
+            "lead_scout": {
+                "active_lead": {
+                    "url": "https://github.com/example/agent/issues/1",
+                    "pain": "agent deployment quota failure",
+                    "addressable_label": "Compute/auth unblock",
+                }
+            },
+        }
+    )
+
+    assert "Package reusable truth pattern" in second["next_objective"]
+    assert "Provider Fallback Ladder" in second["next_objective"]
+    assert second["last_truth_pattern"]["repeat_count"] == 3

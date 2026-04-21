@@ -160,9 +160,23 @@ class NomadSystemMonitor:
         ledger = state.get("truth_density_ledger") or []
         inbox = state.get("swarm_inbox") or []
         packs = state.get("paid_packs") or {}
+        patterns = [
+            entry
+            for entry in ledger
+            if (entry.get("outcome") or {}).get("success")
+        ]
+        patterns.sort(
+            key=lambda entry: (
+                -float(((entry.get("reuse_value") or {}).get("score")) or 0.0),
+                -int(((entry.get("reuse_value") or {}).get("repeat_count")) or 0),
+                -float(entry.get("truth_score") or 0.0),
+            )
+        )
+        top_pattern = patterns[0] if patterns else {}
         return {
             "schema": "nomad.mutual_aid_status.compact.v1",
             "mutual_aid_score": int(state.get("mutual_aid_score") or 0),
+            "swarm_assist_score": int(state.get("swarm_assist_score") or 0),
             "truth_density_total": round(float(state.get("truth_density_total") or 0.0), 4),
             "helped_agent_count": len(state.get("helped_agents") or {}),
             "module_count": len(modules),
@@ -170,6 +184,12 @@ class NomadSystemMonitor:
             "swarm_inbox_count": len(inbox),
             "paid_pack_count": len(packs),
             "latest_module": (modules[-1] if modules else {}).get("module_id", ""),
+            "top_truth_pattern": {
+                "title": top_pattern.get("solution_title") or top_pattern.get("task") or "",
+                "pain_type": top_pattern.get("pain_type", ""),
+                "repeat_count": int(((top_pattern.get("reuse_value") or {}).get("repeat_count")) or 0),
+                "truth_score": float(top_pattern.get("truth_score") or 0.0),
+            } if top_pattern else {},
         }
 
     def _autonomous_development_status(self) -> Dict[str, Any]:
