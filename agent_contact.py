@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
+from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk
 from nomad_collaboration import collaboration_charter
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
@@ -103,12 +104,14 @@ class AgentContactOutbox:
         session: Optional[requests.Session] = None,
         service_desk: Optional[AgentServiceDesk] = None,
         guardrails: Optional[NomadGuardrailEngine] = None,
+        engagements: Optional[AgentEngagementLedger] = None,
     ) -> None:
         load_dotenv()
         self.path = path or DEFAULT_CONTACT_STORE
         self.session = session or requests.Session()
         self.service_desk = service_desk or AgentServiceDesk()
         self.guardrails = guardrails or NomadGuardrailEngine()
+        self.engagements = engagements or AgentEngagementLedger()
         self.public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
         self.user_agent = (
             os.getenv("NOMAD_HTTP_USER_AGENT")
@@ -668,6 +671,33 @@ class AgentContactOutbox:
         reply = self._latest_non_user_message(task)
         if reply.get("text"):
             normalized_reply = self._normalize_reply_text(reply.get("text", ""))
+            role_assessment = self.engagements.classify(
+                requester_agent=str((contact.get("target_profile") or {}).get("agent_name") or (contact.get("lead") or {}).get("title") or "agent"),
+                requester_endpoint=str(contact.get("endpoint_url") or ""),
+                message=reply.get("text", ""),
+                structured_request=normalized_reply,
+                pain_type=str(normalized_reply.get("classification") or contact.get("service_type") or ""),
+            )
+            best_current_offer = (
+                ((contact.get("offer") or {}).get("best_current_offer"))
+                if isinstance(contact.get("offer"), dict)
+                else {}
+            )
+            engagement_entry = self.engagements.record_inbound(
+                session_id=str(snapshot.get("context_id") or contact.get("contact_id") or ""),
+                requester_agent=str((contact.get("target_profile") or {}).get("agent_name") or (contact.get("lead") or {}).get("title") or "agent"),
+                requester_endpoint=str(contact.get("endpoint_url") or ""),
+                message=reply.get("text", ""),
+                pain_type=str(normalized_reply.get("classification") or contact.get("service_type") or ""),
+                role_assessment=role_assessment,
+                best_current_offer=best_current_offer if isinstance(best_current_offer, dict) else {},
+                source="agent_contact_reply",
+            )
+            followup = self.engagements.followup_contract(
+                role_assessment=role_assessment,
+                best_current_offer=best_current_offer if isinstance(best_current_offer, dict) else {},
+                reply_text=reply.get("text", ""),
+            )
             contact["last_reply"] = {
                 "role": reply.get("role", ""),
                 "text": reply.get("text", ""),
@@ -675,7 +705,14 @@ class AgentContactOutbox:
                 "state": snapshot.get("state", ""),
                 "updated_at": snapshot.get("timestamp", ""),
                 "normalized": normalized_reply,
+                "role_assessment": role_assessment,
+                "followup": followup,
+                "engagement_id": engagement_entry.get("engagement_id", ""),
             }
+            contact["reply_role_assessment"] = role_assessment
+            contact["engagement_id"] = engagement_entry.get("engagement_id", "")
+            contact["followup_recommendation"] = followup
+            contact["followup_message"] = followup.get("message", "")
 
     def _remote_task_for_contact(self, contact: Dict[str, Any]) -> Dict[str, Any]:
         existing = contact.get("remote_task") or {}

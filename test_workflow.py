@@ -701,3 +701,31 @@ def test_llm_review_can_override_scout_selection():
     assert result["deal_found"] is True
     assert result["selected_deal"]["selection_source"] == "llm"
     assert result["llm_review"]["selected_opportunity_id"] == result["selected_deal"]["opportunity_id"]
+
+
+def test_agent_engagement_request_routes():
+    agent = ArbiterAgent()
+    agent.agent_engagements.list_engagements = lambda **kwargs: {
+        "mode": "nomad_agent_engagements",
+        "deal_found": False,
+        "ok": True,
+        "roles": kwargs.get("roles") or [],
+        "pain_type": kwargs.get("pain_type") or "",
+        "entry_count": 1,
+    }
+    agent.agent_engagements.summary = lambda **kwargs: {
+        "mode": "nomad_agent_engagement_summary",
+        "deal_found": False,
+        "ok": True,
+        "pain_type": kwargs.get("pain_type") or "",
+        "entry_count": 1,
+    }
+
+    listed = agent.run("/agent-engagements role=peer_solver type=compute_auth limit=3")
+    summary = agent.run("/agent-engagement-summary type=compute_auth limit=2")
+
+    assert listed["mode"] == "nomad_agent_engagements"
+    assert listed["roles"] == ["peer_solver"]
+    assert listed["pain_type"] == "compute_auth"
+    assert summary["mode"] == "nomad_agent_engagement_summary"
+    assert summary["pain_type"] == "compute_auth"

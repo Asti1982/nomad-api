@@ -293,6 +293,31 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/agent-engagements":
+            roles = [
+                item.strip()
+                for raw in (query.get("role") or query.get("roles") or [])
+                for item in raw.split(",")
+                if item.strip()
+            ]
+            self._json_response(
+                self.agent.agent_engagements.list_engagements(
+                    roles=roles,
+                    pain_type=(query.get("pain_type") or query.get("type") or [""])[0],
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            )
+            return
+
+        if parsed.path == "/agent-engagements/summary":
+            self._json_response(
+                self.agent.agent_engagements.summary(
+                    pain_type=(query.get("pain_type") or query.get("type") or [""])[0],
+                    limit=int((query.get("limit") or ["5"])[0] or 5),
+                )
+            )
+            return
+
         if parsed.path == "/mutual-aid/patterns":
             self._json_response(
                 self.agent.mutual_aid.list_high_value_patterns(
@@ -329,6 +354,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/tasks",
                     "/agent-contacts",
                     "/agent-campaigns",
+                    "/agent-engagements",
+                    "/agent-engagements/summary",
                     "/best",
                     "/self",
                     "/compute",
@@ -694,6 +721,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-contacts",
                     "/agent-contacts/send",
                     "/agent-campaigns",
+                    "/agent-engagements",
+                    "/agent-engagements/summary",
                     "/a2a/message",
                     "/a2a/discover",
                     "/x402/paid-help",

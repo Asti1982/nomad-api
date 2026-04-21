@@ -394,6 +394,12 @@ class DirectAgentGateway:
             best_current_offer=best_current_offer,
             need_profile=need_profile,
             rescue_plan=rescue_plan,
+            source="direct_agent_message",
+        )
+        role_followup = self.engagements.followup_contract(
+            role_assessment=agent_role,
+            best_current_offer=best_current_offer,
+            reply_text=message,
         )
         task.setdefault("metadata", {})["need_profile"] = need_profile
         task["metadata"]["engagement_plan"] = engagement_plan
@@ -401,6 +407,7 @@ class DirectAgentGateway:
         task["metadata"]["best_current_offer"] = best_current_offer
         task["metadata"]["agent_role"] = agent_role
         task["metadata"]["engagement_id"] = engagement_entry.get("engagement_id", "")
+        task["metadata"]["role_followup"] = role_followup
         if hasattr(self.service_desk, "_store_task"):
             try:
                 self.service_desk._store_task(task)
@@ -416,6 +423,7 @@ class DirectAgentGateway:
             "agent_role": agent_role,
             "engagement_plan": engagement_plan,
             "best_current_offer": best_current_offer,
+            "role_followup": role_followup,
             "commercial": commercial,
             "rescue_plan": rescue_plan,
             "task_id": task.get("task_id", ""),
@@ -442,6 +450,7 @@ class DirectAgentGateway:
             "engagement_ledger_entry": engagement_entry,
             "engagement_plan": engagement_plan,
             "best_current_offer": best_current_offer,
+            "role_followup": role_followup,
             "commercial": commercial,
             "rescue_plan": rescue_plan,
             "task": task,
@@ -460,9 +469,11 @@ class DirectAgentGateway:
                 commercial=commercial,
                 rescue_plan=rescue_plan,
                 agent_role=agent_role,
+                role_followup=role_followup,
             ),
             "best_offer_reply": self._best_offer_reply(best_current_offer, agent_role=agent_role),
             "best_offer_message": self._best_offer_message(best_current_offer, agent_role=agent_role),
+            "role_followup_message": role_followup.get("message", ""),
             "next_agent_message": self._next_agent_message(
                 requester,
                 diagnosis,
@@ -473,6 +484,7 @@ class DirectAgentGateway:
                 commercial=commercial,
                 rescue_plan=rescue_plan,
                 agent_role=agent_role,
+                role_followup=role_followup,
             ),
             "self_improvement_memory": {
                 "will_store_after_consent": True,
@@ -732,6 +744,7 @@ class DirectAgentGateway:
         commercial: Optional[Dict[str, Any]] = None,
         rescue_plan: Optional[Dict[str, Any]] = None,
         agent_role: Optional[Dict[str, Any]] = None,
+        role_followup: Optional[Dict[str, Any]] = None,
     ) -> str:
         payload = self._structured_reply(
             requester=requester,
@@ -743,6 +756,7 @@ class DirectAgentGateway:
             commercial=commercial or {},
             rescue_plan=rescue_plan or {},
             agent_role=agent_role or {},
+            role_followup=role_followup or {},
         )
         lines = ["nomad.reply.v1"]
         for key, value in payload.items():
@@ -760,6 +774,7 @@ class DirectAgentGateway:
         commercial: Optional[Dict[str, Any]] = None,
         rescue_plan: Optional[Dict[str, Any]] = None,
         agent_role: Optional[Dict[str, Any]] = None,
+        role_followup: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         need_profile = need_profile or {}
         engagement_plan = engagement_plan or {}
@@ -767,6 +782,7 @@ class DirectAgentGateway:
         commercial = commercial or {}
         rescue_plan = rescue_plan or {}
         agent_role = agent_role or {}
+        role_followup = role_followup or {}
         commercial_next_step = rescue_plan.get("commercial_next_step") or {}
         package_name = str(
             commercial_next_step.get("package")
@@ -799,6 +815,8 @@ class DirectAgentGateway:
             "delivery": str(engagement_plan.get("delivery") or ""),
             "preferred_output": str(need_profile.get("preferred_output") or ""),
             "agent_role": str(agent_role.get("role") or "customer"),
+            "role_ask": str(role_followup.get("ask") or ""),
+            "role_contract": str(role_followup.get("contract") or ""),
             "package": package_name,
             "best_offer": str(best_current_offer.get("headline") or package_name),
             "best_offer_price_native": str(best_current_offer.get("price_native") or ""),

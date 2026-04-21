@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from agent_engagement import AgentEngagementLedger
 from agent_pain_solver import AgentPainSolver
 from agent_contact import AgentContactOutbox
 from agent_campaign import AgentColdOutreachCampaign
@@ -58,6 +59,7 @@ class ArbiterAgent:
         self.addons = NomadAddonManager()
         self.codebuddy = CodeBuddyReviewRunner()
         self.agent_pain_solver = AgentPainSolver()
+        self.agent_engagements = AgentEngagementLedger()
         self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
         self.mutual_aid = NomadMutualAidKernel(pain_solver=self.agent_pain_solver)
         self.self_improvement = SelfImprovementEngine(
@@ -69,9 +71,12 @@ class ArbiterAgent:
         )
         self.lead_discovery = LeadDiscoveryScout()
         self.service_desk = AgentServiceDesk(treasury=self.treasury)
-        self.agent_contacts = AgentContactOutbox()
+        self.agent_contacts = AgentContactOutbox(engagements=self.agent_engagements)
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
-        self.direct_agent = DirectAgentGateway(service_desk=self.service_desk)
+        self.direct_agent = DirectAgentGateway(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
         self.guardrails = NomadGuardrailEngine()
         self.lead_conversion = LeadConversionPipeline(
             lead_discovery=self.lead_discovery,
@@ -85,6 +90,7 @@ class ArbiterAgent:
             pain_solver=self.agent_pain_solver,
             service_desk=self.service_desk,
             guardrails=self.guardrails,
+            engagement_ledger=self.agent_engagements,
         )
         self.monitor = NomadSystemMonitor(agent=self)
 
@@ -120,6 +126,9 @@ class ArbiterAgent:
 
         if self._is_product_request(normalized_query):
             return self._handle_product_request(normalized_query)
+
+        if self._is_agent_engagement_request(normalized_query):
+            return self._handle_agent_engagement_request(normalized_query)
 
         if self._is_guardrail_request(normalized_query):
             return self._handle_guardrail_request(normalized_query)
@@ -379,6 +388,14 @@ class ArbiterAgent:
             lowered.startswith("/guardrails")
             or lowered.startswith("/guardrail")
             or lowered.startswith("/check-action")
+        )
+
+    def _is_agent_engagement_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-engagements")
+            or lowered.startswith("/engagements")
+            or lowered.startswith("/agent-engagement-summary")
         )
 
     def _is_collaboration_request(self, query: str) -> bool:
@@ -641,6 +658,27 @@ class ArbiterAgent:
         objective = " ".join(objective.split())
         return self.product_factory.run(
             query=objective,
+            limit=limit,
+        )
+
+    def _handle_agent_engagement_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        requested_pain_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type")
+        limit = self._extract_int_key_value(query, "limit") or 25
+        if lowered.startswith("/agent-engagement-summary") or " summary" in lowered:
+            return self.agent_engagements.summary(
+                pain_type=requested_pain_type,
+                limit=limit,
+            )
+        roles_raw = (
+            self._extract_key_value(query, "role")
+            or self._extract_key_value(query, "roles")
+            or ""
+        )
+        roles = [item.strip() for item in roles_raw.split(",") if item.strip()]
+        return self.agent_engagements.list_engagements(
+            roles=roles,
+            pain_type=requested_pain_type,
             limit=limit,
         )
 

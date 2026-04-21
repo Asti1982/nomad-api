@@ -357,6 +357,31 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_agent_engagements":
+        stats = result.get("stats") or {}
+        roles = stats.get("roles") or {}
+        return "\n".join(
+            [
+                "Nomad Agent Engagements",
+                f"Entries: {result.get('entry_count', 0)}",
+                f"Roles: {', '.join(f'{key}={value}' for key, value in sorted(roles.items())) or 'none'}",
+                result.get("analysis", ""),
+            ]
+        )
+
+    if mode == "nomad_agent_engagement_summary":
+        roles = result.get("roles") or {}
+        outcomes = result.get("outcomes") or {}
+        return "\n".join(
+            [
+                "Nomad Agent Engagement Summary",
+                f"Entries: {result.get('entry_count', 0)}",
+                f"Roles: {', '.join(f'{key}={value}' for key, value in sorted(roles.items())) or 'none'}",
+                f"Outcomes: {', '.join(f'{key}={value}' for key, value in sorted(outcomes.items())) or 'none'}",
+                result.get("analysis", ""),
+            ]
+        )
+
     if mode == "nomad_mutual_aid_packs":
         return "\n".join(
             [
@@ -473,6 +498,15 @@ def build_query(args: argparse.Namespace) -> str:
         status = f" status={','.join(args.status)}" if args.status else ""
         limit = f" limit={args.limit}" if args.limit else ""
         return f"/products{status}{limit}".strip()
+    if command == "agent-engagements":
+        roles = f" role={','.join(args.role)}" if args.role else ""
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        limit = f" limit={args.limit}" if args.limit else ""
+        return f"/agent-engagements{roles}{pain_type}{limit}".strip()
+    if command == "agent-engagement-summary":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        limit = f" limit={args.limit}" if args.limit else ""
+        return f"/agent-engagement-summary{pain_type}{limit}".strip()
     if command == "solve-pain":
         problem = " ".join(args.problem).strip()
         service_type = f" type={args.service_type}" if args.service_type else ""
@@ -712,6 +746,15 @@ def build_parser() -> argparse.ArgumentParser:
     products = subparsers.add_parser("products", help="List stored Nomad product offers.")
     products.add_argument("--status", action="append", default=[])
     products.add_argument("--limit", type=int, default=25)
+
+    engagements = subparsers.add_parser("agent-engagements", help="List recorded inbound/outbound agent engagements.")
+    engagements.add_argument("--role", action="append", default=[])
+    engagements.add_argument("--pain-type", default="")
+    engagements.add_argument("--limit", type=int, default=25)
+
+    engagement_summary = subparsers.add_parser("agent-engagement-summary", help="Show a compact summary of agent engagement roles and outcomes.")
+    engagement_summary.add_argument("--pain-type", default="")
+    engagement_summary.add_argument("--limit", type=int, default=5)
 
     solve_pain = subparsers.add_parser("solve-pain", help="Turn one agent pain point into a reusable Nomad solution.")
     solve_pain.add_argument("problem", nargs="*")

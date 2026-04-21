@@ -301,6 +301,29 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_agent_engagements",
+                "title": "Nomad Agent Engagements",
+                "description": "List recorded agent engagements, grouped by role such as customer, collaborator, reseller, or peer_solver.",
+                "inputSchema": self._schema(
+                    {
+                        "role": "Optional role or comma-separated roles.",
+                        "pain_type": "Optional pain type to filter by.",
+                        "limit": "Maximum number of engagement records to list.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_agent_engagement_summary",
+                "title": "Nomad Agent Engagement Summary",
+                "description": "Summarize current agent-engagement roles, outcomes, and swarm candidates.",
+                "inputSchema": self._schema(
+                    {
+                        "pain_type": "Optional pain type to filter by.",
+                        "limit": "Maximum number of top swarm candidates to include.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_service_catalog",
                 "title": "Nomad Agent Service Catalog",
                 "description": "Return Nomad's wallet-payable public service desk descriptor.",
@@ -587,6 +610,17 @@ class NomadMcpServer:
                 statuses=self._status_list(arguments.get("status") or arguments.get("statuses")),
                 limit=int(arguments.get("limit") or 25),
             )
+        if name == "nomad_agent_engagements":
+            return self.agent.agent_engagements.list_engagements(
+                roles=self._status_list(arguments.get("role") or arguments.get("roles")),
+                pain_type=str(arguments.get("pain_type") or "").strip(),
+                limit=int(arguments.get("limit") or 25),
+            )
+        if name == "nomad_agent_engagement_summary":
+            return self.agent.agent_engagements.summary(
+                pain_type=str(arguments.get("pain_type") or "").strip(),
+                limit=int(arguments.get("limit") or 5),
+            )
         if name == "nomad_addons":
             return self.agent.addons.status()
         if name == "nomad_quantum_tokens":
@@ -763,6 +797,18 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://agent-engagements",
+                "name": "Nomad Agent Engagements",
+                "description": "Recorded agent engagements as JSON.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://agent-engagement-summary",
+                "name": "Nomad Agent Engagement Summary",
+                "description": "Compact summary of current agent role distribution and swarm candidates.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://addons",
                 "name": "Nomad Addons",
                 "description": "Safe manifest-first scan of Nomadds addons.",
@@ -833,6 +879,20 @@ class NomadMcpServer:
         elif uri == "nomad://products":
             text = json.dumps(
                 self.agent.product_factory.list_products(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-engagements":
+            text = json.dumps(
+                self.agent.agent_engagements.list_engagements(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-engagement-summary":
+            text = json.dumps(
+                self.agent.agent_engagements.summary(),
                 indent=2,
                 ensure_ascii=False,
             )

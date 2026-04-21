@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from agent_engagement import AgentEngagementLedger
 from agent_pain_solver import AgentPainSolver
 from agent_service import AgentServiceDesk
 from lead_conversion import LeadConversionPipeline
@@ -95,12 +96,14 @@ class NomadProductFactory:
         pain_solver: Optional[AgentPainSolver] = None,
         service_desk: Optional[AgentServiceDesk] = None,
         guardrails: Optional[NomadGuardrailEngine] = None,
+        engagement_ledger: Optional[AgentEngagementLedger] = None,
     ) -> None:
         self.path = path or DEFAULT_PRODUCT_STORE
         self.lead_conversion = lead_conversion or LeadConversionPipeline()
         self.pain_solver = pain_solver or AgentPainSolver()
         self.service_desk = service_desk or AgentServiceDesk()
         self.guardrails = guardrails or NomadGuardrailEngine()
+        self.engagement_ledger = engagement_ledger or AgentEngagementLedger()
 
     def run(
         self,
@@ -117,6 +120,7 @@ class NomadProductFactory:
             leads=leads,
             conversions=conversions,
         )
+        engagement_summary = self.engagement_ledger.summary(limit=5)
         source_conversions = list(conversion_source.get("conversions") or [])[:cap]
         conversion_products = [
             self._with_priority(self.product_from_conversion(conversion))
@@ -155,6 +159,7 @@ class NomadProductFactory:
             "pattern_source": {
                 "pattern_count": len(high_value_patterns or []),
             },
+            "engagement_summary": engagement_summary,
             "product_count": len(products),
             "stats": stats,
             "products": products,
@@ -165,6 +170,8 @@ class NomadProductFactory:
                 f"{stats.get('offer_ready', 0)} offer-ready, "
                 f"{stats.get('private_offer_needs_approval', 0)} private offers need approval, "
                 f"{stats.get('watchlist', 0)} watchlist. "
+                f"Engagements: customers={((engagement_summary.get('roles') or {}).get('customer', 0))}, "
+                f"peer_solvers={((engagement_summary.get('roles') or {}).get('peer_solver', 0))}. "
                 f"Top priority: {(top_priority_product.get('name') or top_priority_product.get('product_family') or 'none')}."
             ),
         }
@@ -185,6 +192,7 @@ class NomadProductFactory:
                 item for item in products
                 if str(item.get("status") or "") in normalized_statuses
             ]
+        products = [self._with_priority(dict(item)) for item in products]
         products = self._sorted_products(products)
         cap = max(1, min(int(limit or 25), 100))
         limited = products[:cap]
@@ -193,6 +201,7 @@ class NomadProductFactory:
             "deal_found": False,
             "ok": True,
             "statuses": sorted(normalized_statuses),
+            "engagement_summary": self.engagement_ledger.summary(limit=5),
             "stats": self._stats(products),
             "products": limited,
             "top_priority_product": limited[0] if limited else {},
@@ -1100,6 +1109,21 @@ class NomadProductFactory:
         enriched = dict(product)
         source_pattern = enriched.get("source_pattern") or {}
         status = str(enriched.get("status") or "draft")
+        pain_type = str(enriched.get("pain_type") or "").strip()
+        engagement_signal = (
+            self.engagement_ledger.signal_for_pain_type(pain_type)
+            if pain_type
+            else {
+                "schema": "nomad.agent_engagement_signal.v1",
+                "pain_type": "",
+                "entry_count": 0,
+                "roles": {},
+                "outcomes": {},
+                "priority_bonus": 0.0,
+                "priority_reason": "",
+                "top_swarm_candidates": [],
+            }
+        )
         if source_pattern:
             score = (
                 float(source_pattern.get("occurrence_count") or 0) * 10.0
@@ -1122,6 +1146,11 @@ class NomadProductFactory:
             reason = (
                 f"Lead-derived {enriched.get('pain_type', 'agent')} offer with status {status}."
             )
+        bonus = float(engagement_signal.get("priority_bonus") or 0.0)
+        if bonus:
+            score += bonus
+            reason = f"{reason} {engagement_signal.get('priority_reason', '')}".strip()
+        enriched["engagement_signal"] = engagement_signal
         enriched["priority_score"] = round(score, 2)
         enriched["priority_reason"] = reason
         return enriched
@@ -1159,4 +1188,5 @@ class NomadProductFactory:
             return {"products": {}}
 
     def _save(self, state: Dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")

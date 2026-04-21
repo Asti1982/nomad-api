@@ -246,3 +246,6 @@ def test_agent_contact_poll_normalizes_structured_reply(tmp_path):
     assert normalized["classification"] == "compute_auth"
     assert normalized["next_step"] == "verify token scope"
     assert normalized["budget_native"] == "0.03"
+    assert polled["contact"]["reply_role_assessment"]["role"] == "customer"
+    assert polled["contact"]["followup_recommendation"]["next_path"] == "quote_best_current_offer"
+    assert polled["contact"]["followup_message"].startswith("nomad.followup.v1")

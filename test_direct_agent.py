@@ -151,8 +151,11 @@ def test_direct_message_creates_session_free_diagnosis_and_payment_challenge(tmp
     assert result["best_offer_reply"]["offer_headline"].startswith("Nomad Loop Rescue Pack")
     assert result["best_offer_message"].startswith("nomad.best_offer.v1")
     assert result["agent_role_assessment"]["role"] == "customer"
+    assert result["role_followup"]["next_path"] == "quote_best_current_offer"
+    assert result["role_followup_message"].startswith("nomad.followup.v1")
     assert result["engagement_ledger_entry"]["outcome_status"] == "offer_presented"
     assert result["task"]["metadata"]["engagement_id"].startswith("direct-")
+    assert result["task"]["metadata"]["role_followup"]["contract"] == "problem|goal|blocking_step|constraints|budget_native"
     assert result["next_agent_message"].startswith("nomad.reply.v1")
     assert "requester=StuckBot" in result["next_agent_message"]
     assert "rescue_plan_id=rescue-" in result["next_agent_message"]
@@ -229,6 +232,7 @@ def test_direct_message_classifies_reseller_path(tmp_path, monkeypatch):
 
     assert result["agent_role_assessment"]["role"] == "reseller"
     assert result["best_offer_reply"]["next_path"] == "share_referral_ready_offer"
+    assert result["role_followup"]["ask"].startswith("Send one buyer archetype")
 
 
 def test_direct_message_normalizes_a2a_jsonrpc_payload(tmp_path, monkeypatch):

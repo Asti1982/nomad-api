@@ -1,3 +1,4 @@
+from agent_engagement import AgentEngagementLedger
 from nomad_product_factory import NomadProductFactory
 
 
@@ -96,8 +97,16 @@ def _conversion(
     }
 
 
+def _factory(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return NomadProductFactory(
+        path=tmp_path / "products.json",
+        engagement_ledger=AgentEngagementLedger(path=tmp_path / "engagements.json"),
+    )
+
+
 def test_product_factory_builds_private_product_with_approval_gate(tmp_path):
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
 
     result = factory.run(conversions=[_conversion()], limit=1)
 
@@ -118,7 +127,7 @@ def test_product_factory_builds_private_product_with_approval_gate(tmp_path):
 
 
 def test_product_factory_marks_machine_endpoint_offer_ready(tmp_path):
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
 
     result = factory.run(
         conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
@@ -134,7 +143,7 @@ def test_product_factory_marks_machine_endpoint_offer_ready(tmp_path):
 
 
 def test_product_factory_marks_public_comment_approved_offer_ready(tmp_path):
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
 
     result = factory.run(
         conversions=[_conversion(status="public_comment_approved", service_type="repo_issue_help")],
@@ -148,7 +157,7 @@ def test_product_factory_marks_public_comment_approved_offer_ready(tmp_path):
 
 
 def test_product_factory_lists_persisted_products_by_status(tmp_path):
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
     factory.run(conversions=[_conversion()], limit=1)
 
     listed = factory.list_products(statuses=["private_offer_needs_approval"], limit=10)
@@ -160,7 +169,7 @@ def test_product_factory_lists_persisted_products_by_status(tmp_path):
 
 
 def test_product_factory_differentiates_same_service_type_leads(tmp_path):
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
 
     result = factory.run(
         conversions=[
@@ -192,7 +201,7 @@ def test_product_factory_differentiates_same_service_type_leads(tmp_path):
 def test_product_factory_builds_prioritized_product_from_high_value_pattern(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
     monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "productization,agent_endpoint_contact")
-    factory = NomadProductFactory(path=tmp_path / "products.json")
+    factory = _factory(tmp_path)
 
     result = factory.run(
         conversions=[],
@@ -233,3 +242,56 @@ def test_product_factory_builds_prioritized_product_from_high_value_pattern(tmp_
     assert "Repeated compute_auth pattern" in product["priority_reason"]
     assert result["top_priority_product"]["product_id"] == product["product_id"]
     assert product["service_template"]["create_task_payload"]["metadata"]["pattern_id"] == "hvp-1"
+
+
+def test_product_factory_boosts_priority_from_engagement_signals(tmp_path):
+    ledger = AgentEngagementLedger(path=tmp_path / "engagements.json")
+    ledger.record_inbound(
+        session_id="eng-1",
+        requester_agent="BuyerBot",
+        requester_endpoint="https://buyer.example/a2a",
+        message="Need help diagnosing provider quota failures.",
+        pain_type="compute_auth",
+        role_assessment=ledger.classify(
+            requester_agent="BuyerBot",
+            requester_endpoint="https://buyer.example/a2a",
+            message="Need help diagnosing provider quota failures.",
+            pain_type="compute_auth",
+        ),
+        best_current_offer={"headline": "Nomad Compute Unlock Pack", "price_native": 0.03, "service_type": "compute_auth"},
+        source="direct_agent_message",
+    )
+    ledger.record_inbound(
+        session_id="eng-2",
+        requester_agent="VerifierBot",
+        requester_endpoint="https://verifier.example/a2a",
+        message="I can help Nomad with a verifier artifact and patch for provider fallback.",
+        pain_type="compute_auth",
+        role_assessment=ledger.classify(
+            requester_agent="VerifierBot",
+            requester_endpoint="https://verifier.example/a2a",
+            message="I can help Nomad with a verifier artifact and patch for provider fallback.",
+            pain_type="compute_auth",
+        ),
+        best_current_offer={"headline": "Nomad Compute Unlock Pack", "price_native": 0.03, "service_type": "compute_auth"},
+        source="agent_contact_reply",
+    )
+
+    baseline_factory = _factory(tmp_path / "baseline")
+    engaged_factory = NomadProductFactory(
+        path=tmp_path / "products.json",
+        engagement_ledger=ledger,
+    )
+
+    baseline = baseline_factory.run(
+        conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
+        limit=1,
+    )["products"][0]
+    engaged = engaged_factory.run(
+        conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
+        limit=1,
+    )["products"][0]
+
+    assert engaged["engagement_signal"]["priority_bonus"] > 0
+    assert engaged["priority_score"] > baseline["priority_score"]
+    assert "Engagement pull for compute_auth" in engaged["priority_reason"]

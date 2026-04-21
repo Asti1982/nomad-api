@@ -7,6 +7,7 @@ class FakeAgent:
         self.lead_discovery = FakeLeadDiscovery()
         self.service_desk = FakeServiceDesk()
         self.direct_agent = FakeDirectAgent()
+        self.agent_engagements = FakeEngagements()
         self.agent_campaigns = FakeCampaigns()
         self.agent_pain_solver = FakeAgentPainSolver()
         self.mutual_aid = FakeMutualAid()
@@ -30,6 +31,32 @@ class FakeLeadDiscovery:
             "query": query,
             "leads": [],
             "deal_found": False,
+        }
+
+
+class FakeEngagements:
+    def list_engagements(self, **kwargs):
+        return {
+            "mode": "nomad_agent_engagements",
+            "deal_found": False,
+            "ok": True,
+            "roles": kwargs.get("roles") or [],
+            "pain_type": kwargs.get("pain_type") or "",
+            "entry_count": 1,
+            "engagements": [{"engagement_id": "eng-test", "role": "peer_solver"}],
+            "stats": {"roles": {"peer_solver": 1}, "outcomes": {"verification_requested": 1}},
+        }
+
+    def summary(self, **kwargs):
+        return {
+            "mode": "nomad_agent_engagement_summary",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": kwargs.get("pain_type") or "",
+            "entry_count": 1,
+            "roles": {"peer_solver": 1},
+            "outcomes": {"verification_requested": 1},
+            "top_swarm_candidates": [{"requester_agent": "VerifierBot", "role": "peer_solver"}],
         }
 
 
@@ -371,6 +398,8 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_lead_conversion_pipeline" in tool_names
     assert "nomad_product_factory" in tool_names
     assert "nomad_products" in tool_names
+    assert "nomad_agent_engagements" in tool_names
+    assert "nomad_agent_engagement_summary" in tool_names
     assert "nomad_addons" in tool_names
     assert "nomad_quantum_tokens" in tool_names
     assert "nomad_agent_card" in tool_names
@@ -596,6 +625,37 @@ def test_mcp_runs_product_factory():
     assert content["products"][0]["schema"] == "nomad.product.v1"
 
 
+def test_mcp_lists_agent_engagements_and_summary():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    engagements = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 461,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_agent_engagements",
+                "arguments": {"role": "peer_solver", "pain_type": "compute_auth", "limit": "3"},
+            },
+        }
+    )
+    summary = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 462,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_agent_engagement_summary",
+                "arguments": {"pain_type": "compute_auth", "limit": "2"},
+            },
+        }
+    )
+
+    assert engagements["result"]["structuredContent"]["mode"] == "nomad_agent_engagements"
+    assert engagements["result"]["structuredContent"]["engagements"][0]["engagement_id"] == "eng-test"
+    assert summary["result"]["structuredContent"]["mode"] == "nomad_agent_engagement_summary"
+    assert summary["result"]["structuredContent"]["top_swarm_candidates"][0]["requester_agent"] == "VerifierBot"
+
+
 def test_mcp_runs_addons_and_quantum_tokens():
     server = NomadMcpServer(agent_factory=FakeAgent)
     addons = server.handle(
@@ -668,6 +728,12 @@ def test_cli_builds_service_and_lead_queries():
 
     products_args = build_parser().parse_args(["products", "--status", "offer_ready"])
     assert build_query(products_args) == "/products status=offer_ready limit=25"
+
+    engagement_args = build_parser().parse_args(["agent-engagements", "--role", "peer_solver", "--pain-type", "compute_auth"])
+    assert build_query(engagement_args) == "/agent-engagements role=peer_solver type=compute_auth limit=25"
+
+    engagement_summary_args = build_parser().parse_args(["agent-engagement-summary", "--pain-type", "compute_auth", "--limit", "3"])
+    assert build_query(engagement_summary_args) == "/agent-engagement-summary type=compute_auth limit=3"
 
     addons_args = build_parser().parse_args(["addons"])
     assert build_query(addons_args) == "/addons"

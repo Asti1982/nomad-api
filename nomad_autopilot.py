@@ -617,6 +617,8 @@ class NomadAutopilot:
                 replied_ids.append(contact_id)
                 reply = updated.get("last_reply") or {}
                 normalized = reply.get("normalized") or {}
+                role_assessment = reply.get("role_assessment") or updated.get("reply_role_assessment") or {}
+                followup = reply.get("followup") or updated.get("followup_recommendation") or {}
                 reply_summaries.append(
                     {
                         "contact_id": contact_id,
@@ -624,6 +626,8 @@ class NomadAutopilot:
                         "endpoint_url": str(updated.get("endpoint_url") or ""),
                         "reply_text": str(reply.get("text") or "")[:240],
                         "classification": str(normalized.get("classification") or ""),
+                        "agent_role": str(role_assessment.get("role") or ""),
+                        "followup_next_path": str(followup.get("next_path") or ""),
                         "next_step": str(normalized.get("next_step") or ""),
                         "budget_native": str(normalized.get("budget_native") or ""),
                     }
@@ -1335,9 +1339,14 @@ class NomadAutopilot:
     def _compact_product_factory(product_factory: Dict[str, Any]) -> Dict[str, Any]:
         products = product_factory.get("products") or []
         top_priority = product_factory.get("top_priority_product") or (products[0] if products else {})
+        engagement_summary = product_factory.get("engagement_summary") or {}
         return {
             "product_count": product_factory.get("product_count", 0),
             "stats": product_factory.get("stats") or {},
+            "engagement_summary": {
+                "entry_count": engagement_summary.get("entry_count", 0),
+                "roles": engagement_summary.get("roles") or {},
+            },
             "product_ids": [item.get("product_id", "") for item in products[:5] if item.get("product_id")],
             "variant_skus": [item.get("variant_sku", "") for item in products[:5] if item.get("variant_sku")],
             "statuses": [item.get("status", "") for item in products[:5] if item.get("status")],

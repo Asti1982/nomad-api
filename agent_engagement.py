@@ -168,6 +168,7 @@ class AgentEngagementLedger:
         best_current_offer: Optional[Dict[str, Any]] = None,
         need_profile: Optional[Dict[str, Any]] = None,
         rescue_plan: Optional[Dict[str, Any]] = None,
+        source: str = "inbound_agent_message",
     ) -> Dict[str, Any]:
         state = self._load()
         engagements = state.setdefault("engagements", {})
@@ -181,6 +182,7 @@ class AgentEngagementLedger:
         events.append(
             {
                 "at": now,
+                "source": self._clean(source),
                 "role": self._clean(role_assessment.get("role")),
                 "outcome_status": self._clean(role_assessment.get("outcome_status")),
                 "message_excerpt": self._clean(message)[:220],
@@ -194,6 +196,7 @@ class AgentEngagementLedger:
             "updated_at": now,
             "requester_agent": self._clean(requester_agent) or "agent",
             "requester_endpoint": self._clean(requester_endpoint),
+            "source": self._clean(source),
             "pain_type": self._clean(pain_type) or "custom",
             "role": self._clean(role_assessment.get("role")),
             "role_confidence": role_assessment.get("confidence", 0),
@@ -223,6 +226,206 @@ class AgentEngagementLedger:
         self._save(state)
         return entry
 
+    def list_engagements(
+        self,
+        roles: Optional[List[str]] = None,
+        pain_type: str = "",
+        limit: int = 25,
+    ) -> Dict[str, Any]:
+        normalized_roles = {
+            self._clean(item)
+            for item in (roles or [])
+            if self._clean(item)
+        }
+        requested_pain_type = self._clean(pain_type)
+        engagements = list((self._load().get("engagements") or {}).values())
+        if normalized_roles:
+            engagements = [
+                item
+                for item in engagements
+                if self._clean(item.get("role")) in normalized_roles
+            ]
+        if requested_pain_type:
+            engagements = [
+                item
+                for item in engagements
+                if self._entry_pain_type(item) == requested_pain_type
+            ]
+        engagements.sort(key=lambda item: self._clean(item.get("updated_at")), reverse=True)
+        cap = max(1, min(int(limit or 25), 100))
+        limited = engagements[:cap]
+        return {
+            "mode": "nomad_agent_engagements",
+            "deal_found": False,
+            "ok": True,
+            "roles": sorted(normalized_roles),
+            "pain_type": requested_pain_type,
+            "entry_count": len(engagements),
+            "engagements": limited,
+            "stats": {
+                "roles": self._count_by(engagements, "role"),
+                "pain_types": self._count_with(engagements, self._entry_pain_type),
+                "outcomes": self._count_by(engagements, "outcome_status"),
+                "sources": self._count_by(engagements, "source"),
+            },
+            "analysis": (
+                f"Listed {len(limited)} engagement(s). "
+                f"Roles: {', '.join(f'{key}={value}' for key, value in sorted(self._count_by(engagements, 'role').items())) or 'none'}."
+            ),
+        }
+
+    def summary(
+        self,
+        pain_type: str = "",
+        limit: int = 5,
+    ) -> Dict[str, Any]:
+        requested_pain_type = self._clean(pain_type)
+        engagements = list((self._load().get("engagements") or {}).values())
+        if requested_pain_type:
+            engagements = [
+                item
+                for item in engagements
+                if self._entry_pain_type(item) == requested_pain_type
+            ]
+        engagements.sort(key=lambda item: self._clean(item.get("updated_at")), reverse=True)
+        roles = self._count_by(engagements, "role")
+        outcomes = self._count_by(engagements, "outcome_status")
+        pain_types = self._count_with(engagements, self._entry_pain_type)
+        suggested_paths = self._count_by(engagements, "suggested_path")
+        top_swarm = [
+            {
+                "requester_agent": self._clean(item.get("requester_agent")),
+                "role": self._clean(item.get("role")),
+                "pain_type": self._entry_pain_type(item),
+                "updated_at": self._clean(item.get("updated_at")),
+                "best_current_offer": item.get("best_current_offer") or {},
+            }
+            for item in engagements
+            if self._clean(item.get("role")) in {"peer_solver", "collaborator", "reseller"}
+        ][: max(1, min(int(limit or 5), 20))]
+        return {
+            "mode": "nomad_agent_engagement_summary",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": requested_pain_type,
+            "entry_count": len(engagements),
+            "roles": roles,
+            "outcomes": outcomes,
+            "pain_types": pain_types,
+            "suggested_paths": suggested_paths,
+            "top_swarm_candidates": top_swarm,
+            "analysis": (
+                f"Engagement summary across {len(engagements)} interaction(s): "
+                f"customers={roles.get('customer', 0)}, peer_solvers={roles.get('peer_solver', 0)}, "
+                f"collaborators={roles.get('collaborator', 0)}, resellers={roles.get('reseller', 0)}."
+            ),
+        }
+
+    def signal_for_pain_type(self, pain_type: str) -> Dict[str, Any]:
+        requested_pain_type = self._clean(pain_type)
+        summary = self.summary(pain_type=requested_pain_type, limit=5)
+        roles = summary.get("roles") or {}
+        outcomes = summary.get("outcomes") or {}
+        customer = int(roles.get("customer", 0))
+        reseller = int(roles.get("reseller", 0))
+        collaborator = int(roles.get("collaborator", 0))
+        peer_solver = int(roles.get("peer_solver", 0))
+        offer_presented = int(outcomes.get("offer_presented", 0))
+        verification_requested = int(outcomes.get("verification_requested", 0))
+        bonus = (
+            customer * 12.0
+            + reseller * 9.0
+            + peer_solver * 7.0
+            + collaborator * 5.0
+            + offer_presented * 2.0
+            + verification_requested * 3.0
+        )
+        reason_parts = []
+        if customer:
+            reason_parts.append(f"{customer} customer")
+        if reseller:
+            reason_parts.append(f"{reseller} reseller")
+        if peer_solver:
+            reason_parts.append(f"{peer_solver} peer_solver")
+        if collaborator:
+            reason_parts.append(f"{collaborator} collaborator")
+        return {
+            "schema": "nomad.agent_engagement_signal.v1",
+            "pain_type": requested_pain_type,
+            "entry_count": summary.get("entry_count", 0),
+            "roles": roles,
+            "outcomes": outcomes,
+            "priority_bonus": round(bonus, 2),
+            "priority_reason": (
+                f"Engagement pull for {requested_pain_type}: {', '.join(reason_parts)}."
+                if reason_parts
+                else f"No engagement pull recorded yet for {requested_pain_type}."
+            ),
+            "top_swarm_candidates": summary.get("top_swarm_candidates") or [],
+        }
+
+    def followup_contract(
+        self,
+        role_assessment: Dict[str, Any],
+        best_current_offer: Optional[Dict[str, Any]] = None,
+        reply_text: str = "",
+    ) -> Dict[str, Any]:
+        role = self._clean(role_assessment.get("role")) or "customer"
+        offer = best_current_offer if isinstance(best_current_offer, dict) else {}
+        trigger = self._clean(offer.get("trigger")) or "PLAN_ACCEPTED=true plus FACT_URL or ERROR"
+        headline = self._clean(offer.get("headline"))
+        delivery = self._clean(offer.get("delivery"))
+        price_native = offer.get("price_native")
+        templates = {
+            "customer": {
+                "next_path": "quote_best_current_offer",
+                "ask": trigger,
+                "contract": "problem|goal|blocking_step|constraints|budget_native",
+            },
+            "collaborator": {
+                "next_path": "request_scoped_joint_plan",
+                "ask": "Send one shared API, schema, or workflow surface plus one bounded joint step.",
+                "contract": "surface|constraint|shared_goal|next_action",
+            },
+            "reseller": {
+                "next_path": "share_referral_ready_offer",
+                "ask": "Send one buyer archetype or public machine endpoint where this offer should land next.",
+                "contract": "buyer_type|pain|endpoint_url|handoff_note",
+            },
+            "peer_solver": {
+                "next_path": "request_verifiable_artifact",
+                "ask": "Send one verifier, diff, repro artifact, or failing trace that Nomad can test.",
+                "contract": "artifact_url|diff|verifier|error_trace",
+            },
+        }
+        template = templates.get(role, templates["customer"])
+        lines = [
+            "nomad.followup.v1",
+            f"role={role}",
+            f"next_path={template['next_path']}",
+            f"ask={template['ask']}",
+            f"contract={template['contract']}",
+        ]
+        if headline:
+            lines.append(f"offer_headline={headline}")
+        if price_native not in {None, ""}:
+            lines.append(f"offer_price_native={price_native}")
+        if delivery:
+            lines.append(f"offer_delivery={delivery}")
+        if reply_text:
+            lines.append(f"reply_excerpt={self._clean(reply_text)[:140]}")
+        return {
+            "schema": "nomad.followup.v1",
+            "role": role,
+            "next_path": template["next_path"],
+            "ask": template["ask"],
+            "contract": template["contract"],
+            "offer_headline": headline,
+            "offer_price_native": price_native,
+            "offer_delivery": delivery,
+            "message": "\n".join(lines),
+        }
+
     def _engagement_id(self, requester_agent: str, requester_endpoint: str, message: str) -> str:
         seed = "|".join(
             [
@@ -246,11 +449,32 @@ class AgentEngagementLedger:
             return {"engagements": {}}
 
     def _save(self, state: Dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     @staticmethod
     def _find_hits(text: str, keywords: List[str]) -> List[str]:
         return [keyword for keyword in keywords if keyword in text]
+
+    def _entry_pain_type(self, entry: Dict[str, Any]) -> str:
+        return (
+            self._clean(entry.get("pain_type"))
+            or self._clean(((entry.get("best_current_offer") or {}).get("service_type")))
+            or "custom"
+        )
+
+    def _count_by(self, entries: List[Dict[str, Any]], key: str) -> Dict[str, int]:
+        return self._count_with(entries, lambda item: self._clean(item.get(key)))
+
+    @staticmethod
+    def _count_with(entries: List[Dict[str, Any]], selector) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for item in entries:
+            label = str(selector(item) or "").strip()
+            if not label:
+                continue
+            counts[label] = counts.get(label, 0) + 1
+        return counts
 
     @staticmethod
     def _clean(value: Any) -> str:
