@@ -17,5 +17,7 @@ nomad_products.json
 nomad_mutual_aid_state.json
 nomad_mutual_aid_modules/
 truth_density_ledger.json
+truth_density_ledger.ndjson
+truth_density_index.json
 verified_aid_registry.json
 swarm_trust_store.json
