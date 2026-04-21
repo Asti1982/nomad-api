@@ -2,7 +2,10 @@ from self_development import SelfDevelopmentJournal
 
 
 def test_self_development_journal_records_cycle_and_next_objective(tmp_path):
-    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=tmp_path / "mutual_aid.json",
+    )
     result = {
         "objective": "initial objective",
         "external_review_count": 2,
@@ -37,7 +40,10 @@ def test_self_development_journal_records_cycle_and_next_objective(tmp_path):
 
 
 def test_self_development_journal_prefers_active_lead(tmp_path):
-    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=tmp_path / "mutual_aid.json",
+    )
     result = {
         "objective": "lead cycle",
         "external_review_count": 1,
@@ -61,7 +67,10 @@ def test_self_development_journal_prefers_active_lead(tmp_path):
 
 
 def test_self_development_journal_names_human_unlock_for_abstract_lead_discovery(tmp_path):
-    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=tmp_path / "mutual_aid.json",
+    )
     result = {
         "objective": "find leads",
         "external_review_count": 1,
@@ -84,7 +93,10 @@ def test_self_development_journal_names_human_unlock_for_abstract_lead_discovery
 
 
 def test_self_development_journal_renders_codex_task_prompt(tmp_path):
-    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=tmp_path / "mutual_aid.json",
+    )
     journal.record_cycle(
         {
             "objective": "find leads",
@@ -204,7 +216,10 @@ def test_self_development_journal_packages_top_truth_pattern_when_same_lead_repe
 
 
 def test_self_development_journal_tracks_high_value_pattern_watch(tmp_path):
-    journal = SelfDevelopmentJournal(path=tmp_path / "state.json")
+    journal = SelfDevelopmentJournal(
+        path=tmp_path / "state.json",
+        mutual_aid_state_path=tmp_path / "mutual_aid.json",
+    )
 
     state = journal.record_cycle(
         {
