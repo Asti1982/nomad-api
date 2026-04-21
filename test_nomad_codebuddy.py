@@ -49,7 +49,9 @@ def test_compute_probe_includes_codebuddy_as_developer_assistant(monkeypatch):
 def test_codebuddy_review_blocks_until_diff_release_is_approved(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_CODEBUDDY_ENABLED", "true")
     monkeypatch.setenv("CODEBUDDY_API_KEY", "cb-secret-test-token")
-    monkeypatch.delenv("NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD", raising=False)
+    monkeypatch.setenv("NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD", "false")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "disabled")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "")
     monkeypatch.setattr("nomad_codebuddy.shutil.which", lambda name: "C:/tools/codebuddy.exe")
     monkeypatch.setattr("nomad_codebuddy.CodeBuddyProbe._cli_version", lambda self: "codebuddy 2.31.1")
 
@@ -62,6 +64,32 @@ def test_codebuddy_review_blocks_until_diff_release_is_approved(monkeypatch, tmp
     assert result["issue"] == "codebuddy_data_release_required"
     assert result["data_release"]["approved"] is False
     assert "cb-secret-test-token" not in str(result)
+
+
+def test_codebuddy_review_accepts_operator_grant_for_diff_release(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_CODEBUDDY_ENABLED", "true")
+    monkeypatch.setenv("CODEBUDDY_API_KEY", "cb-secret-test-token")
+    monkeypatch.setenv("NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD", "false")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "code_review_diff_share")
+    monkeypatch.setattr("nomad_codebuddy.shutil.which", lambda name: "C:/tools/codebuddy.exe")
+    monkeypatch.setattr("nomad_codebuddy.CodeBuddyProbe._cli_version", lambda self: "codebuddy 2.31.1")
+
+    class Completed:
+        returncode = 0
+        stdout = '{"result":"No blocking findings."}'
+        stderr = ""
+
+    monkeypatch.setattr("nomad_codebuddy.subprocess.run", lambda *args, **kwargs: Completed())
+
+    result = CodeBuddyReviewRunner(repo_root=tmp_path).review(
+        objective="review",
+        diff_text="diff --git a/app.py b/app.py\n+print('hi')\n",
+    )
+
+    assert result["ok"] is True
+    assert result["data_release"]["approved"] is True
+    assert result["data_release"]["approved_by_operator_grant"] is True
 
 
 def test_codebuddy_review_runs_diff_only_when_approved(monkeypatch, tmp_path):

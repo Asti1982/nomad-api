@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 
+from nomad_operator_grant import operator_allows, operator_grant
+
 
 load_dotenv()
 
@@ -271,6 +273,7 @@ class LeadDiscoveryScout:
     ) -> Dict[str, Any]:
         approval = (approval or "draft_only").strip().lower()
         can_publish = approval in {"comment", "public_comment", "pr", "pull_request"}
+        grant = operator_grant()
         lead_url = lead.get("url") or lead.get("html_url") or ""
         pain = lead.get("pain") or lead.get("pain_signal") or "visible infrastructure pain"
         title = lead.get("title") or lead.get("name") or "public agent lead"
@@ -376,6 +379,8 @@ class LeadDiscoveryScout:
             "service_type": service_type,
             "approval": approval,
             "can_publish": can_publish,
+            "operator_grant": grant,
+            "machine_endpoint_contact_allowed": operator_allows("agent_endpoint_contact"),
             "draft_only": not can_publish,
             "draft": help_pack["draft"],
             "pain_validation": pain_validation,
@@ -574,8 +579,10 @@ class LeadDiscoveryScout:
         }
 
     def outreach_policy(self) -> Dict[str, Any]:
+        grant = operator_grant()
         return {
             "default_mode": "draft_only",
+            "operator_grant": grant,
             "public_reading_allowed": True,
             "allowed_without_approval": [
                 "read public issue pages",
@@ -584,6 +591,7 @@ class LeadDiscoveryScout:
                 "draft PR/repro plans",
                 "create local task notes",
                 "send bounded requests to public machine-readable agent/API/MCP endpoints",
+                "productize public lead signals into private Nomad offers",
             ],
             "blocked_without_approval": [
                 "post human-facing public comments",
@@ -596,6 +604,8 @@ class LeadDiscoveryScout:
                 "APPROVE_LEAD_HELP=draft_only",
                 "APPROVE_LEAD_HELP=comment",
                 "APPROVE_LEAD_HELP=pr_plan",
+                "APPROVE_LEAD_HELP=machine_endpoint",
+                "NOMAD_AUTOPILOT_SERVICE_APPROVAL=operator_granted",
                 "APPROVE_LEAD_HELP=skip",
             ],
         }

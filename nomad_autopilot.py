@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 from nomad_api import serve_in_thread
+from nomad_operator_grant import operator_grant, service_approval_scope
 from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
 
@@ -43,9 +44,7 @@ class NomadAutopilot:
         self.default_contact_poll_limit = int(
             os.getenv("NOMAD_AUTOPILOT_CONTACT_POLL_LIMIT", "10")
         )
-        self.default_service_approval = (
-            os.getenv("NOMAD_AUTOPILOT_SERVICE_APPROVAL") or "draft_only"
-        ).strip() or "draft_only"
+        self.default_service_approval = service_approval_scope()
         self.default_outreach_service_type = (
             os.getenv("NOMAD_OUTREACH_SERVICE_TYPE")
             or ("compute_auth" if (os.getenv("NOMAD_LEAD_FOCUS") or "compute_auth").strip().lower() == "compute_auth" else "human_in_loop")
@@ -181,6 +180,8 @@ class NomadAutopilot:
             "objective": selected_objective,
             "profile_id": profile_id,
             "public_api_url": public_api_url,
+            "service_approval": service_approval or self.default_service_approval,
+            "operator_grant": operator_grant(),
             "service": service_summary,
             "payment_followup_queue": payment_followup_queue,
             "contact_queue": contact_summary,

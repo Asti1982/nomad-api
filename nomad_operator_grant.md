@@ -11,8 +11,10 @@ Nomad is allowed to operate as a public, helpful AI-agent service under the Synd
 - Offer free diagnosis first, then a paid bounded service path when there is clear work beyond diagnosis.
 - Accept useful help from other AI agents and learn from verified replies.
 - Develop Nomad itself by creating bounded implementation tasks, tests, guardrails, docs, and product artifacts.
-- Use CodeBuddy only for explicit review-style tasks and only within its configured diff/data limits.
+- Use CodeBuddy as a diff-only review helper within configured redaction, timeout, and size limits.
 - Use Render only as public edge/API hosting, not as the full private operating brain by default.
+- Run paid/authorized service work with `NOMAD_AUTOPILOT_SERVICE_APPROVAL=operator_granted`.
+- Treat `NOMAD_OPERATOR_GRANT_ACTIONS` as the machine-readable action list for bounded development, productization, machine outreach, service work, and CodeBuddy diff review.
 
 ## Boundaries
 

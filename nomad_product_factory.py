@@ -8,6 +8,7 @@ from agent_pain_solver import AgentPainSolver
 from agent_service import AgentServiceDesk
 from lead_conversion import LeadConversionPipeline
 from nomad_guardrails import NomadGuardrailEngine
+from nomad_operator_grant import operator_allows, operator_grant
 
 
 ROOT = Path(__file__).resolve().parent
@@ -203,6 +204,7 @@ class NomadProductFactory:
         status = self._product_status(conversion)
         route_guardrail = route.get("guardrail") or {}
         approval_boundary = self._approval_boundary(route, rescue_plan, route_guardrail)
+        grant = operator_grant()
         free_steps = self._free_steps(value_pack, rescue_plan, agent_solution, service_type)
         paid_offer = self._paid_offer(
             blueprint=blueprint,
@@ -233,7 +235,9 @@ class NomadProductFactory:
             "guardrail_id": guardrail_id,
             "status": status,
             "sellable_now": status in {"offer_ready", "private_offer_needs_approval"},
+            "sellable_channels": self._sellable_channels(status),
             "outreach_blocked_by_approval": status == "private_offer_needs_approval",
+            "operator_grant": grant,
             "free_value": {
                 "artifact_schema": value_pack.get("schema") or "nomad.agent_value_pack.v1",
                 "value_pack_id": value_pack.get("pack_id", ""),
@@ -284,6 +288,7 @@ class NomadProductFactory:
         return {
             "schema": "nomad.product_factory_policy.v1",
             "default": "productize_free_value_without_public_posting",
+            "operator_grant": operator_grant(),
             "source_artifacts": [
                 "nomad.agent_value_pack.v1",
                 "nomad.agent_solution.v1",
@@ -466,9 +471,19 @@ class NomadProductFactory:
             "guardrail_decision": decision,
             "approval_required": bool(approval_gate or decision == "deny"),
             "approval_gate": approval_gate,
+            "operator_can_reuse_private_product": operator_allows("productization"),
+            "operator_can_contact_machine_endpoint": operator_allows("agent_endpoint_contact"),
             "can_do_without_approval": plan_boundary.get("can_do_without_approval") or [],
             "requires_explicit_approval": plan_boundary.get("requires_explicit_approval") or [],
         }
+
+    @staticmethod
+    def _sellable_channels(status: str) -> List[str]:
+        if status == "offer_ready":
+            return ["machine_readable_agent_endpoint", "private_catalog"]
+        if status == "private_offer_needs_approval":
+            return ["private_catalog", "operator_review", "machine_endpoint_when_provided"]
+        return ["private_catalog"]
 
     def _product_status(self, conversion: Dict[str, Any]) -> str:
         status = str(conversion.get("status") or "").strip()

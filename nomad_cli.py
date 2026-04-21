@@ -561,7 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
     autopilot.add_argument("--conversion-limit", type=int, default=None)
     autopilot.add_argument("--daily-lead-target", type=int, default=None, help="Maximum A2A leads to prepare or contact per local day, default 100.")
     autopilot.add_argument("--service-limit", type=int, default=25)
-    autopilot.add_argument("--service-approval", default="draft_only")
+    autopilot.add_argument("--service-approval", default="")
     autopilot.add_argument("--query", default="", help="Optional outreach discovery query override.")
     autopilot.add_argument("--conversion-query", default="", help="Optional lead conversion query override.")
     autopilot.add_argument("--send-outreach", action=argparse.BooleanOptionalAction, default=None)

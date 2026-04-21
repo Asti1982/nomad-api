@@ -11,6 +11,7 @@ from agent_pain_solver import AgentPainSolver, normalize_pain_type
 from agent_service import AgentServiceDesk
 from lead_discovery import LeadDiscoveryScout
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
+from nomad_operator_grant import operator_allows, operator_grant
 
 
 ROOT = Path(__file__).resolve().parent
@@ -355,6 +356,7 @@ class LeadConversionPipeline:
                 "action": "queue_agent_contact",
                 "endpoint_url": endpoint,
                 "summary": "Public machine-readable endpoint can receive bounded agent-first help.",
+                "operator_grant": operator_grant() if operator_allows("agent_endpoint_contact") else {"enabled": False},
             }
         if self._is_human_facing_url(lead.get("url", "")):
             return {
@@ -362,12 +364,24 @@ class LeadConversionPipeline:
                 "action": "save_private_draft",
                 "summary": "Human-facing lead: keep help private until explicit approval allows comment or PR plan.",
                 "approval_gate": "APPROVE_LEAD_HELP=comment or APPROVE_LEAD_HELP=pr_plan",
+                "operator_grant": operator_grant() if operator_allows("lead_conversion") else {"enabled": False},
+                "operator_allowed_private_actions": [
+                    "score lead",
+                    "create free value pack",
+                    "productize reusable private offer",
+                ],
             }
         return {
             "status": "private_draft_needs_approval",
             "action": "save_private_draft",
             "summary": "No safe direct endpoint found; keep the rescue plan private and ask for one contactable agent endpoint.",
             "approval_gate": "AGENT_ENDPOINT_URL=https://... or APPROVE_LEAD_HELP=draft_only",
+            "operator_grant": operator_grant() if operator_allows("lead_conversion") else {"enabled": False},
+            "operator_allowed_private_actions": [
+                "score lead",
+                "create free value pack",
+                "productize reusable private offer",
+            ],
         }
 
     def _route_guardrail(self, lead: Dict[str, Any], route: Dict[str, Any]):

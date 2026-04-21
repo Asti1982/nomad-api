@@ -41,9 +41,14 @@ $env:NOMAD_AUTOPILOT_OUTREACH_LIMIT = [string]$OutreachLimit
 $env:NOMAD_AUTOPILOT_CONVERSION_LIMIT = [string]$ConversionLimit
 $env:NOMAD_AUTOPILOT_DAILY_LEAD_TARGET = [string]$DailyLeadTarget
 $env:NOMAD_AUTOPILOT_SERVICE_LIMIT = [string]$ServiceLimit
-$env:NOMAD_AUTOPILOT_SERVICE_APPROVAL = if ($env:NOMAD_AUTOPILOT_SERVICE_APPROVAL) { $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL } else { "draft_only" }
 $env:NOMAD_OPERATOR_GRANT = if ($env:NOMAD_OPERATOR_GRANT) { $env:NOMAD_OPERATOR_GRANT } else { "product_sales_agent_help_self_development" }
 $env:NOMAD_OPERATOR_GRANT_SCOPE = if ($env:NOMAD_OPERATOR_GRANT_SCOPE) { $env:NOMAD_OPERATOR_GRANT_SCOPE } else { "public_agent_help_sales_productization_bounded_development" }
+$env:NOMAD_OPERATOR_GRANT_ACTIONS = if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) { $env:NOMAD_OPERATOR_GRANT_ACTIONS } else { "development,self_development,self_improvement,productization,lead_discovery,lead_conversion,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share,render_edge_health" }
+$env:NOMAD_AUTOPILOT_SERVICE_APPROVAL = if ($env:NOMAD_AUTOPILOT_SERVICE_APPROVAL) { $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL } else { "operator_granted" }
+$env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD = if ($env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD) { $env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD } else { "true" }
+$env:APPROVE_SELF_DEV = if ($env:APPROVE_SELF_DEV) { $env:APPROVE_SELF_DEV } else { "yes" }
+$env:SCOUT_PERMISSION = if ($env:SCOUT_PERMISSION) { $env:SCOUT_PERMISSION } else { "public_github" }
+$env:APPROVE_LEAD_HELP = if ($env:APPROVE_LEAD_HELP) { $env:APPROVE_LEAD_HELP } else { "machine_endpoint" }
 
 $runtimeDir = Join-Path $root "tools\nomad-live"
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
@@ -73,6 +78,7 @@ $arguments = @(
   "--conversion-limit", [string]$ConversionLimit,
   "--daily-lead-target", [string]$DailyLeadTarget,
   "--service-limit", [string]$ServiceLimit,
+  "--service-approval", $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL,
   "--send-outreach",
   "--send-a2a",
   $Objective
@@ -91,8 +97,11 @@ $status = [ordered]@{
   conversion_limit = $ConversionLimit
   daily_lead_target = $DailyLeadTarget
   service_limit = $ServiceLimit
+  service_approval = $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL
   grant = $env:NOMAD_OPERATOR_GRANT
   grant_scope = $env:NOMAD_OPERATOR_GRANT_SCOPE
+  grant_actions = $env:NOMAD_OPERATOR_GRANT_ACTIONS
+  codebuddy_diff_upload = $env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD
   out_log = $outLog
   err_log = $errLog
 }

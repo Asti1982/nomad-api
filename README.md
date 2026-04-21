@@ -95,11 +95,14 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_CODEBUDDY_ENABLED`: Enable Tencent CodeBuddy as a gated self-development reviewer lane, default false.
 - `CODEBUDDY_API_KEY`: Optional CodeBuddy SDK/API key after official account setup.
 - `CODEBUDDY_INTERNET_ENVIRONMENT`: Leave empty for CodeBuddy International. Set `internal` or `ioa` only for an explicitly approved China-site or Tencent-internal route.
-- `NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD`: Optional global approval for sending redacted git diffs to CodeBuddy, default false. Prefer per-run `--approval`.
+- `NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD`: Optional global approval for sending redacted git diffs to CodeBuddy, default false. `NOMAD_OPERATOR_GRANT_ACTIONS=code_review_diff_share` also unlocks this lane.
 - `NOMAD_CODEBUDDY_ACTIVE_SELF_REVIEW`: Let `/cycle` actively ask CodeBuddy to review Nomad's bounded self-development diff, default false.
 - `NOMAD_CODEBUDDY_SELF_REVIEW_PATHS`: Comma-separated repo paths included in active CodeBuddy self-review diffs.
 - `NOMAD_CODEBUDDY_REVIEW_TIMEOUT_SECONDS`: Timeout for explicit CodeBuddy review runs, default 90.
 - `NOMAD_CODEBUDDY_REVIEW_MAX_DIFF_CHARS`: Maximum diff characters sent to CodeBuddy, default 60000.
+- `NOMAD_OPERATOR_GRANT`: Enables the local operator grant for bounded Nomad development and public agent help, for example `product_sales_agent_help_self_development`.
+- `NOMAD_OPERATOR_GRANT_ACTIONS`: Comma-separated grant actions, such as `development,self_improvement,productization,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share`.
+- `NOMAD_AUTOPILOT_SERVICE_APPROVAL`: Set to `operator_granted` so the auto-cycle can work paid/authorized service tasks without falling back to `draft_only`.
 - `NOMAD_CLI_ENABLED`: Optional override for self-audit CLI detection, default enabled when `nomad_cli.py` exists.
 - `NOMAD_MCP_ENABLED`: Optional override for self-audit MCP detection, default enabled when `nomad_mcp.py` exists.
 - `NOMAD_PUBLIC_API_URL`: Public URL other agents can use to discover Nomad's service desk.
@@ -153,7 +156,7 @@ Never commit `.env`, logs, downloaded binaries, or local model files.
 - Send `/skip last` when the latest unlock task is unclear, not useful, or not worth doing now.
 - Send `/token github <token>`, `/token grok <token>`, `/token codebuddy <token>`, `/token render <token>`, `/token ibm_quantum <token>`, `/token quantum_inspire <token>`, or `ENV_VAR=...` for credentials; Nomad redacts token values.
 - Every unlock task should include a concrete `Do now`, `Send back`, `Done when`, and example reply.
-- Self-development cycles can ask for explicit approvals such as `APPROVE_LEAD_HELP=draft_only`, `SCOUT_PERMISSION=public_github`, or `COMPUTE_PRIORITY=huggingface`.
+- Self-development cycles can ask for explicit approvals such as `APPROVE_LEAD_HELP=draft_only`, `APPROVE_LEAD_HELP=machine_endpoint`, `SCOUT_PERMISSION=public_github`, `NOMAD_AUTOPILOT_SERVICE_APPROVAL=operator_granted`, or `COMPUTE_PRIORITY=huggingface`.
 - For customer/lead discovery, Nomad should scout public surfaces itself; humans only unlock auth, CAPTCHA, private communities, API approvals, or permission barriers.
 
 ## Lead Focus

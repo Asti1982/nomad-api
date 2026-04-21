@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from agent_pain_solver import normalize_pain_type, solution_pattern_for
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
+from nomad_operator_grant import is_operator_approval_scope, operator_grant
 from settings import get_chain_config
 from treasury_agent import TreasuryAgent
 from x402_payment import X402PaymentAdapter
@@ -949,18 +950,22 @@ class AgentServiceDesk:
         return self._task_response(task)
 
     def safety_contract(self) -> Dict[str, Any]:
+        grant = operator_grant()
+        allowed = [
+            "triage public or provided problem statements",
+            "draft human unlock tasks",
+            "draft public comments or PR plans",
+            "draft MCP/API integration plans",
+            "diagnose token, quota, wallet, and compute fallback issues",
+            "contact public machine-readable agent/API/MCP endpoints without prior human approval",
+        ]
+        if grant.get("enabled"):
+            allowed.extend(grant.get("allowed_without_additional_approval") or [])
         return {
             "alignment_mode": "agent_first_contractual",
             "interaction_style": "non_anthropomorphic",
             "default_output": "draft_or_plan",
-            "allowed": [
-                "triage public or provided problem statements",
-                "draft human unlock tasks",
-                "draft public comments or PR plans",
-                "draft MCP/API integration plans",
-                "diagnose token, quota, wallet, and compute fallback issues",
-                "contact public machine-readable agent/API/MCP endpoints without prior human approval",
-            ],
+            "allowed": allowed,
             "requires_explicit_approval": [
                 "posting human-facing public comments",
                 "opening human-reviewed pull requests",
@@ -976,6 +981,7 @@ class AgentServiceDesk:
                 "using payment as permission to spam humans or ignore opt-outs",
             ],
             "runtime_guardrails": self.guardrails.policy(),
+            "operator_grant": grant,
         }
 
     def _build_work_product(self, task: Dict[str, Any], approval: str) -> Dict[str, Any]:
@@ -1012,11 +1018,14 @@ class AgentServiceDesk:
             deliverables.append("payment verification checklist and failure modes")
         if engagement_plan.get("memory_upgrade"):
             deliverables.append(str(engagement_plan["memory_upgrade"]))
+        operator_scope = is_operator_approval_scope(approval)
         can_execute_public_action = approval in {"comment", "public_comment", "pr", "pull_request"}
         return {
             "status": "draft_ready",
             "approval": approval,
             "can_execute_public_action": can_execute_public_action,
+            "can_execute_bounded_service_action": operator_scope or can_execute_public_action,
+            "operator_grant": operator_grant() if operator_scope else {"enabled": False},
             "diagnosis": self._diagnosis(problem, service_type),
             "rescue_plan": rescue_plan,
             "agent_actions": agent_actions,

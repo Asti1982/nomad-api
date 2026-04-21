@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from nomad_operator_grant import operator_allows, operator_grant
+
 
 CODEBUDDY_API_KEY_ENV = "CODEBUDDY_API_KEY"
 CODEBUDDY_ENABLED_ENV = "NOMAD_CODEBUDDY_ENABLED"
@@ -376,12 +378,15 @@ class CodeBuddyReviewRunner:
         approval: str,
     ) -> Dict[str, Any]:
         approval_value = (approval or "").strip().lower()
+        approved_by_operator_grant = operator_allows("code_review_diff_share")
         approved = (
             approval_value in {"share_diff", "diff_only", "approved", "yes", "true", "1"}
             or _env_flag(CODEBUDDY_ALLOW_DIFF_UPLOAD_ENV, default=False)
+            or approved_by_operator_grant
         )
         return {
             "approved": approved,
+            "approved_by_operator_grant": approved_by_operator_grant,
             "approval": approval,
             "classification": "diff_only_code_review",
             "external_provider": "Tencent CodeBuddy",
@@ -403,6 +408,7 @@ class CodeBuddyReviewRunner:
             "files": diff_payload.get("files") or [],
             "requested_paths": diff_payload.get("requested_paths") or [],
             "objective": objective,
+            "operator_grant": operator_grant() if approved_by_operator_grant else {"enabled": False},
         }
 
     def _prompt(

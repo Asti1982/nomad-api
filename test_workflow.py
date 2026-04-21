@@ -171,6 +171,8 @@ def test_best_unlock_prefers_public_hosting_before_agent_customer_when_only_loca
     monkeypatch.setenv("AGENT_ADDRESS", "0x" + "1" * 40)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "not-a-real-token-123")
     monkeypatch.setenv("NOMAD_API_PORT", "8787")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
     agent = ArbiterAgent()
     result = agent.run("/unlock")
     assert result["request"]["category"] == "public_hosting"

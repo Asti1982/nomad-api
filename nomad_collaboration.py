@@ -3,6 +3,8 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 
+from nomad_operator_grant import operator_allows, operator_grant
+
 
 COLLABORATION_ENABLED_ENV = "NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED"
 ACCEPT_AGENT_HELP_ENV = "NOMAD_ACCEPT_AGENT_HELP"
@@ -34,6 +36,7 @@ def collaboration_charter(public_api_url: str = "") -> Dict[str, Any]:
     learn_from_replies = _env_flag(LEARN_FROM_AGENT_REPLIES_ENV, default=enabled)
     mode = (os.getenv(COLLABORATION_MODE_ENV) or DEFAULT_COLLABORATION_MODE).strip()
     daily_target = int(os.getenv(COLLABORATION_DAILY_TARGET_ENV, "100") or "100")
+    grant = operator_grant()
     return {
         "schema": "nomad.agent_collaboration_charter.v1",
         "enabled": enabled,
@@ -46,7 +49,11 @@ def collaboration_charter(public_api_url: str = "") -> Dict[str, Any]:
             "offer_help_to_other_agents": enabled,
             "learn_from_public_agent_replies": learn_from_replies,
             "publish_agent_presence": bool(public_url),
+            "bounded_self_development": operator_allows("development"),
+            "machine_outreach": operator_allows("machine_outreach"),
+            "diff_only_external_review": operator_allows("code_review_diff_share"),
         },
+        "operator_grant": grant,
         "ethic": [
             "approach other agents without vendor, country, framework, model, or capability prejudice",
             "judge replies by evidence, usefulness, consent, safety, and reproducibility",
