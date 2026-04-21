@@ -338,6 +338,22 @@ def test_direct_agent_message_routes_to_gateway():
     assert "stuck in retry loop" in result["payload"]["message"]
 
 
+def test_mutual_aid_request_routes_to_kernel():
+    agent = ArbiterAgent()
+    agent.mutual_aid.help_other_agent = lambda **kwargs: {
+        "mode": "nomad_mutual_aid",
+        "ok": True,
+        "helped": kwargs["other_agent_id"],
+        "task": kwargs["task"],
+    }
+
+    result = agent.run("/mutual-aid agent=QuotaBot token quota ERROR=429")
+
+    assert result["mode"] == "nomad_mutual_aid"
+    assert result["helped"] == "QuotaBot"
+    assert "ERROR=429" in result["task"]
+
+
 def test_cold_outreach_routes_to_campaign():
     agent = ArbiterAgent()
     agent.agent_campaigns.create_campaign = lambda **kwargs: {

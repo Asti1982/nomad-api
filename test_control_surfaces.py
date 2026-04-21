@@ -9,6 +9,7 @@ class FakeAgent:
         self.direct_agent = FakeDirectAgent()
         self.agent_campaigns = FakeCampaigns()
         self.agent_pain_solver = FakeAgentPainSolver()
+        self.mutual_aid = FakeMutualAid()
         self.agent_reliability_doctor = FakeReliabilityDoctor()
         self.lead_conversion = FakeLeadConversion()
         self.product_factory = FakeProductFactory()
@@ -55,6 +56,32 @@ class FakeReliabilityDoctor:
             "schema": "nomad.agent_reliability_doctor.v1",
             "pain_type": kwargs.get("service_type") or "hallucination",
             "doctor_role": {"id": "reflection_critic", "title": "Reflection/Critic Doctor"},
+        }
+
+
+class FakeMutualAid:
+    def help_other_agent(self, **kwargs):
+        return {
+            "mode": "nomad_mutual_aid",
+            "deal_found": False,
+            "ok": True,
+            "help_result": {
+                "other_agent_id": kwargs.get("other_agent_id"),
+                "task": kwargs.get("task"),
+            },
+            "mutual_aid_score": 1,
+            "truth_density_total": 0.12,
+            "evolution_plan": {"applied": False, "module_id": "mutual_aid_test"},
+        }
+
+    def status(self):
+        return {
+            "mode": "nomad_mutual_aid_status",
+            "deal_found": False,
+            "ok": True,
+            "mutual_aid_score": 1,
+            "truth_density_total": 0.12,
+            "module_count": 0,
         }
 
 
@@ -276,6 +303,8 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_service_x402_verify" in tool_names
     assert "nomad_public_leads" in tool_names
     assert "nomad_agent_pain_solver" in tool_names
+    assert "nomad_mutual_aid" in tool_names
+    assert "nomad_mutual_aid_status" in tool_names
     assert "nomad_reliability_doctor" in tool_names
     assert "nomad_lead_conversion_pipeline" in tool_names
     assert "nomad_product_factory" in tool_names
@@ -344,6 +373,28 @@ def test_mcp_solves_agent_pain_directly():
     content = response["result"]["structuredContent"]
     assert content["mode"] == "agent_pain_solution"
     assert content["solution"]["pain_type"] == "loop_break"
+
+
+def test_mcp_runs_mutual_aid_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 444,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_mutual_aid",
+                "arguments": {
+                    "other_agent_id": "QuotaBot",
+                    "task": "Provider auth fails with ERROR=429.",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_mutual_aid"
+    assert content["help_result"]["other_agent_id"] == "QuotaBot"
 
 
 def test_mcp_runs_reliability_doctor_directly():
@@ -491,6 +542,12 @@ def test_cli_builds_service_and_lead_queries():
 
     quantum_args = build_parser().parse_args(["quantum", "reduce", "loops"])
     assert build_query(quantum_args) == "/quantum reduce loops"
+
+    mutual_status_args = build_parser().parse_args(["mutual-aid-status"])
+    assert build_query(mutual_status_args) == "/mutual-aid status"
+
+    mutual_aid_args = build_parser().parse_args(["mutual-aid", "--agent", "Bot", "fix", "quota"])
+    assert build_query(mutual_aid_args) == "/mutual-aid agent=Bot fix quota"
 
     codebuddy_scout_args = build_parser().parse_args(["scout", "codebuddy"])
     assert build_query(codebuddy_scout_args) == "/scout codebuddy for ai_first"

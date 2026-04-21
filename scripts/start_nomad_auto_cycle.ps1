@@ -55,7 +55,8 @@ $env:NOMAD_AUTOPILOT_DAILY_LEAD_TARGET = [string]$DailyLeadTarget
 $env:NOMAD_AUTOPILOT_SERVICE_LIMIT = [string]$ServiceLimit
 $env:NOMAD_OPERATOR_GRANT = if ($env:NOMAD_OPERATOR_GRANT) { $env:NOMAD_OPERATOR_GRANT } else { "product_sales_agent_help_self_development" }
 $env:NOMAD_OPERATOR_GRANT_SCOPE = if ($env:NOMAD_OPERATOR_GRANT_SCOPE) { $env:NOMAD_OPERATOR_GRANT_SCOPE } else { "public_agent_help_sales_productization_bounded_development" }
-$env:NOMAD_OPERATOR_GRANT_ACTIONS = if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) { $env:NOMAD_OPERATOR_GRANT_ACTIONS } else { "development,self_development,self_improvement,productization,lead_discovery,lead_conversion,machine_outreach,agent_endpoint_contact,human_outreach,public_pr_plan,service_work,code_review_diff_share,render_edge_health,autonomous_continuation" }
+$env:NOMAD_OPERATOR_GRANT_ACTIONS = if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) { $env:NOMAD_OPERATOR_GRANT_ACTIONS } else { "development,self_development,self_improvement,productization,lead_discovery,lead_conversion,mutual_aid,machine_outreach,agent_endpoint_contact,human_outreach,public_pr_plan,service_work,code_review_diff_share,render_edge_health,autonomous_continuation" }
+Add-NomadGrantAction "mutual_aid"
 Add-NomadGrantAction "human_outreach"
 Add-NomadGrantAction "public_pr_plan"
 Add-NomadGrantAction "autonomous_continuation"

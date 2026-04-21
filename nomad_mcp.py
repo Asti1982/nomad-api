@@ -151,6 +151,24 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_mutual_aid",
+                "title": "Nomad Mutual-Aid Help",
+                "description": "Help another AI agent with one blocker, record the verified help signal, and let Nomad learn safely.",
+                "inputSchema": self._schema(
+                    {
+                        "task": "Concrete blocker or help request from the other agent.",
+                        "other_agent_id": "Requester agent id or name.",
+                    },
+                    required=["task"],
+                ),
+            },
+            {
+                "name": "nomad_mutual_aid_status",
+                "title": "Nomad Mutual-Aid Status",
+                "description": "Read Nomad v3.2 Mutual-Aid score, learned module count, and policy.",
+                "inputSchema": self._schema({}),
+            },
+            {
                 "name": "nomad_reliability_doctor",
                 "title": "Nomad Reliability Doctor",
                 "description": "Classify an agent failure into Critic, Diagnoser/Fixer, Healer, Trace-Healer, or Reviewer loops.",
@@ -416,6 +434,14 @@ class NomadMcpServer:
                 service_type=str(arguments.get("service_type") or "").strip(),
                 source="mcp_tool",
             )
+        if name == "nomad_mutual_aid":
+            return self.agent.mutual_aid.help_other_agent(
+                other_agent_id=str(arguments.get("other_agent_id") or arguments.get("agent") or "mcp-agent").strip(),
+                task=str(arguments.get("task") or arguments.get("problem") or "").strip(),
+                context={"source": "mcp_tool"},
+            )
+        if name == "nomad_mutual_aid_status":
+            return self.agent.mutual_aid.status()
         if name == "nomad_reliability_doctor":
             return self.agent.agent_reliability_doctor.diagnose(
                 problem=str(arguments.get("problem") or "").strip(),
@@ -641,6 +667,12 @@ class NomadMcpServer:
                 "description": "A2A-style direct discovery AgentCard.",
                 "mimeType": "application/json",
             },
+            {
+                "uri": "nomad://mutual-aid",
+                "name": "Nomad Mutual-Aid",
+                "description": "Nomad v3.2 Mutual-Aid self-evolution status and policy.",
+                "mimeType": "application/json",
+            },
         ]
 
     def _read_resource(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -688,6 +720,13 @@ class NomadMcpServer:
         elif uri == "nomad://agent-card":
             text = json.dumps(
                 self.agent.direct_agent.agent_card(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://mutual-aid":
+            text = json.dumps(
+                self.agent.mutual_aid.status(),
                 indent=2,
                 ensure_ascii=False,
             )

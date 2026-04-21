@@ -262,6 +262,27 @@ class FakeCampaigns:
         }
 
 
+class FakeMutualAid:
+    def __init__(self):
+        self.calls = []
+
+    def learn_from_autopilot_cycle(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "mode": "nomad_mutual_aid",
+            "ok": True,
+            "skipped": False,
+            "mutual_aid_score": len(self.calls),
+            "truth_density_total": 0.12,
+            "evolution_plan": {
+                "module_id": "mutual_aid_test",
+                "filename": "nomad_mutual_aid_modules/mutual_aid_test.py",
+                "applied": False,
+            },
+            "analysis": "mutual aid ok",
+        }
+
+
 class FakeAgent:
     def __init__(self):
         self.self_improvement = FakeSelfImprovement()
@@ -269,6 +290,7 @@ class FakeAgent:
         self.agent_contacts = FakeContacts()
         self.agent_campaigns = FakeCampaigns()
         self.lead_conversion = FakeLeadConversion()
+        self.mutual_aid = FakeMutualAid()
 
 
 def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
@@ -337,7 +359,25 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     text = state_path.read_text(encoding="utf-8")
     assert "last_outreach" in text
     assert "last_lead_conversion" in text
+    assert "last_mutual_aid" in text
     assert "compute_watch" in text
+
+
+def test_autopilot_feeds_verified_help_signal_to_mutual_aid(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=1, send_outreach=True)
+
+    assert agent.mutual_aid.calls
+    assert agent.mutual_aid.calls[0]["lead_conversion"]["stats"]
+    assert result["mutual_aid"]["mutual_aid_score"] == 1
 
 
 def test_autopilot_self_schedule_records_idle_decision(monkeypatch, tmp_path):

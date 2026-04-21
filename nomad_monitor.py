@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent
 AUTOPILOT_STATE = ROOT / "nomad_autopilot_state.json"
 AUTO_CYCLE_PID = ROOT / "tools" / "nomad-live" / "auto-cycle.pid"
 AUTO_CYCLE_STATUS = ROOT / "tools" / "nomad-live" / "auto-cycle-status.json"
+MUTUAL_AID_STATE = ROOT / "nomad_mutual_aid_state.json"
 
 
 class NomadSystemMonitor:
@@ -91,6 +92,7 @@ class NomadSystemMonitor:
             },
             "tasks": task_stats,
             "autopilot": autopilot_status,
+            "mutual_aid": self._mutual_aid_status(),
             "operator": {
                 "grant": operator_grant(),
             },
@@ -148,6 +150,18 @@ class NomadSystemMonitor:
                 "reason": last_decision.get("reason", ""),
                 "next_check_seconds": last_decision.get("next_check_seconds", 0),
             },
+        }
+
+    def _mutual_aid_status(self) -> Dict[str, Any]:
+        state = self._read_json(MUTUAL_AID_STATE)
+        modules = state.get("modules") or []
+        return {
+            "schema": "nomad.mutual_aid_status.compact.v1",
+            "mutual_aid_score": int(state.get("mutual_aid_score") or 0),
+            "truth_density_total": round(float(state.get("truth_density_total") or 0.0), 4),
+            "helped_agent_count": len(state.get("helped_agents") or {}),
+            "module_count": len(modules),
+            "latest_module": (modules[-1] if modules else {}).get("module_id", ""),
         }
 
     @staticmethod

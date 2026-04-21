@@ -21,6 +21,7 @@ from nomad_codebuddy import CodeBuddyReviewRunner
 from nomad_guardrails import NomadGuardrailEngine, guardrail_status
 from nomad_product_factory import NomadProductFactory
 from nomad_monitor import NomadSystemMonitor
+from nomad_mutual_aid import NomadMutualAidKernel
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
 from settings import get_chain_config
@@ -67,6 +68,7 @@ class ArbiterAgent:
         self.direct_agent = DirectAgentGateway(service_desk=self.service_desk)
         self.agent_pain_solver = AgentPainSolver()
         self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
+        self.mutual_aid = NomadMutualAidKernel(pain_solver=self.agent_pain_solver)
         self.guardrails = NomadGuardrailEngine()
         self.lead_conversion = LeadConversionPipeline(
             lead_discovery=self.lead_discovery,
@@ -121,6 +123,9 @@ class ArbiterAgent:
 
         if self._is_collaboration_request(normalized_query):
             return collaboration_status()
+
+        if self._is_mutual_aid_request(normalized_query):
+            return self._handle_mutual_aid_request(normalized_query)
 
         if self._is_public_lead_request(normalized_query):
             return self._handle_public_lead_request(normalized_query)
@@ -382,6 +387,17 @@ class ArbiterAgent:
             or "agent collaboration" in lowered
             or "andere ai agenten" in lowered
             or "andere agenten" in lowered
+        )
+
+    def _is_mutual_aid_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/mutual-aid")
+            or lowered.startswith("/mutual_aid")
+            or lowered.startswith("/aid")
+            or lowered.startswith("/help-agent")
+            or "mutual aid" in lowered
+            or "mutual-aid" in lowered
         )
 
     def _is_service_request(self, query: str) -> bool:
@@ -650,6 +666,33 @@ class ArbiterAgent:
                 "text": body,
                 "url": self._first_url(body),
             },
+        )
+
+    def _handle_mutual_aid_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered in {"/mutual-aid", "/mutual_aid", "/aid", "/mutual-aid status", "/aid status"}:
+            return self.mutual_aid.status()
+        other_agent_id = (
+            self._extract_key_value(query, "agent")
+            or self._extract_key_value(query, "other_agent")
+            or self._extract_key_value(query, "id")
+            or "public-agent"
+        )
+        task = re.sub(
+            r"^/(?:mutual-aid|mutual_aid|aid|help-agent)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("agent", "other_agent", "id"):
+            value = self._extract_key_value(query, key)
+            if value:
+                task = task.replace(f"{key}={value}", "")
+        task = " ".join(task.split()) or "Help another agent with one concrete blocker."
+        return self.mutual_aid.help_other_agent(
+            other_agent_id=other_agent_id,
+            task=task,
+            context={"source": "workflow"},
         )
 
     def _handle_service_request(self, query: str) -> Dict[str, Any]:

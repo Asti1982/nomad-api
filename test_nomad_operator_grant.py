@@ -11,7 +11,7 @@ def test_operator_grant_expands_bounded_actions(monkeypatch):
     monkeypatch.setenv("NOMAD_OPERATOR_GRANT_SCOPE", "public_agent_help_sales_productization_bounded_development")
     monkeypatch.setenv(
         "NOMAD_OPERATOR_GRANT_ACTIONS",
-        "development,service_work,code_review_diff_share,human_outreach,public_pr_plan,autonomous_continuation",
+        "development,service_work,code_review_diff_share,human_outreach,public_pr_plan,autonomous_continuation,mutual_aid",
     )
     monkeypatch.setenv("NOMAD_AUTOPILOT_SERVICE_APPROVAL", "draft_only")
 
@@ -24,6 +24,7 @@ def test_operator_grant_expands_bounded_actions(monkeypatch):
     assert operator_allows("human_outreach") is True
     assert operator_allows("public_pr_plan") is True
     assert operator_allows("autonomous_continuation") is True
+    assert operator_allows("mutual_aid") is True
     assert service_approval_scope() == "operator_granted"
     assert is_operator_approval_scope("operator_granted") is True
     assert "spending money" in " ".join(grant["requires_explicit_approval"])

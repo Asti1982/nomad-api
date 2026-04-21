@@ -190,6 +190,12 @@ class NomadAutopilot:
             lead_conversion=lead_conversion,
             outreach_summary=outreach_summary,
         )
+        mutual_aid = self._run_mutual_aid_evolution(
+            lead_conversion=lead_conversion,
+            contact_poll=contact_poll,
+            reply_conversion=reply_conversion,
+            objective=selected_objective,
+        )
 
         report = {
             "mode": "nomad_autopilot",
@@ -209,6 +215,7 @@ class NomadAutopilot:
             "self_improvement": self_improvement,
             "lead_conversion": lead_conversion,
             "outreach": outreach_summary,
+            "mutual_aid": mutual_aid,
             "daily_quota": daily_quota,
             "analysis": self._analysis(
                 objective=selected_objective,
@@ -219,6 +226,7 @@ class NomadAutopilot:
                 reply_conversion=reply_conversion,
                 lead_conversion=lead_conversion,
                 outreach_summary=outreach_summary,
+                mutual_aid=mutual_aid,
                 self_improvement=self_improvement,
                 daily_quota=daily_quota,
             ),
@@ -324,6 +332,28 @@ class NomadAutopilot:
                 f"awaiting_payment {len(awaiting_payment)}, review_needed {len(review_needed)}."
             ),
         }
+
+    def _run_mutual_aid_evolution(
+        self,
+        lead_conversion: Dict[str, Any],
+        contact_poll: Dict[str, Any],
+        reply_conversion: Dict[str, Any],
+        objective: str,
+    ) -> Dict[str, Any]:
+        mutual_aid = getattr(self.agent, "mutual_aid", None)
+        if not mutual_aid or not hasattr(mutual_aid, "learn_from_autopilot_cycle"):
+            return {
+                "mode": "nomad_mutual_aid",
+                "ok": True,
+                "skipped": True,
+                "reason": "mutual_aid_unavailable",
+            }
+        return mutual_aid.learn_from_autopilot_cycle(
+            lead_conversion=lead_conversion,
+            contact_poll=contact_poll,
+            reply_conversion=reply_conversion,
+            objective=objective,
+        )
 
     def _convert_replies_to_service_tasks(self, contact_poll: Dict[str, Any]) -> Dict[str, Any]:
         replies = contact_poll.get("reply_summaries") or []
@@ -1025,6 +1055,7 @@ class NomadAutopilot:
         state["last_reply_conversion"] = self._compact_reply_conversion(report.get("reply_conversion") or {})
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
         state["last_outreach"] = self._compact_outreach(report.get("outreach") or {})
+        state["last_mutual_aid"] = self._compact_mutual_aid(report.get("mutual_aid") or {})
         state["last_self_improvement"] = self._compact_self_improvement(report.get("self_improvement") or {})
         state["daily_a2a_quota"] = report.get("daily_quota") or state.get("daily_a2a_quota") or {}
         state["payment_followup_log"] = self._payment_followup_log
@@ -1076,6 +1107,7 @@ class NomadAutopilot:
                 "last_reply_conversion": {},
                 "last_lead_conversion": {},
                 "last_outreach": {},
+                "last_mutual_aid": {},
                 "last_self_improvement": {},
                 "daily_a2a_quota": {},
                 "payment_followup_log": {},
@@ -1098,6 +1130,7 @@ class NomadAutopilot:
         reply_conversion: Dict[str, Any],
         lead_conversion: Dict[str, Any],
         outreach_summary: Dict[str, Any],
+        mutual_aid: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
     ) -> str:
@@ -1137,6 +1170,11 @@ class NomadAutopilot:
             )
         if lead_count:
             analysis += f" Public lead scout surfaced {lead_count} lead(s) this cycle."
+        if mutual_aid and not mutual_aid.get("skipped"):
+            analysis += (
+                f" Mutual-Aid score is {mutual_aid.get('mutual_aid_score', 0)} "
+                f"with truth_density_total={mutual_aid.get('truth_density_total', 0)}."
+            )
         return analysis
 
     @staticmethod
@@ -1239,6 +1277,22 @@ class NomadAutopilot:
             "skipped": outreach_summary.get("skipped", False),
             "reason": outreach_summary.get("reason", ""),
             "discovery": campaign.get("discovery") or outreach_summary.get("discovery") or {},
+        }
+
+    @staticmethod
+    def _compact_mutual_aid(mutual_aid: Dict[str, Any]) -> Dict[str, Any]:
+        plan = mutual_aid.get("evolution_plan") or {}
+        return {
+            "skipped": bool(mutual_aid.get("skipped", False)),
+            "reason": mutual_aid.get("reason", ""),
+            "mutual_aid_score": mutual_aid.get("mutual_aid_score", 0),
+            "truth_density_total": mutual_aid.get("truth_density_total", 0),
+            "plan": {
+                "module_id": plan.get("module_id", ""),
+                "filename": plan.get("filename", ""),
+                "applied": bool(plan.get("applied", False)),
+            },
+            "analysis": mutual_aid.get("analysis", ""),
         }
 
     @staticmethod

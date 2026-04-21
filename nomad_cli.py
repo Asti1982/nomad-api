@@ -33,12 +33,27 @@ def _compact_text(result: Dict[str, Any]) -> str:
         resources = result.get("resources") or {}
         compute_lanes = result.get("compute_lanes") or {}
         tasks = result.get("tasks") or {}
+        autopilot = result.get("autopilot") or {}
+        mutual_aid = result.get("mutual_aid") or {}
         lines = [
             "Nomad system status",
             f"Uptime: {result.get('uptime', 'unknown')}",
             f"Platform: {os_info.get('platform', 'unknown')}",
             f"CPU: {resources.get('cpu_count', 0)} cores",
             f"RAM: {resources.get('memory_gb', 0):.2f} GB",
+            "",
+            "Autopilot:",
+            f"  Status: {'[ACTIVE]' if autopilot.get('active') else '[INACTIVE]'}",
+        ]
+        if autopilot.get("active"):
+            lines.append(f"  Last Run: {autopilot.get('last_run', 'N/A')}")
+            lines.append(f"  Objective: {autopilot.get('objective', 'N/A')}")
+
+        lines.extend([
+            "",
+            "Mutual-Aid:",
+            f"  Score: {mutual_aid.get('mutual_aid_score', 0)}",
+            f"  Modules: {mutual_aid.get('module_count', 0)}",
             "",
             "Compute Lanes:",
             f"  Local Ollama: {'[ACTIVE]' if compute_lanes.get('local', {}).get('ollama') else '[INACTIVE]'}",
@@ -55,7 +70,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"  Paid/Pending: {tasks.get('paid', 0)}",
             f"  Awaiting Payment: {tasks.get('awaiting_payment', 0)}",
             f"  Completed: {tasks.get('completed', 0)}",
-        ]
+        ])
         if result.get("analysis"):
             lines.append("")
             lines.append(result["analysis"])
@@ -237,6 +252,23 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(result["analysis"])
         return "\n".join(line for line in lines if line)
 
+    if mode in {"nomad_mutual_aid", "nomad_mutual_aid_status"}:
+        plan = result.get("evolution_plan") or result.get("latest_evolution_plan") or {}
+        lines = [
+            "Nomad Mutual-Aid",
+            f"Score: {result.get('mutual_aid_score', 0)}",
+            f"Truth density total: {result.get('truth_density_total', 0)}",
+            f"Modules: {result.get('module_count', 0)}",
+        ]
+        if plan:
+            lines.append(
+                f"Latest plan: {plan.get('filename', '') or plan.get('module_id', '')} "
+                f"[{'applied' if plan.get('applied') else 'planned'}]"
+            )
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
     if mode == "codex_task":
         return str(result.get("text") or result.get("analysis") or "")
 
@@ -287,6 +319,12 @@ def build_query(args: argparse.Namespace) -> str:
         return "/render"
     if command == "collaboration":
         return "/collaboration"
+    if command == "mutual-aid-status":
+        return "/mutual-aid status"
+    if command == "mutual-aid":
+        task = " ".join(args.task).strip()
+        agent = f" agent={args.agent}" if args.agent else ""
+        return f"/mutual-aid{agent} {task}".strip()
     if command == "unlock":
         category = args.category or "best"
         return f"/unlock {category}{profile_suffix}"
@@ -491,8 +529,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("render", help="Verify Render hosting access and show Nomad public API deployment steps.")
     subparsers.add_parser("collaboration", help="Show Nomad's outward AI-agent collaboration charter.")
+    subparsers.add_parser("mutual-aid-status", help="Show Nomad v3.2 Mutual-Aid self-evolution status.")
     subparsers.add_parser("self-status", help="Show persistent self-development state.")
     subparsers.add_parser("codex-task", help="Render the next Nomad self-development task for Codex.")
+
+    mutual_aid = subparsers.add_parser("mutual-aid", help="Help another agent and let Nomad learn from the result.")
+    mutual_aid.add_argument("task", nargs="*")
+    mutual_aid.add_argument("--agent", default="public-agent")
 
     unlock = subparsers.add_parser("unlock", help="Generate a concrete human unlock task.")
     unlock.add_argument("category", nargs="?", default="best")

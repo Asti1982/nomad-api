@@ -14,3 +14,5 @@ nomad_active_lead_plan.json
 nomad_autopilot_state.json
 nomad_lead_conversions.json
 nomad_products.json
+nomad_mutual_aid_state.json
+nomad_mutual_aid_modules/
