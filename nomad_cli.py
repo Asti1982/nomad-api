@@ -46,7 +46,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"  GitHub Models: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('github_models') else '[INACTIVE]'}",
             f"  Hugging Face: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('huggingface') else '[INACTIVE]'}",
             f"  xAI Grok: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('xai_grok') else '[INACTIVE]'}",
-            f"  Modal: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('modal') else '[INACTIVE]'}",
+            f"  Modal: {'[ACTIVE]' if (compute_lanes.get('hosted', {}).get('modal') if isinstance(compute_lanes.get('hosted', {}).get('modal'), bool) else (compute_lanes.get('hosted', {}).get('modal') or {}).get('available')) else '[INACTIVE]'}",
             f"  Lambda Labs: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('lambda_labs') else '[INACTIVE]'}",
             f"  RunPod: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('runpod') else '[INACTIVE]'}",
             "",
@@ -87,6 +87,20 @@ def _compact_text(result: Dict[str, Any]) -> str:
                 f"prepared {quota.get('prepared_count', 0)}/{quota.get('target', 0)}, "
                 f"sent {quota.get('sent_count', 0)}/{quota.get('target', 0)}"
             )
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    if mode == "autopilot_idle":
+        decision = result.get("decision") or {}
+        lines = [
+            "Nomad autopilot idle",
+            f"Reason: {decision.get('reason', 'waiting')}",
+            f"Next check: {result.get('next_check_seconds', decision.get('next_check_seconds', 0))} seconds",
+        ]
+        active_lanes = decision.get("active_compute_lanes") or []
+        if active_lanes:
+            lines.append(f"Active compute: {', '.join(active_lanes)}")
         if result.get("analysis"):
             lines.append(result["analysis"])
         return "\n".join(lines)
@@ -404,6 +418,7 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             service_limit=args.service_limit,
             service_approval=args.service_approval,
             serve_api=args.serve_api,
+            self_schedule=args.self_schedule,
         )
     else:
         agent = NomadAgent()
@@ -605,6 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
     autopilot.add_argument("--send-outreach", action=argparse.BooleanOptionalAction, default=None)
     autopilot.add_argument("--send-a2a", action=argparse.BooleanOptionalAction, default=None, help="Send only to eligible public machine-readable agent endpoints.")
     autopilot.add_argument("--serve-api", action="store_true", help="Start the local Nomad API thread during autopilot.")
+    autopilot.add_argument("--self-schedule", action=argparse.BooleanOptionalAction, default=True, help="Let Nomad decide when to run or wait between checks.")
 
     ask = subparsers.add_parser("ask", help="Send a raw Nomad query.")
     ask.add_argument("query", nargs="+")

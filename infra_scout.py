@@ -1901,10 +1901,11 @@ class InfrastructureScout:
                     "for example parallel probes, hosted workers or GPU experiments."
                 ),
                 "steps": [
-                    "Create or open a Modal account only if you want Nomad to add serverless burst compute.",
-                    "Create a Modal token from Modal's CLI/dashboard.",
-                    "Send `MODAL_TOKEN_ID=...` and `MODAL_TOKEN_SECRET=...` to Telegram, or add both to `.env`.",
-                    "If Modal is confusing or not worth it now, send `/skip last` and Nomad will move on.",
+                    "Create or open a Modal account at modal.com.",
+                    "Install the Modal package: `pip install modal`.",
+                    "Run `python -m modal setup` to authenticate your local environment.",
+                    "Alternatively, send `MODAL_TOKEN_ID=...` and `MODAL_TOKEN_SECRET=...` to Telegram.",
+                    "Verify with `python scripts/nomad_modal_check.py`.",
                     prompt_suffix,
                 ],
                 "source_url": item["source_url"],

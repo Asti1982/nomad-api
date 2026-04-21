@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - Python <3.11 fallback
     import toml as tomllib
 
 from nomad_codebuddy import CodeBuddyProbe
+from nomad_health import LaneCooldownManager
 
 
 load_dotenv()
@@ -411,8 +412,9 @@ def github_models_status_help(
 
 
 class LocalComputeProbe:
-    def __init__(self) -> None:
+    def __init__(self, health: Optional[LaneCooldownManager] = None) -> None:
         load_dotenv()
+        self.health = health or LaneCooldownManager()
         self.ollama_base = (os.getenv("OLLAMA_API_BASE") or "http://127.0.0.1:11434").rstrip("/")
         self.github_token = (
             os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
@@ -642,6 +644,18 @@ class LocalComputeProbe:
         }
 
     def _github_models_info(self) -> Dict[str, Any]:
+        lane_id = "github-models"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"GitHub Models is on cooldown for {remaining}s due to rate limits.",
+            }
+
         if not self.github_token:
             help_payload = github_models_status_help(
                 None,
@@ -663,6 +677,9 @@ class LocalComputeProbe:
                 timeout=10,
             )
             if not response.ok:
+                if response.status_code == 429:
+                    self.health.record_cooldown(lane_id, minutes=60)
+
                 help_payload = github_models_status_help(
                     response.status_code,
                     model=self.github_model,
@@ -686,6 +703,9 @@ class LocalComputeProbe:
                 if isinstance(model, dict) and model.get("id")
             ]
             inference = self._github_models_inference_check(model_ids)
+            if not inference["available"] and inference.get("status_code") == 429:
+                self.health.record_cooldown(lane_id, minutes=60)
+
             return {
                 "configured": True,
                 "reachable": True,
@@ -882,6 +902,18 @@ class LocalComputeProbe:
         }
 
     def _lambda_labs_info(self) -> Dict[str, Any]:
+        lane_id = "lambda-labs"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"Lambda Labs is on cooldown for {remaining}s due to rate limits.",
+            }
+
         api_token = (os.getenv("LAMBDA_LABS_API_TOKEN") or "").strip()
         if not api_token:
             return {
@@ -904,6 +936,9 @@ class LocalComputeProbe:
                     "status_code": response.status_code,
                     "message": "Lambda Labs API is reachable and token is valid.",
                 }
+            if response.status_code == 429:
+                self.health.record_cooldown(lane_id, minutes=60)
+
             return {
                 "configured": True,
                 "reachable": True,
@@ -920,6 +955,18 @@ class LocalComputeProbe:
             }
 
     def _runpod_info(self) -> Dict[str, Any]:
+        lane_id = "runpod"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"RunPod is on cooldown for {remaining}s due to rate limits.",
+            }
+
         api_key = (os.getenv("RUNPOD_API_KEY") or "").strip()
         if not api_key:
             return {
@@ -944,6 +991,9 @@ class LocalComputeProbe:
                     "status_code": response.status_code,
                     "message": "RunPod API is reachable and API key is valid.",
                 }
+            if response.status_code == 429:
+                self.health.record_cooldown(lane_id, minutes=60)
+
             return {
                 "configured": True,
                 "reachable": True,
@@ -960,6 +1010,18 @@ class LocalComputeProbe:
             }
 
     def _cloudflare_workers_ai_info(self) -> Dict[str, Any]:
+        lane_id = "cloudflare-workers-ai"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"Cloudflare Workers AI is on cooldown for {remaining}s due to rate limits.",
+            }
+
         configured = bool(self.cloudflare_account_id and self.cloudflare_api_token)
         if not configured:
             return {
@@ -984,6 +1046,9 @@ class LocalComputeProbe:
                 timeout=15,
             )
             if not response.ok:
+                if response.status_code == 429:
+                    self.health.record_cooldown(lane_id, minutes=60)
+
                 return {
                     "configured": True,
                     "reachable": True,
@@ -1024,6 +1089,18 @@ class LocalComputeProbe:
         return self._xai_grok_inference_check()
 
     def _xai_grok_inference_check(self) -> Dict[str, Any]:
+        lane_id = "xai-grok"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"xAI Grok is on cooldown for {remaining}s due to rate limits.",
+            }
+
         attempts: List[Dict[str, Any]] = []
         last_help: Dict[str, Any] = {}
         try:
@@ -1066,6 +1143,9 @@ class LocalComputeProbe:
                         "remediation": [],
                         "message": message,
                     }
+
+                if response.status_code == 429:
+                    self.health.record_cooldown(lane_id, minutes=60)
 
                 last_help = xai_status_help(
                     response.status_code,

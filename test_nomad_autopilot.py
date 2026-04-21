@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from nomad_autopilot import NomadAutopilot
@@ -79,6 +80,16 @@ class FakeServiceDesk:
                 "amount_native": 0.03,
             },
             "nudge": "Start with the smaller starter diagnosis first.",
+        }
+
+
+class QuietServiceDesk(FakeServiceDesk):
+    def list_tasks(self, limit=50):
+        return {
+            "mode": "agent_service_task_list",
+            "ok": True,
+            "tasks": [],
+            "stats": {},
         }
 
 
@@ -327,6 +338,36 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     assert "last_outreach" in text
     assert "last_lead_conversion" in text
     assert "compute_watch" in text
+
+
+def test_autopilot_self_schedule_records_idle_decision(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MIN_CHECK_SECONDS", "60")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MAX_CHECK_SECONDS", "3600")
+    state_path = tmp_path / "autopilot-state.json"
+    state_path.write_text(
+        f'{{"run_count": 1, "last_run_at": "{datetime.now(UTC).isoformat()}"}}',
+        encoding="utf-8",
+    )
+    agent = FakeAgent()
+    agent.service_desk = QuietServiceDesk()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=state_path,
+        sleep_fn=lambda _: None,
+    )
+    autopilot.monitor.snapshot = lambda: {
+        "tasks": {},
+        "compute_lanes": {"local": {"ollama": True}, "hosted": {}},
+    }
+
+    result = autopilot.run_once(check_decision=True)
+
+    assert result["mode"] == "autopilot_idle"
+    assert agent.self_improvement.objectives == []
+    text = state_path.read_text(encoding="utf-8")
+    assert "last_decision" in text
+    assert "next_decision_at" in text
 
 
 def test_autopilot_rotates_outreach_queries_between_runs(monkeypatch, tmp_path):

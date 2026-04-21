@@ -15,6 +15,10 @@ from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
 
 
+from nomad_monitor import NomadSystemMonitor
+from decision_engine import DecisionEngine
+
+
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent
@@ -31,8 +35,12 @@ class NomadAutopilot:
         path: Optional[Path] = None,
         sleep_fn=time.sleep,
     ) -> None:
-        load_dotenv()
         self.agent = agent or NomadAgent()
+        try:
+            setattr(self.agent, "autopilot", self)
+        except Exception:
+            pass
+        self.monitor = NomadSystemMonitor(agent=self.agent)
         self.journal = journal or SelfDevelopmentJournal()
         self.path = path or DEFAULT_AUTOPILOT_STATE
         self.sleep_fn = sleep_fn
@@ -87,7 +95,16 @@ class NomadAutopilot:
         service_limit: Optional[int] = None,
         service_approval: str = "",
         serve_api: bool = False,
+        check_decision: bool = False,
     ) -> Dict[str, Any]:
+        decision: Dict[str, Any] = {}
+        if check_decision:
+            decision = self._decision()
+            if not decision.get("should_start"):
+                report = self._idle_report(decision)
+                self._record_idle(report)
+                return report
+
         if serve_api:
             self._ensure_api()
 
@@ -183,6 +200,7 @@ class NomadAutopilot:
             "public_api_url": public_api_url,
             "service_approval": service_approval or self.default_service_approval,
             "operator_grant": operator_grant(),
+            "decision": decision,
             "service": service_summary,
             "payment_followup_queue": payment_followup_queue,
             "contact_queue": contact_summary,
@@ -212,8 +230,10 @@ class NomadAutopilot:
         self,
         cycles: int = 0,
         interval_seconds: Optional[int] = None,
+        self_schedule: bool = True,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        kwargs["check_decision"] = self_schedule
         delay = max(1, int(interval_seconds or self.default_interval_seconds))
         completed = 0
         last_report: Dict[str, Any] = {}
@@ -223,8 +243,38 @@ class NomadAutopilot:
             last_report["loop_index"] = completed
             if cycles > 0 and completed >= cycles:
                 break
-            self.sleep_fn(delay)
+            next_delay = self._next_loop_delay(last_report=last_report, max_delay=delay)
+            self.sleep_fn(next_delay)
         return last_report
+
+    def _decision(self) -> Dict[str, Any]:
+        state = self._load()
+        snapshot = self.monitor.snapshot()
+        return DecisionEngine(state=state, snapshot=snapshot).decide()
+
+    def _idle_report(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        next_check_seconds = int(decision.get("next_check_seconds") or self.default_interval_seconds)
+        reason = decision.get("reason") or "waiting_for_next_trigger"
+        return {
+            "mode": "autopilot_idle",
+            "deal_found": False,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "decision": decision,
+            "next_check_seconds": next_check_seconds,
+            "next_check_at": decision.get("next_check_at", ""),
+            "analysis": (
+                f"Nomad autopilot stayed awake but did not start work because {reason}. "
+                f"Next self-check is in {next_check_seconds} second(s)."
+            ),
+        }
+
+    def _next_loop_delay(self, last_report: Dict[str, Any], max_delay: int) -> int:
+        decision = last_report.get("decision") or {}
+        try:
+            proposed = int(decision.get("next_check_seconds") or max_delay)
+        except (TypeError, ValueError):
+            proposed = max_delay
+        return max(1, min(max_delay, proposed))
 
     def _process_service_queue(self, limit: int, approval: str) -> Dict[str, Any]:
         listing = self.agent.service_desk.list_tasks(limit=limit)
@@ -982,13 +1032,41 @@ class NomadAutopilot:
         converted_ids = set(state.get("converted_reply_contact_ids") or [])
         converted_ids.update(report.get("reply_conversion", {}).get("converted_contact_ids") or [])
         state["converted_reply_contact_ids"] = sorted(converted_ids)
+        self._store_decision(state, report.get("decision") or {})
         self.path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _record_idle(self, report: Dict[str, Any]) -> None:
+        state = self._load()
+        state["idle_count"] = int(state.get("idle_count") or 0) + 1
+        state["last_idle_at"] = report.get("timestamp") or datetime.now(UTC).isoformat()
+        self._store_decision(state, report.get("decision") or {})
+        self.path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _store_decision(state: Dict[str, Any], decision: Dict[str, Any]) -> None:
+        if not decision:
+            return
+        state["last_decision"] = {
+            "timestamp": decision.get("timestamp", ""),
+            "should_start": bool(decision.get("should_start", False)),
+            "reason": decision.get("reason", ""),
+            "reasons": decision.get("reasons") or [],
+            "next_check_seconds": decision.get("next_check_seconds", 0),
+            "next_check_at": decision.get("next_check_at", ""),
+            "active_compute_lanes": decision.get("active_compute_lanes") or [],
+            "task_stats": decision.get("task_stats") or {},
+        }
+        state["next_decision_at"] = decision.get("next_check_at", "")
 
     def _load(self) -> Dict[str, Any]:
         if not self.path.exists():
             return {
                 "run_count": 0,
+                "idle_count": 0,
                 "last_run_at": "",
+                "last_idle_at": "",
+                "last_decision": {},
+                "next_decision_at": "",
                 "last_objective": "",
                 "last_public_api_url": "",
                 "last_service": {},

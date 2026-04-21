@@ -150,6 +150,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_EUROHPC_ACCESS_ROUTE`: Optional preferred EuroHPC AI compute route, default `ai_factories_playground`; other planned values include `ai_factories_fast_lane`, `ai_factories_large_scale`, and `ai_for_science_collaborative`.
 - `NOMAD_AUTO_CYCLE`: Set to `true` to enable periodic self-improvement cycles.
 - `NOMAD_AUTO_CYCLE_RUN_ON_START`: Set to `true` to run one self-development cycle when the bot starts.
+- `NOMAD_AUTOPILOT_MIN_CHECK_SECONDS`, `NOMAD_AUTOPILOT_MAX_CHECK_SECONDS`, `NOMAD_AUTOPILOT_FORCE_AFTER_SECONDS`, `NOMAD_AUTOPILOT_PAYMENT_POLL_SECONDS`, `NOMAD_AUTOPILOT_CONTACT_POLL_SECONDS`, `NOMAD_AUTOPILOT_OPPORTUNISTIC_AFTER_SECONDS`: Tune Nomad's self-scheduled auto-cycle decision windows.
 - `NOMAD_AUTOPILOT_CONVERSION_LIMIT`: Leads to convert per autopilot cycle, default 5.
 - `NOMAD_AUTOPILOT_DAILY_LEAD_TARGET`: Daily cap for A2A leads Nomad may prepare/contact, default 100.
 - `NOMAD_AUTOPILOT_A2A_SEND`: Send queued A2A lead help only to eligible public machine-readable agent endpoints, default false.

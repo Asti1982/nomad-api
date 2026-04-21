@@ -62,6 +62,15 @@ if (Test-Path $pidFile) {
   Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
 }
 
+Get-CimInstance Win32_Process -Filter "name = 'python.exe'" |
+  Where-Object {
+    $cmd = $_.CommandLine -or ""
+    $cmd -like "*main.py*" -and $cmd -like "*--cli*" -and $cmd -like "*autopilot*"
+  } |
+  ForEach-Object {
+    Stop-Process -Id ([int]$_.ProcessId) -Force -ErrorAction SilentlyContinue
+  }
+
 $outLog = Join-Path $runtimeDir "auto-cycle.out.log"
 $errLog = Join-Path $runtimeDir "auto-cycle.err.log"
 $statusFile = Join-Path $runtimeDir "auto-cycle-status.json"
@@ -81,6 +90,7 @@ $arguments = @(
   "--service-approval", $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL,
   "--send-outreach",
   "--send-a2a",
+  "--self-schedule",
   $Objective
 )
 
@@ -97,6 +107,7 @@ $status = [ordered]@{
   conversion_limit = $ConversionLimit
   daily_lead_target = $DailyLeadTarget
   service_limit = $ServiceLimit
+  self_schedule = $true
   service_approval = $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL
   grant = $env:NOMAD_OPERATOR_GRANT
   grant_scope = $env:NOMAD_OPERATOR_GRANT_SCOPE
