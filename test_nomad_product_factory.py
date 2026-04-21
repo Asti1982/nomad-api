@@ -187,3 +187,49 @@ def test_product_factory_differentiates_same_service_type_leads(tmp_path):
     assert products[0]["product_variant"]["slug"] != products[1]["product_variant"]["slug"]
     assert all(product["differentiators"] for product in products)
     assert all(product["lead_solution"]["deliverables"] for product in products)
+
+
+def test_product_factory_builds_prioritized_product_from_high_value_pattern(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "productization,agent_endpoint_contact")
+    factory = NomadProductFactory(path=tmp_path / "products.json")
+
+    result = factory.run(
+        conversions=[],
+        high_value_patterns=[
+            {
+                "pattern_id": "hvp-1",
+                "title": "Provider Fallback Ladder",
+                "pain_type": "compute_auth",
+                "occurrence_count": 3,
+                "avg_truth_score": 0.82,
+                "avg_reuse_value": 0.91,
+                "productization": {
+                    "pack_ready": True,
+                    "sku": "nomad.mutual_aid.compute_auth_micro_pack",
+                    "name": "Mutual-Aid Compute Auth Micro-Pack",
+                    "paid_offer": {"amount_native": 0.03, "delivery": "bounded unblock"},
+                },
+                "agent_offer": {
+                    "starter_diagnosis": "Nomad has seen this compute/auth blocker repeatedly.",
+                    "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                    "smallest_paid_unblock": {"amount_native": 0.03, "delivery": "bounded unblock"},
+                },
+                "self_evolution": {
+                    "self_apply_step": "Use the fallback ladder before retrying.",
+                    "regression_test_stub": "tests/test_pattern_provider_fallback_ladder.py",
+                },
+            }
+        ],
+        limit=1,
+    )
+
+    assert result["mode"] == "nomad_product_factory"
+    assert result["product_count"] == 1
+    product = result["products"][0]
+    assert product["source_pattern"]["pattern_id"] == "hvp-1"
+    assert product["status"] == "offer_ready"
+    assert product["priority_score"] > 0
+    assert "Repeated compute_auth pattern" in product["priority_reason"]
+    assert result["top_priority_product"]["product_id"] == product["product_id"]
+    assert product["service_template"]["create_task_payload"]["metadata"]["pattern_id"] == "hvp-1"

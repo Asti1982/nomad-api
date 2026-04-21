@@ -140,6 +140,18 @@ class FakeLeadConversion:
         }
 
 
+class EmptyLeadConversion(FakeLeadConversion):
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "mode": "lead_conversion_pipeline",
+            "ok": True,
+            "stats": {},
+            "conversions": [],
+            "analysis": "no conversions",
+        }
+
+
 class FakeContacts:
     def __init__(self):
         self.sent = []
@@ -434,6 +446,25 @@ def test_autopilot_feeds_verified_help_signal_to_mutual_aid(monkeypatch, tmp_pat
     assert agent.mutual_aid.calls
     assert agent.mutual_aid.calls[0]["lead_conversion"]["stats"]
     assert result["mutual_aid"]["mutual_aid_score"] == 1
+
+
+def test_autopilot_productizes_high_value_patterns_without_lead_conversions(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FakeAgent()
+    agent.lead_conversion = EmptyLeadConversion()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=1, send_outreach=True)
+
+    assert agent.product_factory.calls
+    assert agent.product_factory.calls[0]["conversions"] == []
+    assert agent.product_factory.calls[0]["high_value_patterns"][0]["title"] == "Provider Fallback Ladder"
+    assert result["product_factory"]["product_count"] == 0
 
 
 def test_autopilot_self_schedule_records_idle_decision(monkeypatch, tmp_path):

@@ -174,7 +174,10 @@ class NomadAutopilot:
         lead_delta = self._lead_conversion_contact_delta(lead_conversion)
         remaining_to_send = max(0, remaining_to_send - lead_delta["sent"])
         remaining_to_prepare = max(0, remaining_to_prepare - lead_delta["prepared"])
-        product_factory = self._run_product_factory(lead_conversion)
+        product_factory = self._run_product_factory(
+            lead_conversion=lead_conversion,
+            self_improvement=self_improvement,
+        )
         outreach_effective_limit = min(
             base_outreach_limit,
             remaining_to_send if effective_send_outreach else remaining_to_prepare,
@@ -734,7 +737,11 @@ class NomadAutopilot:
         result["cycle_lead_count"] = len(leads)
         return result
 
-    def _run_product_factory(self, lead_conversion: Dict[str, Any]) -> Dict[str, Any]:
+    def _run_product_factory(
+        self,
+        lead_conversion: Dict[str, Any],
+        self_improvement: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         product_factory = getattr(self.agent, "product_factory", None)
         if not product_factory or not hasattr(product_factory, "run"):
             return {
@@ -746,18 +753,20 @@ class NomadAutopilot:
                 "analysis": "Productization skipped because product_factory is unavailable.",
             }
         conversions = list(lead_conversion.get("conversions") or [])
-        if not conversions:
+        patterns = list(((self_improvement or {}).get("high_value_patterns") or {}).get("patterns") or [])
+        if not conversions and not patterns:
             return {
                 "mode": "nomad_product_factory",
                 "deal_found": False,
                 "ok": True,
                 "skipped": True,
-                "reason": "no_lead_conversions",
-                "analysis": "Productization skipped because this cycle created no lead conversions.",
+                "reason": "no_productization_sources",
+                "analysis": "Productization skipped because this cycle created no lead conversions or reusable high-value patterns.",
             }
         return product_factory.run(
             conversions=conversions,
-            limit=len(conversions),
+            high_value_patterns=patterns or None,
+            limit=max(len(conversions), len(patterns), 1),
         )
 
     def _daily_quota(self, target: int) -> Dict[str, Any]:
@@ -1325,12 +1334,19 @@ class NomadAutopilot:
     @staticmethod
     def _compact_product_factory(product_factory: Dict[str, Any]) -> Dict[str, Any]:
         products = product_factory.get("products") or []
+        top_priority = product_factory.get("top_priority_product") or (products[0] if products else {})
         return {
             "product_count": product_factory.get("product_count", 0),
             "stats": product_factory.get("stats") or {},
             "product_ids": [item.get("product_id", "") for item in products[:5] if item.get("product_id")],
             "variant_skus": [item.get("variant_sku", "") for item in products[:5] if item.get("variant_sku")],
             "statuses": [item.get("status", "") for item in products[:5] if item.get("status")],
+            "top_priority_product": {
+                "product_id": top_priority.get("product_id", ""),
+                "name": top_priority.get("name", ""),
+                "priority_score": top_priority.get("priority_score", 0),
+                "priority_reason": top_priority.get("priority_reason", ""),
+            },
             "analysis": product_factory.get("analysis", ""),
             "skipped": product_factory.get("skipped", False),
             "reason": product_factory.get("reason", ""),

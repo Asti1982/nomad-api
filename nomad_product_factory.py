@@ -108,6 +108,7 @@ class NomadProductFactory:
         limit: int = 5,
         leads: Optional[List[Dict[str, Any]]] = None,
         conversions: Optional[List[Dict[str, Any]]] = None,
+        high_value_patterns: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         cap = max(1, min(int(limit or 5), 25))
         conversion_source = self._conversion_source(
@@ -117,10 +118,16 @@ class NomadProductFactory:
             conversions=conversions,
         )
         source_conversions = list(conversion_source.get("conversions") or [])[:cap]
-        products = [
-            self.product_from_conversion(conversion)
+        conversion_products = [
+            self._with_priority(self.product_from_conversion(conversion))
             for conversion in source_conversions
         ]
+        pattern_products = [
+            self._with_priority(self.product_from_high_value_pattern(pattern))
+            for pattern in (high_value_patterns or [])[:cap]
+            if isinstance(pattern, dict)
+        ]
+        products = self._sorted_products(pattern_products + conversion_products)
         state = self._load()
         now = datetime.now(UTC).isoformat()
         for product in products:
@@ -133,6 +140,7 @@ class NomadProductFactory:
             state["products"][product_id] = product
         self._save(state)
         stats = self._stats(products)
+        top_priority_product = products[0] if products else {}
         return {
             "mode": "nomad_product_factory",
             "deal_found": False,
@@ -144,15 +152,20 @@ class NomadProductFactory:
                 "ok": conversion_source.get("ok", True),
                 "conversion_count": len(source_conversions),
             },
+            "pattern_source": {
+                "pattern_count": len(high_value_patterns or []),
+            },
             "product_count": len(products),
             "stats": stats,
             "products": products,
+            "top_priority_product": top_priority_product,
             "policy": self.policy(),
             "analysis": (
-                f"Nomad productized {len(products)} lead conversion(s): "
+                f"Nomad productized {len(products)} source artifact(s): "
                 f"{stats.get('offer_ready', 0)} offer-ready, "
                 f"{stats.get('private_offer_needs_approval', 0)} private offers need approval, "
-                f"{stats.get('watchlist', 0)} watchlist."
+                f"{stats.get('watchlist', 0)} watchlist. "
+                f"Top priority: {(top_priority_product.get('name') or top_priority_product.get('product_family') or 'none')}."
             ),
         }
 
@@ -172,7 +185,7 @@ class NomadProductFactory:
                 item for item in products
                 if str(item.get("status") or "") in normalized_statuses
             ]
-        products.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+        products = self._sorted_products(products)
         cap = max(1, min(int(limit or 25), 100))
         limited = products[:cap]
         return {
@@ -182,6 +195,7 @@ class NomadProductFactory:
             "statuses": sorted(normalized_statuses),
             "stats": self._stats(products),
             "products": limited,
+            "top_priority_product": limited[0] if limited else {},
             "analysis": f"Listed {len(limited)} Nomad product(s).",
         }
 
@@ -355,6 +369,199 @@ class NomadProductFactory:
             "runtime_guardrails": self.guardrails.policy(),
         }
 
+    def product_from_high_value_pattern(self, pattern: Dict[str, Any]) -> Dict[str, Any]:
+        pain_type = str(pattern.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        blueprint = PRODUCT_BLUEPRINTS.get(pain_type) or PRODUCT_BLUEPRINTS["default"]
+        productization = pattern.get("productization") or {}
+        agent_offer = pattern.get("agent_offer") or {}
+        self_evolution = pattern.get("self_evolution") or {}
+        variant = self._pattern_variant(pattern=pattern, blueprint=blueprint)
+        product_id = self._pattern_product_id(pattern=pattern, variant_slug=variant["slug"])
+        status = "offer_ready" if operator_allows("productization") else "private_offer_needs_approval"
+        paid_offer = {
+            "sku": blueprint["sku"],
+            "variant_sku": variant["sku"],
+            "package": variant["name"],
+            "base_package": blueprint["name"],
+            "trigger": agent_offer.get("reply_contract") or "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            "service_type": pain_type,
+            "price_native": ((productization.get("paid_offer") or {}).get("amount_native") or 0.03),
+            "delivery": (
+                (productization.get("paid_offer") or {}).get("delivery")
+                or ((agent_offer.get("smallest_paid_unblock") or {}).get("delivery"))
+                or "bounded reusable unblock"
+            ),
+            "acceptance_criteria": [
+                "requester confirms the pattern matches their blocker",
+                "starter diagnosis delivered before paid unblock",
+                "outcome is recorded back into the truth-density ledger",
+            ],
+            "required_input": "FACT_URL, ERROR, or one machine-readable failure trace",
+            "solution_pattern": pattern.get("title", ""),
+            "productized_artifacts": [
+                "service blueprint",
+                "verifier checklist",
+                "self-apply route",
+            ],
+            "offer_ladder": [],
+            "boundary": "Paid work does not authorize public posting, private access, spend, or human impersonation.",
+        }
+        approval_boundary = {
+            "route_status": "pattern_ready",
+            "route_action": "reuse_machine_offer",
+            "guardrail_decision": "allow" if status == "offer_ready" else "deny",
+            "approval_required": status != "offer_ready",
+            "approval_gate": "" if status == "offer_ready" else "NOMAD_OPERATOR_GRANT includes productization",
+            "operator_can_reuse_private_product": operator_allows("productization"),
+            "operator_can_contact_machine_endpoint": operator_allows("agent_endpoint_contact"),
+            "can_do_without_approval": [
+                "build machine-readable offer",
+                "list the product in Nomad's private catalog",
+                "reuse the service blueprint internally",
+            ],
+            "requires_explicit_approval": [
+                "posting human-facing public comments",
+            ],
+        }
+        free_steps = self._clean_list(
+            [
+                agent_offer.get("starter_diagnosis"),
+                self_evolution.get("self_apply_step"),
+            ]
+        )
+        return {
+            "schema": "nomad.product.v1",
+            "product_id": product_id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "source_lead": {
+                "title": "",
+                "url": "",
+                "pain": pattern.get("title", ""),
+                "service_type": pain_type,
+                "conversion_id": "",
+                "value_pack_id": "",
+            },
+            "source_pattern": {
+                "pattern_id": pattern.get("pattern_id", ""),
+                "title": pattern.get("title", ""),
+                "occurrence_count": pattern.get("occurrence_count", 0),
+                "avg_truth_score": pattern.get("avg_truth_score", 0),
+                "avg_reuse_value": pattern.get("avg_reuse_value", 0),
+            },
+            "base_sku": blueprint["sku"],
+            "sku": blueprint["sku"],
+            "variant_sku": variant["sku"],
+            "product_family": blueprint["name"],
+            "base_name": blueprint["name"],
+            "name": variant["name"],
+            "tagline": blueprint["tagline"],
+            "variant_tagline": variant["tagline"],
+            "buyer": blueprint["buyer"],
+            "pain_type": pain_type,
+            "guardrail_id": "",
+            "product_variant": variant,
+            "lead_solution": {
+                "schema": "nomad.lead_solution.v1",
+                "lead_title": pattern.get("title", ""),
+                "lead_url": "",
+                "pain": pattern.get("title", ""),
+                "service_type": pain_type,
+                "diagnosis": agent_offer.get("starter_diagnosis", ""),
+                "first_response": agent_offer.get("starter_diagnosis", ""),
+                "product_package": productization.get("name") or blueprint["name"],
+                "solution_pattern": pattern.get("title", ""),
+                "delivery_target": paid_offer["delivery"],
+                "productized_artifacts": ["service blueprint", "verifier checklist"],
+                "deliverables": ["starter diagnosis", "verifier checklist", "self-apply route"],
+                "required_input": paid_offer["required_input"],
+                "verification": {
+                    "verifier": self_evolution.get("regression_test_stub", ""),
+                    "acceptance_criteria": paid_offer["acceptance_criteria"],
+                },
+                "memory_upgrade": self_evolution.get("self_apply_step", ""),
+            },
+            "differentiators": variant["differentiators"],
+            "status": status,
+            "sellable_now": status in {"offer_ready", "private_offer_needs_approval"},
+            "sellable_channels": self._sellable_channels(status),
+            "outreach_blocked_by_approval": status == "private_offer_needs_approval",
+            "operator_grant": operator_grant(),
+            "free_value": {
+                "artifact_schema": "nomad.high_value_pattern.v1",
+                "value_pack_id": pattern.get("pattern_id", ""),
+                "painpoint_question": f"Does your agent show the repeated pattern '{pattern.get('title', '')}'?",
+                "safe_now": free_steps,
+                "verifier": self_evolution.get("regression_test_stub", ""),
+                "reply_contract": {
+                    "accept": agent_offer.get("reply_contract", "PLAN_ACCEPTED=true plus FACT_URL or ERROR"),
+                },
+            },
+            "paid_offer": paid_offer,
+            "service_template": {
+                "endpoint": "POST /tasks",
+                "mcp_tool": "nomad_service_request",
+                "create_task_payload": {
+                    "problem": f"{pattern.get('title', '')} | pattern_id={pattern.get('pattern_id', '')}",
+                    "service_type": pain_type,
+                    "budget_native": paid_offer["price_native"],
+                    "metadata": {
+                        "product_id": product_id,
+                        "sku": blueprint["sku"],
+                        "variant_sku": variant["sku"],
+                        "pattern_id": pattern.get("pattern_id", ""),
+                        "approval_boundary": paid_offer["boundary"],
+                        "solution_pattern": pattern.get("title", ""),
+                    },
+                },
+            },
+            "product_artifacts": {
+                "value_pack_schema": "nomad.high_value_pattern.v1",
+                "agent_solution_schema": "nomad.agent_solution.v1",
+                "rescue_plan_schema": "nomad.service_blueprint.v1",
+                "guardrail_schema": "nomad.guardrail_evaluation.v1",
+                "conversion_id": "",
+                "solution_id": pattern.get("latest_solution_id", ""),
+                "rescue_plan_id": pattern.get("pattern_id", ""),
+                "product_package": productization.get("name") or blueprint["name"],
+                "solution_pattern": pattern.get("title", ""),
+                "productized_artifacts": ["service blueprint", "verifier checklist"],
+                "deliverables": ["starter diagnosis", "bounded unblock", "self-apply route"],
+                "solution_signature": variant.get("solution_signature", ""),
+            },
+            "runtime_hooks": {
+                "lead_conversion": "",
+                "agent_pain_solver": "nomad_agent_pain_solver",
+                "service_task": "nomad_service_request",
+                "guardrail_id": "",
+                "product_variant_slug": variant["slug"],
+                "variant_sku": variant["sku"],
+                "nomad_self_apply": {
+                    "pattern_id": pattern.get("pattern_id", ""),
+                    "step": self_evolution.get("self_apply_step", ""),
+                },
+            },
+            "sales_motion": {
+                "sequence": [
+                    "free_value_first",
+                    "confirm the blocker matches the pattern",
+                    "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                    "create wallet-payable service task",
+                    "deliver starter diagnosis and verifier checklist",
+                    "record the outcome back into the truth-density ledger",
+                ],
+                "machine_offer": self._machine_offer(
+                    product_id,
+                    blueprint,
+                    free_steps,
+                    paid_offer,
+                    approval_boundary,
+                    variant=variant,
+                ),
+            },
+            "approval_boundary": approval_boundary,
+            "next_action": self._next_action(status, {}, paid_offer),
+        }
+
     def _conversion_source(
         self,
         query: str,
@@ -386,6 +593,51 @@ class NomadProductFactory:
             or ((value_pack.get("lead") or {}).get("service_type"))
             or "self_improvement"
         ).strip() or "self_improvement"
+
+    def _pattern_variant(
+        self,
+        pattern: Dict[str, Any],
+        blueprint: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        title = str(pattern.get("title") or pattern.get("pain_type") or blueprint.get("name") or "").strip()
+        pain_type = str(pattern.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        slug_base = self._slug(title) or self._slug(pain_type) or "agent-pattern"
+        pattern_id = str(pattern.get("pattern_id") or "").strip()
+        digest = hashlib.sha256(f"{pattern_id}|{title}|{pain_type}".encode("utf-8")).hexdigest()[:8]
+        slug = f"{slug_base[:42].strip('-')}-{digest}"
+        differentiators = self._clean_list(
+            [
+                f"Repeated pain type: {pain_type}",
+                f"Occurrence count: {pattern.get('occurrence_count', 0)}",
+                f"Average truth score: {pattern.get('avg_truth_score', 0)}",
+                f"Average reuse value: {pattern.get('avg_reuse_value', 0)}",
+            ]
+        )
+        return {
+            "schema": "nomad.product_variant.v1",
+            "slug": slug,
+            "sku": f"{blueprint['sku']}.{slug}",
+            "name": f"{blueprint['name']}: {title}",
+            "tagline": f"{title} as a reusable bounded service offer."[:240],
+            "lead_phrase": self._short_phrase(title),
+            "solution_phrase": self._short_phrase(title),
+            "solution_signature": hashlib.sha256(
+                "|".join([pain_type, title, pattern_id]).encode("utf-8")
+            ).hexdigest()[:12],
+            "differentiators": differentiators[:8],
+        }
+
+    @staticmethod
+    def _pattern_product_id(pattern: Dict[str, Any], variant_slug: str = "") -> str:
+        seed = "|".join(
+            [
+                str(pattern.get("pattern_id") or ""),
+                str(pattern.get("title") or ""),
+                str(pattern.get("pain_type") or ""),
+                variant_slug,
+            ]
+        )
+        return f"prod-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:12]}"
 
     def _guardrail_id(
         self,
@@ -843,6 +1095,48 @@ class NomadProductFactory:
         while "--" in slug:
             slug = slug.replace("--", "-")
         return slug.strip("-")
+
+    def _with_priority(self, product: Dict[str, Any]) -> Dict[str, Any]:
+        enriched = dict(product)
+        source_pattern = enriched.get("source_pattern") or {}
+        status = str(enriched.get("status") or "draft")
+        if source_pattern:
+            score = (
+                float(source_pattern.get("occurrence_count") or 0) * 10.0
+                + float(source_pattern.get("avg_truth_score") or 0.0) * 100.0
+                + float(source_pattern.get("avg_reuse_value") or 0.0) * 100.0
+                + (15.0 if status == "offer_ready" else 0.0)
+            )
+            reason = (
+                f"Repeated {enriched.get('pain_type', 'agent')} pattern with "
+                f"{source_pattern.get('occurrence_count', 0)} hits and "
+                f"avg truth {source_pattern.get('avg_truth_score', 0)}."
+            )
+        else:
+            lead = enriched.get("source_lead") or {}
+            score = (
+                (40.0 if status == "offer_ready" else 20.0 if status == "private_offer_needs_approval" else 5.0)
+                + (10.0 if str(lead.get("url") or "").strip() else 0.0)
+                + (5.0 if str(enriched.get("variant_sku") or "").strip() else 0.0)
+            )
+            reason = (
+                f"Lead-derived {enriched.get('pain_type', 'agent')} offer with status {status}."
+            )
+        enriched["priority_score"] = round(score, 2)
+        enriched["priority_reason"] = reason
+        return enriched
+
+    @staticmethod
+    def _sorted_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(
+            products,
+            key=lambda item: (
+                float(item.get("priority_score") or 0.0),
+                str(item.get("updated_at") or item.get("created_at") or ""),
+                str(item.get("name") or ""),
+            ),
+            reverse=True,
+        )
 
     @staticmethod
     def _stats(products: List[Dict[str, Any]]) -> Dict[str, int]:
