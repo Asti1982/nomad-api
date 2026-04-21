@@ -173,6 +173,8 @@ class ArbiterAgent:
             return self.infra.codebuddy_scout(profile_id=profile)
         if kind == "render_scout":
             return self.infra.render_scout(profile_id=profile)
+        if kind == "eurohpc_scout":
+            return self.infra.eurohpc_scout(profile_id=profile)
         if kind == "market_scan":
             return self.infra.market_scan(
                 focus=request.get("focus") or "balanced",
@@ -569,9 +571,14 @@ class ArbiterAgent:
             flags=re.IGNORECASE,
         ).strip()
         send = self._extract_bool_key_value(query, "send")
+        approval = (
+            self._extract_key_value(query, "approval")
+            or self._extract_key_value(query, "approve")
+            or self._extract_key_value(query, "public")
+        )
         limit = self._extract_int_key_value(query, "limit") or 5
         budget = self._extract_budget_native(query)
-        for key in ("send", "limit", "budget", "amount", "pay"):
+        for key in ("send", "approval", "approve", "public", "limit", "budget", "amount", "pay"):
             value = self._extract_key_value(query, key)
             if value:
                 objective = objective.replace(f"{key}={value}", "")
@@ -580,6 +587,7 @@ class ArbiterAgent:
             query=objective,
             limit=limit,
             send=send,
+            approval=approval,
             budget_hint_native=budget,
         )
 

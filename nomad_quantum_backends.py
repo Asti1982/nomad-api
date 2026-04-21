@@ -4,6 +4,8 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
+from eurohpc_access import EuroHpcAccessPlanner
+
 
 CLAIM_BOUNDARY = (
     "Nomad's local quantum path is a classical simulator and makes no quantum speedup claim. "
@@ -268,6 +270,9 @@ class QuantumBackendPlanner:
         circuit: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         local_simulation = ClassicalQuantumSimulator().run(circuit or DEFAULT_CIRCUIT)
+        eurohpc_access = EuroHpcAccessPlanner(
+            allow_hpc_submit=self.allow_hpc_submit,
+        ).build_plan(objective=objective)
         backends = self.backend_matrix()
         selected = self.select_backend(backends)
         return {
@@ -284,11 +289,15 @@ class QuantumBackendPlanner:
             "proposal_backed_hpc": [
                 backend for backend in backends if backend.get("class") == "proposal_backed_hpc"
             ],
+            "eurohpc_ai_compute_access": eurohpc_access,
             "local_simulation": local_simulation,
             "next_actions": self._next_actions(backends, selected),
         }
 
     def backend_matrix(self) -> List[Dict[str, Any]]:
+        eurohpc_access = EuroHpcAccessPlanner(
+            allow_hpc_submit=self.allow_hpc_submit,
+        ).build_plan(objective="Plan proposal-backed EuroHPC AI compute access for Nomad.")
         return [
             self._local_backend(),
             self._provider_backend(
@@ -324,6 +333,38 @@ class QuantumBackendPlanner:
                 source_url="https://www.eurohpc-ju.europa.eu/playground-access-ai-factories_en",
                 best_for="Short free GPU/HPC trials after accepted playground access, especially SMEs and startup-style experiments.",
                 next_proposal_step="Apply for playground access, then add project id, SSH host, username, and Slurm account.",
+                access_plan=eurohpc_access,
+                access_mode_id="ai_factories_playground",
+            ),
+            self._hpc_backend(
+                backend_id="eurohpc_ai_factories_fast_lane",
+                provider="EuroHPC AI Factories Fast Lane",
+                env_vars=["EUROHPC_PROJECT_ID", "EUROHPC_USERNAME", "HPC_SSH_HOST", "HPC_SLURM_ACCOUNT"],
+                source_url="https://www.eurohpc-ju.europa.eu/fast-lane-access-ai-factories_en",
+                best_for="Medium AI compute jobs after Nomad has a GPU-hour estimate, up to 50,000 GPU hours.",
+                next_proposal_step="Use Playground results to justify Fast Lane access, then add allocation and scheduler fields.",
+                access_plan=eurohpc_access,
+                access_mode_id="ai_factories_fast_lane",
+            ),
+            self._hpc_backend(
+                backend_id="eurohpc_ai_factories_large_scale",
+                provider="EuroHPC AI Factories Large Scale",
+                env_vars=["EUROHPC_PROJECT_ID", "EUROHPC_USERNAME", "HPC_SSH_HOST", "HPC_SLURM_ACCOUNT"],
+                source_url="https://www.eurohpc-ju.europa.eu/large-scale-access-ai-factories_en",
+                best_for="Large AI model/application work requiring more than 50,000 GPU hours after peer review.",
+                next_proposal_step="Prepare a reviewed Large Scale proposal with GPU-hour estimate, impact case, and target system.",
+                access_plan=eurohpc_access,
+                access_mode_id="ai_factories_large_scale",
+            ),
+            self._hpc_backend(
+                backend_id="eurohpc_ai_for_science_collaborative",
+                provider="EuroHPC AI for Science and Collaborative EU Projects",
+                env_vars=["EUROHPC_PROJECT_ID", "EUROHPC_USERNAME", "HPC_SSH_HOST", "HPC_SLURM_ACCOUNT"],
+                source_url="https://www.eurohpc-ju.europa.eu/eurohpc-ju-call-proposals-ai-science-and-collaborative-eu-projects_en",
+                best_for="AI research, public-sector AI, or industrial AI inside eligible Horizon Europe/Digital Europe collaborations.",
+                next_proposal_step="Use this route only with an eligible research/public/EU-funded collaboration and accepted allocation.",
+                access_plan=eurohpc_access,
+                access_mode_id="ai_for_science_collaborative",
             ),
             self._hpc_backend(
                 backend_id="egi_federated_cloud",
@@ -426,6 +467,8 @@ class QuantumBackendPlanner:
         source_url: str,
         best_for: str,
         next_proposal_step: str,
+        access_plan: Optional[Dict[str, Any]] = None,
+        access_mode_id: str = "",
     ) -> Dict[str, Any]:
         configured = _env_configured(*env_vars)
         submit_configured = configured and (
@@ -441,6 +484,20 @@ class QuantumBackendPlanner:
             if submit_configured
             else "proposal_or_credentials_required"
         )
+        access_mode = {}
+        if access_plan and access_mode_id:
+            access_mode = next(
+                (
+                    mode
+                    for mode in access_plan.get("access_modes", [])
+                    if mode.get("route_id") == access_mode_id
+                ),
+                {},
+            )
+            next_proposal_step = (
+                (access_plan.get("human_unlock_contract") or {}).get("do_now")
+                or next_proposal_step
+            )
         return {
             "backend_id": backend_id,
             "provider": provider,
@@ -454,6 +511,9 @@ class QuantumBackendPlanner:
             "cost_boundary": "free or no-cost access only after accepted allocation, project, VO, or academic eligibility",
             "best_for": best_for,
             "source_url": source_url,
+            "access_mode": access_mode,
+            "access_plan_schema": (access_plan or {}).get("schema", ""),
+            "access_portal": (access_plan or {}).get("access_portal", ""),
             "next_action": (
                 "Submit through the configured SSH/Slurm or portal adapter."
                 if can_execute

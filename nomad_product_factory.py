@@ -487,7 +487,13 @@ class NomadProductFactory:
 
     def _product_status(self, conversion: Dict[str, Any]) -> str:
         status = str(conversion.get("status") or "").strip()
-        if status in {"queued_agent_contact", "sent_agent_contact", "ready_to_queue_agent_contact"}:
+        if status in {
+            "queued_agent_contact",
+            "sent_agent_contact",
+            "ready_to_queue_agent_contact",
+            "public_comment_approved",
+            "public_pr_plan_approved",
+        }:
             return "offer_ready"
         if status == "private_draft_needs_approval":
             return "private_offer_needs_approval"

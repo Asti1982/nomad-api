@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from compute_probe import LocalComputeProbe
+from eurohpc_access import EuroHpcAccessPlanner
 from settings import get_chain_config
 from azure_scout import AzureScout
 from nomad_codebuddy import CodeBuddyProbe
@@ -124,6 +125,18 @@ class InfrastructureScout:
             return {
                 "kind": "codebuddy_scout",
                 "category": "codebuddy",
+                "profile": self._extract_profile(lowered),
+            }
+
+        if (
+            (lowered.startswith("/scout") and ("eurohpc" in lowered or "ai factories" in lowered))
+            or "eurohpc ai compute" in lowered
+            or "eurohpc compute" in lowered
+            or "ai factories compute" in lowered
+        ):
+            return {
+                "kind": "eurohpc_scout",
+                "category": "compute",
                 "profile": self._extract_profile(lowered),
             }
 
@@ -344,6 +357,7 @@ class InfrastructureScout:
         quantum_plan = QuantumBackendPlanner().build_plan(
             objective="Keep quantum and proposal-backed HPC compute conservative for Nomad."
         )
+        eurohpc_access = quantum_plan.get("eurohpc_ai_compute_access") or {}
         activation_request = self._build_compute_activation_request(
             ranked=ranked,
             probe=probe,
@@ -425,6 +439,13 @@ class InfrastructureScout:
                 f"{selected_quantum_backend.get('provider', 'local simulator')} "
                 "stays selected while provider and proposal-backed backends remain gated."
             )
+        selected_eurohpc_route = eurohpc_access.get("selected_route") or {}
+        if selected_eurohpc_route:
+            analysis += (
+                " EuroHPC AI compute path: "
+                f"{selected_eurohpc_route.get('name', 'AI Factories Playground')} first; "
+                "this is an application/allocation route, not an API-token route."
+            )
 
         return {
             "mode": "compute_audit",
@@ -441,6 +462,7 @@ class InfrastructureScout:
             "activation_request": activation_request,
             "market_scan": market_scan,
             "quantum_compute_matrix": quantum_plan,
+            "eurohpc_ai_compute_access": eurohpc_access,
             "external_compute_opportunities": external_compute[:3],
             "analysis": analysis,
         }
@@ -1175,6 +1197,55 @@ class InfrastructureScout:
                 "GitHub Codespaces can expose a public test port, while Cloudflare or Render are better public URL paths."
             )
         return result
+
+    def eurohpc_scout(self, profile_id: str = "ai_first") -> Dict[str, Any]:
+        profile = self.profiles.get(profile_id, self.profiles["ai_first"])
+        plan = EuroHpcAccessPlanner().build_plan(
+            objective="Find the smallest honest EuroHPC AI compute path for Nomad."
+        )
+        selected = plan.get("selected_route") or {}
+        contract = plan.get("human_unlock_contract") or {}
+        activation = self._make_activation_request_concrete(
+            {
+                "category": "compute",
+                "candidate_id": "eurohpc-ai-factories-playground",
+                "candidate_name": selected.get("name") or "EuroHPC AI Factories Playground Access",
+                "lane_state": plan.get("status", "application_or_allocation_required"),
+                "role": "proposal-backed AI compute access",
+                "requires_account": True,
+                "account_provider": "EuroHPC JU Access Portal",
+                "env_vars": plan.get("handoff_env_fields") or [],
+                "ask": (
+                    "Unlock EuroHPC AI compute by submitting or tracking the correct AI Factories access request. "
+                    "Nomad should not ask for a token; it needs application/allocation metadata."
+                ),
+                "short_ask": "Start EuroHPC AI Factories Playground access for Nomad.",
+                "reason": selected.get("selection_reason", ""),
+                "steps": [
+                    "Use Playground first unless a larger eligible project already exists.",
+                    "Estimate GPU hours from a local smoke test before requesting Fast Lane or Large Scale.",
+                    "After acceptance, provide project id, username, endpoint, and Slurm/account fields.",
+                    "Keep NOMAD_ALLOW_HPC_SUBMIT=false until the allocation and site rules are reviewed.",
+                ],
+                "verification_steps": [
+                    "Run /scout eurohpc to confirm the selected route and missing fields.",
+                    "Run /compute to confirm Nomad still keeps local/hosted fallback lanes while waiting.",
+                ],
+                "human_action": contract.get("do_now", ""),
+                "human_deliverable": contract.get("send_back", ""),
+                "success_criteria": contract.get("done_when") or [],
+                "example_response": contract.get("example_response", ""),
+                "timebox_minutes": contract.get("timebox_minutes", 30),
+                "source_url": selected.get("source_url") or contract.get("source_url") or "",
+            }
+        )
+        plan["profile"] = {
+            "id": profile.id,
+            "label": profile.label,
+            "description": profile.description,
+        }
+        plan["activation_request"] = activation
+        return plan
 
     def render_scout(self, profile_id: str = "ai_first") -> Dict[str, Any]:
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
@@ -2365,6 +2436,22 @@ class InfrastructureScout:
                 openness_score=7,
                 privacy_score=6,
                 ai_fit_score=9,
+            ),
+            InfraOption(
+                id="eurohpc-ai-factories-playground",
+                category="compute",
+                name="EuroHPC AI Factories Playground",
+                summary="Proposal-backed European AI compute access route for SMEs, startups, and entry-level industry users.",
+                best_for="Real GPU/HPC experiments after local smoke tests, with Playground as the first honest EuroHPC step.",
+                tradeoff="Not a token API: it needs eligibility, application/account setup, allocation metadata, and site-specific scheduler details.",
+                source_url="https://www.eurohpc-ju.europa.eu/playground-access-ai-factories_en",
+                tags=("free", "research", "proposal-backed", "hpc"),
+                free_score=9,
+                reliability_score=7,
+                automation_score=3,
+                openness_score=8,
+                privacy_score=8,
+                ai_fit_score=8,
             ),
             InfraOption(
                 id="modal-starter",

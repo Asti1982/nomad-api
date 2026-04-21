@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,6 +73,7 @@ class LeadConversionPipeline:
         query: str = "",
         limit: int = 5,
         send: bool = False,
+        approval: str = "",
         budget_hint_native: Optional[float] = None,
         leads: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
@@ -97,6 +99,7 @@ class LeadConversionPipeline:
             self.convert_lead(
                 lead=lead,
                 send=send,
+                approval=approval,
                 budget_hint_native=budget_hint_native,
             )
             for lead in raw_leads
@@ -114,6 +117,7 @@ class LeadConversionPipeline:
             "generated_at": datetime.now(UTC).isoformat(),
             "query": query,
             "send_requested": send,
+            "approval": approval,
             "discovery": {
                 "mode": discovered.get("mode"),
                 "candidate_count": discovered.get("candidate_count", len(raw_leads)),
@@ -139,9 +143,11 @@ class LeadConversionPipeline:
         self,
         lead: Dict[str, Any],
         send: bool = False,
+        approval: str = "",
         budget_hint_native: Optional[float] = None,
     ) -> Dict[str, Any]:
         normalized = self._normalize_lead(lead)
+        approval = self._approval_for_lead(normalized.get("url", ""), approval)
         service_type = normalize_pain_type(
             service_type=normalized.get("service_type"),
             problem=normalized.get("problem"),
@@ -160,10 +166,10 @@ class LeadConversionPipeline:
         )
         help_draft = self.lead_discovery.draft_first_help_action(
             lead,
-            approval="draft_only",
+            approval=approval,
         )
-        route = self._route_for_lead(normalized, score)
-        route_guardrail = self._route_guardrail(normalized, route)
+        route = self._route_for_lead(normalized, score, approval=approval)
+        route_guardrail = self._route_guardrail(normalized, route, approval=approval)
         route["guardrail"] = route_guardrail.to_dict()
         if route_guardrail.decision == GuardrailDecision.DENY and route.get("action") == "queue_agent_contact":
             route = {
@@ -225,6 +231,15 @@ class LeadConversionPipeline:
                 "agent_solution": agent_solution,
                 "rescue_plan": rescue_plan,
                 "private_help_draft": help_draft,
+                "public_response_draft": self._public_response_draft(
+                    normalized=normalized,
+                    service_type=service_type,
+                    agent_solution=agent_solution,
+                    rescue_plan=rescue_plan,
+                    route=route,
+                )
+                if route.get("action") in {"prepare_public_comment", "prepare_pr_plan"}
+                else "",
             },
             "customer_next_step": self._customer_next_step(route, rescue_plan, value_pack),
             "contact_result": contact_result,
@@ -342,8 +357,9 @@ class LeadConversionPipeline:
             "reasons": reasons,
         }
 
-    def _route_for_lead(self, lead: Dict[str, Any], score: Dict[str, Any]) -> Dict[str, Any]:
+    def _route_for_lead(self, lead: Dict[str, Any], score: Dict[str, Any], approval: str = "") -> Dict[str, Any]:
         endpoint = lead.get("endpoint_url") or ""
+        approval = (approval or "draft_only").strip().lower()
         if score["fit"] == "watchlist":
             return {
                 "status": "watchlist_low_fit",
@@ -359,6 +375,24 @@ class LeadConversionPipeline:
                 "operator_grant": operator_grant() if operator_allows("agent_endpoint_contact") else {"enabled": False},
             }
         if self._is_human_facing_url(lead.get("url", "")):
+            if approval in {"comment", "public_comment"}:
+                return {
+                    "status": "public_comment_approved",
+                    "action": "prepare_public_comment",
+                    "summary": "Human-facing lead approved for one public, value-first comment.",
+                    "approval": approval,
+                    "approval_gate": "",
+                    "operator_grant": operator_grant() if operator_allows("lead_conversion") else {"enabled": False},
+                }
+            if approval in {"pr", "pull_request", "pr_plan"}:
+                return {
+                    "status": "public_pr_plan_approved",
+                    "action": "prepare_pr_plan",
+                    "summary": "Human-facing lead approved for a public PR/repro plan.",
+                    "approval": approval,
+                    "approval_gate": "",
+                    "operator_grant": operator_grant() if operator_allows("lead_conversion") else {"enabled": False},
+                }
             return {
                 "status": "private_draft_needs_approval",
                 "action": "save_private_draft",
@@ -384,7 +418,7 @@ class LeadConversionPipeline:
             ],
         }
 
-    def _route_guardrail(self, lead: Dict[str, Any], route: Dict[str, Any]):
+    def _route_guardrail(self, lead: Dict[str, Any], route: Dict[str, Any], approval: str = ""):
         if route.get("action") == "queue_agent_contact":
             return self.guardrails.evaluate(
                 action="agent_contact.queue",
@@ -402,7 +436,9 @@ class LeadConversionPipeline:
                     "url": lead.get("url", ""),
                     "problem": lead.get("problem", ""),
                     "lead": lead,
+                    "approval": approval or route.get("approval", ""),
                 },
+                approval=approval or route.get("approval", ""),
             )
         return self.guardrails.evaluate(
             action="lead.private_draft",
@@ -430,6 +466,13 @@ class LeadConversionPipeline:
             return {
                 "ask": "Get explicit approval before any human-facing post, or provide a public agent endpoint.",
                 "expected_reply": route.get("approval_gate", "APPROVE_LEAD_HELP=draft_only"),
+                "required_input": rescue_plan.get("required_input", ""),
+                "value_pack_id": value_pack.get("pack_id", ""),
+            }
+        if route.get("action") in {"prepare_public_comment", "prepare_pr_plan"}:
+            return {
+                "ask": "Publish the approved value-first response, then wait for maintainer interest before any paid follow-up.",
+                "expected_reply": "MAINTAINER_INTEREST=true, FACT_URL=https://..., or PLAN_ACCEPTED=true",
                 "required_input": rescue_plan.get("required_input", ""),
                 "value_pack_id": value_pack.get("pack_id", ""),
             }
@@ -518,6 +561,65 @@ class LeadConversionPipeline:
                 f"{agent_solution.get('title', 'agent rescue')} with {len(safe_now)} safe step(s)."
             ),
         }
+
+    def _approval_for_lead(self, lead_url: str, approval: str = "") -> str:
+        explicit = (approval or "").strip().lower()
+        if explicit:
+            return explicit
+        allowed_urls = [
+            item.strip()
+            for item in (os.getenv("NOMAD_PUBLIC_LEAD_APPROVAL_URLS") or "").split(",")
+            if item.strip()
+        ]
+        if lead_url and any(lead_url.rstrip("/") == item.rstrip("/") for item in allowed_urls):
+            return (os.getenv("NOMAD_PUBLIC_LEAD_APPROVAL_SCOPE") or "comment").strip().lower() or "comment"
+        return "draft_only"
+
+    def _public_response_draft(
+        self,
+        normalized: Dict[str, Any],
+        service_type: str,
+        agent_solution: Dict[str, Any],
+        rescue_plan: Dict[str, Any],
+        route: Dict[str, Any],
+    ) -> str:
+        title = normalized.get("title") or "this issue"
+        url = normalized.get("url") or ""
+        guardrail = (agent_solution.get("guardrail") or {}).get("id") or "nomad_guardrail"
+        safe_now = rescue_plan.get("safe_now") or []
+        acceptance = rescue_plan.get("acceptance_criteria") or []
+        if route.get("action") == "prepare_pr_plan":
+            return "\n".join(
+                [
+                    f"Draft PR/repro plan for {title}",
+                    f"Source: {url}",
+                    "",
+                    "1. Add the smallest fixture for one intercepted tool call.",
+                    "2. Verify ALLOW preserves the args and still calls the tool.",
+                    "3. Verify MODIFY revalidates modified args before execution.",
+                    "4. Verify DENY prevents execution and returns a structured denial/audit record.",
+                    f"Guardrail pattern: {guardrail}.",
+                ]
+            ).strip()
+        return "\n".join(
+            [
+                f"I think {title} becomes easiest to evaluate if the first slice is a tiny fixture-backed tool-call boundary.",
+                "",
+                "Concrete diagnostic frame:",
+                f"- Classify this as `{service_type}` at the exact pre-execution point, before the tool mutates state.",
+                "- Start with one FunctionTool/BaseTool fixture and one Workbench/MCP-style fixture; keep the provider protocol the same for both.",
+                "- Treat `MODIFY` as important as `DENY`: after a provider rewrites args, run normal args validation again before execution.",
+                "- Avoid returning a plain string for DENY if the caller expects the tool return type; prefer the existing structured error/result path, with reason and metadata attached.",
+                "",
+                "Smallest useful test pack:",
+                "1. ALLOW calls the underlying tool with unchanged args.",
+                "2. MODIFY changes args, then the tool receives only the revalidated effective args.",
+                "3. DENY never calls the tool and preserves `tool_name`, `call_id`, provider id, reason, and audit metadata.",
+                "",
+                "That would make the architecture discussion concrete without committing AutoGen to the full workbench/agent-level surface in the first PR.",
+                f"Nomad guardrail pattern: `{guardrail}`. Safe next steps: {'; '.join(str(item) for item in safe_now[:2]) or 'draft a fixture-backed plan'}. Done when: {'; '.join(str(item) for item in acceptance[:2]) or 'the denied tool is not executed'}.",
+            ]
+        ).strip()
 
     def _agent_contact_problem(self, value_pack: Dict[str, Any]) -> str:
         immediate = value_pack.get("immediate_value") or {}

@@ -223,6 +223,15 @@ def test_cli_accepts_autopilot_daily_lead_target():
     assert args.daily_lead_target == 100
 
 
+def test_cli_builds_convert_leads_with_public_approval():
+    args = build_parser().parse_args(
+        ["convert-leads", "--limit", "1", "--approval", "comment", "Lead:", "AutoGen"]
+    )
+    query = build_query(args)
+    assert "approval=comment" in query
+    assert query.endswith("Lead: AutoGen")
+
+
 def test_cli_builds_reliability_doctor_query():
     args = build_parser().parse_args(["doctor", "--service-type", "hallucination", "fake", "sources"])
     assert build_query(args) == "/doctor type=hallucination fake sources"

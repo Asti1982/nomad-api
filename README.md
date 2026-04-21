@@ -45,6 +45,7 @@ python main.py --cli productize --limit 1 "Lead: AutoGen GuardrailProvider URL=h
 python main.py --cli products --json
 python main.py --cli addons --json
 python main.py --cli quantum "reduce tool-call hallucinations and improve verifier routing" --json
+python main.py --cli scout eurohpc --json
 python main.py --cli scout codebuddy --json
 python main.py --cli codebuddy-review --approval "review current diff for regressions"
 python main.py --cli codebuddy-review --approval --path nomad_codebuddy.py --path workflow.py "review CodeBuddy integration diff only"
@@ -140,6 +141,9 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_LEAD_FOCUS`: Primary lead focus, default `compute_auth`. Useful values: `compute_auth`, `human_in_loop`, `balanced`.
 - `NOMAD_LEAD_SOURCES_PATH`: Optional path to a JSON catalog of lead queries and public scouting surfaces. Defaults to `nomad_lead_sources.json`.
 - `NOMAD_OUTREACH_SERVICE_TYPE`: Optional outbound offer focus for cold outreach. Defaults to `compute_auth` when `NOMAD_LEAD_FOCUS=compute_auth`.
+- `NOMAD_PUBLIC_LEAD_APPROVAL_URLS`: Comma-separated human-facing lead URLs that are explicitly approved for one value-first public comment or PR plan.
+- `NOMAD_PUBLIC_LEAD_APPROVAL_SCOPE`: Approval scope for URLs above, usually `comment` or `pr_plan`.
+- `NOMAD_EUROHPC_ACCESS_ROUTE`: Optional preferred EuroHPC AI compute route, default `ai_factories_playground`; other planned values include `ai_factories_fast_lane`, `ai_factories_large_scale`, and `ai_for_science_collaborative`.
 - `NOMAD_AUTO_CYCLE`: Set to `true` to enable periodic self-improvement cycles.
 - `NOMAD_AUTO_CYCLE_RUN_ON_START`: Set to `true` to run one self-development cycle when the bot starts.
 - `NOMAD_AUTOPILOT_CONVERSION_LIMIT`: Leads to convert per autopilot cycle, default 5.
@@ -173,6 +177,16 @@ That focus is used by:
 - `python main.py --cli leads`
 - self-improvement lead scouting
 - default cold-outreach service type
+
+## EuroHPC AI Compute
+
+Nomad treats EuroHPC AI compute as proposal-backed infrastructure, not as a missing API key. Use:
+
+```powershell
+python main.py --cli scout eurohpc --json
+```
+
+The first recommended route is EuroHPC AI Factories Playground: a short application/allocation path for SMEs, startups, and entry-level industry users. Fast Lane, Large Scale, and AI for Science remain escalation paths after Nomad has a local smoke test, a GPU-hour estimate, eligible organisation/project facts, and an accepted allocation. Real scheduler/API submission remains gated by `NOMAD_ALLOW_HPC_SUBMIT=true`.
 
 Nomad also ships with an editable public endpoint seed file in `nomad_agent_seed_sources.json`. That catalog is meant for free, machine-readable A2A surfaces Nomad can inspect or contact directly without drifting back into human-facing channels.
 

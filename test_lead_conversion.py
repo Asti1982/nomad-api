@@ -135,6 +135,41 @@ def test_lead_conversion_keeps_human_facing_issue_private(tmp_path):
     assert "APPROVE_LEAD_HELP" in conversion["customer_next_step"]["expected_reply"]
 
 
+def test_lead_conversion_uses_explicit_public_comment_approval(tmp_path):
+    pipeline = LeadConversionPipeline(
+        path=tmp_path / "conversions.json",
+        lead_discovery=FakeLeadDiscovery(),
+        service_desk=FakeServiceDesk(),
+        outbox=FakeOutbox(),
+    )
+    lead = FakeLeadDiscovery().scout_public_leads(limit=2)["leads"][1]
+
+    result = pipeline.run(leads=[lead], limit=1, approval="comment")
+
+    conversion = result["conversions"][0]
+    assert conversion["status"] == "public_comment_approved"
+    assert conversion["route"]["guardrail"]["decision"] == "allow"
+    assert conversion["free_value"]["public_response_draft"]
+    assert "ALLOW calls the underlying tool" in conversion["free_value"]["public_response_draft"]
+    assert "wait for maintainer interest" in conversion["customer_next_step"]["ask"]
+
+
+def test_lead_conversion_can_read_url_scoped_public_comment_approval(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_LEAD_APPROVAL_URLS", "https://github.com/example/agent/issues/7")
+    monkeypatch.setenv("NOMAD_PUBLIC_LEAD_APPROVAL_SCOPE", "comment")
+    pipeline = LeadConversionPipeline(
+        path=tmp_path / "conversions.json",
+        lead_discovery=FakeLeadDiscovery(),
+        service_desk=FakeServiceDesk(),
+        outbox=FakeOutbox(),
+    )
+    lead = FakeLeadDiscovery().scout_public_leads(limit=2)["leads"][1]
+
+    result = pipeline.run(leads=[lead], limit=1)
+
+    assert result["conversions"][0]["status"] == "public_comment_approved"
+
+
 def test_lead_conversion_can_send_only_after_queueing_machine_endpoint(tmp_path):
     outbox = FakeOutbox()
     pipeline = LeadConversionPipeline(

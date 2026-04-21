@@ -114,6 +114,20 @@ def test_product_factory_marks_machine_endpoint_offer_ready(tmp_path):
     assert product["next_action"]["action"] == "await_plan_accepted_or_create_task"
 
 
+def test_product_factory_marks_public_comment_approved_offer_ready(tmp_path):
+    factory = NomadProductFactory(path=tmp_path / "products.json")
+
+    result = factory.run(
+        conversions=[_conversion(status="public_comment_approved", service_type="repo_issue_help")],
+        limit=1,
+    )
+
+    product = result["products"][0]
+    assert product["status"] == "offer_ready"
+    assert product["sellable_now"] is True
+    assert product["outreach_blocked_by_approval"] is False
+
+
 def test_product_factory_lists_persisted_products_by_status(tmp_path):
     factory = NomadProductFactory(path=tmp_path / "products.json")
     factory.run(conversions=[_conversion()], limit=1)

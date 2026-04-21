@@ -249,9 +249,10 @@ def build_query(args: argparse.Namespace) -> str:
     if command == "convert-leads":
         query = " ".join(args.query).strip()
         send = f" send={str(bool(args.send)).lower()}"
+        approval = f" approval={args.approval}" if args.approval else ""
         limit = f" limit={args.limit}" if args.limit else ""
         budget = f" budget={args.budget}" if args.budget is not None else ""
-        return f"/convert-leads{send}{limit}{budget} {query}".strip()
+        return f"/convert-leads{send}{approval}{limit}{budget} {query}".strip()
     if command == "lead-conversions":
         status = f" status={','.join(args.status)}" if args.status else ""
         limit = f" limit={args.limit}" if args.limit else ""
@@ -455,6 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     convert_leads.add_argument("query", nargs="*")
     convert_leads.add_argument("--limit", type=int, default=5)
     convert_leads.add_argument("--send", action="store_true", help="Send only to eligible public machine-readable agent endpoints.")
+    convert_leads.add_argument("--approval", default="", help="Explicit public lead approval scope, e.g. comment or pr_plan.")
     convert_leads.add_argument("--budget", type=float)
 
     lead_conversions = subparsers.add_parser("lead-conversions", help="List stored lead conversion records.")

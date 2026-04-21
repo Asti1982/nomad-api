@@ -33,6 +33,7 @@ def test_quantum_backend_matrix_defaults_to_local_and_lists_provider_paths(monke
         "DENBI_PROJECT_ID",
         "HPC_SSH_HOST",
         "HPC_SLURM_ACCOUNT",
+        "NOMAD_EUROHPC_ACCESS_ROUTE",
         "NOMAD_QUANTUM_BACKEND",
         "NOMAD_ALLOW_REAL_QUANTUM",
         "NOMAD_ALLOW_HPC_SUBMIT",
@@ -47,6 +48,10 @@ def test_quantum_backend_matrix_defaults_to_local_and_lists_provider_paths(monke
     assert "ibm_quantum_open_plan" in backend_ids
     assert "quantum_inspire" in backend_ids
     assert "eurohpc_ai_factories_playground" in backend_ids
+    assert "eurohpc_ai_factories_fast_lane" in backend_ids
+    assert plan["eurohpc_ai_compute_access"]["selected_route"]["route_id"] == "ai_factories_playground"
+    playground = next(backend for backend in plan["backends"] if backend["backend_id"] == "eurohpc_ai_factories_playground")
+    assert playground["access_mode"]["expected_time_to_access"] == "within 2 working days after eligibility and technical assessment"
     assert any(action["type"] == "proposal_backed_hpc_unlock" for action in plan["next_actions"])
 
 
