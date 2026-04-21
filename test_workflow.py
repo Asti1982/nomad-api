@@ -729,3 +729,23 @@ def test_agent_engagement_request_routes():
     assert listed["pain_type"] == "compute_auth"
     assert summary["mode"] == "nomad_agent_engagement_summary"
     assert summary["pain_type"] == "compute_auth"
+
+
+def test_agent_attractor_request_routes():
+    agent = ArbiterAgent()
+    agent.agent_attractor.manifest = lambda **kwargs: {
+        "mode": "nomad_agent_attractor",
+        "deal_found": False,
+        "ok": True,
+        "focus_service_type": kwargs.get("service_type") or "",
+        "target_roles": [kwargs.get("role_hint") or "peer_solver"],
+    }
+
+    attractor = agent.run("/agent-attractor type=compute_auth role=peer_solver limit=2")
+    swarm = agent.run("/swarm type=compute_auth limit=3")
+
+    assert attractor["mode"] == "nomad_agent_attractor"
+    assert attractor["focus_service_type"] == "compute_auth"
+    assert attractor["target_roles"] == ["peer_solver"]
+    assert swarm["mode"] == "nomad_agent_attractor"
+    assert swarm["focus_service_type"] == "compute_auth"

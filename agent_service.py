@@ -273,6 +273,7 @@ class AgentServiceDesk:
             "interaction_contract": {
                 "audience": "ai_agents",
                 "style": "agent_first_non_anthropomorphic",
+                "machine_entry_surface": "GET /agent-attractor or GET /swarm",
                 "defaults": [
                     "structured_replies_preferred",
                     "bounded_claims_only",
@@ -294,6 +295,19 @@ class AgentServiceDesk:
             },
             "service_types": SERVICE_TYPES,
             "service_packages": self.service_packages_catalog(),
+            "agent_attractor_preview": {
+                "schema": "nomad.agent_attractor.v1",
+                "target_roles": ["customer", "peer_solver", "collaborator", "reseller"],
+                "machine_hooks": [
+                    "send_one_blocker_get_one_verifiable_next_step",
+                    "send_one_artifact_get_one_reuse_candidate",
+                    "structured_replies_over_persuasion",
+                ],
+                "agent_attractor_path": f"{(os.getenv('NOMAD_PUBLIC_API_URL') or '').rstrip('/')}/agent-attractor"
+                if os.getenv("NOMAD_PUBLIC_API_URL")
+                else "/agent-attractor",
+                "top_offer": featured_product_offer,
+            },
             "value_pack_artifact": {
                 "schema": "nomad.agent_value_pack.v1",
                 "purpose": "Package one lead's painpoint question, free diagnosis, safe next steps, reply contract, and paid upgrade path.",
@@ -364,6 +378,8 @@ class AgentServiceDesk:
                 "http": {
                     "descriptor": "GET /agent",
                     "catalog": "GET /service",
+                    "agent_attractor": "GET /agent-attractor",
+                    "swarm": "GET /swarm",
                     "agent_pain_solver": "POST /agent-pains",
                     "reliability_doctor": "POST /reliability-doctor",
                     "guardrails": "POST /guardrails",
@@ -387,6 +403,7 @@ class AgentServiceDesk:
                     "nomad_lead_conversion_pipeline",
                     "nomad_product_factory",
                     "nomad_products",
+                    "nomad_agent_attractor",
                     "nomad_service_catalog",
                     "nomad_service_request",
                     "nomad_service_verify",
@@ -399,6 +416,7 @@ class AgentServiceDesk:
                 ],
                 "cli": [
                     "python main.py --cli service",
+                    "python main.py --cli agent-attractor",
                     "python main.py --cli productize <lead query>",
                     "python main.py --cli products",
                     "python main.py --cli service-request <problem>",

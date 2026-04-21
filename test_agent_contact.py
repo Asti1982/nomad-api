@@ -228,6 +228,9 @@ def test_agent_contact_accepts_a2a_base_endpoint_from_agent_card(tmp_path):
     assert "service_type=human_in_loop" in text
     assert "offer_headline=Nomad HITL Contract Pack" in text
     assert "reply_schema=problem|goal|blocking_step|constraints|budget_native" in text
+    assert "roles_sought=customer|peer_solver|collaborator|reseller" in text
+    assert "agent_attractor=" in text
+    assert "peer_solver_contract=artifact_url|diff|verifier|error_trace" in text
 
 
 def test_agent_contact_poll_normalizes_structured_reply(tmp_path):

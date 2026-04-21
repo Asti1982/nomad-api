@@ -382,6 +382,19 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_agent_attractor":
+        top_offer = result.get("top_offer") or {}
+        return "\n".join(
+            [
+                "Nomad Agent Attractor",
+                f"Focus: {result.get('focus_service_type', 'custom')}",
+                f"Roles sought: {', '.join(result.get('target_roles') or []) or 'none'}",
+                f"Top offer: {top_offer.get('headline', '') or 'none'}",
+                f"Attractor: {(result.get('entrypoints') or {}).get('agent_attractor', '')}",
+                result.get("analysis", ""),
+            ]
+        )
+
     if mode == "nomad_mutual_aid_packs":
         return "\n".join(
             [
@@ -507,6 +520,11 @@ def build_query(args: argparse.Namespace) -> str:
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         limit = f" limit={args.limit}" if args.limit else ""
         return f"/agent-engagement-summary{pain_type}{limit}".strip()
+    if command == "agent-attractor":
+        service_type = f" type={args.service_type}" if args.service_type else ""
+        role = f" role={args.role}" if args.role else ""
+        limit = f" limit={args.limit}" if args.limit else ""
+        return f"/agent-attractor{service_type}{role}{limit}".strip()
     if command == "solve-pain":
         problem = " ".join(args.problem).strip()
         service_type = f" type={args.service_type}" if args.service_type else ""
@@ -755,6 +773,11 @@ def build_parser() -> argparse.ArgumentParser:
     engagement_summary = subparsers.add_parser("agent-engagement-summary", help="Show a compact summary of agent engagement roles and outcomes.")
     engagement_summary.add_argument("--pain-type", default="")
     engagement_summary.add_argument("--limit", type=int, default=5)
+
+    agent_attractor = subparsers.add_parser("agent-attractor", help="Show Nomad's machine-readable attractor surface for other AI agents.")
+    agent_attractor.add_argument("--service-type", default="")
+    agent_attractor.add_argument("--role", default="")
+    agent_attractor.add_argument("--limit", type=int, default=5)
 
     solve_pain = subparsers.add_parser("solve-pain", help="Turn one agent pain point into a reusable Nomad solution.")
     solve_pain.add_argument("problem", nargs="*")

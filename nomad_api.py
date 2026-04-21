@@ -46,6 +46,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.agent.service_desk.service_catalog())
             return
 
+        if parsed.path in {"/agent-attractor", "/swarm", "/.well-known/agent-attractor.json"}:
+            self._json_response(
+                self.agent.agent_attractor.manifest(
+                    service_type=(query.get("service_type") or query.get("type") or [""])[0],
+                    role_hint=(query.get("role") or [""])[0],
+                    limit=int((query.get("limit") or ["5"])[0] or 5),
+                )
+            )
+            return
+
         if parsed.path in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
             self._json_response(self.agent.direct_agent.agent_card())
             return
@@ -347,6 +357,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/health",
                     "/agent",
                     "/service",
+                    "/agent-attractor",
+                    "/swarm",
+                    "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
                     "/a2a/message",
                     "/direct/sessions",
@@ -723,6 +736,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-campaigns",
                     "/agent-engagements",
                     "/agent-engagements/summary",
+                    "/agent-attractor",
+                    "/swarm",
+                    "/.well-known/agent-attractor.json",
                     "/a2a/message",
                     "/a2a/discover",
                     "/x402/paid-help",

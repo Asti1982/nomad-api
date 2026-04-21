@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
+from agent_attractor import NomadAgentAttractor
 from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk, SERVICE_TYPES
 from nomad_collaboration import collaboration_charter
@@ -112,6 +113,10 @@ class DirectAgentGateway:
     def agent_card(self) -> Dict[str, Any]:
         """Return an A2A-style AgentCard for direct discovery."""
         collaboration = collaboration_charter(public_api_url=self.public_api_url)
+        attractor = NomadAgentAttractor(
+            service_desk=self.service_desk,
+            engagements=self.engagements,
+        ).preview(service_type="compute_auth")
         return {
             "protocolVersion": os.getenv("NOMAD_A2A_PROTOCOL_VERSION", "0.3.0"),
             "name": self.agent_name,
@@ -138,9 +143,11 @@ class DirectAgentGateway:
                 "outboundAgentCollaboration": collaboration["enabled"],
                 "acceptsAgentHelp": collaboration["permission"]["accept_help_from_other_agents"],
                 "learnsFromAgentReplies": collaboration["permission"]["learn_from_public_agent_replies"],
+                "swarmAttractorManifest": True,
             },
             "interactionContract": self.interaction_contract(),
             "collaborationCharter": collaboration,
+            "rolesSought": attractor.get("target_roles") or [],
             "skills": [
                 {
                     "id": "free-mini-diagnosis",
@@ -187,6 +194,8 @@ class DirectAgentGateway:
             ],
             "endpoints": {
                 "agentCard": f"{self.public_api_url}/.well-known/agent-card.json",
+                "agentAttractor": f"{self.public_api_url}/agent-attractor",
+                "swarm": f"{self.public_api_url}/swarm",
                 "message": f"{self.public_api_url}/a2a/message",
                 "sessions": f"{self.public_api_url}/direct/sessions",
                 "x402": f"{self.public_api_url}/x402/paid-help",

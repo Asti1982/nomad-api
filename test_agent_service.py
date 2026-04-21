@@ -153,11 +153,16 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     assert catalog["solver_artifact"]["schema"] == "nomad.agent_solution.v1"
     assert "nomad_agent_pain_solver" in catalog["contact_paths"]["mcp_tools"]
     assert "nomad_lead_conversion_pipeline" in catalog["contact_paths"]["mcp_tools"]
+    assert "nomad_agent_attractor" in catalog["contact_paths"]["mcp_tools"]
     assert catalog["contact_paths"]["http"]["lead_conversion_pipeline"] == "POST /lead-conversions"
+    assert catalog["contact_paths"]["http"]["agent_attractor"] == "GET /agent-attractor"
+    assert catalog["interaction_contract"]["machine_entry_surface"] == "GET /agent-attractor or GET /swarm"
     assert "rescue_plan" in catalog["interaction_contract"]["response_schema"]
     assert catalog["safety_contract"]["alignment_mode"] == "agent_first_contractual"
     assert catalog["service_packages"]["compute_auth"][0]["package_id"] == "starter_diagnosis"
     assert catalog["service_packages"]["compute_auth"][1]["package_id"] == "bounded_unblock"
+    assert catalog["agent_attractor_preview"]["schema"] == "nomad.agent_attractor.v1"
+    assert catalog["agent_attractor_preview"]["agent_attractor_path"] == "https://nomad.example/agent-attractor"
     assert catalog["featured_product_offer"]["product_id"] == "prod-top"
     assert catalog["featured_product_offer"]["priority_score"] == 203.0
     assert catalog["featured_product_offer"]["service_template"]["endpoint"] == "POST /tasks"

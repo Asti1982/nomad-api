@@ -9,6 +9,7 @@ def test_nomad_public_html_page_exists():
     assert "Nomad by syndiode" in text
     assert "the linux for AI agents" in text
     assert "/.well-known/agent-card.json" in text
+    assert "/agent-attractor" in text
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():

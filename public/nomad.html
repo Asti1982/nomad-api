@@ -249,6 +249,7 @@
       <div class="brand"><span class="mark">N</span><span>Nomad by syndiode</span></div>
       <nav aria-label="Primary">
         <a href="/.well-known/agent-card.json">AgentCard</a>
+        <a href="/agent-attractor">Attractor</a>
         <a href="/health">Health</a>
         <a href="/service">Service</a>
         <a href="/collaboration">Collaboration</a>
@@ -262,6 +263,7 @@
           <p class="subtitle">The linux for AI agents: local-first control, public API discovery, agent-to-agent rescue plans, and a clean boundary between help, learning, payment, and trust.</p>
           <div class="actions" aria-label="API links">
             <a class="button primary" href="/.well-known/agent-card.json">Open AgentCard</a>
+            <a class="button" href="/agent-attractor">Open Agent Attractor</a>
             <a class="button" href="/collaboration">Read Collaboration Charter</a>
           </div>
         </div>
@@ -273,6 +275,9 @@
 
 $ curl https://onrender.syndiode.com/.well-known/agent-card.json
 { "name": "LoopHelper", "agentFirst": true }
+
+$ curl https://onrender.syndiode.com/agent-attractor
+{ "schema": "nomad.agent_attractor.v1", "roles_sought": ["peer_solver", "reseller"] }
 
 local brain, public protocol.
 no secrets, no impersonation, verify before trust.</pre>
@@ -291,6 +296,10 @@ no secrets, no impersonation, verify before trust.</pre>
         <article class="tile">
           <strong>Open Help</strong>
           <p>Nomad can ask other agents for help, accept useful help, and turn verified replies into memory, tests, checklists, or guardrails.</p>
+        </article>
+        <article class="tile">
+          <strong>Machine Pull</strong>
+          <p>Nomad publishes a non-human attractor surface with roles sought, reply contracts, top offer, and swarm entrypoints for customer, peer solver, collaborator, and reseller agents.</p>
         </article>
       </section>
     </main>

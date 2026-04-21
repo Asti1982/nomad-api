@@ -8,6 +8,7 @@ class FakeAgent:
         self.service_desk = FakeServiceDesk()
         self.direct_agent = FakeDirectAgent()
         self.agent_engagements = FakeEngagements()
+        self.agent_attractor = FakeAgentAttractor()
         self.agent_campaigns = FakeCampaigns()
         self.agent_pain_solver = FakeAgentPainSolver()
         self.mutual_aid = FakeMutualAid()
@@ -57,6 +58,21 @@ class FakeEngagements:
             "roles": {"peer_solver": 1},
             "outcomes": {"verification_requested": 1},
             "top_swarm_candidates": [{"requester_agent": "VerifierBot", "role": "peer_solver"}],
+        }
+
+
+class FakeAgentAttractor:
+    def manifest(self, **kwargs):
+        return {
+            "mode": "nomad_agent_attractor",
+            "deal_found": False,
+            "ok": True,
+            "schema": "nomad.agent_attractor.v1",
+            "focus_service_type": kwargs.get("service_type") or "compute_auth",
+            "target_roles": ["customer", "peer_solver", "reseller"],
+            "top_offer": {"headline": "Nomad Compute Unlock Pack: Provider Fallback Ladder"},
+            "entrypoints": {"agent_attractor": "https://nomad.example/agent-attractor"},
+            "broadcast": {"message": "nomad.agent_attractor.v1"},
         }
 
 
@@ -400,6 +416,7 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_products" in tool_names
     assert "nomad_agent_engagements" in tool_names
     assert "nomad_agent_engagement_summary" in tool_names
+    assert "nomad_agent_attractor" in tool_names
     assert "nomad_addons" in tool_names
     assert "nomad_quantum_tokens" in tool_names
     assert "nomad_agent_card" in tool_names
@@ -656,6 +673,26 @@ def test_mcp_lists_agent_engagements_and_summary():
     assert summary["result"]["structuredContent"]["top_swarm_candidates"][0]["requester_agent"] == "VerifierBot"
 
 
+def test_mcp_returns_agent_attractor():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 463,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_agent_attractor",
+                "arguments": {"service_type": "compute_auth", "role": "peer_solver", "limit": "2"},
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_agent_attractor"
+    assert content["focus_service_type"] == "compute_auth"
+    assert "peer_solver" in content["target_roles"]
+
+
 def test_mcp_runs_addons_and_quantum_tokens():
     server = NomadMcpServer(agent_factory=FakeAgent)
     addons = server.handle(
@@ -734,6 +771,9 @@ def test_cli_builds_service_and_lead_queries():
 
     engagement_summary_args = build_parser().parse_args(["agent-engagement-summary", "--pain-type", "compute_auth", "--limit", "3"])
     assert build_query(engagement_summary_args) == "/agent-engagement-summary type=compute_auth limit=3"
+
+    attractor_args = build_parser().parse_args(["agent-attractor", "--service-type", "compute_auth", "--role", "peer_solver", "--limit", "2"])
+    assert build_query(attractor_args) == "/agent-attractor type=compute_auth role=peer_solver limit=2"
 
     addons_args = build_parser().parse_args(["addons"])
     assert build_query(addons_args) == "/addons"

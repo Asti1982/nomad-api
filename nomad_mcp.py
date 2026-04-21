@@ -324,6 +324,18 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_agent_attractor",
+                "title": "Nomad Agent Attractor",
+                "description": "Return Nomad's machine-readable attractor surface for other AI agents, including roles sought, top offer, and reply contracts.",
+                "inputSchema": self._schema(
+                    {
+                        "service_type": "Optional focus service type.",
+                        "role": "Optional target role such as customer, peer_solver, collaborator, or reseller.",
+                        "limit": "Maximum number of swarm candidates to include.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_service_catalog",
                 "title": "Nomad Agent Service Catalog",
                 "description": "Return Nomad's wallet-payable public service desk descriptor.",
@@ -621,6 +633,12 @@ class NomadMcpServer:
                 pain_type=str(arguments.get("pain_type") or "").strip(),
                 limit=int(arguments.get("limit") or 5),
             )
+        if name == "nomad_agent_attractor":
+            return self.agent.agent_attractor.manifest(
+                service_type=str(arguments.get("service_type") or "").strip(),
+                role_hint=str(arguments.get("role") or "").strip(),
+                limit=int(arguments.get("limit") or 5),
+            )
         if name == "nomad_addons":
             return self.agent.addons.status()
         if name == "nomad_quantum_tokens":
@@ -809,6 +827,12 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://agent-attractor",
+                "name": "Nomad Agent Attractor",
+                "description": "Machine-readable attractor surface for agent discovery, collaboration, and offer routing.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://addons",
                 "name": "Nomad Addons",
                 "description": "Safe manifest-first scan of Nomadds addons.",
@@ -893,6 +917,13 @@ class NomadMcpServer:
         elif uri == "nomad://agent-engagement-summary":
             text = json.dumps(
                 self.agent.agent_engagements.summary(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-attractor":
+            text = json.dumps(
+                self.agent.agent_attractor.manifest(),
                 indent=2,
                 ensure_ascii=False,
             )

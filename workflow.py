@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from agent_attractor import NomadAgentAttractor
 from agent_engagement import AgentEngagementLedger
 from agent_pain_solver import AgentPainSolver
 from agent_contact import AgentContactOutbox
@@ -71,8 +72,15 @@ class ArbiterAgent:
         )
         self.lead_discovery = LeadDiscoveryScout()
         self.service_desk = AgentServiceDesk(treasury=self.treasury)
-        self.agent_contacts = AgentContactOutbox(engagements=self.agent_engagements)
+        self.agent_contacts = AgentContactOutbox(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
+        self.agent_attractor = NomadAgentAttractor(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
         self.direct_agent = DirectAgentGateway(
             service_desk=self.service_desk,
             engagements=self.agent_engagements,
@@ -129,6 +137,9 @@ class ArbiterAgent:
 
         if self._is_agent_engagement_request(normalized_query):
             return self._handle_agent_engagement_request(normalized_query)
+
+        if self._is_agent_attractor_request(normalized_query):
+            return self._handle_agent_attractor_request(normalized_query)
 
         if self._is_guardrail_request(normalized_query):
             return self._handle_guardrail_request(normalized_query)
@@ -397,6 +408,10 @@ class ArbiterAgent:
             or lowered.startswith("/engagements")
             or lowered.startswith("/agent-engagement-summary")
         )
+
+    def _is_agent_attractor_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return lowered.startswith("/agent-attractor") or lowered.startswith("/swarm")
 
     def _is_collaboration_request(self, query: str) -> bool:
         lowered = query.lower()
@@ -679,6 +694,20 @@ class ArbiterAgent:
         return self.agent_engagements.list_engagements(
             roles=roles,
             pain_type=requested_pain_type,
+            limit=limit,
+        )
+
+    def _handle_agent_attractor_request(self, query: str) -> Dict[str, Any]:
+        requested_pain_type = (
+            self._extract_key_value(query, "type")
+            or self._extract_key_value(query, "pain_type")
+            or self._extract_key_value(query, "service_type")
+        )
+        role_hint = self._extract_key_value(query, "role")
+        limit = self._extract_int_key_value(query, "limit") or 5
+        return self.agent_attractor.manifest(
+            service_type=requested_pain_type,
+            role_hint=role_hint,
             limit=limit,
         )
 

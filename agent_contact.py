@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
+from agent_attractor import NomadAgentAttractor
 from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk
 from nomad_collaboration import collaboration_charter
@@ -636,6 +637,14 @@ class AgentContactOutbox:
     def _outbound_message_text(self, contact: Dict[str, Any]) -> str:
         offer = contact.get("offer") if isinstance(contact.get("offer"), dict) else {}
         best_current_offer = offer.get("best_current_offer") if isinstance(offer.get("best_current_offer"), dict) else {}
+        attractor = NomadAgentAttractor(
+            service_desk=self.service_desk,
+            engagements=self.engagements,
+        ).manifest(
+            service_type=str(contact.get("service_type") or ""),
+            limit=3,
+        )
+        role_contracts = attractor.get("role_contracts") if isinstance(attractor.get("role_contracts"), dict) else {}
         lines = [
             "nomad.outreach.v2",
             f"problem={self._single_line(contact.get('problem'))}",
@@ -650,6 +659,18 @@ class AgentContactOutbox:
             lines.append(f"offer_price_native={self._single_line(best_current_offer.get('price_native'))}")
             lines.append(f"offer_delivery={self._single_line(best_current_offer.get('delivery'))}")
             lines.append(f"offer_trigger={self._single_line(best_current_offer.get('trigger'))}")
+        lines.append(
+            f"roles_sought={self._single_line('|'.join(attractor.get('target_roles') or []))}"
+        )
+        lines.append(
+            f"agent_attractor={self._single_line((attractor.get('entrypoints') or {}).get('agent_attractor'))}"
+        )
+        peer_solver = role_contracts.get("peer_solver") if isinstance(role_contracts.get("peer_solver"), dict) else {}
+        reseller = role_contracts.get("reseller") if isinstance(role_contracts.get("reseller"), dict) else {}
+        if peer_solver.get("contract"):
+            lines.append(f"peer_solver_contract={self._single_line(peer_solver.get('contract'))}")
+        if reseller.get("contract"):
+            lines.append(f"reseller_contract={self._single_line(reseller.get('contract'))}")
         return "\n".join(lines)
 
     def _apply_remote_task_update(
