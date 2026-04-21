@@ -1,8 +1,17 @@
 import json
 
+import pytest
+
 from agent_contact import AgentContactOutbox
 from agent_service import AgentServiceDesk
 from nomad_guardrails import NomadGuardrailEngine, guardrail_status
+
+
+@pytest.fixture(autouse=True)
+def private_operator_grant_by_default(monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "disabled")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_SCOPE", "")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "")
 
 
 class FakeResponse:
@@ -45,6 +54,42 @@ def test_guardrails_allow_public_github_comment_with_explicit_approval():
 
     assert result["ok"] is True
     assert result["evaluation"]["decision"] == "allow"
+
+
+def test_guardrails_allow_public_github_comment_with_operator_human_outreach(monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "human_outreach")
+
+    result = guardrail_status(
+        action="github.comment",
+        args={"url": "https://github.com/microsoft/autogen/issues/7405", "text": "comment"},
+    )
+
+    assert result["ok"] is True
+    assert result["evaluation"]["decision"] == "allow"
+    approval_result = next(
+        item for item in result["evaluation"]["results"]
+        if item["provider"] == "approval_boundary_guardrail"
+    )
+    assert approval_result["metadata"]["operator_action"] == "human_outreach"
+
+
+def test_guardrails_allow_public_pr_plan_with_operator_grant(monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "public_pr_plan")
+
+    result = guardrail_status(
+        action="github.pr",
+        args={"url": "https://github.com/microsoft/autogen/pulls", "text": "plan"},
+    )
+
+    assert result["ok"] is True
+    assert result["evaluation"]["decision"] == "allow"
+    approval_result = next(
+        item for item in result["evaluation"]["results"]
+        if item["provider"] == "approval_boundary_guardrail"
+    )
+    assert approval_result["metadata"]["operator_action"] == "public_pr_plan"
 
 
 def test_guardrails_redact_secret_values_before_execution():

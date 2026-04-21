@@ -1,4 +1,13 @@
+import pytest
+
 from lead_conversion import LeadConversionPipeline
+
+
+@pytest.fixture(autouse=True)
+def private_operator_grant_by_default(monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "disabled")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_SCOPE", "")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "")
 
 
 class FakeLeadDiscovery:
@@ -168,6 +177,45 @@ def test_lead_conversion_can_read_url_scoped_public_comment_approval(tmp_path, m
     result = pipeline.run(leads=[lead], limit=1)
 
     assert result["conversions"][0]["status"] == "public_comment_approved"
+
+
+def test_lead_conversion_operator_grant_allows_public_pr_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "lead_conversion,public_pr_plan")
+    pipeline = LeadConversionPipeline(
+        path=tmp_path / "conversions.json",
+        lead_discovery=FakeLeadDiscovery(),
+        service_desk=FakeServiceDesk(),
+        outbox=FakeOutbox(),
+    )
+    lead = FakeLeadDiscovery().scout_public_leads(limit=2)["leads"][1]
+
+    result = pipeline.run(leads=[lead], limit=1)
+
+    conversion = result["conversions"][0]
+    assert conversion["status"] == "public_pr_plan_approved"
+    assert conversion["route"]["action"] == "prepare_pr_plan"
+    assert conversion["route"]["guardrail"]["decision"] == "allow"
+    assert "Draft PR/repro plan" in conversion["free_value"]["public_response_draft"]
+
+
+def test_lead_conversion_operator_grant_allows_public_human_response(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "custom_public_human_outreach")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "lead_conversion,human_outreach")
+    pipeline = LeadConversionPipeline(
+        path=tmp_path / "conversions.json",
+        lead_discovery=FakeLeadDiscovery(),
+        service_desk=FakeServiceDesk(),
+        outbox=FakeOutbox(),
+    )
+    lead = FakeLeadDiscovery().scout_public_leads(limit=2)["leads"][1]
+
+    result = pipeline.run(leads=[lead], limit=1)
+
+    conversion = result["conversions"][0]
+    assert conversion["status"] == "public_comment_approved"
+    assert conversion["route"]["action"] == "prepare_public_comment"
+    assert conversion["route"]["guardrail"]["decision"] == "allow"
 
 
 def test_lead_conversion_can_send_only_after_queueing_machine_endpoint(tmp_path):

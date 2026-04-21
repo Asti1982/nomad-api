@@ -18,9 +18,12 @@ DEFAULT_GRANTED_ACTIONS = (
     "lead_conversion",
     "machine_outreach",
     "agent_endpoint_contact",
+    "human_outreach",
+    "public_pr_plan",
     "service_work",
     "code_review_diff_share",
     "render_edge_health",
+    "autonomous_continuation",
 )
 
 ACTION_ALIASES = {
@@ -33,7 +36,7 @@ ACTION_ALIASES = {
 DISABLED_VALUES = {"", "0", "false", "no", "off", "disabled", "none"}
 
 REQUIRES_EXPLICIT_APPROVAL = (
-    "posting human-facing public comments or PRs",
+    "posting human-facing public comments or PRs outside the bounded operator-approved scope",
     "sending human DMs, email, or private-community messages",
     "spending money, upgrading paid plans, staking treasury funds, or buying compute",
     "accepting legal, financial, employment, or exclusivity commitments",
@@ -99,9 +102,11 @@ def operator_grant() -> Dict[str, Any]:
         "allowed_without_additional_approval": [
             "bounded Nomad development, tests, docs, guardrails, and product artifacts",
             "public lead discovery and private lead conversion artifacts",
+            "bounded public human-facing comments and PR plans when value-first, non-repetitive, on-topic, and opt-out respecting",
             "bounded machine-readable agent endpoint outreach with quotas and opt-out respect",
             "diff-only CodeBuddy review after redaction and size limits",
             "Render edge health checks and existing-service maintenance",
+            "continued local self-development cycles when unattended, within cost, secret, access-control, and public-contact guardrails",
         ],
         "requires_explicit_approval": list(REQUIRES_EXPLICIT_APPROVAL),
         "refused": list(REFUSED),

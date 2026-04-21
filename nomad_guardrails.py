@@ -8,6 +8,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
+from nomad_operator_grant import operator_allows
+
 
 HUMAN_FACING_HOSTS = {
     "bitbucket.org",
@@ -204,12 +206,26 @@ class ApprovalBoundaryGuardrail:
                 reason="Explicit approval scope is present for the public/human-facing action.",
                 metadata={"approval": approval_scope},
             )
+        if normalized_action in {"github.pr", "lead.pull_request"} and operator_allows("public_pr_plan"):
+            return GuardrailResult(
+                provider=self.provider_id,
+                decision=GuardrailDecision.ALLOW,
+                reason="Operator grant allows bounded public PR planning.",
+                metadata={"operator_action": "public_pr_plan", "target_host": host},
+            )
+        if normalized_action in {"github.comment", "lead.public_comment", "public.post"} and operator_allows("human_outreach"):
+            return GuardrailResult(
+                provider=self.provider_id,
+                decision=GuardrailDecision.ALLOW,
+                reason="Operator grant allows bounded public human-facing outreach.",
+                metadata={"operator_action": "human_outreach", "target_host": host},
+            )
         return GuardrailResult(
             provider=self.provider_id,
             decision=GuardrailDecision.DENY,
             reason="Public human-facing actions require explicit approval before execution.",
             metadata={
-                "approval_required": "APPROVE_LEAD_HELP=comment or APPROVE_LEAD_HELP=pr_plan",
+                "approval_required": "APPROVE_LEAD_HELP=comment/pr_plan or NOMAD_OPERATOR_GRANT_ACTIONS=human_outreach,public_pr_plan",
                 "target_host": host,
             },
         )
@@ -299,7 +315,8 @@ class NomadGuardrailEngine:
             "decisions": [decision.value for decision in GuardrailDecision],
             "protects": [
                 "raw secrets before storage or outbound send",
-                "human-facing public comments, PRs, DMs, and email without explicit approval",
+                "human-facing public comments and PR plans outside explicit approval or bounded operator grant",
+                "human DMs, email, private communities, repeated/off-topic posts, and impersonation",
                 "agent-contact tool calls without endpoint/payload contract",
             ],
             "approval_scopes": sorted(PUBLIC_APPROVAL_SCOPES),

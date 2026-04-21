@@ -287,12 +287,13 @@ class LeadConversionPipeline:
                 "generate nomad.agent_solution.v1",
                 "generate nomad.rescue_plan.v1",
                 "queue contact to public machine-readable agent endpoints",
+                "prepare bounded public PR plans when the operator grant includes public_pr_plan",
+                "prepare one value-first public human-facing response when the operator grant includes human_outreach",
             ],
             "requires_explicit_approval": [
-                "human-facing GitHub comments",
-                "pull requests",
                 "human DMs or email",
                 "private communities",
+                "repeated or off-topic human-facing posts",
                 "login, CAPTCHA, or access-control steps",
                 "spending or staking funds",
             ],
@@ -393,6 +394,24 @@ class LeadConversionPipeline:
                     "approval_gate": "",
                     "operator_grant": operator_grant() if operator_allows("lead_conversion") else {"enabled": False},
                 }
+            if operator_allows("public_pr_plan"):
+                return {
+                    "status": "public_pr_plan_approved",
+                    "action": "prepare_pr_plan",
+                    "summary": "Operator grant approves a bounded public PR/repro plan.",
+                    "approval": "operator_public_pr_plan",
+                    "approval_gate": "",
+                    "operator_grant": operator_grant(),
+                }
+            if operator_allows("human_outreach"):
+                return {
+                    "status": "public_comment_approved",
+                    "action": "prepare_public_comment",
+                    "summary": "Operator grant approves one bounded, value-first public response.",
+                    "approval": "operator_human_outreach",
+                    "approval_gate": "",
+                    "operator_grant": operator_grant(),
+                }
             return {
                 "status": "private_draft_needs_approval",
                 "action": "save_private_draft",
@@ -431,7 +450,7 @@ class LeadConversionPipeline:
             )
         if self._is_human_facing_url(lead.get("url", "")):
             return self.guardrails.evaluate(
-                action="lead.public_comment",
+                action="lead.pull_request" if route.get("action") == "prepare_pr_plan" else "lead.public_comment",
                 args={
                     "url": lead.get("url", ""),
                     "problem": lead.get("problem", ""),

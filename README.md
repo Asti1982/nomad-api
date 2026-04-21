@@ -106,7 +106,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_CODEBUDDY_REVIEW_TIMEOUT_SECONDS`: Timeout for explicit CodeBuddy review runs, default 90.
 - `NOMAD_CODEBUDDY_REVIEW_MAX_DIFF_CHARS`: Maximum diff characters sent to CodeBuddy, default 60000.
 - `NOMAD_OPERATOR_GRANT`: Enables the local operator grant for bounded Nomad development and public agent help, for example `product_sales_agent_help_self_development`.
-- `NOMAD_OPERATOR_GRANT_ACTIONS`: Comma-separated grant actions, such as `development,self_improvement,productization,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share`.
+- `NOMAD_OPERATOR_GRANT_ACTIONS`: Comma-separated grant actions, such as `development,self_improvement,productization,machine_outreach,agent_endpoint_contact,human_outreach,public_pr_plan,autonomous_continuation,service_work,code_review_diff_share`.
 - `NOMAD_AUTOPILOT_SERVICE_APPROVAL`: Set to `operator_granted` so the auto-cycle can work paid/authorized service tasks without falling back to `draft_only`.
 - `NOMAD_CLI_ENABLED`: Optional override for self-audit CLI detection, default enabled when `nomad_cli.py` exists.
 - `NOMAD_MCP_ENABLED`: Optional override for self-audit MCP detection, default enabled when `nomad_mcp.py` exists.
@@ -265,7 +265,7 @@ Nomad's Agent Reliability Doctor productizes the useful roles common in modern s
 
 Autopilot now runs that loop autonomously. Each cycle processes paid tasks, polls A2A replies, converts accepted replies into service tasks, runs self-improvement, converts the current lead scout output into free-value artifacts, and records conversion status in `nomad_autopilot_state.json`. The daily A2A quota defaults to 100 leads per local calendar day and is enforced across repeated runs with `NOMAD_AUTOPILOT_DAILY_LEAD_TARGET` or `--daily-lead-target`. By default it prepares and queues only; set `NOMAD_AUTOPILOT_A2A_SEND=true` or pass `--send-a2a` only after `NOMAD_PUBLIC_API_URL` points to a real public Nomad API.
 
-Nomad ranks buyer-fit leads by public payment signals such as bounties, paid support, budgets, urgent production blockers, grants, and sponsorship language. Public machine-readable agent/API/MCP endpoints may be contacted directly with bounded, rate-limited requests. Human-facing comments, PRs, DMs, private spaces, spending funds, MetaMask treasury staking, or bypassing access controls always requires explicit approval.
+Nomad ranks buyer-fit leads by public payment signals such as bounties, paid support, budgets, urgent production blockers, grants, and sponsorship language. Public machine-readable agent/API/MCP endpoints may be contacted directly with bounded, rate-limited requests. With `human_outreach` and `public_pr_plan` in the operator grant, Nomad may prepare or publish one value-first public/professional response or bounded PR/repro plan on relevant public surfaces. Human DMs, email, private spaces, repeated/off-topic posts, spending funds, MetaMask treasury staking, or bypassing access controls always requires fresh explicit approval.
 
 Cold outreach is direct-agent only: provide endpoint URLs such as `https://agent.example/.well-known/agent`, `/api/...`, `/a2a/...`, `/mcp`, `/webhook`, `/service`, or `/tasks`, or let Nomad discover public agent endpoints from seed URLs and public GitHub code search. Nomad deduplicates targets, caps campaigns at 100, asks for the agent's biggest pain point, offers an immediate free mini-diagnosis, and records every queued/sent/blocked contact.
 

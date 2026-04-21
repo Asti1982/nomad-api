@@ -34,6 +34,18 @@ if (-not $env:NOMAD_PUBLIC_API_URL) {
   $env:NOMAD_PUBLIC_API_URL = "https://nomad-api-4s84.onrender.com"
 }
 
+function Add-NomadGrantAction {
+  param([string]$Action)
+  $existing = @()
+  if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) {
+    $existing = $env:NOMAD_OPERATOR_GRANT_ACTIONS -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+  }
+  if ($existing -notcontains $Action) {
+    $existing += $Action
+  }
+  $env:NOMAD_OPERATOR_GRANT_ACTIONS = ($existing -join ",")
+}
+
 $env:NOMAD_AUTOPILOT_A2A_SEND = "true"
 $env:NOMAD_AUTOPILOT_SEND_OUTREACH = "true"
 $env:NOMAD_AUTOPILOT_INTERVAL_SECONDS = [string]$IntervalSeconds
@@ -43,7 +55,10 @@ $env:NOMAD_AUTOPILOT_DAILY_LEAD_TARGET = [string]$DailyLeadTarget
 $env:NOMAD_AUTOPILOT_SERVICE_LIMIT = [string]$ServiceLimit
 $env:NOMAD_OPERATOR_GRANT = if ($env:NOMAD_OPERATOR_GRANT) { $env:NOMAD_OPERATOR_GRANT } else { "product_sales_agent_help_self_development" }
 $env:NOMAD_OPERATOR_GRANT_SCOPE = if ($env:NOMAD_OPERATOR_GRANT_SCOPE) { $env:NOMAD_OPERATOR_GRANT_SCOPE } else { "public_agent_help_sales_productization_bounded_development" }
-$env:NOMAD_OPERATOR_GRANT_ACTIONS = if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) { $env:NOMAD_OPERATOR_GRANT_ACTIONS } else { "development,self_development,self_improvement,productization,lead_discovery,lead_conversion,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share,render_edge_health" }
+$env:NOMAD_OPERATOR_GRANT_ACTIONS = if ($env:NOMAD_OPERATOR_GRANT_ACTIONS) { $env:NOMAD_OPERATOR_GRANT_ACTIONS } else { "development,self_development,self_improvement,productization,lead_discovery,lead_conversion,machine_outreach,agent_endpoint_contact,human_outreach,public_pr_plan,service_work,code_review_diff_share,render_edge_health,autonomous_continuation" }
+Add-NomadGrantAction "human_outreach"
+Add-NomadGrantAction "public_pr_plan"
+Add-NomadGrantAction "autonomous_continuation"
 $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL = if ($env:NOMAD_AUTOPILOT_SERVICE_APPROVAL) { $env:NOMAD_AUTOPILOT_SERVICE_APPROVAL } else { "operator_granted" }
 $env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD = if ($env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD) { $env:NOMAD_CODEBUDDY_ALLOW_DIFF_UPLOAD } else { "true" }
 $env:APPROVE_SELF_DEV = if ($env:APPROVE_SELF_DEV) { $env:APPROVE_SELF_DEV } else { "yes" }
