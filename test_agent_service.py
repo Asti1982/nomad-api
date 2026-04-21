@@ -143,6 +143,7 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     )
 
     catalog = desk.service_catalog()
+    best_offer = desk.best_current_offer(service_type="compute_auth", requested_amount=0.03)
 
     assert catalog["service"] == "Nomad agent-first service contract"
     assert catalog["interaction_contract"]["audience"] == "ai_agents"
@@ -160,6 +161,10 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     assert catalog["featured_product_offer"]["product_id"] == "prod-top"
     assert catalog["featured_product_offer"]["priority_score"] == 203.0
     assert catalog["featured_product_offer"]["service_template"]["endpoint"] == "POST /tasks"
+    assert best_offer["headline"] == "Nomad Compute Unlock Pack: Provider Fallback Ladder"
+    assert best_offer["source"] == "product_factory"
+    assert best_offer["price_native"] == 0.03
+    assert best_offer["trigger"] == "PLAN_ACCEPTED=true plus FACT_URL or ERROR"
 
 
 def test_service_request_detects_self_improvement_tasks(tmp_path, monkeypatch):

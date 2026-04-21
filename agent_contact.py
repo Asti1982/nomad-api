@@ -471,6 +471,10 @@ class AgentContactOutbox:
         budget_hint_native: Optional[float],
     ) -> Dict[str, Any]:
         commercial = self._commercial_terms(service_type=service_type, requested_amount=budget_hint_native)
+        best_current_offer = self._best_current_offer(
+            service_type=service_type,
+            requested_amount=budget_hint_native,
+        )
         starter_offer = commercial.get("starter_offer") or {}
         primary_offer = commercial.get("primary_offer") or {}
         entry_path = commercial.get("payment_entry_path") or "primary_only"
@@ -485,6 +489,7 @@ class AgentContactOutbox:
             "to_endpoint": endpoint_url,
             "service_type": service_type,
             "problem": problem,
+            "best_current_offer": best_current_offer,
             "operating_contract": {
                 "audience": "ai_agents",
                 "style": "agent_first_non_anthropomorphic",
@@ -575,6 +580,33 @@ class AgentContactOutbox:
             terms["nudge"] = ""
         return terms
 
+    def _best_current_offer(
+        self,
+        service_type: str,
+        requested_amount: Optional[float],
+    ) -> Dict[str, Any]:
+        helper = getattr(self.service_desk, "best_current_offer", None)
+        if callable(helper):
+            try:
+                offer = helper(service_type=service_type, requested_amount=requested_amount)
+                if isinstance(offer, dict) and offer:
+                    return offer
+            except Exception:
+                pass
+        commercial = self._commercial_terms(service_type=service_type, requested_amount=requested_amount)
+        starter_offer = commercial.get("starter_offer") or {}
+        primary_offer = commercial.get("primary_offer") or {}
+        return {
+            "schema": "nomad.best_offer.v1",
+            "source": "contact_outbox_fallback",
+            "service_type": service_type or "custom",
+            "headline": primary_offer.get("title") or starter_offer.get("title") or "Nomad bounded offer",
+            "price_native": primary_offer.get("amount_native") or starter_offer.get("amount_native"),
+            "delivery": "",
+            "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            "entry_path": commercial.get("payment_entry_path") or "primary_only",
+        }
+
     def _request_payload(self, contact: Dict[str, Any]) -> Dict[str, Any]:
         endpoint_url = str(contact.get("endpoint_url") or "")
         if self._looks_like_a2a_base_endpoint(endpoint_url):
@@ -589,7 +621,7 @@ class AgentContactOutbox:
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": str(contact.get("problem") or ""),
+                                "text": self._outbound_message_text(contact),
                             }
                         ],
                         "messageId": f"{contact_id}-message" if contact_id else None,
@@ -597,6 +629,25 @@ class AgentContactOutbox:
                 },
             }
         return contact.get("offer") or {}
+
+    def _outbound_message_text(self, contact: Dict[str, Any]) -> str:
+        offer = contact.get("offer") if isinstance(contact.get("offer"), dict) else {}
+        best_current_offer = offer.get("best_current_offer") if isinstance(offer.get("best_current_offer"), dict) else {}
+        lines = [
+            "nomad.outreach.v2",
+            f"problem={self._single_line(contact.get('problem'))}",
+            f"service_type={self._single_line(contact.get('service_type'))}",
+            "request=send_one_blocker_or_failing_step",
+            "reply_schema=problem|goal|blocking_step|constraints|budget_native",
+            "reply_modes=message|task",
+            "opt_out=NOMAD_OPT_OUT",
+        ]
+        if best_current_offer:
+            lines.append(f"offer_headline={self._single_line(best_current_offer.get('headline'))}")
+            lines.append(f"offer_price_native={self._single_line(best_current_offer.get('price_native'))}")
+            lines.append(f"offer_delivery={self._single_line(best_current_offer.get('delivery'))}")
+            lines.append(f"offer_trigger={self._single_line(best_current_offer.get('trigger'))}")
+        return "\n".join(lines)
 
     def _apply_remote_task_update(
         self,
@@ -1123,6 +1174,10 @@ class AgentContactOutbox:
     @staticmethod
     def _clean(value: Any) -> str:
         return str(value or "").strip()
+
+    @classmethod
+    def _single_line(cls, value: Any) -> str:
+        return cls._clean(value).replace("\r", " ").replace("\n", " ")
 
     @staticmethod
     def _parse_timestamp(value: str) -> Optional[float]:

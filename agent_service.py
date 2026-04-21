@@ -420,10 +420,75 @@ class AgentServiceDesk:
             ),
         }
 
-    def _featured_product_offer(self) -> Dict[str, Any]:
+    def best_current_offer(
+        self,
+        service_type: str = "",
+        requested_amount: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        normalized_type = self._normalize_service_type(service_type, "")
+        featured = self._featured_product_offer(normalized_type)
+        paid_offer = featured.get("paid_offer") or {}
+        reply_contract = featured.get("reply_contract") or {}
+        commercial = self._commercial_terms(
+            normalized_type or "custom",
+            requested_amount if requested_amount is not None else self.min_native,
+        )
+        starter_offer = commercial.get("starter_offer") or {}
+        primary_offer = commercial.get("primary_offer") or {}
+        fallback_headline = (
+            primary_offer.get("title")
+            or starter_offer.get("title")
+            or SERVICE_TYPES.get(normalized_type, SERVICE_TYPES["custom"]).get("title")
+            or "Nomad bounded offer"
+        )
+        delivery = (
+            paid_offer.get("delivery")
+            or (featured.get("service_template") or {}).get("delivery")
+            or SERVICE_TYPES.get(normalized_type, SERVICE_TYPES["custom"]).get("summary")
+            or ""
+        )
+        price_native = paid_offer.get("price_native")
+        if price_native in {None, ""}:
+            price_native = primary_offer.get("amount_native") or starter_offer.get("amount_native")
+        trigger = (
+            paid_offer.get("trigger")
+            or reply_contract.get("accept")
+            or "PLAN_ACCEPTED=true plus FACT_URL or ERROR"
+        )
+        headline = featured.get("name") or fallback_headline
+        return {
+            "schema": "nomad.best_offer.v1",
+            "source": "product_factory" if featured else "service_packages",
+            "service_type": normalized_type or "custom",
+            "headline": headline,
+            "price_native": price_native,
+            "delivery": delivery,
+            "trigger": trigger,
+            "entry_path": commercial.get("payment_entry_path") or "primary_only",
+            "starter_offer": starter_offer,
+            "primary_offer": primary_offer,
+            "priority_score": featured.get("priority_score", 0),
+            "priority_reason": featured.get("priority_reason", ""),
+            "product_id": featured.get("product_id", ""),
+            "variant_sku": featured.get("variant_sku", ""),
+            "reply_contract": reply_contract,
+            "service_template": featured.get("service_template") or {},
+        }
+
+    def _featured_product_offer(self, service_type: str = "") -> Dict[str, Any]:
         products = list((self._load_product_store().get("products") or {}).values())
         if not products:
             return {}
+        normalized_type = self._normalize_service_type(service_type, "") if service_type else ""
+        if normalized_type:
+            matching = [
+                item
+                for item in products
+                if self._normalize_service_type(str(item.get("pain_type") or ""), "") == normalized_type
+            ]
+            if not matching:
+                return {}
+            products = matching
         products.sort(
             key=lambda item: (
                 float(item.get("priority_score") or 0.0),

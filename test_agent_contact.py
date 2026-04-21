@@ -173,6 +173,8 @@ def test_agent_contact_queues_and_sends_public_agent_endpoint(tmp_path):
     assert session.gets[0]["url"] == "https://remote-agent.ai/.well-known/agent-card.json"
     assert session.posts[0]["url"] == "https://remote-agent.ai/a2a/message"
     assert session.posts[0]["json"]["type"] == "nomad.agent_service_offer"
+    assert session.posts[0]["json"]["best_current_offer"]["schema"] == "nomad.best_offer.v1"
+    assert "Nomad HITL Contract Pack" in session.posts[0]["json"]["best_current_offer"]["headline"]
     assert session.posts[0]["json"]["payment"]["required_before_work"] is True
     assert session.posts[0]["json"]["improvement_support"]["available"] is True
     assert session.posts[0]["json"]["operating_contract"]["audience"] == "ai_agents"
@@ -220,7 +222,12 @@ def test_agent_contact_accepts_a2a_base_endpoint_from_agent_card(tmp_path):
     assert session.posts[0]["url"] == "https://api.clwnt.com/a2a/TowerRelay"
     assert session.posts[0]["json"]["jsonrpc"] == "2.0"
     assert session.posts[0]["json"]["method"] == "message/send"
-    assert session.posts[0]["json"]["params"]["message"]["parts"][0]["text"] == "Need compute help"
+    text = session.posts[0]["json"]["params"]["message"]["parts"][0]["text"]
+    assert text.startswith("nomad.outreach.v2")
+    assert "problem=Need compute help" in text
+    assert "service_type=human_in_loop" in text
+    assert "offer_headline=Nomad HITL Contract Pack" in text
+    assert "reply_schema=problem|goal|blocking_step|constraints|budget_native" in text
 
 
 def test_agent_contact_poll_normalizes_structured_reply(tmp_path):

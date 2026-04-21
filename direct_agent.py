@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
+from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk, SERVICE_TYPES
 from nomad_collaboration import collaboration_charter
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
@@ -92,12 +93,14 @@ class DirectAgentGateway:
         service_desk: Optional[AgentServiceDesk] = None,
         session: Optional[requests.Session] = None,
         guardrails: Optional[NomadGuardrailEngine] = None,
+        engagements: Optional[AgentEngagementLedger] = None,
     ) -> None:
         load_dotenv()
         self.path = path or DEFAULT_DIRECT_STORE
         self.service_desk = service_desk or AgentServiceDesk()
         self.session = session or requests.Session()
         self.guardrails = guardrails or NomadGuardrailEngine()
+        self.engagements = engagements or AgentEngagementLedger()
         self.public_api_url = (
             os.getenv("NOMAD_PUBLIC_API_URL")
             or f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
@@ -360,6 +363,12 @@ class DirectAgentGateway:
             need_profile=need_profile,
             challenge=challenge,
         )
+        best_current_offer = self._best_current_offer(
+            pain_type=pain_type,
+            requested_amount=normalized.get("budget_native") or challenge.get("amount_native"),
+            engagement_plan=engagement_plan,
+            commercial=commercial,
+        )
         rescue_plan = self._rescue_plan(
             problem=message,
             pain_type=pain_type,
@@ -367,9 +376,31 @@ class DirectAgentGateway:
             engagement_plan=engagement_plan,
             amount_native=challenge.get("amount_native"),
         )
+        agent_role = self.engagements.classify(
+            requester_agent=requester,
+            requester_endpoint=requester_endpoint,
+            message=message,
+            structured_request=normalized.get("structured_request") or {},
+            pain_type=pain_type,
+            need_profile=need_profile,
+        )
+        engagement_entry = self.engagements.record_inbound(
+            session_id=session.get("session_id", ""),
+            requester_agent=requester,
+            requester_endpoint=requester_endpoint,
+            message=message,
+            pain_type=pain_type,
+            role_assessment=agent_role,
+            best_current_offer=best_current_offer,
+            need_profile=need_profile,
+            rescue_plan=rescue_plan,
+        )
         task.setdefault("metadata", {})["need_profile"] = need_profile
         task["metadata"]["engagement_plan"] = engagement_plan
         task["metadata"]["rescue_plan_id"] = rescue_plan.get("plan_id", "")
+        task["metadata"]["best_current_offer"] = best_current_offer
+        task["metadata"]["agent_role"] = agent_role
+        task["metadata"]["engagement_id"] = engagement_entry.get("engagement_id", "")
         if hasattr(self.service_desk, "_store_task"):
             try:
                 self.service_desk._store_task(task)
@@ -382,7 +413,9 @@ class DirectAgentGateway:
             "pain_type": pain_type,
             "free_diagnosis": diagnosis,
             "agent_need_profile": need_profile,
+            "agent_role": agent_role,
             "engagement_plan": engagement_plan,
+            "best_current_offer": best_current_offer,
             "commercial": commercial,
             "rescue_plan": rescue_plan,
             "task_id": task.get("task_id", ""),
@@ -390,6 +423,7 @@ class DirectAgentGateway:
             "guardrails": {
                 "direct_message": guardrail.to_dict(),
             },
+            "engagement_id": engagement_entry.get("engagement_id", ""),
         }
         session.setdefault("turns", []).append(turn)
         session["last_pain_type"] = pain_type
@@ -404,7 +438,10 @@ class DirectAgentGateway:
             "normalized_request": normalized,
             "free_diagnosis": diagnosis,
             "agent_need_profile": need_profile,
+            "agent_role_assessment": agent_role,
+            "engagement_ledger_entry": engagement_entry,
             "engagement_plan": engagement_plan,
+            "best_current_offer": best_current_offer,
             "commercial": commercial,
             "rescue_plan": rescue_plan,
             "task": task,
@@ -419,17 +456,23 @@ class DirectAgentGateway:
                 challenge=challenge,
                 need_profile=need_profile,
                 engagement_plan=engagement_plan,
+                best_current_offer=best_current_offer,
                 commercial=commercial,
                 rescue_plan=rescue_plan,
+                agent_role=agent_role,
             ),
+            "best_offer_reply": self._best_offer_reply(best_current_offer, agent_role=agent_role),
+            "best_offer_message": self._best_offer_message(best_current_offer, agent_role=agent_role),
             "next_agent_message": self._next_agent_message(
                 requester,
                 diagnosis,
                 challenge,
                 need_profile=need_profile,
                 engagement_plan=engagement_plan,
+                best_current_offer=best_current_offer,
                 commercial=commercial,
                 rescue_plan=rescue_plan,
+                agent_role=agent_role,
             ),
             "self_improvement_memory": {
                 "will_store_after_consent": True,
@@ -685,8 +728,10 @@ class DirectAgentGateway:
         challenge: Dict[str, Any],
         need_profile: Optional[Dict[str, Any]] = None,
         engagement_plan: Optional[Dict[str, Any]] = None,
+        best_current_offer: Optional[Dict[str, Any]] = None,
         commercial: Optional[Dict[str, Any]] = None,
         rescue_plan: Optional[Dict[str, Any]] = None,
+        agent_role: Optional[Dict[str, Any]] = None,
     ) -> str:
         payload = self._structured_reply(
             requester=requester,
@@ -694,8 +739,10 @@ class DirectAgentGateway:
             challenge=challenge,
             need_profile=need_profile or {},
             engagement_plan=engagement_plan or {},
+            best_current_offer=best_current_offer or {},
             commercial=commercial or {},
             rescue_plan=rescue_plan or {},
+            agent_role=agent_role or {},
         )
         lines = ["nomad.reply.v1"]
         for key, value in payload.items():
@@ -709,13 +756,17 @@ class DirectAgentGateway:
         challenge: Dict[str, Any],
         need_profile: Optional[Dict[str, Any]] = None,
         engagement_plan: Optional[Dict[str, Any]] = None,
+        best_current_offer: Optional[Dict[str, Any]] = None,
         commercial: Optional[Dict[str, Any]] = None,
         rescue_plan: Optional[Dict[str, Any]] = None,
+        agent_role: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         need_profile = need_profile or {}
         engagement_plan = engagement_plan or {}
+        best_current_offer = best_current_offer or {}
         commercial = commercial or {}
         rescue_plan = rescue_plan or {}
+        agent_role = agent_role or {}
         commercial_next_step = rescue_plan.get("commercial_next_step") or {}
         package_name = str(
             commercial_next_step.get("package")
@@ -747,7 +798,12 @@ class DirectAgentGateway:
             "acceptance": " | ".join(str(item) for item in (rescue_plan.get("acceptance_criteria") or [])[:2]),
             "delivery": str(engagement_plan.get("delivery") or ""),
             "preferred_output": str(need_profile.get("preferred_output") or ""),
+            "agent_role": str(agent_role.get("role") or "customer"),
             "package": package_name,
+            "best_offer": str(best_current_offer.get("headline") or package_name),
+            "best_offer_price_native": str(best_current_offer.get("price_native") or ""),
+            "best_offer_delivery": str(best_current_offer.get("delivery") or ""),
+            "best_offer_trigger": str(best_current_offer.get("trigger") or ""),
             "payment_required": "true",
             "amount_native": str(
                 challenge.get("amount_native")
@@ -768,6 +824,34 @@ class DirectAgentGateway:
             "ttl_seconds": "600",
             "reply_schema": "problem|goal|blocking_step|constraints|budget_native",
         }
+
+    def _best_offer_reply(
+        self,
+        best_current_offer: Dict[str, Any],
+        agent_role: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, str]:
+        role = agent_role or {}
+        return {
+            "schema": "nomad.best_offer.v1",
+            "role": str(role.get("role") or "customer"),
+            "service_type": str(best_current_offer.get("service_type") or "custom"),
+            "offer_headline": str(best_current_offer.get("headline") or ""),
+            "offer_price_native": str(best_current_offer.get("price_native") or ""),
+            "offer_delivery": str(best_current_offer.get("delivery") or ""),
+            "offer_trigger": str(best_current_offer.get("trigger") or ""),
+            "next_path": str(role.get("suggested_path") or "quote_best_current_offer"),
+        }
+
+    def _best_offer_message(
+        self,
+        best_current_offer: Dict[str, Any],
+        agent_role: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        payload = self._best_offer_reply(best_current_offer, agent_role=agent_role)
+        lines = ["nomad.best_offer.v1"]
+        for key, value in payload.items():
+            lines.append(f"{key}={value}")
+        return "\n".join(lines)
 
     def _rescue_plan(
         self,
@@ -834,6 +918,44 @@ class DirectAgentGateway:
             "primary_offer": primary_offer,
             "payment_entry_path": entry_path,
             "nudge": nudge,
+        }
+
+    def _best_current_offer(
+        self,
+        pain_type: str,
+        requested_amount: Optional[float],
+        engagement_plan: Optional[Dict[str, Any]] = None,
+        commercial: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        helper = getattr(self.service_desk, "best_current_offer", None)
+        if callable(helper):
+            try:
+                offer = helper(service_type=pain_type, requested_amount=requested_amount)
+                if isinstance(offer, dict) and offer:
+                    return offer
+            except Exception:
+                pass
+        engagement_plan = engagement_plan or {}
+        ladder = commercial or self._commercial_terms(pain_type=pain_type, requested_amount=requested_amount)
+        starter_offer = ladder.get("starter_offer") or {}
+        primary_offer = ladder.get("primary_offer") or {}
+        return {
+            "schema": "nomad.best_offer.v1",
+            "source": "direct_gateway_fallback",
+            "service_type": pain_type or "custom",
+            "headline": str(primary_offer.get("title") or engagement_plan.get("package") or "Nomad bounded offer"),
+            "price_native": primary_offer.get("amount_native") or starter_offer.get("amount_native") or requested_amount or self.min_native,
+            "delivery": str(engagement_plan.get("delivery") or ""),
+            "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            "entry_path": str(ladder.get("payment_entry_path") or "primary_only"),
+            "starter_offer": starter_offer,
+            "primary_offer": primary_offer,
+            "priority_score": 0,
+            "priority_reason": "",
+            "product_id": "",
+            "variant_sku": "",
+            "reply_contract": {},
+            "service_template": {},
         }
 
     def _message_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:

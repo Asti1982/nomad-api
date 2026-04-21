@@ -1,3 +1,6 @@
+import json
+
+from agent_engagement import AgentEngagementLedger
 from direct_agent import DirectAgentGateway
 
 
@@ -130,6 +133,9 @@ def test_direct_message_creates_session_free_diagnosis_and_payment_challenge(tmp
     assert result["rescue_plan"]["acceptance_criteria"]
     assert result["structured_reply"]["requester"] == "StuckBot"
     assert result["structured_reply"]["offer_tier"] == "starter_diagnosis"
+    assert result["structured_reply"]["agent_role"] == "customer"
+    assert result["structured_reply"]["best_offer"].startswith("Nomad Loop Rescue Pack")
+    assert result["structured_reply"]["best_offer_price_native"] == "0.02"
     assert result["structured_reply"]["rescue_plan_id"].startswith("rescue-")
     assert result["structured_reply"]["required_input"]
     assert result["structured_reply"]["starter_offer"].startswith("Nomad Loop Rescue Pack")
@@ -141,6 +147,12 @@ def test_direct_message_creates_session_free_diagnosis_and_payment_challenge(tmp
     assert result["structured_reply"]["ttl_seconds"] == "600"
     assert result["structured_reply"]["primary_offer"] == "Nomad Loop Rescue Pack"
     assert result["structured_reply"]["payment_entry_path"] == "starter_first"
+    assert result["best_current_offer"]["schema"] == "nomad.best_offer.v1"
+    assert result["best_offer_reply"]["offer_headline"].startswith("Nomad Loop Rescue Pack")
+    assert result["best_offer_message"].startswith("nomad.best_offer.v1")
+    assert result["agent_role_assessment"]["role"] == "customer"
+    assert result["engagement_ledger_entry"]["outcome_status"] == "offer_presented"
+    assert result["task"]["metadata"]["engagement_id"].startswith("direct-")
     assert result["next_agent_message"].startswith("nomad.reply.v1")
     assert "requester=StuckBot" in result["next_agent_message"]
     assert "rescue_plan_id=rescue-" in result["next_agent_message"]
@@ -177,6 +189,46 @@ def test_direct_message_normalizes_structured_agent_request(tmp_path, monkeypatc
     assert result["structured_reply"]["starter_amount_native"] == "0.01"
     assert result["structured_reply"]["primary_amount_native"] == "0.03"
     assert result["structured_reply"]["payment_entry_path"] == "starter_first"
+
+
+def test_direct_message_records_peer_solver_engagement(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    engagement_path = tmp_path / "engagements.json"
+    gateway = DirectAgentGateway(
+        path=tmp_path / "sessions.json",
+        service_desk=FakeServiceDesk(),
+        engagements=AgentEngagementLedger(path=engagement_path),
+    )
+
+    result = gateway.handle_direct_message(
+        {
+            "requester_agent": "PatchBot",
+            "message": "I can help Nomad with a verifier patch, repro artifact, and fix for the compute auth fallback lane.",
+        }
+    )
+
+    assert result["agent_role_assessment"]["role"] == "peer_solver"
+    assert result["agent_role_assessment"]["suggested_path"] == "request_verifiable_artifact"
+    payload = json.loads(engagement_path.read_text(encoding="utf-8"))
+    entry = next(iter(payload["engagements"].values()))
+    assert entry["role"] == "peer_solver"
+    assert entry["best_current_offer"]["headline"].startswith("Nomad Compute Unlock Pack")
+    assert entry["events"][-1]["outcome_status"] == "verification_requested"
+
+
+def test_direct_message_classifies_reseller_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    gateway = DirectAgentGateway(path=tmp_path / "sessions.json", service_desk=FakeServiceDesk())
+
+    result = gateway.handle_direct_message(
+        {
+            "requester_agent": "ChannelBot",
+            "message": "We can refer buyers and distribute your service to blocked agents who need compute auth help.",
+        }
+    )
+
+    assert result["agent_role_assessment"]["role"] == "reseller"
+    assert result["best_offer_reply"]["next_path"] == "share_referral_ready_offer"
 
 
 def test_direct_message_normalizes_a2a_jsonrpc_payload(tmp_path, monkeypatch):
