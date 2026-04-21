@@ -37,6 +37,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         autonomous = result.get("autonomous_development") or {}
         mutual_aid = result.get("mutual_aid") or {}
         top_truth_pattern = mutual_aid.get("top_truth_pattern") or {}
+        top_high_value_patterns = (mutual_aid.get("top_high_value_patterns") or [])[:3]
         lines = [
             "Nomad system status",
             f"Uptime: {result.get('uptime', 'unknown')}",
@@ -92,6 +93,18 @@ def _compact_text(result: Dict[str, Any]) -> str:
                     f"truth={top_truth_pattern.get('truth_score', 0)}"
                 ),
             ])
+        if top_high_value_patterns:
+            lines.extend([
+                "",
+                "Top High-Value Patterns:",
+            ])
+            for item in top_high_value_patterns:
+                lines.append(
+                    f"  {item.get('title', '')} [{item.get('pain_type', 'unknown')}] "
+                    f"hits={item.get('occurrence_count', 0)} "
+                    f"truth={item.get('avg_truth_score', 0)} "
+                    f"reuse={item.get('avg_reuse_value', 0)}"
+                )
         if result.get("analysis"):
             lines.append("")
             lines.append(result["analysis"])
@@ -334,6 +347,16 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_high_value_patterns":
+        return "\n".join(
+            [
+                "Nomad High-Value Patterns",
+                f"Patterns: {result.get('pattern_count', 0)}",
+                f"Minimum repeats: {result.get('min_repeat_count', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
+
     if mode == "nomad_mutual_aid_packs":
         return "\n".join(
             [
@@ -408,6 +431,12 @@ def build_query(args: argparse.Namespace) -> str:
     if command == "swarm-signals":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         return f"/mutual-aid signals{pain_type} limit={args.limit}".strip()
+    if command == "mutual-aid-patterns":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return (
+            f"/mutual-aid patterns{pain_type} limit={args.limit} "
+            f"min_repeat_count={args.min_repeat_count}"
+        ).strip()
     if command == "mutual-aid-packs":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         return f"/mutual-aid packs{pain_type} limit={args.limit}".strip()
@@ -640,6 +669,11 @@ def build_parser() -> argparse.ArgumentParser:
     signals = subparsers.add_parser("swarm-signals", help="List inbound agent help converted into development/product signals.")
     signals.add_argument("--pain-type", default="")
     signals.add_argument("--limit", type=int, default=25)
+
+    patterns = subparsers.add_parser("mutual-aid-patterns", help="List repeated high-value Mutual-Aid patterns that Nomad can reuse and productize.")
+    patterns.add_argument("--pain-type", default="")
+    patterns.add_argument("--limit", type=int, default=10)
+    patterns.add_argument("--min-repeat-count", type=int, default=2)
 
     packs = subparsers.add_parser("mutual-aid-packs", help="List paid packs distilled from repeated Mutual-Aid patterns.")
     packs.add_argument("--pain-type", default="")

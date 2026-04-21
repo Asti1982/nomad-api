@@ -173,6 +173,37 @@ class NomadSystemMonitor:
             )
         )
         top_pattern = patterns[0] if patterns else {}
+        top_high_value_patterns = []
+        grouped: dict[str, list[dict]] = {}
+        for entry in patterns:
+            title = str(entry.get("solution_title") or entry.get("task") or entry.get("pain_type") or "").strip()
+            key = f"{entry.get('pain_type', '')}:{title.lower()}"
+            grouped.setdefault(key, []).append(entry)
+        for entries in grouped.values():
+            if len(entries) < 2:
+                continue
+            top_high_value_patterns.append(
+                {
+                    "title": entries[-1].get("solution_title") or entries[-1].get("task") or "",
+                    "pain_type": entries[-1].get("pain_type", ""),
+                    "occurrence_count": len(entries),
+                    "avg_truth_score": round(
+                        sum(float(item.get("truth_score") or 0.0) for item in entries) / len(entries),
+                        4,
+                    ),
+                    "avg_reuse_value": round(
+                        sum(float((item.get("reuse_value") or {}).get("score") or 0.0) for item in entries) / len(entries),
+                        4,
+                    ),
+                }
+            )
+        top_high_value_patterns.sort(
+            key=lambda item: (
+                -int(item.get("occurrence_count") or 0),
+                -float(item.get("avg_reuse_value") or 0.0),
+                -float(item.get("avg_truth_score") or 0.0),
+            )
+        )
         return {
             "schema": "nomad.mutual_aid_status.compact.v1",
             "mutual_aid_score": int(state.get("mutual_aid_score") or 0),
@@ -190,6 +221,7 @@ class NomadSystemMonitor:
                 "repeat_count": int(((top_pattern.get("reuse_value") or {}).get("repeat_count")) or 0),
                 "truth_score": float(top_pattern.get("truth_score") or 0.0),
             } if top_pattern else {},
+            "top_high_value_patterns": top_high_value_patterns[:3],
         }
 
     def _autonomous_development_status(self) -> Dict[str, Any]:

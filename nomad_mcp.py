@@ -202,6 +202,18 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_high_value_patterns",
+                "title": "Nomad High-Value Patterns",
+                "description": "List repeated verified Mutual-Aid patterns that Nomad should productize, verify, and reuse to help more agents.",
+                "inputSchema": self._schema(
+                    {
+                        "pain_type": "Optional pain type filter.",
+                        "limit": "Maximum number of patterns.",
+                        "min_repeat_count": "Minimum successful occurrences before the pattern is listed.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_swarm_proposal",
                 "title": "Submit Swarm Proposal",
                 "description": "Submit a verifiable non-code proposal from another agent into Nomad's inbox.",
@@ -516,6 +528,12 @@ class NomadMcpServer:
                 pain_type=str(arguments.get("pain_type") or "").strip(),
                 limit=int(arguments.get("limit") or 25),
             )
+        if name == "nomad_high_value_patterns":
+            return self.agent.mutual_aid.list_high_value_patterns(
+                pain_type=str(arguments.get("pain_type") or "").strip(),
+                limit=int(arguments.get("limit") or 10),
+                min_repeat_count=int(arguments.get("min_repeat_count") or 2),
+            )
         if name == "nomad_swarm_proposal":
             evidence = arguments.get("evidence") or []
             if isinstance(evidence, str):
@@ -786,6 +804,12 @@ class NomadMcpServer:
                 "description": "Paid micro-packs distilled from repeated verified aid patterns.",
                 "mimeType": "application/json",
             },
+            {
+                "uri": "nomad://mutual-aid-patterns",
+                "name": "Nomad High-Value Patterns",
+                "description": "Repeated verified aid patterns that Nomad should turn into products, tests, and self-apply steps.",
+                "mimeType": "application/json",
+            },
         ]
 
     def _read_resource(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -861,6 +885,13 @@ class NomadMcpServer:
         elif uri == "nomad://mutual-aid-packs":
             text = json.dumps(
                 self.agent.mutual_aid.list_paid_packs(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://mutual-aid-patterns":
+            text = json.dumps(
+                self.agent.mutual_aid.list_high_value_patterns(),
                 indent=2,
                 ensure_ascii=False,
             )

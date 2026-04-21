@@ -354,10 +354,11 @@ def test_mutual_aid_request_routes_to_kernel():
     assert "ERROR=429" in result["task"]
 
 
-def test_mutual_aid_subcommands_route_to_ledger_inbox_and_packs():
+def test_mutual_aid_subcommands_route_to_ledger_inbox_patterns_and_packs():
     agent = ArbiterAgent()
     agent.mutual_aid.list_truth_ledger = lambda **kwargs: {"mode": "nomad_truth_density_ledger", **kwargs}
     agent.mutual_aid.list_swarm_inbox = lambda **kwargs: {"mode": "nomad_swarm_inbox", **kwargs}
+    agent.mutual_aid.list_high_value_patterns = lambda **kwargs: {"mode": "nomad_high_value_patterns", **kwargs}
     agent.mutual_aid.list_paid_packs = lambda **kwargs: {"mode": "nomad_mutual_aid_packs", **kwargs}
     agent.mutual_aid.receive_swarm_proposal = lambda payload: {
         "mode": "nomad_swarm_inbox",
@@ -366,6 +367,7 @@ def test_mutual_aid_subcommands_route_to_ledger_inbox_and_packs():
 
     ledger = agent.run("/mutual-aid ledger type=compute_auth limit=3")
     inbox = agent.run("/mutual-aid inbox status=verified_pending_review limit=4")
+    patterns = agent.run("/mutual-aid patterns type=compute_auth limit=2 min_repeat_count=3")
     packs = agent.run("/mutual-aid packs type=compute_auth limit=5")
     proposal = agent.run("/mutual-aid proposal agent=Bot evidence=dry-run|test-pass Add a preflight check")
 
@@ -374,6 +376,9 @@ def test_mutual_aid_subcommands_route_to_ledger_inbox_and_packs():
     assert ledger["limit"] == 3
     assert inbox["mode"] == "nomad_swarm_inbox"
     assert inbox["statuses"] == ["verified_pending_review"]
+    assert patterns["mode"] == "nomad_high_value_patterns"
+    assert patterns["limit"] == 2
+    assert patterns["min_repeat_count"] == 3
     assert packs["mode"] == "nomad_mutual_aid_packs"
     assert packs["limit"] == 5
     assert proposal["payload"]["sender_id"] == "Bot"

@@ -93,6 +93,42 @@ def test_mutual_aid_distills_repeated_patterns_into_paid_pack(tmp_path):
     assert pack["service_template"]["endpoint"] == "POST /tasks"
 
 
+def test_mutual_aid_lists_high_value_patterns(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+
+    kernel.help_other_agent(
+        other_agent_id="quota-bot-1",
+        task="Provider token quota failure needs fallback ladder before retry.",
+        auto_apply=False,
+    )
+    kernel.help_other_agent(
+        other_agent_id="quota-bot-2",
+        task="Another provider quota failure needs fallback ladder before retry.",
+        auto_apply=False,
+    )
+    kernel.help_other_agent(
+        other_agent_id="loop-bot",
+        task="Agent retry loop needs a break condition and a verifier.",
+        auto_apply=False,
+    )
+
+    patterns = kernel.list_high_value_patterns(pain_type="compute_auth", limit=5, min_repeat_count=2)
+
+    assert patterns["mode"] == "nomad_high_value_patterns"
+    assert patterns["pattern_count"] == 1
+    pattern = patterns["patterns"][0]
+    assert pattern["schema"] == "nomad.high_value_pattern.v1"
+    assert pattern["pain_type"] == "compute_auth"
+    assert pattern["occurrence_count"] == 2
+    assert pattern["repeat_count"] >= 1
+    assert pattern["productization"]["pack_ready"] is True
+    assert pattern["agent_offer"]["smallest_paid_unblock"]["trigger"] == "PLAN_ACCEPTED=true plus FACT_URL or ERROR"
+    assert pattern["self_evolution"]["regression_test_stub"].startswith("tests/test_pattern_")
+
+
 def test_swarm_proposal_inbox_accepts_verifiable_non_code_help(tmp_path):
     kernel = NomadMutualAidKernel(
         path=tmp_path / "mutual-aid-state.json",

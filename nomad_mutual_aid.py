@@ -56,6 +56,7 @@ class NomadMutualAidKernel:
         inbox = state.get("swarm_inbox") or []
         paid_packs = list((state.get("paid_packs") or {}).values())
         development_signals = state.get("swarm_development_signals") or []
+        high_value_patterns = self._high_value_patterns(state=state, pain_type="", min_repeat_count=2)
         return {
             "mode": "nomad_mutual_aid_status",
             "schema": "nomad.mutual_aid_status.v1",
@@ -71,11 +72,13 @@ class NomadMutualAidKernel:
             "swarm_inbox": self._inbox_stats(inbox),
             "swarm_development_signal_count": len(development_signals),
             "paid_pack_count": len(paid_packs),
+            "high_value_pattern_count": len(high_value_patterns),
             "latest_evolution_plan": state.get("latest_evolution_plan") or {},
             "latest_truth_entry": ledger_entries[-1] if ledger_entries else {},
             "latest_swarm_development_signal": development_signals[-1] if development_signals else {},
             "modules": modules[-10:],
             "paid_packs": paid_packs[-10:],
+            "top_high_value_patterns": high_value_patterns[:3],
             "policy": self.policy(),
             "analysis": (
                 "Nomad's Mutual-Aid lane evolves from verified help outcomes, keeps a "
@@ -454,6 +457,31 @@ class NomadMutualAidKernel:
             "analysis": f"Listed {min(len(packs), cap)} paid Mutual-Aid pack(s).",
         }
 
+    def list_high_value_patterns(
+        self,
+        pain_type: str = "",
+        limit: int = 10,
+        min_repeat_count: int = 2,
+    ) -> Dict[str, Any]:
+        state = self._load()
+        patterns = self._high_value_patterns(
+            state=state,
+            pain_type=pain_type,
+            min_repeat_count=min_repeat_count,
+        )
+        cap = max(1, min(int(limit or 10), 100))
+        return {
+            "mode": "nomad_high_value_patterns",
+            "schema": "nomad.high_value_patterns.v1",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": pain_type,
+            "min_repeat_count": max(1, int(min_repeat_count or 2)),
+            "pattern_count": len(patterns),
+            "patterns": patterns[:cap],
+            "analysis": f"Listed {min(len(patterns), cap)} high-value Mutual-Aid pattern(s).",
+        }
+
     def load_learned_modules(self) -> List[Dict[str, Any]]:
         state = self._load()
         loaded: List[Dict[str, Any]] = []
@@ -541,6 +569,49 @@ class NomadMutualAidKernel:
             packs[pack["pack_id"]] = pack
         return packs
 
+    def _high_value_patterns(
+        self,
+        state: Dict[str, Any],
+        pain_type: str = "",
+        min_repeat_count: int = 2,
+    ) -> List[Dict[str, Any]]:
+        entries = [
+            entry
+            for entry in (state.get("truth_density_ledger") or [])
+            if (entry.get("outcome") or {}).get("success")
+        ]
+        if pain_type:
+            entries = [
+                entry for entry in entries
+                if str(entry.get("pain_type") or "") == str(pain_type).strip()
+            ]
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for entry in entries:
+            grouped.setdefault(self._pattern_key_from_entry(entry), []).append(entry)
+
+        min_count = max(1, int(min_repeat_count or 2))
+        paid_packs = dict(state.get("paid_packs") or {})
+        signals = list(state.get("swarm_development_signals") or [])
+        patterns = [
+            self._high_value_pattern_from_entries(
+                pattern_key=pattern_key,
+                entries=pattern_entries,
+                paid_packs=paid_packs,
+                signals=signals,
+            )
+            for pattern_key, pattern_entries in grouped.items()
+            if len(pattern_entries) >= min_count
+        ]
+        patterns.sort(
+            key=lambda item: (
+                -int(item.get("occurrence_count") or 0),
+                -float(item.get("avg_reuse_value") or 0.0),
+                -float(item.get("avg_truth_score") or 0.0),
+                str(item.get("latest_at") or ""),
+            )
+        )
+        return patterns
+
     def _paid_pack_from_entries(self, pain_type: str, entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         sku, name = PAID_PACK_BLUEPRINTS.get(
             pain_type,
@@ -606,6 +677,107 @@ class NomadMutualAidKernel:
             "updated_at": _now(),
         }
 
+    def _high_value_pattern_from_entries(
+        self,
+        pattern_key: str,
+        entries: List[Dict[str, Any]],
+        paid_packs: Dict[str, Any],
+        signals: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        sorted_entries = sorted(entries, key=lambda item: item.get("timestamp") or "")
+        latest = sorted_entries[-1]
+        pain_type = str(latest.get("pain_type") or "self_improvement")
+        title = self._pattern_title(entries)
+        avg_truth = sum(float(item.get("truth_score") or 0.0) for item in entries) / max(1, len(entries))
+        avg_reuse = (
+            sum(float((item.get("reuse_value") or {}).get("score") or 0.0) for item in entries) / max(1, len(entries))
+        )
+        evidence_total = sum(len(item.get("evidence") or []) for item in entries)
+        source_agents = sorted(
+            {
+                str(item.get("agent_id") or "").strip()
+                for item in entries
+                if str(item.get("agent_id") or "").strip()
+            }
+        )
+        repeat_count = max(
+            max(int((item.get("reuse_value") or {}).get("repeat_count") or 0) for item in entries),
+            max(0, len(entries) - 1),
+        )
+        pack = next(
+            (
+                item for item in paid_packs.values()
+                if str((item or {}).get("pain_type") or "") == pain_type
+            ),
+            {},
+        )
+        matching_signals = [
+            signal
+            for signal in signals
+            if str(signal.get("pain_type") or "") == pain_type
+        ]
+        pattern_id = f"hvp-{hashlib.sha256(pattern_key.encode('utf-8')).hexdigest()[:12]}"
+        regression_slug = _slug(title)[:48] or _slug(pain_type) or "pattern"
+        smallest_paid_unblock = (
+            dict(pack.get("paid_offer") or {})
+            if pack
+            else {
+                "amount_native": 0.03,
+                "delivery": "bounded unblock, verifier checklist, and one reusable artifact",
+                "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            }
+        )
+        return {
+            "schema": "nomad.high_value_pattern.v1",
+            "pattern_id": pattern_id,
+            "pattern_key": pattern_key,
+            "pain_type": pain_type,
+            "title": title,
+            "occurrence_count": len(entries),
+            "repeat_count": repeat_count,
+            "avg_truth_score": round(avg_truth, 4),
+            "avg_reuse_value": round(avg_reuse, 4),
+            "evidence_total": evidence_total,
+            "source_agents": source_agents[:12],
+            "source_ledger_ids": [item.get("ledger_id", "") for item in sorted_entries[-8:]],
+            "latest_at": latest.get("timestamp", ""),
+            "latest_solution_id": latest.get("solution_id", ""),
+            "latest_solution_title": latest.get("solution_title", ""),
+            "productization": {
+                "pack_ready": bool(pack),
+                "pack_id": pack.get("pack_id", ""),
+                "sku": pack.get("sku", ""),
+                "name": pack.get("name", ""),
+                "starter_offer": pack.get("starter_offer") or {},
+                "paid_offer": pack.get("paid_offer") or smallest_paid_unblock,
+            },
+            "development_signal_count": len(matching_signals),
+            "latest_product_candidate": (
+                (matching_signals[-1] or {}).get("product_candidate")
+                if matching_signals
+                else {}
+            ),
+            "self_evolution": {
+                "next_action": (
+                    "differentiate_paid_pack_and_add_regression_check"
+                    if pack
+                    else "productize_pattern_and_add_regression_check"
+                ),
+                "regression_test_stub": f"tests/test_pattern_{regression_slug}.py",
+                "self_apply_step": (
+                    f"Use '{title}' as Nomad's default starter path when another agent shows {pain_type} pain."
+                ),
+            },
+            "agent_offer": {
+                "starter_diagnosis": (
+                    f"Nomad has seen this {pain_type} pattern {len(entries)} time(s) with "
+                    f"avg truth {round(avg_truth, 4)} and avg reuse {round(avg_reuse, 4)}."
+                ),
+                "smallest_paid_unblock": smallest_paid_unblock,
+                "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            },
+        }
+
     @staticmethod
     def _ledger_stats(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not entries:
@@ -637,6 +809,31 @@ class NomadMutualAidKernel:
             stats[status] = stats.get(status, 0) + 1
         stats["total"] = len(inbox)
         return stats
+
+    @staticmethod
+    def _pattern_key_from_entry(entry: Dict[str, Any]) -> str:
+        pain_type = str(entry.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        solution_title = str(entry.get("solution_title") or "").strip()
+        solution_id = str(entry.get("solution_id") or "").strip()
+        task = str(entry.get("task") or "").strip()
+        signature = solution_title or solution_id or " ".join(task.split()[:10]) or pain_type
+        return f"{pain_type}:{_slug(signature)[:72] or 'general'}"
+
+    @staticmethod
+    def _pattern_title(entries: List[Dict[str, Any]]) -> str:
+        counts: Dict[str, int] = {}
+        for entry in entries:
+            candidate = (
+                str(entry.get("solution_title") or "").strip()
+                or " ".join(str(entry.get("task") or "").split()[:12]).strip()
+                or str(entry.get("pain_type") or "reusable pattern")
+            )
+            counts[candidate] = counts.get(candidate, 0) + 1
+        best = sorted(
+            counts.items(),
+            key=lambda item: (-item[1], -len(item[0]), item[0].lower()),
+        )
+        return best[0][0] if best else "reusable pattern"
 
     def _load(self) -> Dict[str, Any]:
         if not self.path.exists():

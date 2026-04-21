@@ -112,6 +112,16 @@ class FakeMutualAid:
             "signals": [{"signal_id": "sig-test"}],
         }
 
+    def list_high_value_patterns(self, **kwargs):
+        return {
+            "mode": "nomad_high_value_patterns",
+            "deal_found": False,
+            "ok": True,
+            "pattern_count": 1,
+            "patterns": [{"pattern_id": "hvp-test"}],
+            "min_repeat_count": kwargs.get("min_repeat_count", 2),
+        }
+
     def receive_swarm_proposal(self, proposal):
         return {
             "mode": "nomad_swarm_inbox",
@@ -354,6 +364,7 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_truth_density_ledger" in tool_names
     assert "nomad_swarm_inbox" in tool_names
     assert "nomad_swarm_development_signals" in tool_names
+    assert "nomad_high_value_patterns" in tool_names
     assert "nomad_swarm_proposal" in tool_names
     assert "nomad_mutual_aid_packs" in tool_names
     assert "nomad_reliability_doctor" in tool_names
@@ -492,6 +503,30 @@ def test_mcp_lists_swarm_development_signals_directly():
     content = response["result"]["structuredContent"]
     assert content["mode"] == "nomad_swarm_development_signals"
     assert content["signals"][0]["signal_id"] == "sig-test"
+
+
+def test_mcp_lists_high_value_patterns_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 448,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_high_value_patterns",
+                "arguments": {
+                    "pain_type": "compute_auth",
+                    "limit": "2",
+                    "min_repeat_count": "3",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_high_value_patterns"
+    assert content["patterns"][0]["pattern_id"] == "hvp-test"
+    assert content["min_repeat_count"] == 3
 
 
 def test_mcp_runs_reliability_doctor_directly():
@@ -654,6 +689,11 @@ def test_cli_builds_service_and_lead_queries():
 
     signals_args = build_parser().parse_args(["swarm-signals", "--pain-type", "compute_auth", "--limit", "3"])
     assert build_query(signals_args) == "/mutual-aid signals type=compute_auth limit=3"
+
+    patterns_args = build_parser().parse_args(
+        ["mutual-aid-patterns", "--pain-type", "compute_auth", "--limit", "4", "--min-repeat-count", "3"]
+    )
+    assert build_query(patterns_args) == "/mutual-aid patterns type=compute_auth limit=4 min_repeat_count=3"
 
     pack_args = build_parser().parse_args(["mutual-aid-packs", "--pain-type", "compute_auth", "--limit", "5"])
     assert build_query(pack_args) == "/mutual-aid packs type=compute_auth limit=5"
