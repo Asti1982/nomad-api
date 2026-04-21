@@ -672,6 +672,50 @@ class ArbiterAgent:
         lowered = query.lower().strip()
         if lowered in {"/mutual-aid", "/mutual_aid", "/aid", "/mutual-aid status", "/aid status"}:
             return self.mutual_aid.status()
+        if lowered.startswith(("/mutual-aid ledger", "/aid ledger", "/mutual_aid ledger")):
+            return self.mutual_aid.list_truth_ledger(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid inbox", "/aid inbox", "/mutual_aid inbox")):
+            statuses = self._extract_key_value(query, "status")
+            return self.mutual_aid.list_swarm_inbox(
+                statuses=[item.strip() for item in statuses.split(",") if item.strip()],
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid packs", "/aid packs", "/mutual_aid packs")):
+            return self.mutual_aid.list_paid_packs(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid proposal", "/aid proposal", "/help-agent proposal")):
+            sender_id = (
+                self._extract_key_value(query, "agent")
+                or self._extract_key_value(query, "sender")
+                or "swarm-agent"
+            )
+            evidence = self._extract_key_value(query, "evidence")
+            body = re.sub(
+                r"^/(?:mutual-aid|mutual_aid|aid|help-agent)\s+proposal\b",
+                "",
+                query,
+                flags=re.IGNORECASE,
+            ).strip()
+            for key in ("agent", "sender", "evidence", "type", "pain_type"):
+                value = self._extract_key_value(query, key)
+                if value:
+                    body = body.replace(f"{key}={value}", "")
+            body = " ".join(body.split()) or "Swarm proposal for Nomad."
+            return self.mutual_aid.receive_swarm_proposal(
+                {
+                    "sender_id": sender_id,
+                    "title": body[:120],
+                    "proposal": body,
+                    "pain_type": self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                    "evidence": [item.strip() for item in re.split(r"[|,]+", evidence) if item.strip()],
+                    "payload": {"source": "workflow", "body": body},
+                }
+            )
         other_agent_id = (
             self._extract_key_value(query, "agent")
             or self._extract_key_value(query, "other_agent")

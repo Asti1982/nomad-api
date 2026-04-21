@@ -16,3 +16,6 @@ nomad_lead_conversions.json
 nomad_products.json
 nomad_mutual_aid_state.json
 nomad_mutual_aid_modules/
+truth_density_ledger.json
+verified_aid_registry.json
+swarm_trust_store.json

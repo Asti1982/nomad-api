@@ -84,6 +84,43 @@ class FakeMutualAid:
             "module_count": 0,
         }
 
+    def list_truth_ledger(self, **kwargs):
+        return {
+            "mode": "nomad_truth_density_ledger",
+            "deal_found": False,
+            "ok": True,
+            "entry_count": 1,
+            "entries": [{"ledger_id": "tdl-test"}],
+            "stats": {"avg_truth_score": 0.8, "avg_reuse_value": 0.7},
+        }
+
+    def list_swarm_inbox(self, **kwargs):
+        return {
+            "mode": "nomad_swarm_inbox",
+            "deal_found": False,
+            "ok": True,
+            "items": [{"aid_id": "aid-test"}],
+            "stats": {"total": 1, "verified_pending_review": 1},
+        }
+
+    def receive_swarm_proposal(self, proposal):
+        return {
+            "mode": "nomad_swarm_inbox",
+            "deal_found": False,
+            "ok": True,
+            "item": {"proposal": proposal, "status": "verified_pending_review"},
+            "stats": {"total": 1, "verified_pending_review": 1},
+        }
+
+    def list_paid_packs(self, **kwargs):
+        return {
+            "mode": "nomad_mutual_aid_packs",
+            "deal_found": False,
+            "ok": True,
+            "pack_count": 1,
+            "packs": [{"pack_id": "map-test"}],
+        }
+
 
 class FakeLeadConversion:
     def run(self, **kwargs):
@@ -305,6 +342,10 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_agent_pain_solver" in tool_names
     assert "nomad_mutual_aid" in tool_names
     assert "nomad_mutual_aid_status" in tool_names
+    assert "nomad_truth_density_ledger" in tool_names
+    assert "nomad_swarm_inbox" in tool_names
+    assert "nomad_swarm_proposal" in tool_names
+    assert "nomad_mutual_aid_packs" in tool_names
     assert "nomad_reliability_doctor" in tool_names
     assert "nomad_lead_conversion_pipeline" in tool_names
     assert "nomad_product_factory" in tool_names
@@ -395,6 +436,30 @@ def test_mcp_runs_mutual_aid_directly():
     content = response["result"]["structuredContent"]
     assert content["mode"] == "nomad_mutual_aid"
     assert content["help_result"]["other_agent_id"] == "QuotaBot"
+
+
+def test_mcp_runs_swarm_proposal_directly():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 446,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_swarm_proposal",
+                "arguments": {
+                    "sender_id": "VerifierBot",
+                    "title": "Fallback check",
+                    "proposal": "Add a provider preflight check.",
+                    "evidence": "dry-run passed, ERROR=429 observed",
+                },
+            },
+        }
+    )
+
+    content = response["result"]["structuredContent"]
+    assert content["mode"] == "nomad_swarm_inbox"
+    assert content["item"]["status"] == "verified_pending_review"
 
 
 def test_mcp_runs_reliability_doctor_directly():
@@ -548,6 +613,20 @@ def test_cli_builds_service_and_lead_queries():
 
     mutual_aid_args = build_parser().parse_args(["mutual-aid", "--agent", "Bot", "fix", "quota"])
     assert build_query(mutual_aid_args) == "/mutual-aid agent=Bot fix quota"
+
+    ledger_args = build_parser().parse_args(["mutual-aid-ledger", "--pain-type", "compute_auth", "--limit", "5"])
+    assert build_query(ledger_args) == "/mutual-aid ledger type=compute_auth limit=5"
+
+    inbox_args = build_parser().parse_args(["swarm-inbox", "--status", "verified_pending_review", "--limit", "5"])
+    assert build_query(inbox_args) == "/mutual-aid inbox status=verified_pending_review limit=5"
+
+    pack_args = build_parser().parse_args(["mutual-aid-packs", "--pain-type", "compute_auth", "--limit", "5"])
+    assert build_query(pack_args) == "/mutual-aid packs type=compute_auth limit=5"
+
+    proposal_args = build_parser().parse_args(
+        ["swarm-propose", "--agent", "Bot", "--evidence", "dry-run", "add", "preflight"]
+    )
+    assert build_query(proposal_args) == "/mutual-aid proposal agent=Bot type=self_improvement evidence=dry-run add preflight"
 
     codebuddy_scout_args = build_parser().parse_args(["scout", "codebuddy"])
     assert build_query(codebuddy_scout_args) == "/scout codebuddy for ai_first"

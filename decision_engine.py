@@ -41,10 +41,22 @@ class DecisionEngine:
         seconds_since_last_run = self._seconds_since(last_run)
         reasons: list[str] = []
 
+        # 1. Immediate priority: Paid or awaiting tasks
         if task_stats.get("paid", 0) > 0:
             reasons.append("paid_service_task")
             return self._decision(True, reasons, task_stats, active_lanes, 60, last_run)
 
+        # 2. Reputation growth: if Mutual-Aid exists but is still shallow, scout again after the normal wait.
+        mutual_aid_score = self._mutual_aid_score()
+        if (
+            mutual_aid_score is not None
+            and mutual_aid_score < 10
+            and seconds_since_last_run >= self.opportunistic_after_seconds
+        ):
+            reasons.append("low_reputation_scout_required")
+            return self._decision(True, reasons, task_stats, active_lanes, 60, last_run)
+
+        # 3. Prevent stale state
         if last_run is None:
             reasons.append("first_run")
             return self._decision(True, reasons, task_stats, active_lanes, 60, last_run)
@@ -176,6 +188,24 @@ class DecisionEngine:
             return int(stats.get("sent") or 0)
         except (TypeError, ValueError):
             return 0
+
+    def _mutual_aid_score(self) -> Optional[int]:
+        sources = [
+            self.snapshot.get("mutual_aid") or {},
+            self.state.get("last_mutual_aid") or {},
+            self.state.get("mutual_aid") or {},
+        ]
+        for source in sources:
+            raw = source.get("mutual_aid_score")
+            if raw is None:
+                raw = source.get("score")
+            if raw is None:
+                continue
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                continue
+        return None
 
     def _last_run_at(self) -> Optional[datetime]:
         raw = self.state.get("last_run_at") or self.snapshot.get("last_run_at") or ""

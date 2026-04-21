@@ -1287,6 +1287,8 @@ class NomadAutopilot:
             "reason": mutual_aid.get("reason", ""),
             "mutual_aid_score": mutual_aid.get("mutual_aid_score", 0),
             "truth_density_total": mutual_aid.get("truth_density_total", 0),
+            "truth_ledger_count": mutual_aid.get("truth_ledger_count", 0),
+            "paid_pack_count": mutual_aid.get("paid_pack_count", 0),
             "plan": {
                 "module_id": plan.get("module_id", ""),
                 "filename": plan.get("filename", ""),

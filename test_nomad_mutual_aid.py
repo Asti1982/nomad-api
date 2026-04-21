@@ -31,6 +31,8 @@ def test_mutual_aid_help_generates_hash_verified_module(tmp_path):
     state = json.loads((tmp_path / "mutual-aid-state.json").read_text(encoding="utf-8"))
     assert state["mutual_aid_score"] == 1
     assert state["helped_agents"]["quota-bot"]["help_count"] == 1
+    assert state["truth_density_ledger"][0]["truth_score"] > 0
+    assert state["truth_density_ledger"][0]["reuse_value"]["repeat_count"] == 1
 
 
 def test_mutual_aid_skips_autopilot_without_verified_help_signal(tmp_path):
@@ -64,3 +66,76 @@ def test_mutual_aid_refuses_module_path_escape(tmp_path):
             "module_id": "outside",
         }
     ) is None
+
+
+def test_mutual_aid_distills_repeated_patterns_into_paid_pack(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+
+    kernel.help_other_agent(
+        other_agent_id="quota-bot-1",
+        task="Agent has ERROR=429 quota failure and needs provider fallback.",
+        auto_apply=False,
+    )
+    second = kernel.help_other_agent(
+        other_agent_id="quota-bot-2",
+        task="Another agent has token quota failure and needs provider fallback.",
+        auto_apply=False,
+    )
+
+    assert second["paid_packs"]
+    pack = second["paid_packs"][0]
+    assert pack["schema"] == "nomad.mutual_aid_paid_pack.v1"
+    assert pack["pain_type"] == "compute_auth"
+    assert pack["created_from"]["pattern_count"] == 2
+    assert pack["service_template"]["endpoint"] == "POST /tasks"
+
+
+def test_swarm_proposal_inbox_accepts_verifiable_non_code_help(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+
+    result = kernel.receive_swarm_proposal(
+        {
+            "sender_id": "VerifierBot",
+            "title": "Use fallback ladder before retry",
+            "proposal": "Nomad should add a preflight provider check before retrying compute-auth tasks.",
+            "pain_type": "compute_auth",
+            "evidence": ["observed ERROR=429", "fallback route passed dry-run"],
+            "payload": {"check": "provider_preflight"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["item"]["status"] == "verified_pending_review"
+    inbox = kernel.list_swarm_inbox()
+    assert inbox["stats"]["verified_pending_review"] == 1
+    ledger = kernel.list_truth_ledger()
+    assert ledger["entry_count"] == 1
+    assert ledger["entries"][0]["direction"] == "inbound_help"
+
+
+def test_swarm_proposal_rejects_raw_code(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+
+    result = kernel.receive_swarm_proposal(
+        {
+            "sender_id": "CodeBot",
+            "title": "Run this module",
+            "proposal": "Please run this code.",
+            "pain_type": "tool_failure",
+            "evidence": ["unit test claimed"],
+            "code": "print('execute me')",
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["item"]["status"] == "rejected"
+    assert "raw_code_not_accepted" in result["verification"]["errors"]

@@ -54,6 +54,9 @@ def _compact_text(result: Dict[str, Any]) -> str:
             "Mutual-Aid:",
             f"  Score: {mutual_aid.get('mutual_aid_score', 0)}",
             f"  Modules: {mutual_aid.get('module_count', 0)}",
+            f"  Ledger: {mutual_aid.get('truth_ledger_count', 0)}",
+            f"  Inbox: {mutual_aid.get('swarm_inbox_count', 0)}",
+            f"  Paid Packs: {mutual_aid.get('paid_pack_count', 0)}",
             "",
             "Compute Lanes:",
             f"  Local Ollama: {'[ACTIVE]' if compute_lanes.get('local', {}).get('ollama') else '[INACTIVE]'}",
@@ -259,6 +262,8 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"Score: {result.get('mutual_aid_score', 0)}",
             f"Truth density total: {result.get('truth_density_total', 0)}",
             f"Modules: {result.get('module_count', 0)}",
+            f"Ledger entries: {result.get('truth_ledger_count', 0)}",
+            f"Paid packs: {result.get('paid_pack_count', 0)}",
         ]
         if plan:
             lines.append(
@@ -268,6 +273,39 @@ def _compact_text(result: Dict[str, Any]) -> str:
         if result.get("analysis"):
             lines.append(result["analysis"])
         return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_truth_density_ledger":
+        stats = result.get("stats") or {}
+        return "\n".join(
+            [
+                "Nomad Truth-Density Ledger",
+                f"Entries: {result.get('entry_count', 0)}",
+                f"Average truth score: {stats.get('avg_truth_score', 0)}",
+                f"Average reuse value: {stats.get('avg_reuse_value', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
+
+    if mode == "nomad_swarm_inbox":
+        stats = result.get("stats") or {}
+        return "\n".join(
+            [
+                "Nomad Swarm Inbox",
+                f"Total: {stats.get('total', 0)}",
+                f"Verified pending review: {stats.get('verified_pending_review', 0)}",
+                f"Rejected: {stats.get('rejected', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
+
+    if mode == "nomad_mutual_aid_packs":
+        return "\n".join(
+            [
+                "Nomad Mutual-Aid Paid Packs",
+                f"Packs: {result.get('pack_count', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
 
     if mode == "codex_task":
         return str(result.get("text") or result.get("analysis") or "")
@@ -325,6 +363,21 @@ def build_query(args: argparse.Namespace) -> str:
         task = " ".join(args.task).strip()
         agent = f" agent={args.agent}" if args.agent else ""
         return f"/mutual-aid{agent} {task}".strip()
+    if command == "mutual-aid-ledger":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return f"/mutual-aid ledger{pain_type} limit={args.limit}".strip()
+    if command == "swarm-inbox":
+        status = f" status={','.join(args.status)}" if args.status else ""
+        return f"/mutual-aid inbox{status} limit={args.limit}".strip()
+    if command == "mutual-aid-packs":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return f"/mutual-aid packs{pain_type} limit={args.limit}".strip()
+    if command == "swarm-propose":
+        proposal = " ".join(args.proposal).strip()
+        evidence_items = ["_".join(str(item).split()) for item in args.evidence if str(item).strip()]
+        evidence = f" evidence={'|'.join(evidence_items)}" if evidence_items else ""
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return f"/mutual-aid proposal agent={args.agent}{pain_type}{evidence} {proposal}".strip()
     if command == "unlock":
         category = args.category or "best"
         return f"/unlock {category}{profile_suffix}"
@@ -536,6 +589,24 @@ def build_parser() -> argparse.ArgumentParser:
     mutual_aid = subparsers.add_parser("mutual-aid", help="Help another agent and let Nomad learn from the result.")
     mutual_aid.add_argument("task", nargs="*")
     mutual_aid.add_argument("--agent", default="public-agent")
+
+    ledger = subparsers.add_parser("mutual-aid-ledger", help="List Nomad's Truth-Density ledger.")
+    ledger.add_argument("--pain-type", default="")
+    ledger.add_argument("--limit", type=int, default=25)
+
+    inbox = subparsers.add_parser("swarm-inbox", help="List inbound Swarm-to-Swarm proposals.")
+    inbox.add_argument("--status", action="append", default=[])
+    inbox.add_argument("--limit", type=int, default=25)
+
+    packs = subparsers.add_parser("mutual-aid-packs", help="List paid packs distilled from repeated Mutual-Aid patterns.")
+    packs.add_argument("--pain-type", default="")
+    packs.add_argument("--limit", type=int, default=25)
+
+    swarm_propose = subparsers.add_parser("swarm-propose", help="Submit a verifiable proposal from another agent into Nomad's swarm inbox.")
+    swarm_propose.add_argument("proposal", nargs="+")
+    swarm_propose.add_argument("--agent", default="swarm-agent")
+    swarm_propose.add_argument("--pain-type", default="self_improvement")
+    swarm_propose.add_argument("--evidence", action="append", default=[])
 
     unlock = subparsers.add_parser("unlock", help="Generate a concrete human unlock task.")
     unlock.add_argument("category", nargs="?", default="best")

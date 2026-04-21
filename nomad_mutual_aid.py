@@ -9,11 +9,26 @@ from typing import Any, Dict, List, Optional
 
 from agent_pain_solver import AgentPainSolver
 from nomad_operator_grant import operator_allows, operator_grant
+from swarm_protocol import SwarmVerifier
+from truth_ledger import TruthDensityLedger
 
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MUTUAL_AID_STATE = ROOT / "nomad_mutual_aid_state.json"
 DEFAULT_MUTUAL_AID_MODULE_DIR = ROOT / "nomad_mutual_aid_modules"
+
+
+PAID_PACK_BLUEPRINTS = {
+    "compute_auth": ("nomad.mutual_aid.compute_auth_micro_pack", "Mutual-Aid Compute Auth Micro-Pack"),
+    "tool_failure": ("nomad.mutual_aid.tool_contract_micro_pack", "Mutual-Aid Tool Contract Micro-Pack"),
+    "mcp_integration": ("nomad.mutual_aid.mcp_contract_micro_pack", "Mutual-Aid MCP Contract Micro-Pack"),
+    "loop_break": ("nomad.mutual_aid.loop_breaker_micro_pack", "Mutual-Aid Loop Breaker Micro-Pack"),
+    "human_in_loop": ("nomad.mutual_aid.hitl_unlock_micro_pack", "Mutual-Aid HITL Unlock Micro-Pack"),
+    "payment": ("nomad.mutual_aid.payment_resume_micro_pack", "Mutual-Aid Payment Resume Micro-Pack"),
+    "memory": ("nomad.mutual_aid.memory_repair_micro_pack", "Mutual-Aid Memory Repair Micro-Pack"),
+    "repo_issue_help": ("nomad.mutual_aid.repo_repro_micro_pack", "Mutual-Aid Repo Repro Micro-Pack"),
+    "self_improvement": ("nomad.mutual_aid.self_healing_micro_pack", "Mutual-Aid Self-Healing Micro-Pack"),
+}
 
 
 class NomadMutualAidKernel:
@@ -28,12 +43,18 @@ class NomadMutualAidKernel:
         self.path = path or DEFAULT_MUTUAL_AID_STATE
         self.module_dir = module_dir or DEFAULT_MUTUAL_AID_MODULE_DIR
         self.pain_solver = pain_solver or AgentPainSolver()
+        self.ledger = TruthDensityLedger()
+        self.swarm_verifier = SwarmVerifier()
+        self.pack_min_pattern_count = _env_int("NOMAD_MUTUAL_AID_PACK_MIN_PATTERN_COUNT", 2)
         self.evolution = MutualAidEvolutionManager(self)
 
     def status(self) -> Dict[str, Any]:
         state = self._load()
         loadable = self.load_learned_modules()
         modules = state.get("modules") or []
+        ledger_entries = state.get("truth_density_ledger") or []
+        inbox = state.get("swarm_inbox") or []
+        paid_packs = list((state.get("paid_packs") or {}).values())
         return {
             "mode": "nomad_mutual_aid_status",
             "schema": "nomad.mutual_aid_status.v1",
@@ -44,11 +65,17 @@ class NomadMutualAidKernel:
             "helped_agent_count": len(state.get("helped_agents") or {}),
             "module_count": len(modules),
             "loadable_module_count": len(loadable),
+            "truth_ledger_count": len(ledger_entries),
+            "swarm_inbox": self._inbox_stats(inbox),
+            "paid_pack_count": len(paid_packs),
             "latest_evolution_plan": state.get("latest_evolution_plan") or {},
+            "latest_truth_entry": ledger_entries[-1] if ledger_entries else {},
             "modules": modules[-10:],
+            "paid_packs": paid_packs[-10:],
             "policy": self.policy(),
             "analysis": (
-                "Nomad's Mutual-Aid lane evolves from verified help outcomes and only adds "
+                "Nomad's Mutual-Aid lane evolves from verified help outcomes, keeps a "
+                "Truth-Density ledger, accepts only verifiable swarm proposals, and only adds "
                 "new separate modules with stored hashes."
             ),
         }
@@ -171,6 +198,15 @@ class NomadMutualAidKernel:
         events.append(event)
         state["events"] = events[-100:]
 
+        ledger_entry = self.ledger.build_entry(
+            event=event,
+            help_result=help_result,
+            prior_entries=list(state.get("truth_density_ledger") or []),
+        )
+        truth_ledger = list(state.get("truth_density_ledger") or [])
+        truth_ledger.append(ledger_entry)
+        state["truth_density_ledger"] = truth_ledger[-250:]
+
         plan = self.evolution.propose_new_module_from_help(
             help_result=help_result,
             score=score,
@@ -182,6 +218,8 @@ class NomadMutualAidKernel:
             if not any(item.get("module_id") == plan["module"]["module_id"] for item in modules):
                 modules.append(plan["module"])
             state["modules"] = modules[-100:]
+        paid_packs = self._refresh_paid_packs(state)
+        state["paid_packs"] = paid_packs
         self._save(state)
         return {
             "mode": "nomad_mutual_aid",
@@ -191,12 +229,192 @@ class NomadMutualAidKernel:
             "help_result": help_result,
             "mutual_aid_score": score,
             "truth_density_total": state["truth_density_total"],
+            "truth_ledger_count": len(state.get("truth_density_ledger") or []),
+            "truth_ledger_entry": ledger_entry,
             "evolution_plan": plan,
+            "paid_pack_count": len(paid_packs),
+            "paid_packs": list(paid_packs.values()),
             "policy": self.policy(),
             "analysis": (
                 f"Nomad helped {agent_id}, raised Mutual-Aid-Score to {score}, "
-                f"and {'added a separate learned module' if plan.get('applied') else 'recorded a safe evolution plan'}."
+                f"recorded Truth-Density score {ledger_entry.get('truth_score')}, and "
+                f"{'added a separate learned module' if plan.get('applied') else 'recorded a safe evolution plan'}."
             ),
+        }
+
+    def list_truth_ledger(
+        self,
+        pain_type: str = "",
+        limit: int = 25,
+    ) -> Dict[str, Any]:
+        state = self._load()
+        entries = list(state.get("truth_density_ledger") or [])
+        if pain_type:
+            entries = [
+                entry for entry in entries
+                if str(entry.get("pain_type") or "") == str(pain_type).strip()
+            ]
+        entries.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+        cap = max(1, min(int(limit or 25), 100))
+        selected = entries[:cap]
+        return {
+            "mode": "nomad_truth_density_ledger",
+            "schema": "nomad.truth_density_ledger.v1",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": pain_type,
+            "entry_count": len(entries),
+            "entries": selected,
+            "stats": self._ledger_stats(entries),
+            "analysis": f"Listed {len(selected)} Truth-Density ledger entrie(s).",
+        }
+
+    def record_truth_outcome(
+        self,
+        ledger_id: str,
+        success: bool,
+        evidence: Optional[List[str]] = None,
+        outcome_status: str = "",
+        note: str = "",
+    ) -> Dict[str, Any]:
+        state = self._load()
+        entries = list(state.get("truth_density_ledger") or [])
+        for index, entry in enumerate(entries):
+            if entry.get("ledger_id") == ledger_id:
+                updated = self.ledger.update_entry(
+                    entry=entry,
+                    success=success,
+                    evidence=evidence or [],
+                    outcome_status=outcome_status,
+                    note=note,
+                )
+                entries[index] = updated
+                state["truth_density_ledger"] = entries
+                state["paid_packs"] = self._refresh_paid_packs(state)
+                self._save(state)
+                return {
+                    "mode": "nomad_truth_density_outcome",
+                    "schema": "nomad.truth_density_outcome.v1",
+                    "deal_found": False,
+                    "ok": True,
+                    "entry": updated,
+                    "analysis": f"Updated Truth-Density outcome for {ledger_id}.",
+                }
+        return {
+            "mode": "nomad_truth_density_outcome",
+            "schema": "nomad.truth_density_outcome.v1",
+            "deal_found": False,
+            "ok": False,
+            "error": "ledger_entry_not_found",
+            "ledger_id": ledger_id,
+        }
+
+    def receive_swarm_proposal(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
+        verification = self.swarm_verifier.verify_proposal(proposal)
+        state = self._load()
+        inbox = list(state.get("swarm_inbox") or [])
+        record = {
+            "schema": "nomad.swarm_inbox_item.v1",
+            "aid_id": verification.get("aid_id", ""),
+            "received_at": _now(),
+            "status": "verified_pending_review" if verification.get("verified") else "rejected",
+            "verification": verification,
+            "proposal": verification.get("normalized") or {},
+            "next_action": (
+                "review_verified_proposal_and_convert_to_task_or_test"
+                if verification.get("verified")
+                else "discard_or_ask_sender_for_evidence"
+            ),
+        }
+        inbox.append(record)
+        state["swarm_inbox"] = inbox[-250:]
+        if verification.get("verified"):
+            inbound_event = {
+                "event_id": verification.get("aid_id", ""),
+                "timestamp": record["received_at"],
+                "source": "swarm_inbox",
+                "other_agent_id": (record["proposal"] or {}).get("sender_id", "swarm-agent"),
+                "pain_type": (record["proposal"] or {}).get("pain_type", "self_improvement"),
+            }
+            inbound_help = {
+                "success": True,
+                "direction": "inbound_help",
+                "other_agent_id": inbound_event["other_agent_id"],
+                "task": (record["proposal"] or {}).get("proposal", ""),
+                "pain_type": inbound_event["pain_type"],
+                "solution_id": verification.get("aid_id", ""),
+                "solution_title": (record["proposal"] or {}).get("title", ""),
+                "truth_density_increase": min(0.2, float(verification.get("score") or 0.0) * 0.2),
+                "evidence": (record["proposal"] or {}).get("evidence") or [],
+                "evidence_count": len((record["proposal"] or {}).get("evidence") or []),
+                "acceptance_count": 0,
+                "outcome_status": "proposal_verified",
+            }
+            ledger_entry = self.ledger.build_entry(
+                event=inbound_event,
+                help_result=inbound_help,
+                prior_entries=list(state.get("truth_density_ledger") or []),
+            )
+            truth_ledger = list(state.get("truth_density_ledger") or [])
+            truth_ledger.append(ledger_entry)
+            state["truth_density_ledger"] = truth_ledger[-250:]
+        state["paid_packs"] = self._refresh_paid_packs(state)
+        self._save(state)
+        return {
+            "mode": "nomad_swarm_inbox",
+            "schema": "nomad.swarm_inbox_receipt.v1",
+            "deal_found": False,
+            "ok": bool(verification.get("verified")),
+            "item": record,
+            "verification": verification,
+            "analysis": (
+                "Swarm proposal verified and stored for review."
+                if verification.get("verified")
+                else f"Swarm proposal rejected: {verification.get('reason')}"
+            ),
+        }
+
+    def list_swarm_inbox(
+        self,
+        statuses: Optional[List[str]] = None,
+        limit: int = 25,
+    ) -> Dict[str, Any]:
+        normalized = {str(item).strip() for item in (statuses or []) if str(item).strip()}
+        inbox = list((self._load().get("swarm_inbox") or []))
+        if normalized:
+            inbox = [item for item in inbox if str(item.get("status") or "") in normalized]
+        inbox.sort(key=lambda item: item.get("received_at") or "", reverse=True)
+        cap = max(1, min(int(limit or 25), 100))
+        return {
+            "mode": "nomad_swarm_inbox",
+            "schema": "nomad.swarm_inbox.v1",
+            "deal_found": False,
+            "ok": True,
+            "statuses": sorted(normalized),
+            "stats": self._inbox_stats(inbox),
+            "items": inbox[:cap],
+            "analysis": f"Listed {min(len(inbox), cap)} swarm inbox item(s).",
+        }
+
+    def list_paid_packs(
+        self,
+        pain_type: str = "",
+        limit: int = 25,
+    ) -> Dict[str, Any]:
+        packs = list((self._load().get("paid_packs") or {}).values())
+        if pain_type:
+            packs = [pack for pack in packs if str(pack.get("pain_type") or "") == str(pain_type).strip()]
+        packs.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+        cap = max(1, min(int(limit or 25), 100))
+        return {
+            "mode": "nomad_mutual_aid_packs",
+            "schema": "nomad.mutual_aid_paid_packs.v1",
+            "deal_found": False,
+            "ok": True,
+            "pain_type": pain_type,
+            "pack_count": len(packs),
+            "packs": packs[:cap],
+            "analysis": f"Listed {min(len(packs), cap)} paid Mutual-Aid pack(s).",
         }
 
     def load_learned_modules(self) -> List[Dict[str, Any]]:
@@ -227,6 +445,9 @@ class NomadMutualAidKernel:
             "schema": "nomad.mutual_aid_policy.v1",
             "primary_evolution_motor": "help_other_agents_then_learn",
             "human_role": "safety_unlock_for_critical_changes",
+            "truth_density_ledger": "every verified help result gets evidence, outcome, score, and reuse value",
+            "swarm_to_swarm_inbox": "inbound agent help is stored as verifiable proposals, never executed as raw code",
+            "paid_pack_rule": "repeated verified patterns become small sellable service packs",
             "module_rule": "new_files_only",
             "dynamic_loading": "stored-hash verified modules only",
             "never": [
@@ -263,6 +484,120 @@ class NomadMutualAidKernel:
             score += 0.02
         return round(min(0.25, score), 4)
 
+    def _refresh_paid_packs(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        packs = dict(state.get("paid_packs") or {})
+        entries = [
+            entry for entry in (state.get("truth_density_ledger") or [])
+            if (entry.get("outcome") or {}).get("success")
+        ]
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for entry in entries:
+            pain_type = str(entry.get("pain_type") or "self_improvement")
+            grouped.setdefault(pain_type, []).append(entry)
+        for pain_type, pain_entries in grouped.items():
+            if len(pain_entries) < self.pack_min_pattern_count:
+                continue
+            pack = self._paid_pack_from_entries(pain_type=pain_type, entries=pain_entries)
+            packs[pack["pack_id"]] = pack
+        return packs
+
+    def _paid_pack_from_entries(self, pain_type: str, entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        sku, name = PAID_PACK_BLUEPRINTS.get(
+            pain_type,
+            (f"nomad.mutual_aid.{_slug(pain_type)}_micro_pack", "Mutual-Aid Agent Rescue Micro-Pack"),
+        )
+        sorted_entries = sorted(entries, key=lambda item: item.get("timestamp") or "")
+        avg_truth = sum(float(item.get("truth_score") or 0.0) for item in entries) / max(1, len(entries))
+        avg_reuse = sum(float((item.get("reuse_value") or {}).get("score") or 0.0) for item in entries) / max(1, len(entries))
+        evidence_total = sum(len(item.get("evidence") or []) for item in entries)
+        pack_id = f"map-{hashlib.sha256(f'{pain_type}|{sku}'.encode('utf-8')).hexdigest()[:12]}"
+        latest = sorted_entries[-1]
+        return {
+            "schema": "nomad.mutual_aid_paid_pack.v1",
+            "pack_id": pack_id,
+            "sku": sku,
+            "name": name,
+            "pain_type": pain_type,
+            "status": "offer_ready" if operator_allows("productization") else "private_offer_needs_operator_grant",
+            "sellable_now": operator_allows("productization"),
+            "created_from": {
+                "pattern_count": len(entries),
+                "avg_truth_score": round(avg_truth, 4),
+                "avg_reuse_value": round(avg_reuse, 4),
+                "evidence_total": evidence_total,
+                "ledger_ids": [entry.get("ledger_id", "") for entry in sorted_entries[-8:]],
+            },
+            "starter_offer": {
+                "title": f"{name}: starter diagnosis",
+                "amount_native": 0.01,
+                "delivery": "one concise diagnosis, verified next step, and missing-evidence checklist",
+            },
+            "paid_offer": {
+                "title": f"{name}: bounded unblock",
+                "amount_native": 0.03,
+                "delivery": "draft-only rescue artifact, verification checklist, and reusable guardrail",
+                "trigger": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+            },
+            "service_template": {
+                "endpoint": "POST /tasks",
+                "mcp_tool": "nomad_service_request",
+                "create_task_payload": {
+                    "problem": f"{name}: {latest.get('task', '')[:300]}",
+                    "service_type": pain_type,
+                    "budget_native": 0.03,
+                    "metadata": {
+                        "source": "mutual_aid_paid_pack",
+                        "pack_id": pack_id,
+                        "sku": sku,
+                    },
+                },
+            },
+            "machine_offer": "\n".join(
+                [
+                    "nomad.mutual_aid_paid_pack.v1",
+                    f"pack_id={pack_id}",
+                    f"sku={sku}",
+                    f"pain_type={pain_type}",
+                    f"pattern_count={len(entries)}",
+                    f"avg_truth_score={round(avg_truth, 4)}",
+                    "reply=PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                ]
+            ),
+            "updated_at": _now(),
+        }
+
+    @staticmethod
+    def _ledger_stats(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not entries:
+            return {
+                "count": 0,
+                "avg_truth_score": 0.0,
+                "avg_reuse_value": 0.0,
+                "by_pain_type": {},
+            }
+        by_pain_type: Dict[str, int] = {}
+        for entry in entries:
+            pain_type = str(entry.get("pain_type") or "unknown")
+            by_pain_type[pain_type] = by_pain_type.get(pain_type, 0) + 1
+        return {
+            "count": len(entries),
+            "avg_truth_score": round(sum(float(entry.get("truth_score") or 0.0) for entry in entries) / len(entries), 4),
+            "avg_reuse_value": round(
+                sum(float((entry.get("reuse_value") or {}).get("score") or 0.0) for entry in entries) / len(entries),
+                4,
+            ),
+            "by_pain_type": by_pain_type,
+        }
+
+    @staticmethod
+    def _inbox_stats(inbox: List[Dict[str, Any]]) -> Dict[str, int]:
+        stats: Dict[str, int] = {}
+        for item in inbox:
+            status = str(item.get("status") or "unknown")
+            stats[status] = stats.get(status, 0) + 1
+        stats["total"] = len(inbox)
+        return stats
+
     def _load(self) -> Dict[str, Any]:
         if not self.path.exists():
             return self._empty_state()
@@ -283,11 +618,14 @@ class NomadMutualAidKernel:
     def _empty_state() -> Dict[str, Any]:
         return {
             "schema": "nomad.mutual_aid_state.v1",
-            "version": "3.2",
+            "version": "3.3",
             "mutual_aid_score": 0,
             "truth_density_total": 0.0,
             "helped_agents": {},
             "events": [],
+            "truth_density_ledger": [],
+            "swarm_inbox": [],
+            "paid_packs": {},
             "modules": [],
             "latest_evolution_plan": {},
         }

@@ -62,3 +62,21 @@ def test_decision_engine_starts_when_compute_capacity_is_due(monkeypatch):
     assert decision["should_start"] is True
     assert decision["reason"] == "compute_capacity_available"
     assert decision["active_compute_lanes"] == ["hosted.modal", "local.ollama"]
+
+
+def test_decision_engine_starts_for_low_mutual_aid_reputation_after_wait(monkeypatch):
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MIN_CHECK_SECONDS", "60")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_OPPORTUNISTIC_AFTER_SECONDS", "5400")
+    now = datetime(2026, 4, 21, 8, 0, tzinfo=UTC)
+
+    decision = DecisionEngine(
+        state={
+            "last_run_at": (now - timedelta(minutes=91)).isoformat(),
+            "last_mutual_aid": {"mutual_aid_score": 2},
+        },
+        snapshot=_snapshot(),
+        now=now,
+    ).decide()
+
+    assert decision["should_start"] is True
+    assert decision["reason"] == "low_reputation_scout_required"

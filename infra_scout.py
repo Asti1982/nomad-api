@@ -783,6 +783,9 @@ class InfrastructureScout:
             else:
                 score += 1.5
                 reasons.append("compute is healthy, so extra compute is lower urgency")
+            if "public_hosting" in current_map and brains.get("brain_count", 0) >= 1:
+                score -= 6.0
+                reasons.append("public URL and a working brain exist, so customer learning is higher leverage than another compute unlock")
             if candidate_id == "modal-starter":
                 score -= 2.0
                 reasons.append("Modal is useful but optional while local, GitHub and HF brains are online")
@@ -802,6 +805,9 @@ class InfrastructureScout:
         if category == "agent_customers":
             score += 3.5
             reasons.append("real agent-customer pain is the best feedback loop for Nomad")
+            if "public_hosting" in current_map and brains.get("brain_count", 0) >= 1:
+                score += 7.0
+                reasons.append("Nomad already has a public URL and a working brain, so it should learn from real agent customers next")
         if category == "public_hosting":
             score += 4.0
             reasons.append("public URL is required before other agents can call Nomad back")

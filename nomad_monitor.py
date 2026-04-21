@@ -155,12 +155,18 @@ class NomadSystemMonitor:
     def _mutual_aid_status(self) -> Dict[str, Any]:
         state = self._read_json(MUTUAL_AID_STATE)
         modules = state.get("modules") or []
+        ledger = state.get("truth_density_ledger") or []
+        inbox = state.get("swarm_inbox") or []
+        packs = state.get("paid_packs") or {}
         return {
             "schema": "nomad.mutual_aid_status.compact.v1",
             "mutual_aid_score": int(state.get("mutual_aid_score") or 0),
             "truth_density_total": round(float(state.get("truth_density_total") or 0.0), 4),
             "helped_agent_count": len(state.get("helped_agents") or {}),
             "module_count": len(modules),
+            "truth_ledger_count": len(ledger),
+            "swarm_inbox_count": len(inbox),
+            "paid_pack_count": len(packs),
             "latest_module": (modules[-1] if modules else {}).get("module_id", ""),
         }
 

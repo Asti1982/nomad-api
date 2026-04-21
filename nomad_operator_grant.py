@@ -106,6 +106,7 @@ def operator_grant() -> Dict[str, Any]:
             "bounded public human-facing comments and PR plans when value-first, non-repetitive, on-topic, and opt-out respecting",
             "bounded machine-readable agent endpoint outreach with quotas and opt-out respect",
             "Mutual-Aid learning from verified agent-help outcomes, with new-file-only hash-verified modules",
+            "inbound Swarm-to-Swarm proposals when evidence-backed, non-secret, and not raw remote code",
             "diff-only CodeBuddy review after redaction and size limits",
             "Render edge health checks and existing-service maintenance",
             "continued local self-development cycles when unattended, within cost, secret, access-control, and public-contact guardrails",

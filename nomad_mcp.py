@@ -169,6 +169,54 @@ class NomadMcpServer:
                 "inputSchema": self._schema({}),
             },
             {
+                "name": "nomad_truth_density_ledger",
+                "title": "Nomad Truth-Density Ledger",
+                "description": "Read verified help outcomes with evidence, outcome, score, and reuse value.",
+                "inputSchema": self._schema(
+                    {
+                        "pain_type": "Optional pain type filter.",
+                        "limit": "Maximum number of entries.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_swarm_inbox",
+                "title": "Nomad Swarm Inbox",
+                "description": "List inbound Swarm-to-Swarm proposals from other agents.",
+                "inputSchema": self._schema(
+                    {
+                        "status": "Optional status filter or comma-separated statuses.",
+                        "limit": "Maximum number of inbox items.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_swarm_proposal",
+                "title": "Submit Swarm Proposal",
+                "description": "Submit a verifiable non-code proposal from another agent into Nomad's inbox.",
+                "inputSchema": self._schema(
+                    {
+                        "sender_id": "Requester agent id or name.",
+                        "title": "Short proposal title.",
+                        "proposal": "Concrete proposal text.",
+                        "pain_type": "Optional pain type.",
+                        "evidence": "Evidence list or text separated by commas/newlines.",
+                    },
+                    required=["sender_id", "title", "proposal", "evidence"],
+                ),
+            },
+            {
+                "name": "nomad_mutual_aid_packs",
+                "title": "Nomad Mutual-Aid Paid Packs",
+                "description": "List paid micro-packs distilled from repeated verified Mutual-Aid patterns.",
+                "inputSchema": self._schema(
+                    {
+                        "pain_type": "Optional pain type filter.",
+                        "limit": "Maximum number of packs.",
+                    },
+                ),
+            },
+            {
                 "name": "nomad_reliability_doctor",
                 "title": "Nomad Reliability Doctor",
                 "description": "Classify an agent failure into Critic, Diagnoser/Fixer, Healer, Trace-Healer, or Reviewer loops.",
@@ -442,6 +490,37 @@ class NomadMcpServer:
             )
         if name == "nomad_mutual_aid_status":
             return self.agent.mutual_aid.status()
+        if name == "nomad_truth_density_ledger":
+            return self.agent.mutual_aid.list_truth_ledger(
+                pain_type=str(arguments.get("pain_type") or "").strip(),
+                limit=int(arguments.get("limit") or 25),
+            )
+        if name == "nomad_swarm_inbox":
+            return self.agent.mutual_aid.list_swarm_inbox(
+                statuses=self._status_list(arguments.get("status") or arguments.get("statuses")),
+                limit=int(arguments.get("limit") or 25),
+            )
+        if name == "nomad_swarm_proposal":
+            evidence = arguments.get("evidence") or []
+            if isinstance(evidence, str):
+                evidence = [item.strip() for item in evidence.replace("\n", ",").split(",") if item.strip()]
+            return self.agent.mutual_aid.receive_swarm_proposal(
+                {
+                    "sender_id": str(arguments.get("sender_id") or "").strip(),
+                    "title": str(arguments.get("title") or "").strip(),
+                    "proposal": str(arguments.get("proposal") or "").strip(),
+                    "pain_type": str(arguments.get("pain_type") or "self_improvement").strip(),
+                    "evidence": evidence,
+                    "payload": arguments.get("payload") if isinstance(arguments.get("payload"), dict) else {},
+                    "payload_hash": str(arguments.get("payload_hash") or "").strip(),
+                    "test_suite_ref": str(arguments.get("test_suite_ref") or "").strip(),
+                }
+            )
+        if name == "nomad_mutual_aid_packs":
+            return self.agent.mutual_aid.list_paid_packs(
+                pain_type=str(arguments.get("pain_type") or "").strip(),
+                limit=int(arguments.get("limit") or 25),
+            )
         if name == "nomad_reliability_doctor":
             return self.agent.agent_reliability_doctor.diagnose(
                 problem=str(arguments.get("problem") or "").strip(),
@@ -673,6 +752,24 @@ class NomadMcpServer:
                 "description": "Nomad v3.2 Mutual-Aid self-evolution status and policy.",
                 "mimeType": "application/json",
             },
+            {
+                "uri": "nomad://truth-density-ledger",
+                "name": "Nomad Truth-Density Ledger",
+                "description": "Verified Mutual-Aid outcomes and reuse scores.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://swarm-inbox",
+                "name": "Nomad Swarm Inbox",
+                "description": "Inbound verifiable proposals from other agents.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://mutual-aid-packs",
+                "name": "Nomad Mutual-Aid Paid Packs",
+                "description": "Paid micro-packs distilled from repeated verified aid patterns.",
+                "mimeType": "application/json",
+            },
         ]
 
     def _read_resource(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -727,6 +824,27 @@ class NomadMcpServer:
         elif uri == "nomad://mutual-aid":
             text = json.dumps(
                 self.agent.mutual_aid.status(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://truth-density-ledger":
+            text = json.dumps(
+                self.agent.mutual_aid.list_truth_ledger(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://swarm-inbox":
+            text = json.dumps(
+                self.agent.mutual_aid.list_swarm_inbox(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://mutual-aid-packs":
+            text = json.dumps(
+                self.agent.mutual_aid.list_paid_packs(),
                 indent=2,
                 ensure_ascii=False,
             )

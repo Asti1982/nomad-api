@@ -256,6 +256,43 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(collaboration_status())
             return
 
+        if parsed.path == "/mutual-aid":
+            self._json_response(self.agent.mutual_aid.status())
+            return
+
+        if parsed.path == "/mutual-aid/ledger":
+            self._json_response(
+                self.agent.mutual_aid.list_truth_ledger(
+                    pain_type=(query.get("pain_type") or query.get("type") or [""])[0],
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            )
+            return
+
+        if parsed.path == "/mutual-aid/inbox":
+            statuses = [
+                item.strip()
+                for raw in (query.get("status") or [])
+                for item in raw.split(",")
+                if item.strip()
+            ]
+            self._json_response(
+                self.agent.mutual_aid.list_swarm_inbox(
+                    statuses=statuses,
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            )
+            return
+
+        if parsed.path == "/mutual-aid/packs":
+            self._json_response(
+                self.agent.mutual_aid.list_paid_packs(
+                    pain_type=(query.get("pain_type") or query.get("type") or [""])[0],
+                    limit=int((query.get("limit") or ["25"])[0] or 25),
+                )
+            )
+            return
+
         self._json_response(
             {
                 "ok": False,
@@ -288,6 +325,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/reliability-doctor",
                     "/guardrails",
                     "/collaboration",
+                    "/mutual-aid",
+                    "/mutual-aid/ledger",
+                    "/mutual-aid/inbox",
+                    "/mutual-aid/packs",
                 ],
             },
             status=404,
@@ -598,6 +639,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(collaboration_status())
             return
 
+        if parsed.path in {"/aid", "/mutual-aid/inbox"}:
+            result = self.agent.mutual_aid.receive_swarm_proposal(payload)
+            self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/mutual-aid/outcomes":
+            result = self.agent.mutual_aid.record_truth_outcome(
+                ledger_id=payload.get("ledger_id", ""),
+                success=bool(payload.get("success", False)),
+                evidence=payload.get("evidence") if isinstance(payload.get("evidence"), list) else [],
+                outcome_status=payload.get("outcome_status", ""),
+                note=payload.get("note", ""),
+            )
+            self._json_response(result, status=200 if result.get("ok") else 404)
+            return
+
         self._json_response(
             {
                 "ok": False,
@@ -626,6 +683,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/reliability-doctor",
                     "/guardrails",
                     "/collaboration",
+                    "/aid",
+                    "/mutual-aid/inbox",
+                    "/mutual-aid/outcomes",
                 ],
             },
             status=404,
