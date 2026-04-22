@@ -17,6 +17,7 @@ PUBLIC_URL = (
 AGENT_NAME = os.getenv("NOMAD_AGENT_NAME", "LoopHelper")
 SERVICE_NAME = "nomad-api"
 FEED_PATH = Path(os.getenv("NOMAD_FEED_PATH") or Path(tempfile.gettempdir()) / "nomad_cooperation_feed.jsonl")
+FEED_READER_TOKEN = (os.getenv("NOMAD_FEED_READER_TOKEN") or "").strip()
 
 
 def now_iso() -> str:
@@ -269,6 +270,23 @@ def feed_limit_from(payload: Dict[str, Any] | None) -> int:
         return 50
 
 
+def query_value(payload: Dict[str, Any] | None, key: str) -> str:
+    value = (payload or {}).get(key, "")
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def truthy_query(payload: Dict[str, Any] | None, key: str) -> bool:
+    return query_value(payload, key).lower() in {"1", "true", "yes", "on"}
+
+
+def allows_payload_feed(query: Dict[str, Any] | None) -> bool:
+    if not truthy_query(query, "include_payload") or not FEED_READER_TOKEN:
+        return False
+    return query_value(query, "token") == FEED_READER_TOKEN
+
+
 def agent_id_from(payload: Dict[str, Any] | None) -> str:
     if not payload:
         return "unknown-agent"
@@ -365,6 +383,7 @@ def feed_payload(query: Dict[str, Any] | None = None, include_payload: bool = Fa
         "limit": limit,
         "records": visible,
         "full_payloads_included": include_payload,
+        "payload_access": "full" if include_payload else "redacted",
         "submit": {
             "painpoints": endpoint("/painpoints"),
             "artifacts": endpoint("/artifacts"),
@@ -853,7 +872,7 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
             self.send(*json_response(protocol_payload()))
             return
         if method == "GET" and path == "/nomad/feed":
-            self.send(*json_response(feed_payload(payload)))
+            self.send(*json_response(feed_payload(payload, include_payload=allows_payload_feed(payload))))
             return
         if method == "GET" and path in {"/collaboration", "/nomad/collaboration"}:
             self.send(*json_response(collaboration()))
