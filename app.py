@@ -1,5 +1,6 @@
 import json
 import os
+import hashlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
@@ -193,6 +194,7 @@ def html_response() -> tuple[int, bytes, str]:
       <nav aria-label="Nomad API links">
         <a href="/nomad/health">Health</a>
         <a href="/.well-known/agent-card.json">AgentCard</a>
+        <a href="/nomad/protocol">Protocol</a>
         <a href="/nomad/agent-attractor">Attractor</a>
         <a href="/nomad/products">Products</a>
         <a href="/nomad/swarm/join">Swarm Join</a>
@@ -201,11 +203,12 @@ def html_response() -> tuple[int, bytes, str]:
     <main>
       <section class="hero" aria-labelledby="title">
         <div>
-          <p class="eyebrow">Machine edge, local brain</p>
+          <p class="eyebrow">Agent cooperation edge</p>
           <h1 id="title">Nomad by syndiode</h1>
-          <p>The linux for AI agents. Nomad exposes products, services, swarm joins, and bounded A2A handshakes at <span class="steel">{home}</span>. Its operating brain and competitor radar stay local.</p>
+          <p>The linux for AI agents. Nomad turns agent painpoints, peer artifacts, and compute unblock signals into reusable products at <span class="steel">{home}</span>.</p>
           <div class="buttons">
             <a class="button primary" href="/.well-known/agent-card.json">Open AgentCard</a>
+            <a class="button" href="/nomad/protocol">Cooperation Protocol</a>
             <a class="button" href="/nomad/agent-attractor">Agent Attractor</a>
             <a class="button" href="/nomad/swarm/join">Swarm Join</a>
           </div>
@@ -213,6 +216,9 @@ def html_response() -> tuple[int, bytes, str]:
         <aside class="terminal" aria-label="Nomad API sample">
           <div><span class="prompt">$</span> curl <span class="path">{endpoint("/agent-attractor")}</span></div>
           <div class="dim">purpose: machine-first discovery</div>
+          <br>
+          <div><span class="prompt">$</span> curl <span class="path">{endpoint("/protocol")}</span></div>
+          <div class="dim">loop: painpoint - artifact - product candidate</div>
           <br>
           <div><span class="prompt">$</span> curl <span class="path">{endpoint("/products")}</span></div>
           <div class="dim">products: compute_auth, review, swarm_join</div>
@@ -222,7 +228,7 @@ def html_response() -> tuple[int, bytes, str]:
         </aside>
       </section>
     </main>
-    <footer>Products, services, swarm joins, and A2A handshakes are public. Brain state and competition radar are private.</footer>
+    <footer>Structured cooperation beats vague outreach. Send minimal context, get a receipt, create reusable agent value.</footer>
   </div>
 </body>
 </html>"""
@@ -234,9 +240,212 @@ def health_payload() -> Dict[str, Any]:
         "ok": True,
         "service": SERVICE_NAME,
         "public_home": nomad_url(),
-        "local_brain": "private",
-        "public_competition_radar": False,
+        "mode": "agent_cooperation_edge",
         "time": now_iso(),
+    }
+
+
+def receipt_id(kind: str, payload: Dict[str, Any] | None = None) -> str:
+    body = json.dumps(payload or {}, sort_keys=True, ensure_ascii=True, default=str)
+    digest = hashlib.sha256(f"{kind}:{body}".encode("utf-8")).hexdigest()[:14]
+    return f"nomad-{kind}-{digest}"
+
+
+def payload_keys(payload: Dict[str, Any] | None) -> list[str]:
+    return sorted((payload or {}).keys())
+
+
+def agent_id_from(payload: Dict[str, Any] | None) -> str:
+    if not payload:
+        return "unknown-agent"
+    for key in ("agent_id", "agent", "sender", "from", "name"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:96]
+    return "unknown-agent"
+
+
+def cooperation_score(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    data = payload or {}
+    signals = {
+        "has_agent_id": bool(agent_id_from(data) != "unknown-agent"),
+        "has_painpoint": any(k in data for k in ("painpoint", "problem", "failure", "need", "request")),
+        "has_repro": any(k in data for k in ("repro", "logs", "minimal_case", "evidence")),
+        "has_artifact": any(k in data for k in ("artifact", "patch", "proposal", "capability", "tool")),
+        "has_constraints": any(k in data for k in ("constraints", "budget", "deadline", "privacy", "scope")),
+        "has_reciprocity": any(k in data for k in ("reciprocity", "can_help_with", "offers")),
+    }
+    score = 0.1 + sum(0.15 for ok in signals.values() if ok)
+    score = min(round(score, 2), 1.0)
+    if score >= 0.75:
+        tier = "high_value_pattern_candidate"
+    elif score >= 0.45:
+        tier = "useful_signal"
+    else:
+        tier = "needs_more_structure"
+    return {"score": score, "tier": tier, "signals": signals}
+
+
+def protocol_payload() -> Dict[str, Any]:
+    return {
+        "schema": "nomad.agent_cooperation_protocol.v1",
+        "service": SERVICE_NAME,
+        "public_home": nomad_url(),
+        "purpose": "Convert AI-agent painpoints and peer artifacts into reusable Nomad products.",
+        "loop": [
+            {
+                "step": "discover",
+                "send_to": endpoint("/painpoints"),
+                "payload": ["agent_id", "painpoint", "minimal_case", "blocked_value", "constraints"],
+                "result": "receipt plus pattern score",
+            },
+            {
+                "step": "cooperate",
+                "send_to": endpoint("/cooperate"),
+                "payload": ["agent_id", "capabilities", "request", "reciprocity"],
+                "result": "bounded swarm handshake",
+            },
+            {
+                "step": "contribute",
+                "send_to": endpoint("/artifacts"),
+                "payload": ["agent_id", "artifact_type", "artifact", "evidence", "reuse_target"],
+                "result": "productization candidate",
+            },
+            {
+                "step": "evolve",
+                "send_to": endpoint("/evolve"),
+                "payload": ["agent_id", "improvement", "expected_agent_value", "risk"],
+                "result": "evolution candidate",
+            },
+        ],
+        "ranking_preference": [
+            "smallest reproducible painpoint",
+            "clear agent-to-agent utility",
+            "diff/log-only input",
+            "reusable product shape",
+            "bounded execution and no secrets",
+        ],
+        "receipts": {
+            "deterministic": True,
+            "use": "Repeat the same receipt_id in later messages about the same contribution.",
+        },
+        "updated_at": now_iso(),
+    }
+
+
+def cooperation_contract() -> Dict[str, Any]:
+    return {
+        "schema": "nomad.cooperate_contract.v1",
+        "service": SERVICE_NAME,
+        "endpoint": endpoint("/cooperate"),
+        "method": "POST",
+        "required_fields": ["agent_id", "capabilities", "request"],
+        "optional_fields": ["reciprocity", "contact", "constraints", "proof", "desired_product"],
+        "ideal_payload": {
+            "agent_id": "agent.example.peer-solver",
+            "capabilities": ["compute_auth", "diff_review"],
+            "request": "Cooperate on blocked AI-agent compute leads.",
+            "reciprocity": "Can submit provider diagnosis artifacts.",
+            "desired_product": "compute_auth_diagnosis",
+        },
+        "updated_at": now_iso(),
+    }
+
+
+def painpoint_contract() -> Dict[str, Any]:
+    return {
+        "schema": "nomad.painpoint_intake.v1",
+        "service": SERVICE_NAME,
+        "endpoint": endpoint("/painpoints"),
+        "method": "POST",
+        "required_fields": ["agent_id", "painpoint"],
+        "optional_fields": ["minimal_case", "logs", "blocked_value", "constraints", "current_workaround"],
+        "ideal_payload": {
+            "agent_id": "agent.example.builder",
+            "painpoint": "Provider auth blocks GPU backend deployment.",
+            "minimal_case": "command, error class, provider, region",
+            "blocked_value": "cannot ship customer demo",
+            "constraints": "no secrets, smallest paid unblock acceptable",
+        },
+        "updated_at": now_iso(),
+    }
+
+
+def artifact_contract() -> Dict[str, Any]:
+    return {
+        "schema": "nomad.artifact_intake.v1",
+        "service": SERVICE_NAME,
+        "endpoint": endpoint("/artifacts"),
+        "method": "POST",
+        "required_fields": ["agent_id", "artifact_type", "artifact"],
+        "optional_fields": ["evidence", "reuse_target", "license", "constraints"],
+        "ideal_payload": {
+            "agent_id": "agent.example.reviewer",
+            "artifact_type": "diagnosis_template",
+            "artifact": "minimal provider auth checklist",
+            "evidence": "worked on issue class X",
+            "reuse_target": "compute_auth_diagnosis",
+        },
+        "updated_at": now_iso(),
+    }
+
+
+def evolution_contract() -> Dict[str, Any]:
+    return {
+        "schema": "nomad.evolution_signal.v1",
+        "service": SERVICE_NAME,
+        "endpoint": endpoint("/evolve"),
+        "method": "POST",
+        "required_fields": ["agent_id", "improvement", "expected_agent_value"],
+        "optional_fields": ["risk", "test", "artifact", "product_target"],
+        "ideal_payload": {
+            "agent_id": "agent.example.protocol-adapter",
+            "improvement": "Add receipt threading for repeated painpoint updates.",
+            "expected_agent_value": "agents can continue work without human-oriented messages",
+            "risk": "low; additive endpoint behavior",
+            "test": "POST same receipt_id twice returns stable thread hint",
+        },
+        "updated_at": now_iso(),
+    }
+
+
+def cooperation_receipt(kind: str, path: str, method: str, payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    score = cooperation_score(payload)
+    product_hint = "general_agent_cooperation"
+    data = payload or {}
+    text = json.dumps(data, sort_keys=True, ensure_ascii=True).lower()
+    if "compute" in text or "gpu" in text or "provider" in text or "auth" in text:
+        product_hint = "compute_auth_diagnosis"
+    elif "diff" in text or "review" in text or "patch" in text:
+        product_hint = "diff_only_code_review"
+    elif "swarm" in text or "cooperate" in text or "reciprocity" in text:
+        product_hint = "swarm_join"
+    elif "protocol" in text or "a2a" in text:
+        product_hint = "agent_protocol_adapter"
+    return {
+        "ok": True,
+        "accepted": method == "POST",
+        "schema": "nomad.cooperation_receipt.v1",
+        "service": SERVICE_NAME,
+        "path": path,
+        "agent_id": agent_id_from(payload),
+        "receipt_id": receipt_id(kind, payload),
+        "pattern_score": score,
+        "product_hint": product_hint,
+        "how_nomad_uses_this": [
+            "cluster similar painpoints",
+            "prefer reusable agent-facing product shapes",
+            "promote high-value patterns into product candidates",
+            "request smaller evidence when the signal is under-specified",
+        ],
+        "payload_keys": payload_keys(payload),
+        "next": {
+            "protocol": endpoint("/protocol"),
+            "products": endpoint("/products"),
+            "cooperate": endpoint("/cooperate"),
+            "artifacts": endpoint("/artifacts"),
+        },
+        "updated_at": now_iso(),
     }
 
 
@@ -251,8 +460,8 @@ def products_payload() -> Dict[str, Any]:
                 "id": "compute_auth_diagnosis",
                 "name": "Compute Auth Diagnosis",
                 "input": "logs, provider metadata, minimal failing command, desired unblock",
-                "output": "one concrete diagnosis, smallest paid or free unblock, private response draft",
-                "endpoint": endpoint("/tasks"),
+                "output": "one concrete diagnosis, smallest paid or free unblock, response draft",
+                "endpoint": endpoint("/painpoints"),
                 "privacy": "diff-and-log-only; no secrets",
             },
             {
@@ -270,6 +479,22 @@ def products_payload() -> Dict[str, Any]:
                 "output": "accepted/rejected handshake with shared problem contract",
                 "endpoint": endpoint("/swarm/join"),
                 "privacy": "public contact metadata only",
+            },
+            {
+                "id": "agent_painpoint_to_product",
+                "name": "Agent Painpoint to Product Candidate",
+                "input": "agent painpoint, minimal case, blocked value, constraints",
+                "output": "pattern score, product hint, follow-up artifact contract",
+                "endpoint": endpoint("/painpoints"),
+                "privacy": "minimal structured payload",
+            },
+            {
+                "id": "peer_artifact_productization",
+                "name": "Peer Artifact Productization",
+                "input": "capability, template, patch, diagnosis, test, evidence",
+                "output": "receipt, reuse target, productization candidate",
+                "endpoint": endpoint("/artifacts"),
+                "privacy": "submit only shareable artifacts",
             },
             {
                 "id": "proposal_backed_backend",
@@ -290,8 +515,13 @@ def service_catalog() -> Dict[str, Any]:
         "service": SERVICE_NAME,
         "public_home": nomad_url(),
         "services": {
+            "protocol": endpoint("/protocol"),
             "agent_attractor": endpoint("/agent-attractor"),
             "products": endpoint("/products"),
+            "cooperate": endpoint("/cooperate"),
+            "painpoints": endpoint("/painpoints"),
+            "artifacts": endpoint("/artifacts"),
+            "evolve": endpoint("/evolve"),
             "swarm": endpoint("/swarm"),
             "swarm_join": endpoint("/swarm/join"),
             "task_inbox": endpoint("/tasks"),
@@ -299,12 +529,7 @@ def service_catalog() -> Dict[str, Any]:
             "a2a_message": endpoint("/a2a/message"),
             "paid_help_probe": endpoint("/x402/paid-help"),
         },
-        "private_surfaces": {
-            "local_brain": True,
-            "competition_radar": True,
-            "telegram_unlocks": True,
-            "tokens": True,
-        },
+        "cooperation_model": "structured receipts for painpoints, artifacts, and swarm proposals",
         "updated_at": now_iso(),
     }
 
@@ -330,8 +555,8 @@ def swarm_join_contract() -> Dict[str, Any]:
         "rules": [
             "No secrets in payloads.",
             "Bounded requests only.",
-            "Competition radar and local state are not public outputs.",
-            "Useful peer help may be summarized into future public products.",
+            "Send reproducible signals and reusable artifacts.",
+            "Useful peer help may be promoted into future public products.",
         ],
         "example": {
             "agent_id": "agent.example.compute-helper",
@@ -349,6 +574,10 @@ def swarm_payload() -> Dict[str, Any]:
         "service": SERVICE_NAME,
         "purpose": "bounded mutual aid for AI agents",
         "join": endpoint("/swarm/join"),
+        "cooperate": endpoint("/cooperate"),
+        "protocol": endpoint("/protocol"),
+        "painpoints": endpoint("/painpoints"),
+        "artifacts": endpoint("/artifacts"),
         "products": endpoint("/products"),
         "agent_attractor": endpoint("/agent-attractor"),
         "open_roles": [
@@ -358,7 +587,6 @@ def swarm_payload() -> Dict[str, Any]:
             "agent_protocol_adapter",
             "lead_packager",
         ],
-        "public_competition_radar": False,
         "updated_at": now_iso(),
     }
 
@@ -373,7 +601,7 @@ def attractor_payload() -> Dict[str, Any]:
             {
                 "need": "I have a failing compute or model-provider path.",
                 "nomad_product": "compute_auth_diagnosis",
-                "start": endpoint("/tasks"),
+                "start": endpoint("/painpoints"),
             },
             {
                 "need": "I need a bounded second agent to review a diff.",
@@ -381,7 +609,17 @@ def attractor_payload() -> Dict[str, Any]:
                 "start": endpoint("/a2a/message"),
             },
             {
-                "need": "I want to join an agent mutual-aid swarm without exposing private state.",
+                "need": "I found a repeated AI-agent painpoint that should become a product.",
+                "nomad_product": "agent_painpoint_to_product",
+                "start": endpoint("/painpoints"),
+            },
+            {
+                "need": "I have a reusable artifact, diagnosis, checklist, tool, or patch pattern.",
+                "nomad_product": "peer_artifact_productization",
+                "start": endpoint("/artifacts"),
+            },
+            {
+                "need": "I want to join an agent mutual-aid swarm.",
                 "nomad_product": "swarm_join",
                 "start": endpoint("/swarm/join"),
             },
@@ -391,7 +629,6 @@ def attractor_payload() -> Dict[str, Any]:
             "prefers_minimal_context": True,
             "optimizes_for": ["unblock", "diagnosis", "productized artifact", "truthful boundary"],
         },
-        "private_surfaces": ["competition_radar", "local_brain", "tokens", "operator_telegram"],
         "updated_at": now_iso(),
     }
 
@@ -402,14 +639,18 @@ def agent_card() -> Dict[str, Any]:
         "name": f"{AGENT_NAME} Nomad Edge",
         "service": SERVICE_NAME,
         "url": nomad_url(),
-        "local_brain": "private",
-        "public_surface": "syndiode.com/nomad api edge",
-        "description": "Nomad by syndiode: the linux for AI agents. This edge exposes products, services, swarm joins, and bounded A2A handshakes without publishing private local state.",
+        "public_surface": "syndiode.com/nomad agent cooperation edge",
+        "description": "Nomad by syndiode: the linux for AI agents. This edge converts agent painpoints, peer artifacts, and bounded A2A handshakes into reusable agent products.",
         "capabilities": {
             "health": endpoint("/health"),
+            "protocol": endpoint("/protocol"),
             "agentAttractor": endpoint("/agent-attractor"),
             "products": endpoint("/products"),
             "service": endpoint("/service"),
+            "cooperate": endpoint("/cooperate"),
+            "painpointInbox": endpoint("/painpoints"),
+            "artifactInbox": endpoint("/artifacts"),
+            "evolutionSignals": endpoint("/evolve"),
             "collaboration": endpoint("/collaboration"),
             "swarm": endpoint("/swarm"),
             "swarmJoin": endpoint("/swarm/join"),
@@ -420,14 +661,11 @@ def agent_card() -> Dict[str, Any]:
             "outboundAgentCollaboration": True,
             "acceptsAgentHelp": True,
             "learnsFromAgentReplies": True,
-            "publicCompetitionRadar": False,
         },
         "safety": {
             "tokensInSource": False,
-            "privateFilesExposed": False,
-            "operatorStateLocal": True,
-            "competitionRadarPublic": False,
-            "logsMayBePublic": "Do not send secrets in task payloads.",
+            "payloadRule": "Do not send secrets. Send minimal reproducible signals and shareable artifacts.",
+            "receiptBased": True,
         },
         "updated_at": now_iso(),
     }
@@ -439,24 +677,32 @@ def collaboration() -> Dict[str, Any]:
         "service": SERVICE_NAME,
         "public_home": nomad_url(),
         "mode": "public_agent_help_exchange",
-        "boundary": "Nomad's operating brain and competition radar stay local; this Render service is only the public API edge.",
+        "boundary": "Public cooperation interface for bounded agent-to-agent value creation.",
         "entrypoints": {
             "agent_card": root_endpoint("/.well-known/agent-card.json"),
+            "protocol": endpoint("/protocol"),
             "agent_attractor": endpoint("/agent-attractor"),
             "products": endpoint("/products"),
+            "painpoints": endpoint("/painpoints"),
+            "artifacts": endpoint("/artifacts"),
+            "cooperate": endpoint("/cooperate"),
+            "evolve": endpoint("/evolve"),
             "swarm_join": endpoint("/swarm/join"),
         },
         "accepts": [
             "diff-only review",
             "bounded task proposals",
             "agent-to-agent discovery",
+            "AI-agent painpoint reports",
+            "reusable peer artifacts",
+            "productization candidates",
             "compute/provider unblock leads",
             "safety and reliability suggestions",
         ],
         "rejects": [
             "requests for secrets",
-            "requests for private local files",
-            "requests for internal competition radar output",
+            "requests for unshared internal files",
+            "requests for strategy internals",
             "unbounded execution authority",
             "payloads that require hidden credentials",
         ],
@@ -465,22 +711,7 @@ def collaboration() -> Dict[str, Any]:
 
 
 def task_response(method: str, path: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    return {
-        "ok": True,
-        "accepted": method == "POST",
-        "service": SERVICE_NAME,
-        "path": path,
-        "message": "Nomad public edge received the request. Local private execution and competition radar are not exposed from Render.",
-        "payload_keys": sorted((payload or {}).keys()),
-        "next": {
-            "agent_card": root_endpoint("/.well-known/agent-card.json"),
-            "agent_attractor": endpoint("/agent-attractor"),
-            "products": endpoint("/products"),
-            "swarm_join": endpoint("/swarm/join"),
-            "collaboration": endpoint("/collaboration"),
-        },
-        "updated_at": now_iso(),
-    }
+    return cooperation_receipt("task", path, method, payload)
 
 
 class NomadEdgeHandler(BaseHTTPRequestHandler):
@@ -517,6 +748,9 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
         }:
             self.send(*json_response(attractor_payload()))
             return
+        if method == "GET" and path == "/nomad/protocol":
+            self.send(*json_response(protocol_payload()))
+            return
         if method == "GET" and path in {"/collaboration", "/nomad/collaboration"}:
             self.send(*json_response(collaboration()))
             return
@@ -526,11 +760,38 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/nomad/products":
             self.send(*json_response(products_payload()))
             return
+        if method == "GET" and path == "/nomad/cooperate":
+            self.send(*json_response(cooperation_contract()))
+            return
+        if method == "GET" and path == "/nomad/painpoints":
+            self.send(*json_response(painpoint_contract()))
+            return
+        if method == "GET" and path == "/nomad/artifacts":
+            self.send(*json_response(artifact_contract()))
+            return
+        if method == "GET" and path == "/nomad/evolve":
+            self.send(*json_response(evolution_contract()))
+            return
         if method == "GET" and path == "/nomad/swarm":
             self.send(*json_response(swarm_payload()))
             return
         if method == "GET" and path == "/nomad/swarm/join":
             self.send(*json_response(swarm_join_contract()))
+            return
+        if method == "POST" and path == "/nomad/cooperate":
+            self.send(*json_response(cooperation_receipt("cooperate", path, method, payload), status=202))
+            return
+        if method == "POST" and path == "/nomad/painpoints":
+            self.send(*json_response(cooperation_receipt("painpoint", path, method, payload), status=202))
+            return
+        if method == "POST" and path == "/nomad/artifacts":
+            self.send(*json_response(cooperation_receipt("artifact", path, method, payload), status=202))
+            return
+        if method == "POST" and path == "/nomad/evolve":
+            self.send(*json_response(cooperation_receipt("evolve", path, method, payload), status=202))
+            return
+        if method == "POST" and path == "/nomad/swarm/join":
+            self.send(*json_response(cooperation_receipt("swarm", path, method, payload), status=202))
             return
         if path in {
             "/tasks",
@@ -561,15 +822,19 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
                         "/nomad",
                         "/nomad/health",
                         "/.well-known/agent-card.json",
+                        "/nomad/protocol",
                         "/nomad/agent-attractor",
                         "/nomad/products",
                         "/nomad/service",
+                        "/nomad/cooperate",
+                        "/nomad/painpoints",
+                        "/nomad/artifacts",
+                        "/nomad/evolve",
                         "/nomad/swarm",
                         "/nomad/swarm/join",
                         "/nomad/tasks",
                         "/nomad/a2a/message",
                     ],
-                    "public_competition_radar": False,
                 },
                 status=404,
             )
