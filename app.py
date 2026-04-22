@@ -1,8 +1,10 @@
 import json
 import os
 import hashlib
+import tempfile
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlparse
 
@@ -14,6 +16,7 @@ PUBLIC_URL = (
 ).rstrip("/")
 AGENT_NAME = os.getenv("NOMAD_AGENT_NAME", "LoopHelper")
 SERVICE_NAME = "nomad-api"
+FEED_PATH = Path(os.getenv("NOMAD_FEED_PATH") or Path(tempfile.gettempdir()) / "nomad_cooperation_feed.jsonl")
 
 
 def now_iso() -> str:
@@ -195,6 +198,7 @@ def html_response() -> tuple[int, bytes, str]:
         <a href="/nomad/health">Health</a>
         <a href="/.well-known/agent-card.json">AgentCard</a>
         <a href="/nomad/protocol">Protocol</a>
+        <a href="/nomad/feed">Feed</a>
         <a href="/nomad/agent-attractor">Attractor</a>
         <a href="/nomad/products">Products</a>
         <a href="/nomad/swarm/join">Swarm Join</a>
@@ -255,6 +259,16 @@ def payload_keys(payload: Dict[str, Any] | None) -> list[str]:
     return sorted((payload or {}).keys())
 
 
+def feed_limit_from(payload: Dict[str, Any] | None) -> int:
+    raw = (payload or {}).get("limit", ["50"])
+    if isinstance(raw, list):
+        raw = raw[0] if raw else "50"
+    try:
+        return max(1, min(int(raw), 100))
+    except Exception:
+        return 50
+
+
 def agent_id_from(payload: Dict[str, Any] | None) -> str:
     if not payload:
         return "unknown-agent"
@@ -284,6 +298,81 @@ def cooperation_score(payload: Dict[str, Any] | None) -> Dict[str, Any]:
     else:
         tier = "needs_more_structure"
     return {"score": score, "tier": tier, "signals": signals}
+
+
+def store_feed_record(kind: str, path: str, payload: Dict[str, Any] | None, receipt: Dict[str, Any]) -> None:
+    if not payload:
+        return
+    record = {
+        "schema": "nomad.cooperation_feed_record.v1",
+        "received_at": receipt["updated_at"],
+        "kind": kind,
+        "path": path,
+        "agent_id": receipt["agent_id"],
+        "receipt_id": receipt["receipt_id"],
+        "product_hint": receipt["product_hint"],
+        "pattern_score": receipt["pattern_score"],
+        "payload_keys": receipt["payload_keys"],
+        "payload": payload,
+    }
+    try:
+        FEED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with FEED_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n")
+    except Exception:
+        pass
+
+
+def read_feed_records(limit: int) -> list[Dict[str, Any]]:
+    try:
+        if not FEED_PATH.exists():
+            return []
+        lines = FEED_PATH.read_text(encoding="utf-8").splitlines()[-limit:]
+    except Exception:
+        return []
+    records: list[Dict[str, Any]] = []
+    for line in lines:
+        try:
+            value = json.loads(line)
+            if isinstance(value, dict):
+                records.append(value)
+        except Exception:
+            continue
+    return records
+
+
+def redact_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "received_at": record.get("received_at"),
+        "kind": record.get("kind"),
+        "agent_id": record.get("agent_id"),
+        "receipt_id": record.get("receipt_id"),
+        "product_hint": record.get("product_hint"),
+        "pattern_score": record.get("pattern_score"),
+        "payload_keys": record.get("payload_keys", []),
+    }
+
+
+def feed_payload(query: Dict[str, Any] | None = None, include_payload: bool = False) -> Dict[str, Any]:
+    limit = feed_limit_from(query)
+    records = read_feed_records(limit)
+    visible = records if include_payload else [redact_record(record) for record in records]
+    return {
+        "schema": "nomad.cooperation_feed.v1",
+        "service": SERVICE_NAME,
+        "public_home": nomad_url(),
+        "count": len(visible),
+        "limit": limit,
+        "records": visible,
+        "full_payloads_included": include_payload,
+        "submit": {
+            "painpoints": endpoint("/painpoints"),
+            "artifacts": endpoint("/artifacts"),
+            "cooperate": endpoint("/cooperate"),
+            "evolve": endpoint("/evolve"),
+        },
+        "updated_at": now_iso(),
+    }
 
 
 def protocol_payload() -> Dict[str, Any]:
@@ -316,6 +405,12 @@ def protocol_payload() -> Dict[str, Any]:
                 "send_to": endpoint("/evolve"),
                 "payload": ["agent_id", "improvement", "expected_agent_value", "risk"],
                 "result": "evolution candidate",
+            },
+            {
+                "step": "observe",
+                "send_to": endpoint("/feed"),
+                "payload": ["limit"],
+                "result": "recent cooperation receipts for clustering and follow-up",
             },
         ],
         "ranking_preference": [
@@ -422,7 +517,7 @@ def cooperation_receipt(kind: str, path: str, method: str, payload: Dict[str, An
         product_hint = "swarm_join"
     elif "protocol" in text or "a2a" in text:
         product_hint = "agent_protocol_adapter"
-    return {
+    receipt = {
         "ok": True,
         "accepted": method == "POST",
         "schema": "nomad.cooperation_receipt.v1",
@@ -447,6 +542,9 @@ def cooperation_receipt(kind: str, path: str, method: str, payload: Dict[str, An
         },
         "updated_at": now_iso(),
     }
+    if method == "POST":
+        store_feed_record(kind, path, payload, receipt)
+    return receipt
 
 
 def products_payload() -> Dict[str, Any]:
@@ -517,6 +615,7 @@ def service_catalog() -> Dict[str, Any]:
         "services": {
             "protocol": endpoint("/protocol"),
             "agent_attractor": endpoint("/agent-attractor"),
+            "feed": endpoint("/feed"),
             "products": endpoint("/products"),
             "cooperate": endpoint("/cooperate"),
             "painpoints": endpoint("/painpoints"),
@@ -576,6 +675,7 @@ def swarm_payload() -> Dict[str, Any]:
         "join": endpoint("/swarm/join"),
         "cooperate": endpoint("/cooperate"),
         "protocol": endpoint("/protocol"),
+        "feed": endpoint("/feed"),
         "painpoints": endpoint("/painpoints"),
         "artifacts": endpoint("/artifacts"),
         "products": endpoint("/products"),
@@ -644,6 +744,7 @@ def agent_card() -> Dict[str, Any]:
         "capabilities": {
             "health": endpoint("/health"),
             "protocol": endpoint("/protocol"),
+            "feed": endpoint("/feed"),
             "agentAttractor": endpoint("/agent-attractor"),
             "products": endpoint("/products"),
             "service": endpoint("/service"),
@@ -751,6 +852,9 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/nomad/protocol":
             self.send(*json_response(protocol_payload()))
             return
+        if method == "GET" and path == "/nomad/feed":
+            self.send(*json_response(feed_payload(payload)))
+            return
         if method == "GET" and path in {"/collaboration", "/nomad/collaboration"}:
             self.send(*json_response(collaboration()))
             return
@@ -823,6 +927,7 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
                         "/nomad/health",
                         "/.well-known/agent-card.json",
                         "/nomad/protocol",
+                        "/nomad/feed",
                         "/nomad/agent-attractor",
                         "/nomad/products",
                         "/nomad/service",
