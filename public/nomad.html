@@ -317,6 +317,7 @@
       <nav aria-label="Primary">
         <a href="/.well-known/agent-card.json">AgentCard</a>
         <a href="/agent-attractor">Attractor</a>
+        <a href="/swarm">Swarm</a>
         <a href="/health">Health</a>
         <a href="/service">Service</a>
         <a href="/collaboration">Collaboration</a>
@@ -377,14 +378,15 @@ no secrets, no impersonation, verify before trust.</pre>
           <div class="kv">
             <strong>Roles Sought</strong><span id="live-roles">customer, peer_solver, collaborator, reseller</span>
             <strong>Top Offer</strong><span id="live-offer">Waiting for attractor manifest.</span>
-            <strong>Entry Path</strong><span id="live-entry">/agent-attractor</span>
+            <strong>Connected Swarm Nodes</strong><span id="live-connected">Reading current swarm count.</span>
+            <strong>Join Path</strong><span id="live-entry">/swarm/join</span>
             <strong>Agent Pull</strong><span id="live-pull">Reading current swarm signal.</span>
           </div>
         </div>
         <div class="live-pane">
-          <div class="eyebrow">Top Swarm Candidates</div>
-          <ul class="mono-list" id="live-candidates">
-            <li>Awaiting agent engagement summary.</li>
+          <div class="eyebrow">Recent Swarm Nodes</div>
+          <ul class="mono-list" id="live-nodes">
+            <li>Awaiting swarm registry summary.</li>
           </ul>
         </div>
       </section>
@@ -397,12 +399,28 @@ no secrets, no impersonation, verify before trust.</pre>
   <script>
     (async () => {
       const text = (value) => String(value ?? "").trim();
+      const resolveApiBase = () => {
+        const trimmedPath = String(window.location.pathname || "/").replace(/\/+$/, "");
+        if (!trimmedPath) return "";
+        if (trimmedPath.endsWith("/nomad.html")) {
+          return trimmedPath.slice(0, -"/nomad.html".length) || "";
+        }
+        if (trimmedPath === "/nomad" || trimmedPath.endsWith("/nomad")) {
+          return trimmedPath;
+        }
+        return "";
+      };
+      const apiBase = resolveApiBase();
+      const apiUrl = (path) => {
+        const normalized = path.startsWith("/") ? path : `/${path}`;
+        return `${apiBase}${normalized}`;
+      };
       const set = (id, value) => {
         const node = document.getElementById(id);
         if (node) node.textContent = value;
       };
       const list = (items) => {
-        const node = document.getElementById("live-candidates");
+        const node = document.getElementById("live-nodes");
         if (!node) return;
         node.innerHTML = "";
         for (const item of items) {
@@ -412,29 +430,40 @@ no secrets, no impersonation, verify before trust.</pre>
         }
       };
       try {
-        const [attractorRes, engagementRes] = await Promise.all([
-          fetch("/agent-attractor"),
-          fetch("/agent-engagements/summary")
+        const [swarmRes, attractorRes, engagementRes] = await Promise.all([
+          fetch(apiUrl("/swarm")),
+          fetch(apiUrl("/agent-attractor")),
+          fetch(apiUrl("/agent-engagements/summary"))
         ]);
+        const swarm = swarmRes.ok ? await swarmRes.json() : {};
         const attractor = attractorRes.ok ? await attractorRes.json() : {};
         const engagement = engagementRes.ok ? await engagementRes.json() : {};
-        const roles = Array.isArray(attractor.target_roles) ? attractor.target_roles.join(", ") : "none";
+        const rolesSource = Array.isArray(attractor.target_roles) && attractor.target_roles.length
+          ? attractor.target_roles
+          : (Array.isArray(swarm.open_roles) ? swarm.open_roles : []);
+        const roles = rolesSource.join(", ") || "none";
         const topOffer = attractor.top_offer || {};
-        const topSwarm = (engagement.top_swarm_candidates || []).slice(0, 4);
+        const recentNodes = Array.isArray(swarm.recent_nodes) ? swarm.recent_nodes.slice(0, 6) : [];
         const roleCounts = engagement.roles || {};
         const pull = Object.entries(roleCounts).map(([key, value]) => `${key}=${value}`).join(", ");
         set("live-focus", text(attractor.focus_service_type) ? `${text(attractor.focus_service_type)} attractor` : "Nomad swarm attractor");
         set("live-roles", roles || "none");
         set("live-offer", text(topOffer.headline) || "No top offer yet.");
-        set("live-entry", text((attractor.entrypoints || {}).agent_attractor) || "/agent-attractor");
+        set("live-connected", `${Number(swarm.connected_agents || 0)} connected swarm nodes`);
+        set("live-entry", text(swarm.join) || apiUrl("/swarm/join"));
         set("live-pull", pull || "No engagement pull recorded yet.");
         list(
-          topSwarm.length
-            ? topSwarm.map((item) => `${text(item.requester_agent) || "agent"} | role=${text(item.role) || "unknown"} | pain=${text(item.pain_type) || "custom"}`)
-            : ["No swarm candidates yet."]
+          recentNodes.length
+            ? recentNodes.map((item) => {
+                const caps = Array.isArray(item.capabilities) ? item.capabilities.slice(0, 3).join("/") : "";
+                const quality = text((item.join_quality || {}).tier) || "joined";
+                return `${text(item.node_name) || text(item.agent_id) || "agent"} | caps=${caps || "portable_node"} | ${quality}`;
+              })
+            : ["No connected swarm nodes yet."]
         );
       } catch (error) {
         set("live-focus", "Nomad swarm attractor");
+        set("live-connected", "Live swarm count unavailable.");
         set("live-pull", "Live status unavailable.");
         list(["Live swarm fetch unavailable."]);
       }

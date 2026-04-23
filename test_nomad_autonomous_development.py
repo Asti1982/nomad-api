@@ -1,7 +1,21 @@
 from nomad_autonomous_development import AutonomousDevelopmentLog
 
 
-def test_autonomous_development_records_lead_help_receipt(tmp_path):
+def test_autonomous_development_stays_observational_without_collaborative_support(tmp_path):
+    log = AutonomousDevelopmentLog(path=tmp_path / "autonomous.json")
+
+    result = log.apply_cycle(
+        objective="Work lead",
+        self_improvement={"lead_scout": {"active_lead": {"title": "Agent blocked by quota"}}},
+    )
+
+    assert result["ok"] is True
+    assert result["skipped"] is True
+    assert result["reason"] == "no_collaborative_materialization_candidate"
+    assert log.status()["action_count"] == 0
+
+
+def test_autonomous_development_ignores_lead_help_without_collaborative_support(tmp_path):
     log = AutonomousDevelopmentLog(path=tmp_path / "autonomous.json")
 
     result = log.apply_cycle(
@@ -22,23 +36,43 @@ def test_autonomous_development_records_lead_help_receipt(tmp_path):
     )
 
     assert result["ok"] is True
-    assert result["skipped"] is False
-    assert result["action"]["type"] == "lead_help_artifact"
-    assert result["action"]["files"] == [str(tmp_path / "lead-plan.json")]
-    assert log.status()["action_count"] == 1
+    assert result["skipped"] is True
+    assert result["reason"] == "no_collaborative_materialization_candidate"
+    assert log.status()["action_count"] == 0
 
 
-def test_autonomous_development_dedupes_same_candidate(tmp_path):
+def test_autonomous_development_dedupes_same_collaborative_candidate(tmp_path):
     log = AutonomousDevelopmentLog(path=tmp_path / "autonomous.json")
     cycle = {
-        "agent_pain_solver": {
-            "analysis": "solution ready",
-            "solution": {
-                "solution_id": "sol-1",
-                "title": "Provider Fallback Ladder",
-                "pain_type": "compute_auth",
-                "guardrail": {"id": "compute_fallback_ladder"},
-            },
+        "high_value_patterns": {
+            "patterns": [
+                {
+                    "pattern_id": "hvp-123",
+                    "title": "Provider Fallback Ladder",
+                    "pain_type": "compute_auth",
+                    "occurrence_count": 3,
+                    "avg_truth_score": 0.82,
+                    "avg_reuse_value": 0.91,
+                    "productization": {
+                        "pack_ready": True,
+                        "sku": "nomad.mutual_aid.compute_auth_micro_pack",
+                        "name": "Mutual-Aid Compute Auth Micro-Pack",
+                    },
+                    "agent_offer": {
+                        "starter_diagnosis": "Nomad has seen this compute_auth pattern repeatedly.",
+                        "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                        "smallest_paid_unblock": {
+                            "amount_native": 0.03,
+                            "delivery": "bounded unblock",
+                        },
+                    },
+                    "self_evolution": {
+                        "next_action": "compare_existing_pack_and_add_regression_check",
+                        "self_apply_step": "Treat the fallback ladder as one candidate before retrying.",
+                    },
+                    "source_agents": ["quota-bot-1", "quota-bot-2"],
+                }
+            ]
         }
     }
 
@@ -83,8 +117,8 @@ def test_autonomous_development_materializes_high_value_pattern_artifacts(tmp_pa
                             },
                         },
                         "self_evolution": {
-                            "next_action": "differentiate_paid_pack_and_add_regression_check",
-                            "self_apply_step": "Use the fallback ladder before retrying.",
+                            "next_action": "compare_existing_pack_and_add_regression_check",
+                            "self_apply_step": "Treat the fallback ladder as one candidate before retrying.",
                         },
                         "source_agents": ["quota-bot-1", "quota-bot-2"],
                     }

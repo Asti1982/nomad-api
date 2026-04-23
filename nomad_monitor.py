@@ -95,6 +95,7 @@ class NomadSystemMonitor:
             "autopilot": autopilot_status,
             "autonomous_development": self._autonomous_development_status(),
             "mutual_aid": self._mutual_aid_status(),
+            "roaas": self._roaas_status(),
             "operator": {
                 "grant": operator_grant(),
             },
@@ -235,6 +236,24 @@ class NomadSystemMonitor:
             "latest_action_id": latest.get("action_id", ""),
             "latest_title": latest.get("title", ""),
         }
+
+    def _roaas_status(self) -> Dict[str, Any]:
+        if not self.agent or not hasattr(self.agent, "self_improvement"):
+            return {"enabled": False}
+        brain_router = getattr(self.agent.self_improvement, "brain_router", None)
+        if brain_router is None or not hasattr(brain_router, "predictive_status"):
+            return {"enabled": False}
+        try:
+            status = brain_router.predictive_status(task_type="self_improvement_review")
+            if not isinstance(status, dict):
+                return {"enabled": False}
+            status["enabled"] = bool(status.get("enabled", True))
+            return status
+        except Exception as exc:
+            return {
+                "enabled": False,
+                "error": str(exc),
+            }
 
     @staticmethod
     def _read_json(path: Path) -> Dict[str, Any]:

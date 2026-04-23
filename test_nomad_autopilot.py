@@ -559,6 +559,35 @@ def test_autopilot_self_schedule_records_idle_decision(monkeypatch, tmp_path):
     assert "next_decision_at" in text
 
 
+def test_autopilot_starts_api_even_when_self_schedule_stays_idle(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MIN_CHECK_SECONDS", "60")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MAX_CHECK_SECONDS", "3600")
+    state_path = tmp_path / "autopilot-state.json"
+    state_path.write_text(
+        f'{{"run_count": 1, "last_run_at": "{datetime.now(UTC).isoformat()}"}}',
+        encoding="utf-8",
+    )
+    agent = FakeAgent()
+    agent.service_desk = QuietServiceDesk()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=state_path,
+        sleep_fn=lambda _: None,
+    )
+    autopilot.monitor.snapshot = lambda: {
+        "tasks": {},
+        "compute_lanes": {"local": {"ollama": True}, "hosted": {}},
+    }
+    api_started: list[bool] = []
+    autopilot._ensure_api = lambda: api_started.append(True)  # type: ignore[method-assign]
+
+    result = autopilot.run_once(check_decision=True, serve_api=True)
+
+    assert result["mode"] == "autopilot_idle"
+    assert api_started == [True]
+
+
 def test_autopilot_rotates_outreach_queries_between_runs(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
     monkeypatch.setenv(

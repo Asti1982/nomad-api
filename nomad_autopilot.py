@@ -105,6 +105,9 @@ class NomadAutopilot:
         serve_api: bool = False,
         check_decision: bool = False,
     ) -> Dict[str, Any]:
+        if serve_api:
+            self._ensure_api()
+
         decision: Dict[str, Any] = {}
         if check_decision:
             decision = self._decision()
@@ -112,9 +115,6 @@ class NomadAutopilot:
                 report = self._idle_report(decision)
                 self._record_idle(report)
                 return report
-
-        if serve_api:
-            self._ensure_api()
 
         effective_send_outreach = self.default_send_outreach if send_outreach is None else bool(send_outreach)
         effective_send_a2a = self.default_send_a2a if send_a2a is None else bool(send_a2a)

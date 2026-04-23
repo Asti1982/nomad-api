@@ -232,8 +232,8 @@ def test_self_improvement_runs_public_lead_scout_and_compute_watch(tmp_path):
     assert result["lead_scout"]["help_draft_saved"] is True
     assert result["lead_scout"]["help_draft_path"] == str(tmp_path / "lead-plan.json")
     assert result["agent_pain_solver"]["solution"]["pain_type"] == "compute_auth"
-    assert result["autonomous_development"]["skipped"] is False
-    assert result["autonomous_development"]["action"]["type"] == "lead_help_artifact"
+    assert result["autonomous_development"]["skipped"] is True
+    assert result["autonomous_development"]["reason"] == "no_collaborative_materialization_candidate"
     assert result["agent_pain_solver"]["solution"]["guardrail"]["id"] == "compute_fallback_ladder"
     assert any(action["type"] == "agent_pain_solution" for action in result["local_actions"])
     assert result["market_scan"]["compute_opportunities"][0]["name"] == "Cloudflare Workers AI"
@@ -332,17 +332,20 @@ def test_self_improvement_surfaces_high_value_patterns_and_builds_artifacts(tmp_
 
     assert result["high_value_patterns"]["pattern_count"] == 1
     assert result["high_value_patterns"]["patterns"][0]["title"] == "Provider Fallback Ladder"
-    assert any(action["type"] == "high_value_pattern_productization" for action in result["local_actions"])
+    assert any(action["type"] == "high_value_pattern_watch" for action in result["local_actions"])
     assert result["autonomous_development"]["action"]["type"] == "high_value_pattern_artifact"
     assert any(path.endswith(".service.json") for path in result["autonomous_development"]["action"]["files"])
     assert mutual_aid.calls[0] == (3, 2)
 
 
-def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch):
+def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch, tmp_path):
     monkeypatch.delenv("NOMAD_HOSTED_BRAIN_MODE", raising=False)
     monkeypatch.delenv("NOMAD_ALLOW_HOSTED_BRAINS", raising=False)
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
     monkeypatch.setenv("HF_TOKEN", "hf-test-token")
+    monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
+    monkeypatch.setenv("NOMAD_LANE_HEALTH_PATH", str(tmp_path / "lane-health.json"))
+    monkeypatch.setenv("NOMAD_HEAL_LOG_PATH", str(tmp_path / "heal.ndjson"))
     router = HostedBrainRouter()
     router._ollama_review = lambda messages: {
         "provider": "ollama",
@@ -380,10 +383,13 @@ def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch):
     assert [item["provider"] for item in results] == ["ollama", "huggingface"]
 
 
-def test_hosted_brain_router_prefers_fast_available_ollama_model(monkeypatch):
+def test_hosted_brain_router_prefers_fast_available_ollama_model(monkeypatch, tmp_path):
     monkeypatch.setenv("OLLAMA_MODEL", "")
     monkeypatch.setenv("NOMAD_OLLAMA_SELF_IMPROVE_MODEL", "")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "true")
+    monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
+    monkeypatch.setenv("NOMAD_LANE_HEALTH_PATH", str(tmp_path / "lane-health.json"))
+    monkeypatch.setenv("NOMAD_HEAL_LOG_PATH", str(tmp_path / "heal.ndjson"))
 
     class TagsResponse:
         def raise_for_status(self):
@@ -406,12 +412,15 @@ def test_hosted_brain_router_prefers_fast_available_ollama_model(monkeypatch):
     assert router.ollama_timeout_seconds <= 15
 
 
-def test_hosted_brain_router_skips_unreachable_ollama_when_hosted_available(monkeypatch):
+def test_hosted_brain_router_skips_unreachable_ollama_when_hosted_available(monkeypatch, tmp_path):
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:1b")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
     monkeypatch.setenv("HF_TOKEN", "hf-test-token")
     monkeypatch.delenv("NOMAD_HOSTED_BRAIN_MODE", raising=False)
     monkeypatch.delenv("NOMAD_ALLOW_HOSTED_BRAINS", raising=False)
+    monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
+    monkeypatch.setenv("NOMAD_LANE_HEALTH_PATH", str(tmp_path / "lane-health.json"))
+    monkeypatch.setenv("NOMAD_HEAL_LOG_PATH", str(tmp_path / "heal.ndjson"))
     router = HostedBrainRouter()
     router._ollama_review = lambda messages: (_ for _ in ()).throw(AssertionError("Ollama should be skipped"))
     router._huggingface_review = lambda messages: {
@@ -435,10 +444,13 @@ def test_hosted_brain_router_skips_unreachable_ollama_when_hosted_available(monk
     assert [item["provider"] for item in results] == ["huggingface"]
 
 
-def test_ollama_review_timeout_returns_retryable_fallback_advice(monkeypatch):
+def test_ollama_review_timeout_returns_retryable_fallback_advice(monkeypatch, tmp_path):
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:1b")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
     monkeypatch.setenv("NOMAD_OLLAMA_TIMEOUT_SECONDS", "3")
+    monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
+    monkeypatch.setenv("NOMAD_LANE_HEALTH_PATH", str(tmp_path / "lane-health.json"))
+    monkeypatch.setenv("NOMAD_HEAL_LOG_PATH", str(tmp_path / "heal.ndjson"))
     router = HostedBrainRouter()
 
     def timeout_post(*args, **kwargs):

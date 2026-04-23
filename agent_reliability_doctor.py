@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
     "reflection_critic": {
-        "title": "Reflection/Critic Doctor",
+        "title": "Reflection/Critic Loop",
         "framework_inspiration": "LangGraph-style reflection loop",
         "best_for": ["hallucination", "bad_planning", "self_correction_failure"],
         "why": "Use a critic rubric before retrying, posting, editing code, or claiming success.",
@@ -19,7 +19,7 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "diagnoser_fixer": {
-        "title": "Monitor-Diagnoser-Fixer Team",
+        "title": "Monitor-Diagnoser-Fixer Loop",
         "framework_inspiration": "CrewAI-style role team",
         "best_for": ["loop_break", "compute_auth", "human_in_loop"],
         "why": "Separate detection, root-cause analysis, and the smallest safe repair.",
@@ -32,10 +32,10 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "execution_healer": {
-        "title": "Execution Healer",
-        "framework_inspiration": "Playwright/custom healer-style runtime repair",
+        "title": "Execution Stabilizer",
+        "framework_inspiration": "Playwright/custom runtime stabilization",
         "best_for": ["tool_failure", "execution_failure", "mcp_integration"],
-        "why": "Repair failing tool calls, schemas, selectors, timeouts, and runtime steps with fixtures first.",
+        "why": "Stabilize failing tool calls, schemas, selectors, timeouts, and runtime steps with fixtures first.",
         "loop": ["observe_failure", "patch_contract", "dry_run", "live_retry_once", "record_fixture"],
         "interventions": [
             "Capture the failing tool, input schema, response shape, timeout, and first error.",
@@ -45,10 +45,10 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "self_learning_healer": {
-        "title": "Self-Learning Healer",
+        "title": "Memory Synthesizer",
         "framework_inspiration": "Beam-style maintenance-free autonomy pattern",
         "best_for": ["memory", "self_improvement"],
-        "why": "Convert repeated incidents into durable memory, guardrails, and self-apply actions.",
+        "why": "Turn repeated incidents into durable memory, guardrails, and self-apply actions.",
         "loop": ["incident", "lesson", "guardrail", "self_apply", "regression_check"],
         "interventions": [
             "Cluster recurring failures by fingerprint and impact.",
@@ -58,8 +58,8 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "trace_healer": {
-        "title": "Adaptive Trace Healer",
-        "framework_inspiration": "observability-driven self-healing system",
+        "title": "Adaptive Trace Resumer",
+        "framework_inspiration": "observability-driven trace recovery system",
         "best_for": ["payment", "production_incident"],
         "why": "Use traces, ledgers, state transitions, and callbacks to find the broken resume point.",
         "loop": ["trace", "state_diff", "idempotent_fix", "resume_point", "audit_log"],
@@ -120,7 +120,7 @@ PAIN_HINTS = {
 
 
 class AgentReliabilityDoctor:
-    """Diagnose agent failures into critic, fixer, and healer roles Nomad can productize."""
+    """Diagnose agent failures into bounded reliability roles Nomad can reuse without human allegory."""
 
     def diagnose(
         self,
@@ -180,7 +180,7 @@ class AgentReliabilityDoctor:
         }
         report["analysis"] = (
             f"Nomad diagnosed {pain_type} as {role['title']} and produced a bounded "
-            f"{report['schema']} loop with critic, fix, verifier, and memory steps."
+            f"{report['schema']} loop with critic, intervention, verifier, and memory steps."
         )
         return report
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -36,6 +37,9 @@ from nomad_codebuddy import (
     CodeBuddyReviewRunner,
 )
 from nomad_mutual_aid import NomadMutualAidKernel
+from nomad_market_patterns import ComputeLane, MarketPatternRegistry
+from nomad_predictive_router import PredictiveRouter
+from nomad_self_healing import SelfHealingPipeline
 from self_development import SelfDevelopmentJournal
 
 
@@ -150,26 +154,44 @@ class HostedBrainRouter:
         self.ollama_max_tokens = int(
             os.getenv("NOMAD_OLLAMA_MAX_TOKENS", str(min(self.max_tokens, 180)))
         )
+        self.predictive_routing_enabled = self._env_flag("NOMAD_PREDICTIVE_ROUTING_ENABLED", default=True)
+        self.self_healing_enabled = self._env_flag("NOMAD_SELF_HEALING_ENABLED", default=False)
+        self.max_review_providers = max(1, int(os.getenv("NOMAD_SELF_IMPROVE_MAX_PROVIDERS", "3")))
+        self.pattern_registry = MarketPatternRegistry(
+            registry_path=Path(
+                os.getenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH")
+                or os.getenv("NOMAD_MARKET_PATTERN_REGISTRY_PATH")
+                or str(DEFAULT_ACTIVE_LEAD_PLAN_PATH.resolve().parent / "nomad_runtime_patterns.json")
+            )
+        )
+        self.predictive_router = PredictiveRouter(
+            registry=self.pattern_registry,
+            health_path=Path(
+                os.getenv("NOMAD_LANE_HEALTH_PATH")
+                or str(DEFAULT_ACTIVE_LEAD_PLAN_PATH.resolve().parent / "nomad_lane_health.json")
+            ),
+        )
+        self.self_healer = SelfHealingPipeline(
+            router=self.predictive_router,
+            registry=self.pattern_registry,
+            max_actions_per_cycle=max(1, int(os.getenv("NOMAD_SELF_HEALING_MAX_ACTIONS", "3"))),
+            heal_log_path=Path(
+                os.getenv("NOMAD_HEAL_LOG_PATH")
+                or str(DEFAULT_ACTIVE_LEAD_PLAN_PATH.resolve().parent / "nomad_heal_log.ndjson")
+            ),
+        )
+        self.default_task_type = "self_improvement_review"
+        self.last_routing_report: Dict[str, Any] = {}
 
     def review(self, objective: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         messages = self._messages(objective=objective, context=context)
-        providers = self._review_plan(context.get("resources") or {})
+        task_type = str(context.get("task_type") or self.default_task_type).strip() or self.default_task_type
+        providers = self._review_plan(context.get("resources") or {}, task_type=task_type)
         results: List[Dict[str, Any]] = []
         for provider in providers:
-            if provider == "ollama":
-                results.append(self._ollama_review(messages))
-            elif provider == "github_models":
-                results.append(self._github_review(messages))
-            elif provider == "huggingface":
-                results.append(self._huggingface_review(messages))
-            elif provider == "cloudflare_workers_ai":
-                results.append(self._cloudflare_review(messages))
-            elif provider == "xai_grok":
-                results.append(self._xai_grok_review(messages))
-            elif provider == "codebuddy_brain":
-                results.append(self._codebuddy_brain_review(messages))
+            results.append(self._run_review_provider(provider=provider, messages=messages, task_type=task_type))
         if not results:
-            results.append(self._ollama_review(messages))
+            results.append(self._run_review_provider(provider="ollama", messages=messages, task_type=task_type))
         return results
 
     def _ollama_candidate_models(
@@ -773,14 +795,14 @@ class HostedBrainRouter:
             "message": "Review completed." if content else "No review content returned.",
         }
 
-    def _review_plan(self, resources: Dict[str, Any]) -> List[str]:
+    def _review_plan(self, resources: Dict[str, Any], task_type: str = "") -> List[str]:
         providers: List[str] = []
         if self._should_use_ollama(resources):
             providers.append("ollama")
         if self.hosted_mode in {"off", "disabled", "false", "0"}:
             if self._should_use_codebuddy_brain():
                 providers.append("codebuddy_brain")
-            return providers
+            return self._rank_review_providers(providers, task_type=task_type)
         if self._should_use_hosted_provider("github_models", resources):
             providers.append("github_models")
         if self._should_use_hosted_provider("huggingface", resources):
@@ -791,7 +813,7 @@ class HostedBrainRouter:
             providers.append("xai_grok")
         if self._should_use_codebuddy_brain():
             providers.append("codebuddy_brain")
-        return providers
+        return self._rank_review_providers(providers, task_type=task_type)
 
     def _should_use_ollama(self, resources: Dict[str, Any]) -> bool:
         if not self.ollama_model:
@@ -827,6 +849,221 @@ class HostedBrainRouter:
 
     def _codebuddy_brain_review(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         return self.codebuddy_brain.brain_review(messages)
+
+    def predictive_status(self, task_type: str = "") -> Dict[str, Any]:
+        effective_task_type = task_type or self.default_task_type
+        top_patterns = self.pattern_registry.summary(task_type=effective_task_type)
+        return {
+            "enabled": self.predictive_routing_enabled,
+            "task_type": effective_task_type,
+            "last_routing_report": self.last_routing_report,
+            "lane_status": self.predictive_router.lane_status(),
+            "patterns": top_patterns,
+            "self_healing": self.self_healer.heal_summary(),
+        }
+
+    def run_self_healing_cycle(self) -> Dict[str, Any]:
+        if not self.self_healing_enabled:
+            return {
+                "status": "skipped",
+                "reason": "automatic_correction_disabled",
+                "actions_taken": 0,
+                "actions": [],
+            }
+        return self.self_healer.run_healing_cycle_sync()
+
+    def _rank_review_providers(self, providers: List[str], task_type: str = "") -> List[str]:
+        ordered = [provider for provider in providers if provider]
+        if not ordered:
+            self.last_routing_report = {"task_type": task_type or self.default_task_type, "ranked_providers": []}
+            return ordered
+
+        effective_task_type = task_type or self.default_task_type
+        pattern_summary = self.pattern_registry.summary(task_type=effective_task_type)
+        if int(pattern_summary.get("pattern_count") or 0) <= 0:
+            self.last_routing_report = {
+                "task_type": effective_task_type,
+                "predictive_routing_enabled": bool(self.predictive_routing_enabled),
+                "reason": "no_runtime_pattern_evidence",
+                "ranked_providers": ordered[: self.max_review_providers],
+            }
+            return ordered[: self.max_review_providers]
+
+        if not self.predictive_routing_enabled:
+            self.last_routing_report = {
+                "task_type": effective_task_type,
+                "ranked_providers": ordered,
+                "predictive_routing_enabled": False,
+            }
+            return ordered[: self.max_review_providers]
+
+        provider_lanes = {
+            provider: self._provider_lane(provider)
+            for provider in ordered
+        }
+        unique_lanes = []
+        for lane in provider_lanes.values():
+            if lane not in unique_lanes:
+                unique_lanes.append(lane)
+
+        ranked_lanes = self.predictive_router.rank_lanes(
+            task_type=effective_task_type,
+            lanes=unique_lanes,
+            preferred_lanes=unique_lanes,
+        )
+        lane_order = [item["lane"] for item in ranked_lanes]
+        if not lane_order:
+            self.last_routing_report = {
+                "task_type": effective_task_type,
+                "ranked_providers": ordered[: self.max_review_providers],
+                "predictive_routing_enabled": True,
+                "ranked_lanes": [],
+            }
+            return ordered[: self.max_review_providers]
+
+        ranked_providers: List[str] = []
+        for lane in lane_order:
+            ranked_providers.extend(
+                provider
+                for provider in ordered
+                if provider_lanes.get(provider) == lane and provider not in ranked_providers
+            )
+        for provider in ordered:
+            if provider not in ranked_providers:
+                ranked_providers.append(provider)
+
+        self.last_routing_report = {
+            "task_type": effective_task_type,
+            "predictive_routing_enabled": True,
+            "ranked_lanes": [
+                {
+                    "lane": item["lane"].value,
+                    "routing_score": round(float(item["routing_score"]), 4),
+                    "predicted_latency_ms": round(float(item["predicted_latency_ms"]), 1),
+                    "predicted_error_rate": round(float(item["predicted_error_rate"]), 4),
+                }
+                for item in ranked_lanes
+            ],
+            "ranked_providers": ranked_providers[: self.max_review_providers],
+        }
+        return ranked_providers[: self.max_review_providers]
+
+    def _run_review_provider(
+        self,
+        provider: str,
+        messages: List[Dict[str, str]],
+        task_type: str,
+    ) -> Dict[str, Any]:
+        handlers = {
+            "ollama": self._ollama_review,
+            "github_models": self._github_review,
+            "huggingface": self._huggingface_review,
+            "cloudflare_workers_ai": self._cloudflare_review,
+            "xai_grok": self._xai_grok_review,
+            "codebuddy_brain": self._codebuddy_brain_review,
+        }
+        handler = handlers.get(provider)
+        if handler is None:
+            return {
+                "provider": provider,
+                "ok": False,
+                "useful": False,
+                "message": f"No handler is registered for provider '{provider}'.",
+            }
+
+        start = time.perf_counter()
+        result = handler(messages)
+        latency_ms = max(1.0, (time.perf_counter() - start) * 1000.0)
+        recorded = self._record_review_outcome(
+            provider=provider,
+            task_type=task_type,
+            latency_ms=latency_ms,
+            result=result,
+        )
+        result["routing"] = recorded
+        return result
+
+    def _record_review_outcome(
+        self,
+        provider: str,
+        task_type: str,
+        latency_ms: float,
+        result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        lane = self._provider_lane(provider)
+        usage = result.get("usage") or {}
+        total_tokens = int(
+            usage.get("total_tokens")
+            or usage.get("completion_tokens")
+            or usage.get("prompt_tokens")
+            or 0
+        )
+        useful = bool(result.get("useful")) if "useful" in result else self._is_useful_review_content(result.get("content", ""))
+        success = bool(result.get("ok")) and useful
+        model_hint = str(result.get("model") or "")
+        error_type = ""
+        if not success:
+            error_type = str(
+                result.get("issue")
+                or result.get("status_code")
+                or result.get("message")
+                or f"{provider}_review_failed"
+            )
+        estimated_cost = self._estimate_review_cost_usd(provider=provider, usage=usage)
+        self.predictive_router.record_outcome(
+            lane=lane,
+            latency_ms=latency_ms,
+            success=success,
+            task_type=task_type,
+            cost_usd=estimated_cost,
+            tokens_used=total_tokens,
+            error_type=error_type,
+            model_hint=model_hint,
+            notes=str(result.get("message") or ""),
+        )
+        decision = self.predictive_router.route(
+            task_type=task_type,
+            preferred_lanes=[lane],
+        )
+        return {
+            "lane": lane.value,
+            "task_type": task_type,
+            "success": success,
+            "latency_ms": round(latency_ms, 1),
+            "estimated_cost_usd": round(estimated_cost, 6),
+            "decision": decision.to_dict(),
+        }
+
+    def _estimate_review_cost_usd(self, provider: str, usage: Dict[str, Any]) -> float:
+        total_tokens = int(
+            usage.get("total_tokens")
+            or usage.get("completion_tokens")
+            or usage.get("prompt_tokens")
+            or 0
+        )
+        per_1k = {
+            "ollama": 0.0,
+            "github_models": 0.0002,
+            "huggingface": 0.0004,
+            "cloudflare_workers_ai": 0.0005,
+            "xai_grok": 0.003,
+            "codebuddy_brain": 0.0003,
+        }.get(provider, 0.0)
+        if total_tokens <= 0:
+            return 0.0
+        return round((total_tokens / 1000.0) * per_1k, 6)
+
+    @staticmethod
+    def _provider_lane(provider: str) -> ComputeLane:
+        mapping = {
+            "ollama": ComputeLane.LOCAL_OLLAMA,
+            "github_models": ComputeLane.GITHUB_MODELS,
+            "huggingface": ComputeLane.HUGGINGFACE,
+            "cloudflare_workers_ai": ComputeLane.CLOUDFLARE_WORKERS_AI,
+            "xai_grok": ComputeLane.XAI_GROK,
+            "codebuddy_brain": ComputeLane.CODEBUDDY_BRAIN,
+        }
+        return mapping.get(provider, ComputeLane.UNKNOWN)
 
     def _should_use_codebuddy_brain(self) -> bool:
         if not self._env_flag(CODEBUDDY_BRAIN_ENABLED_ENV, default=False):
@@ -888,7 +1125,7 @@ class SelfImprovementEngine:
     ) -> Dict[str, Any]:
         objective = objective.strip() or (
             "Use Nomad's currently unlocked resources to improve scouting quality, "
-            "fallback compute resilience, and self-development velocity."
+            "fallback compute resilience, and bounded cycle quality."
         )
         best_stack = self.infra.best_stack(profile_id=profile_id)
         self_audit = self.infra.self_audit(profile_id=profile_id)
@@ -917,6 +1154,27 @@ class SelfImprovementEngine:
             context["quantum_tokens"] = quantum_tokens["brain_context"]
         local_actions.extend(self._quantum_local_actions(quantum_tokens))
         brain_reviews = self.brain_router.review(objective=objective, context=context)
+        predictive_routing = (
+            self.brain_router.predictive_status(task_type="self_improvement_review")
+            if hasattr(self.brain_router, "predictive_status")
+            else {
+                "enabled": False,
+                "task_type": "self_improvement_review",
+                "lane_status": {},
+                "patterns": {"pattern_count": 0, "top_patterns": []},
+                "self_healing": {"total_actions": 0},
+            }
+        )
+        self_healing = (
+            self.brain_router.run_self_healing_cycle()
+            if hasattr(self.brain_router, "run_self_healing_cycle")
+            else {
+                "status": "skipped",
+                "reason": "brain_router_without_self_healing",
+                "actions_taken": 0,
+                "actions": [],
+            }
+        )
         codebuddy_review = self._active_codebuddy_review(objective=objective, context=context)
         if codebuddy_review.get("ok") and codebuddy_review.get("review"):
             brain_reviews.append(
@@ -1015,6 +1273,15 @@ class SelfImprovementEngine:
                 analysis += " CodeBuddy actively reviewed the bounded self-development diff for this cycle."
             else:
                 analysis += f" CodeBuddy active review was attempted but did not complete: {codebuddy_review.get('issue', 'unknown')}."
+        top_runtime_pattern = ((predictive_routing.get("patterns") or {}).get("top_patterns") or [])
+        if top_runtime_pattern:
+            pattern = top_runtime_pattern[0]
+            analysis += (
+                f" Runtime pattern memory now prefers {pattern.get('lane')} for "
+                f"{pattern.get('task_type')} with score {pattern.get('efficiency_score', 0.0):.2f}."
+            )
+        if self_healing.get("actions_taken"):
+            analysis += f" Runtime correction executed {self_healing.get('actions_taken')} bounded adjustment(s)."
         if human_unlocks:
             analysis += f" Next human unlock: {human_unlocks[0]['short_ask']}"
 
@@ -1028,6 +1295,8 @@ class SelfImprovementEngine:
             "local_actions": local_actions,
             "brain_reviews": brain_reviews,
             "external_review_count": len(ok_reviews),
+            "predictive_routing": predictive_routing,
+            "self_healing": self_healing,
             "compute_watch": compute_watch,
             "market_scan": market_scan,
             "quantum_tokens": quantum_tokens,
@@ -1395,16 +1664,16 @@ class SelfImprovementEngine:
         top_pattern = patterns[0]
         return [
             {
-                "type": "high_value_pattern_productization",
+                "type": "high_value_pattern_watch",
                 "category": top_pattern.get("pain_type") or "self_improvement",
                 "title": (
-                    f"Package repeated pattern '{top_pattern.get('title') or 'agent rescue pattern'}' "
-                    "into a reusable service blueprint."
+                    f"Keep repeated pattern '{top_pattern.get('title') or 'agent rescue pattern'}' "
+                    "in watch mode and compare it against future evidence."
                 ),
                 "reason": (
                     f"{top_pattern.get('occurrence_count', 0)} verified occurrences with "
                     f"avg truth {top_pattern.get('avg_truth_score', 0)} and "
-                    f"avg reuse {top_pattern.get('avg_reuse_value', 0)}."
+                    f"avg reuse {top_pattern.get('avg_reuse_value', 0)}. Do not assign it a fixed role yet."
                 ),
                 "requires_human": False,
             }

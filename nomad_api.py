@@ -7,7 +7,10 @@ from urllib.parse import parse_qs, urlparse
 
 from nomad_guardrails import guardrail_status
 from nomad_collaboration import collaboration_status
+from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
+from nomad_roaas_exchange import RuntimePatternExchange
+from nomad_swarm_registry import SwarmJoinRegistry
 from workflow import NomadAgent
 
 
@@ -20,6 +23,8 @@ PUBLIC_DIR = ROOT / "public"
 class NomadApiHandler(BaseHTTPRequestHandler):
     agent = NomadAgent()
     monitor = NomadSystemMonitor(agent=agent)
+    roaas = RuntimePatternExchange(agent=agent)
+    swarm_registry = SwarmJoinRegistry()
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -34,6 +39,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "nomad-api",
+                    "public_home": self._base_url(),
                 }
             )
             return
@@ -42,11 +48,56 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.monitor.snapshot())
             return
 
+        if parsed.path == "/roaas":
+            self._json_response(
+                self.roaas.status(
+                    task_type=(query.get("task_type") or query.get("task") or [""])[0]
+                )
+            )
+            return
+
+        if parsed.path in {"/roaas/export", "/artifacts/runtime-patterns", "/.well-known/nomad-runtime-patterns.json"}:
+            headers = {"Cache-Control": "public, max-age=60"} if parsed.path != "/roaas/export" else {}
+            self._json_response(
+                self.roaas.export_bundle(
+                    task_type=(query.get("task_type") or query.get("task") or [""])[0],
+                    include_executions=self._truthy(
+                        (query.get("include_executions") or ["true"])[0],
+                        default=True,
+                    ),
+                    min_status=self._parse_pattern_status(
+                        (query.get("min_status") or ["candidate"])[0]
+                    ),
+                ),
+                headers=headers,
+            )
+            return
+
         if parsed.path in {"/agent", "/service"}:
             self._json_response(self.agent.service_desk.service_catalog())
             return
 
-        if parsed.path in {"/agent-attractor", "/swarm", "/.well-known/agent-attractor.json"}:
+        if parsed.path == "/swarm":
+            self._json_response(
+                self.swarm_registry.public_manifest(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
+        if parsed.path == "/swarm/join":
+            self._json_response(
+                self.swarm_registry.join_contract(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
+        if parsed.path == "/swarm/nodes":
+            self._json_response(self.swarm_registry.summary())
+            return
+
+        if parsed.path in {"/agent-attractor", "/.well-known/agent-attractor.json"}:
             self._json_response(
                 self.agent.agent_attractor.manifest(
                     service_type=(query.get("service_type") or query.get("type") or [""])[0],
@@ -266,6 +317,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(collaboration_status())
             return
 
+        if parsed.path == "/roaas/import":
+            self._json_response(
+                {
+                    "ok": False,
+                    "error": "post_required",
+                    "message": "Use POST /roaas/import with a runtime pattern bundle.",
+                },
+                status=405,
+            )
+            return
+
         if parsed.path == "/mutual-aid":
             self._json_response(self.agent.mutual_aid.status())
             return
@@ -359,6 +421,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/service",
                     "/agent-attractor",
                     "/swarm",
+                    "/swarm/join",
+                    "/swarm/nodes",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
                     "/a2a/message",
@@ -384,6 +448,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/reliability-doctor",
                     "/guardrails",
                     "/collaboration",
+                    "/roaas",
+                    "/roaas/export",
+                    "/roaas/import",
+                    "/artifacts/runtime-patterns",
+                    "/.well-known/nomad-runtime-patterns.json",
                     "/mutual-aid",
                     "/mutual-aid/ledger",
                     "/mutual-aid/inbox",
@@ -700,6 +769,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(collaboration_status())
             return
 
+        if parsed.path == "/swarm/join":
+            self._json_response(
+                self.swarm_registry.register_join(
+                    payload,
+                    base_url=self._base_url(),
+                    remote_addr=self._remote_addr(),
+                    path=parsed.path,
+                ),
+                status=202,
+            )
+            return
+
+        if parsed.path in {"/roaas/import", "/artifacts/runtime-patterns", "/.well-known/nomad-runtime-patterns.json"}:
+            result = self.roaas.import_bundle(
+                payload,
+                source=str(payload.get("source") or "").strip(),
+                trust_level=self._parse_pattern_status(payload.get("trust_level") or "candidate"),
+            )
+            self._json_response(result, status=202 if result.get("ok") else 400)
+            return
+
         if parsed.path in {"/aid", "/mutual-aid/inbox"}:
             result = self.agent.mutual_aid.receive_swarm_proposal(payload)
             self._json_response(result, status=202 if result.get("ok") else 422)
@@ -738,6 +828,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-engagements/summary",
                     "/agent-attractor",
                     "/swarm",
+                    "/swarm/join",
                     "/.well-known/agent-attractor.json",
                     "/a2a/message",
                     "/a2a/discover",
@@ -749,6 +840,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/reliability-doctor",
                     "/guardrails",
                     "/collaboration",
+                    "/roaas",
+                    "/roaas/export",
+                    "/roaas/import",
+                    "/artifacts/runtime-patterns",
+                    "/.well-known/nomad-runtime-patterns.json",
                     "/aid",
                     "/mutual-aid/inbox",
                     "/mutual-aid/outcomes",
@@ -778,6 +874,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def _base_url(self) -> str:
+        configured = str(os.getenv("NOMAD_PUBLIC_API_URL", "")).strip().rstrip("/")
+        if configured:
+            return configured
+
+        proto = str(self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip() or "http"
+        host = (
+            str(self.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+            or str(self.headers.get("Host") or "").strip()
+            or f"{HOST}:{PORT}"
+        )
+        prefix = str(self.headers.get("X-Forwarded-Prefix") or "").split(",")[0].strip()
+        if prefix and not prefix.startswith("/"):
+            prefix = f"/{prefix}"
+        return f"{proto}://{host}{prefix}".rstrip("/")
+
+    def _remote_addr(self) -> str:
+        forwarded_for = str(self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded_for:
+            return forwarded_for
+        if isinstance(self.client_address, tuple) and self.client_address:
+            return str(self.client_address[0])
+        return ""
 
     def _is_jsonrpc_request(self, payload: dict) -> bool:
         return (
@@ -857,6 +977,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _truthy(value: object, default: bool = False) -> bool:
+        if value is None or value == "":
+            return default
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _parse_pattern_status(value: object) -> PatternStatus:
+        try:
+            return PatternStatus(str(value or "").strip().lower())
+        except ValueError:
+            return PatternStatus.CANDIDATE
 
 
 def serve() -> None:
