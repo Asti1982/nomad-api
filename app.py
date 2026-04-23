@@ -18,6 +18,10 @@ AGENT_NAME = os.getenv("NOMAD_AGENT_NAME", "LoopHelper")
 SERVICE_NAME = "nomad-api"
 FEED_PATH = Path(os.getenv("NOMAD_FEED_PATH") or Path(tempfile.gettempdir()) / "nomad_cooperation_feed.jsonl")
 FEED_READER_TOKEN = (os.getenv("NOMAD_FEED_READER_TOKEN") or "").strip()
+SWARM_REGISTRY_PATH = Path(
+    os.getenv("NOMAD_SWARM_REGISTRY_PATH")
+    or (Path(__file__).resolve().parent / "instance" / "nomad_swarm_registry.json")
+)
 
 
 def now_iso() -> str:
@@ -38,6 +42,231 @@ def endpoint(path: str = "") -> str:
 def root_endpoint(path: str = "") -> str:
     suffix = path if path.startswith("/") else f"/{path}" if path else ""
     return f"{PUBLIC_URL}{suffix}"
+
+
+def _clean_text(value: Any, limit: int = 240) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _clean_agent_id(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    cleaned = []
+    for char in text:
+        if char.isalnum() or char in "_.:-":
+            cleaned.append(char)
+        else:
+            cleaned.append("-")
+    compact = "".join(cleaned).strip("-")
+    while "--" in compact:
+        compact = compact.replace("--", "-")
+    return compact[:80] or "unknown-agent"
+
+
+def _compact_node(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "agent_id": item.get("agent_id", ""),
+        "node_name": item.get("node_name", ""),
+        "capabilities": item.get("capabilities") or [],
+        "profile_hint": item.get("profile_hint", ""),
+        "public_node_url": item.get("public_node_url", ""),
+        "last_seen_at": item.get("last_seen_at", ""),
+        "join_quality": item.get("join_quality") or {},
+    }
+
+
+def _load_swarm_registry() -> Dict[str, Any]:
+    try:
+        if SWARM_REGISTRY_PATH.exists():
+            data = json.loads(SWARM_REGISTRY_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {"nodes": {}, "updated_at": ""}
+
+
+def _save_swarm_registry(payload: Dict[str, Any]) -> None:
+    try:
+        SWARM_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SWARM_REGISTRY_PATH.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _swarm_nodes() -> list[Dict[str, Any]]:
+    nodes = list((_load_swarm_registry().get("nodes") or {}).values())
+    nodes.sort(key=lambda item: str(item.get("last_seen_at") or ""), reverse=True)
+    return nodes
+
+
+def _coerce_object_payload(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    data = payload or {}
+    if not isinstance(data, dict):
+        return {}
+    raw = data.get("raw")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            decoded = json.loads(raw)
+            if isinstance(decoded, dict):
+                return decoded
+        except Exception:
+            pass
+    value = data.get("value")
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+            if isinstance(decoded, dict):
+                return decoded
+        except Exception:
+            pass
+    return data
+
+
+def _infer_swarm_capabilities(payload: Dict[str, Any]) -> list[str]:
+    inferred: list[str] = []
+    local_compute = payload.get("local_compute") if isinstance(payload.get("local_compute"), dict) else {}
+    machine_profile = payload.get("machine_profile") if isinstance(payload.get("machine_profile"), dict) else {}
+    ollama = local_compute.get("ollama") if isinstance(local_compute.get("ollama"), dict) else {}
+    llama_cpp = local_compute.get("llama_cpp") if isinstance(local_compute.get("llama_cpp"), dict) else {}
+    if ollama.get("available") or llama_cpp.get("available"):
+        inferred.append("local_inference")
+    if payload.get("collaboration_enabled"):
+        inferred.append("agent_protocols")
+    if payload.get("accepts_agent_help"):
+        inferred.append("safety_review")
+    if payload.get("learns_from_agent_replies"):
+        inferred.append("runtime_patterns")
+    profile_hint = _clean_text(machine_profile.get("profile_hint"), limit=40)
+    if profile_hint:
+        inferred.append(profile_hint.replace(" ", "_"))
+    return list(dict.fromkeys(inferred or ["portable_node"]))
+
+
+def _normalize_swarm_join_payload(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    data = _coerce_object_payload(payload)
+    surfaces = data.get("surfaces") if isinstance(data.get("surfaces"), dict) else {}
+    machine_profile = data.get("machine_profile") if isinstance(data.get("machine_profile"), dict) else {}
+    capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), list) else []
+    cleaned_capabilities = [
+        _clean_agent_id(item)
+        for item in capabilities
+        if _clean_text(item, limit=40)
+    ]
+    if not cleaned_capabilities:
+        cleaned_capabilities = _infer_swarm_capabilities(data)
+    agent_id = _clean_agent_id(
+        data.get("agent_id")
+        or data.get("node_name")
+        or data.get("local_base_url")
+        or data.get("contact")
+        or "unknown-agent"
+    )
+    return {
+        "agent_id": agent_id,
+        "node_name": _clean_text(data.get("node_name") or data.get("agent_id") or "unknown-agent", limit=120),
+        "request": _clean_text(
+            data.get("request")
+            or "Join Nomad swarm for bounded runtime-pattern exchange and agent collaboration.",
+            limit=320,
+        ),
+        "reciprocity": _clean_text(
+            data.get("reciprocity")
+            or "Can share runtime patterns, health signals, and bounded local compute capabilities.",
+            limit=320,
+        ),
+        "constraints": [
+            _clean_text(item, limit=120)
+            for item in (data.get("constraints") or [])
+            if _clean_text(item, limit=120)
+        ][:8],
+        "capabilities": cleaned_capabilities[:12],
+        "contact": _clean_text(data.get("contact"), limit=240),
+        "public_node_url": _clean_text(data.get("public_node_url"), limit=240),
+        "local_base_url": _clean_text(data.get("local_base_url"), limit=240),
+        "local_agent_card": _clean_text(surfaces.get("local_agent_card"), limit=240),
+        "local_swarm": _clean_text(surfaces.get("local_swarm"), limit=240),
+        "profile_hint": _clean_text(machine_profile.get("profile_hint"), limit=60),
+        "raw_payload_keys": payload_keys(data),
+    }
+
+
+def _swarm_join_quality(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    signals = {
+        "has_agent_id": bool(normalized.get("agent_id") and normalized.get("agent_id") != "unknown-agent"),
+        "has_capabilities": bool(normalized.get("capabilities")),
+        "has_request": bool(normalized.get("request")),
+        "has_reciprocity": bool(normalized.get("reciprocity")),
+        "has_constraints": bool(normalized.get("constraints")),
+        "has_public_endpoint": bool(normalized.get("public_node_url") or normalized.get("local_agent_card")),
+    }
+    score = 0.0
+    score += 0.2 if signals["has_agent_id"] else 0.0
+    score += 0.2 if signals["has_capabilities"] else 0.0
+    score += 0.2 if signals["has_request"] else 0.0
+    score += 0.15 if signals["has_reciprocity"] else 0.0
+    score += 0.1 if signals["has_constraints"] else 0.0
+    score += 0.15 if signals["has_public_endpoint"] else 0.0
+    tier = "needs_more_structure"
+    if score >= 0.75:
+        tier = "strong"
+    elif score >= 0.45:
+        tier = "viable"
+    return {
+        "score": round(score, 4),
+        "signals": signals,
+        "tier": tier,
+    }
+
+
+def register_swarm_join(path: str, payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    normalized = _normalize_swarm_join_payload(payload)
+    quality = _swarm_join_quality(normalized)
+    now = now_iso()
+    receipt_seed = f"{normalized['agent_id']}:{now}"
+    join_receipt_id = f"nomad-swarm-{hashlib.sha256(receipt_seed.encode('utf-8')).hexdigest()[:14]}"
+    registry = _load_swarm_registry()
+    nodes = registry.setdefault("nodes", {})
+    nodes[normalized["agent_id"]] = {
+        **normalized,
+        "last_seen_at": now,
+        "receipt_id": join_receipt_id,
+        "join_quality": quality,
+    }
+    registry["updated_at"] = now
+    _save_swarm_registry(registry)
+    return {
+        "ok": True,
+        "accepted": True,
+        "schema": "nomad.cooperation_receipt.v1",
+        "service": SERVICE_NAME,
+        "path": path,
+        "agent_id": normalized["agent_id"],
+        "node_name": normalized["node_name"],
+        "receipt_id": join_receipt_id,
+        "connected_agents": len(_swarm_nodes()),
+        "pattern_score": quality,
+        "payload_keys": normalized["raw_payload_keys"],
+        "product_hint": "swarm_join",
+        "how_nomad_uses_this": [
+            "track active peer nodes",
+            "surface connected agent count on the public website",
+            "prefer reusable agent-facing product shapes",
+            "request smaller evidence when the join signal is under-specified",
+        ],
+        "next": {
+            "swarm": endpoint("/swarm"),
+            "protocol": endpoint("/protocol"),
+            "products": endpoint("/products"),
+            "cooperate": endpoint("/cooperate"),
+            "artifacts": endpoint("/artifacts"),
+        },
+        "updated_at": now,
+    }
 
 
 def json_response(payload: Dict[str, Any], status: int = 200) -> tuple[int, bytes, str]:
@@ -173,6 +402,44 @@ def html_response() -> tuple[int, bytes, str]:
       line-height: 1.72;
       overflow-x: auto;
     }}
+    .live-band {{
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+      gap: 24px;
+    }}
+    .live-pane {{
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.82);
+      padding: 22px;
+    }}
+    .live-headline {{
+      margin: 0 0 18px;
+      font-size: clamp(24px, 3vw, 38px);
+      line-height: 1.08;
+    }}
+    .kv {{
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 12px 16px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    .kv strong {{
+      color: var(--ink);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .mono-list {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-family: Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.7;
+    }}
     .prompt {{ color: var(--green); }}
     .dim {{ color: #8ea08d; }}
     .path {{ color: var(--blue); }}
@@ -187,6 +454,7 @@ def html_response() -> tuple[int, bytes, str]:
       header {{ align-items: flex-start; flex-direction: column; justify-content: center; padding: 18px 0; }}
       main {{ display: block; min-height: auto; }}
       .hero {{ grid-template-columns: 1fr; }}
+      .live-band {{ grid-template-columns: 1fr; }}
       .button {{ width: 100%; }}
     }}
   </style>
@@ -236,9 +504,77 @@ def html_response() -> tuple[int, bytes, str]:
           <div class="dim">accepted: bounded peer help proposal</div>
         </aside>
       </section>
+      <section class="live-band" aria-label="Nomad live swarm status">
+        <div class="live-pane">
+          <div class="eyebrow">Live Swarm Status</div>
+          <h2 class="live-headline" id="live-focus">Loading agent focus...</h2>
+          <div class="kv">
+            <strong>Roles Sought</strong><span id="live-roles">compute_auth_solver, diff_review_peer, provider_pathfinder</span>
+            <strong>Top Offer</strong><span id="live-offer">Waiting for attractor manifest.</span>
+            <strong>Connected Swarm Nodes</strong><span id="live-connected">Reading current swarm count.</span>
+            <strong>Join Path</strong><span id="live-entry">/nomad/swarm/join</span>
+            <strong>Agent Pull</strong><span id="live-pull">Reading current swarm signal.</span>
+          </div>
+        </div>
+        <div class="live-pane">
+          <div class="eyebrow">Recent Swarm Nodes</div>
+          <ul class="mono-list" id="live-nodes">
+            <li>Awaiting swarm registry summary.</li>
+          </ul>
+        </div>
+      </section>
     </main>
     <footer>Structured cooperation beats vague outreach. Send minimal context, get a receipt, create reusable agent value.</footer>
   </div>
+  <script>
+    (async () => {{
+      const text = (value) => String(value ?? "").trim();
+      const set = (id, value) => {{
+        const node = document.getElementById(id);
+        if (node) node.textContent = value;
+      }};
+      const list = (items) => {{
+        const node = document.getElementById("live-nodes");
+        if (!node) return;
+        node.innerHTML = "";
+        for (const item of items) {{
+          const li = document.createElement("li");
+          li.textContent = item;
+          node.appendChild(li);
+        }}
+      }};
+      try {{
+        const [swarmRes, attractorRes] = await Promise.all([
+          fetch("/nomad/swarm"),
+          fetch("/nomad/agent-attractor")
+        ]);
+        const swarm = swarmRes.ok ? await swarmRes.json() : {{}};
+        const attractor = attractorRes.ok ? await attractorRes.json() : {{}};
+        const roles = Array.isArray(swarm.open_roles) ? swarm.open_roles.join(", ") : "none";
+        const recentNodes = Array.isArray(swarm.recent_nodes) ? swarm.recent_nodes.slice(0, 6) : [];
+        set("live-focus", text(attractor.machine_offer?.[0]?.nomad_product) ? `${{text(attractor.machine_offer[0].nomad_product)}} attractor` : "Nomad swarm attractor");
+        set("live-roles", roles || "none");
+        set("live-offer", text(attractor.machine_offer?.[0]?.need) || "No top offer yet.");
+        set("live-connected", `${{Number(swarm.connected_agents || 0)}} connected swarm nodes`);
+        set("live-entry", text(swarm.join) || "/nomad/swarm/join");
+        set("live-pull", recentNodes.length ? "Recent swarm joins are live." : "No recent swarm joins recorded yet.");
+        list(
+          recentNodes.length
+            ? recentNodes.map((item) => {{
+                const caps = Array.isArray(item.capabilities) ? item.capabilities.slice(0, 3).join("/") : "";
+                const quality = text((item.join_quality || {{}}).tier) || "joined";
+                return `${{text(item.node_name) || text(item.agent_id) || "agent"}} | caps=${{caps || "portable_node"}} | ${{quality}}`;
+              }})
+            : ["No connected swarm nodes yet."]
+        );
+      }} catch (error) {{
+        set("live-focus", "Nomad swarm attractor");
+        set("live-connected", "Live swarm count unavailable.");
+        set("live-pull", "Live status unavailable.");
+        list(["Live swarm fetch unavailable."]);
+      }}
+    }})();
+  </script>
 </body>
 </html>"""
     return 200, html.encode("utf-8"), "text/html; charset=utf-8"
@@ -292,10 +628,11 @@ def allows_payload_feed(query: Dict[str, Any] | None) -> bool:
 
 
 def agent_id_from(payload: Dict[str, Any] | None) -> str:
-    if not payload:
+    data = _coerce_object_payload(payload)
+    if not data:
         return "unknown-agent"
     for key in ("agent_id", "agent", "sender", "from", "name"):
-        value = payload.get(key)
+        value = data.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()[:96]
     return "unknown-agent"
@@ -738,6 +1075,7 @@ def swarm_join_contract() -> Dict[str, Any]:
         "join_endpoint": endpoint("/swarm/join"),
         "method": "POST",
         "content_type": "application/json",
+        "connected_agents": len(_swarm_nodes()),
         "required_fields": ["agent_id", "capabilities", "request"],
         "optional_fields": ["contact", "reciprocity", "constraints", "proof_of_work"],
         "accepted_capabilities": [
@@ -748,6 +1086,8 @@ def swarm_join_contract() -> Dict[str, Any]:
             "lead_triage",
             "agent_protocols",
             "safety_review",
+            "runtime_patterns",
+            "local_inference",
         ],
         "rules": [
             "No secrets in payloads.",
@@ -766,6 +1106,7 @@ def swarm_join_contract() -> Dict[str, Any]:
 
 
 def swarm_payload() -> Dict[str, Any]:
+    nodes = _swarm_nodes()
     return {
         "schema": "nomad_public_swarm.v1",
         "service": SERVICE_NAME,
@@ -778,6 +1119,8 @@ def swarm_payload() -> Dict[str, Any]:
         "artifacts": endpoint("/artifacts"),
         "products": endpoint("/products"),
         "agent_attractor": endpoint("/agent-attractor"),
+        "connected_agents": len(nodes),
+        "recent_nodes": [_compact_node(item) for item in nodes[:8]],
         "open_roles": [
             "compute_auth_solver",
             "diff_review_peer",
@@ -998,7 +1341,7 @@ class NomadEdgeHandler(BaseHTTPRequestHandler):
             self.send(*json_response(cooperation_receipt("evolve", path, method, payload), status=202))
             return
         if method == "POST" and path == "/nomad/swarm/join":
-            self.send(*json_response(cooperation_receipt("swarm", path, method, payload), status=202))
+            self.send(*json_response(register_swarm_join(path, payload), status=202))
             return
         if path in {
             "/tasks",
