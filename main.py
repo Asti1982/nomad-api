@@ -1,19 +1,19 @@
-import sys
-import asyncio
 from nomad_api import serve_in_thread
-from workflow import NomadAgent
 from telegram_bot import NomadBot
 
-async def run_cli():
-    agent = NomadAgent()
-    print("--- Nomad Active (CLI Mode) ---")
-    query = "/best"
-    result = agent.run(query)
-    print(result)
 
 def main():
+    import sys
+
     if len(sys.argv) > 1 and sys.argv[1] == "--cli":
-        asyncio.run(run_cli())
+        from nomad_cli import main as cli_main
+
+        cli_main(sys.argv[2:] or ["self"])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "--mcp":
+        from nomad_mcp import serve_stdio
+
+        serve_stdio()
         return
 
     serve_in_thread()

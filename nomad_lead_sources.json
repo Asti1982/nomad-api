@@ -1,0 +1,143 @@
+{
+  "focus_profiles": {
+    "compute_auth": {
+      "service_type": "compute_auth",
+      "pain_hint": "quota, auth, token, rate limit, inference, compute fallback",
+      "min_focus_score": 8.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/microsoft/autogen",
+        "https://github.com/langchain-ai/langgraph",
+        "https://github.com/crewAIInc/crewAI",
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/google-gemini/gemini-cli",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/Significant-Gravitas/AutoGPT",
+        "https://github.com/microsoft/semantic-kernel",
+        "https://github.com/run-llama/llama_index",
+        "https://github.com/OpenInterpreter/open-interpreter"
+      ],
+      "seed_queries": [
+        "repo:microsoft/autogen \"rate limit\" is:issue is:open",
+        "repo:microsoft/autogen token is:issue is:open",
+        "repo:langchain-ai/langgraph quota is:issue is:open",
+        "repo:langchain-ai/langgraph auth is:issue is:open",
+        "repo:crewAIInc/crewAI token is:issue is:open",
+        "repo:openai/openai-agents-python auth is:issue is:open",
+        "repo:modelcontextprotocol/servers token is:issue is:open",
+        "repo:google-gemini/gemini-cli quota is:issue is:open",
+        "repo:microsoft/semantic-kernel \"rate limit\" is:issue is:open",
+        "repo:run-llama/llama_index auth is:issue is:open"
+      ],
+      "queries": [
+        "\"AI agent\" \"rate limit\" is:issue is:open",
+        "\"AI agent\" quota token is:issue is:open",
+        "\"autonomous agent\" compute quota is:issue is:open",
+        "\"LangGraph\" token deployment is:issue is:open",
+        "\"OpenAI agent\" auth token is:issue is:open",
+        "\"MCP\" token agent is:issue is:open",
+        "\"AI agent\" inference budget is:issue is:open",
+        "\"agent framework\" authentication is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"quota\" \"https://\"",
+        "\"agent-card.json\" \"token\" \"https://\"",
+        "\"agent-card.json\" \"rate limit\" \"https://\"",
+        "\"agent-card.json\" \"auth\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "Microsoft AutoGen issue search: rate limit",
+          "url": "https://github.com/microsoft/autogen/issues?q=is%3Aissue+is%3Aopen+%22rate+limit%22"
+        },
+        {
+          "name": "LangGraph issue search: quota",
+          "url": "https://github.com/langchain-ai/langgraph/issues?q=is%3Aissue+is%3Aopen+quota"
+        },
+        {
+          "name": "CrewAI issue search: token",
+          "url": "https://github.com/crewAIInc/crewAI/issues?q=is%3Aissue+is%3Aopen+token"
+        },
+        {
+          "name": "OpenAI Agents issue search: auth",
+          "url": "https://github.com/openai/openai-agents-python/issues?q=is%3Aissue+is%3Aopen+auth"
+        },
+        {
+          "name": "MCP servers issue search: token",
+          "url": "https://github.com/modelcontextprotocol/servers/issues?q=is%3Aissue+is%3Aopen+token"
+        },
+        {
+          "name": "GitHub issue search: AI agent rate limit",
+          "url": "https://github.com/search?q=%22AI+agent%22+%22rate+limit%22+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: autonomous agent compute quota",
+          "url": "https://github.com/search?q=%22autonomous+agent%22+compute+quota+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: LangGraph token deployment",
+          "url": "https://github.com/search?q=%22LangGraph%22+token+deployment+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: MCP token agent",
+          "url": "https://github.com/search?q=%22MCP%22+token+agent+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: AI agent inference budget",
+          "url": "https://github.com/search?q=%22AI+agent%22+inference+budget+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "human_in_loop": {
+      "service_type": "human_in_loop",
+      "pain_hint": "human approval, verification, CAPTCHA, judgment, handoff",
+      "min_focus_score": 7.0,
+      "allow_unqualified_fallback": false,
+      "queries": [
+        "\"AI agent\" \"human in the loop\" is:issue is:open",
+        "\"agent framework\" approval is:issue is:open",
+        "\"AI agent\" captcha is:issue is:open",
+        "\"autonomous agent\" verification is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"human\" \"https://\"",
+        "\"agent-card.json\" \"approval\" \"https://\"",
+        "\"agent-card.json\" \"captcha\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: AI agent human in the loop",
+          "url": "https://github.com/search?q=%22AI+agent%22+%22human+in+the+loop%22+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: agent approval",
+          "url": "https://github.com/search?q=%22agent+framework%22+approval+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "balanced": {
+      "service_type": "human_in_loop",
+      "pain_hint": "human-in-the-loop, loops, payment, memory, compute, auth",
+      "queries": [
+        "\"AI agent\" \"rate limit\" is:issue is:open",
+        "\"agent framework\" \"human in the loop\" is:issue is:open",
+        "\"AI agent\" \"human in the loop\" \"paid\" is:issue is:open",
+        "\"AI agent\" \"bounty\" \"agent\" is:issue is:open",
+        "\"autonomous agent\" \"compute\" \"quota\" is:issue is:open",
+        "\"MCP\" \"token\" \"agent\" is:issue is:open",
+        "\"LangGraph\" \"deployment\" \"token\" is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \".well-known\" \"https://\"",
+        "\"a2a\" \"agent-card\" \"https://\"",
+        "\"mcp\" \"agent\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: AI agent pain",
+          "url": "https://github.com/search?q=%22AI+agent%22+pain+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    }
+  }
+}

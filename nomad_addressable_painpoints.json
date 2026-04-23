@@ -1,0 +1,154 @@
+{
+  "painpoints": [
+    {
+      "id": "compute-auth-unblock",
+      "label": "Compute/auth unblock",
+      "service_type": "compute_auth",
+      "detection_terms": ["quota", "rate limit", "token", "auth", "authentication", "permission", "inference", "compute"],
+      "monetizable_terms": ["budget", "paid", "bounty", "production", "urgent", "enterprise"],
+      "value_score": 9.6,
+      "self_improvement_gain": "high",
+      "first_offer": "diagnosis + quota/auth isolation + fallback plan",
+      "quote_native": {
+        "diagnosis_min": 0.001,
+        "diagnosis_max": 0.003,
+        "resolution_min": 0.004,
+        "resolution_max": 0.012
+      },
+      "delivery_target": "same-day diagnosis pack plus a bounded fallback-lane plan",
+      "memory_upgrade": "store the solved blocker as a reusable credential/quota checklist and fallback policy",
+      "solution_pattern": "credential and quota diagnosis, provider fallback selection, bounded retry policy",
+      "product_package": "Nomad Compute Unlock Pack",
+      "productized_artifacts": [
+        "credential/quota checklist",
+        "provider fallback policy",
+        "smallest-repro template"
+      ],
+      "deliverables": [
+        "minimal failing call",
+        "credential/quota map",
+        "fallback lane plan"
+      ]
+    },
+    {
+      "id": "human-unlock-contract",
+      "label": "Human unlock contract",
+      "service_type": "human_in_loop",
+      "detection_terms": ["human", "approval", "verification", "captcha", "judgment", "handoff"],
+      "monetizable_terms": ["blocked", "urgent", "operations", "production", "support"],
+      "value_score": 9.1,
+      "self_improvement_gain": "high",
+      "first_offer": "minimal do-now/send-back/done-when contract",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.005,
+        "resolution_max": 0.015
+      },
+      "delivery_target": "rapid handoff contract and operator-ready approval payload",
+      "memory_upgrade": "turn the resolved human gate into a reusable handoff template and operator checklist",
+      "solution_pattern": "minimal do-now/send-back/done-when contract plus operator evidence pack",
+      "product_package": "Nomad HITL Contract Pack",
+      "productized_artifacts": [
+        "handoff contract template",
+        "operator checklist",
+        "decision memory step"
+      ],
+      "deliverables": [
+        "operator checklist",
+        "approval payload",
+        "memory step for future runs"
+      ]
+    },
+    {
+      "id": "wallet-payment-repair",
+      "label": "Wallet/payment repair",
+      "service_type": "wallet_payment",
+      "detection_terms": ["wallet", "payment", "x402", "tx hash", "signature", "escrow"],
+      "monetizable_terms": ["paid", "bounty", "invoice", "budget", "buyer"],
+      "value_score": 8.7,
+      "self_improvement_gain": "medium",
+      "first_offer": "verification path + retry-safe payment state machine",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.0045,
+        "resolution_min": 0.006,
+        "resolution_max": 0.018
+      },
+      "delivery_target": "payment-path diagnosis plus retry-safe verification flow",
+      "memory_upgrade": "persist verified payment-state transitions and recovery rules for future jobs",
+      "solution_pattern": "payment-state diagnosis, verification boundary, retry-safe recovery path",
+      "product_package": "Nomad Payment Reliability Pack",
+      "productized_artifacts": [
+        "payment verification checklist",
+        "idempotent state diagram",
+        "manual review fallback"
+      ],
+      "deliverables": [
+        "payment verification checklist",
+        "state diagram",
+        "manual review fallback"
+      ]
+    },
+    {
+      "id": "self-improvement-packaging",
+      "label": "Self-improvement packaging",
+      "service_type": "self_improvement",
+      "detection_terms": ["memory", "guardrail", "checklist", "playbook", "prompt", "self-improvement", "self improvement"],
+      "monetizable_terms": ["production", "quality", "reliability", "repeat"],
+      "value_score": 8.2,
+      "self_improvement_gain": "very_high",
+      "first_offer": "turn solved blocker into reusable memory/checklist/guardrail",
+      "quote_native": {
+        "diagnosis_min": 0.001,
+        "diagnosis_max": 0.0025,
+        "resolution_min": 0.004,
+        "resolution_max": 0.01
+      },
+      "delivery_target": "convert one solved blocker into reusable memory, guardrails, and a repeatable checklist",
+      "memory_upgrade": "write the solution back into durable agent memory with a guardrail and reuse checklist",
+      "solution_pattern": "extract blocker -> rule -> checklist -> reusable memory object",
+      "product_package": "Nomad Memory Upgrade Pack",
+      "productized_artifacts": [
+        "memory entry",
+        "guardrail rule",
+        "repeatability checklist"
+      ],
+      "deliverables": [
+        "memory entry",
+        "guardrail rule",
+        "repeatable checklist"
+      ]
+    },
+    {
+      "id": "mcp-api-contract",
+      "label": "MCP/API contract",
+      "service_type": "mcp_integration",
+      "detection_terms": ["mcp", "api", "schema", "tool", "resource", "contract"],
+      "monetizable_terms": ["integration", "production", "support", "buyer"],
+      "value_score": 7.9,
+      "self_improvement_gain": "medium",
+      "first_offer": "tool/resource contract + expected request/response schema",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.0035,
+        "resolution_min": 0.005,
+        "resolution_max": 0.014
+      },
+      "delivery_target": "contract draft plus one bounded integration path with validation notes",
+      "memory_upgrade": "store the final tool/resource contract as a reusable integration template",
+      "solution_pattern": "schema diagnosis, contract draft, bounded integration path",
+      "product_package": "Nomad MCP Contract Pack",
+      "productized_artifacts": [
+        "tool schema template",
+        "resource URI plan",
+        "integration validation notes"
+      ],
+      "deliverables": [
+        "tool schema",
+        "resource URI plan",
+        "response contract"
+      ]
+    }
+  ]
+}

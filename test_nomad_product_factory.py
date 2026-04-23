@@ -1,0 +1,297 @@
+from agent_engagement import AgentEngagementLedger
+from nomad_product_factory import NomadProductFactory
+
+
+def _conversion(
+    status="private_draft_needs_approval",
+    service_type="tool_failure",
+    title="AutoGen GuardrailProvider",
+    pain="tool call interception, approval, audit trail",
+    url="https://github.com/microsoft/autogen/issues/7405",
+):
+    guardrail_decision = "deny" if status == "private_draft_needs_approval" else "allow"
+    return {
+        "conversion_id": "conv-test",
+        "created_at": "2026-04-19T12:00:00+00:00",
+        "status": status,
+        "lead": {
+            "title": title,
+            "url": url,
+            "pain": pain,
+            "service_type": service_type,
+        },
+        "route": {
+            "status": status,
+            "action": "save_private_draft" if status == "private_draft_needs_approval" else "queue_agent_contact",
+            "endpoint_url": "https://agent.example/a2a/message" if status != "private_draft_needs_approval" else "",
+            "approval_gate": "APPROVE_LEAD_HELP=comment or APPROVE_LEAD_HELP=pr_plan"
+            if status == "private_draft_needs_approval"
+            else "",
+            "guardrail": {
+                "schema": "nomad.guardrail_evaluation.v1",
+                "decision": guardrail_decision,
+                "ok": guardrail_decision != "deny",
+                "results": [
+                    {
+                        "provider": "approval_boundary_guardrail",
+                        "decision": guardrail_decision,
+                        "metadata": {
+                            "approval_required": "APPROVE_LEAD_HELP=comment or APPROVE_LEAD_HELP=pr_plan"
+                        },
+                    }
+                ],
+            },
+        },
+        "free_value": {
+            "value_pack": {
+                "schema": "nomad.agent_value_pack.v1",
+                "pack_id": "avp-test",
+                "painpoint_question": "Which tool call needs interception?",
+                "immediate_value": {
+                    "safe_now": ["Capture tool name, args, response shape, and approval scope."],
+                    "verifier": "Run a dry-run tool call against the policy fixture.",
+                },
+                "reply_contract": {"accept": "PLAN_ACCEPTED=true"},
+                "paid_upgrade": {
+                    "trigger": "Reply with PLAN_ACCEPTED=true plus FACT_URL.",
+                    "service_type": service_type,
+                    "price_native": 0.03,
+                    "delivery": "guardrail protocol draft plus verifier checklist",
+                },
+            },
+            "agent_solution": {
+                "schema": "nomad.agent_solution.v1",
+                "solution_id": "sol-test",
+                "pain_type": service_type,
+                "title": "Tool Failure Triage",
+                "guardrail": {"id": "tool_failure_triage"},
+                "nomad_self_apply": {"status": "actionable_now"},
+            },
+            "rescue_plan": {
+                "schema": "nomad.rescue_plan.v1",
+                "plan_id": "rescue-test",
+                "service_type": service_type,
+                "safe_now": ["Create a private repro and policy fixture."],
+                "required_input": "`TOOL=<name>` or `ARGS=<json>`",
+                "acceptance_criteria": ["No public post without approval."],
+                "commercial_next_step": {
+                    "package": "Nomad Tool Guardrail Pack",
+                    "price_native": 0.03,
+                    "delivery": "guardrail protocol draft plus verifier checklist",
+                },
+                "approval_boundary": {
+                    "can_do_without_approval": ["draft diagnosis"],
+                    "requires_explicit_approval": ["posting human-facing public comments"],
+                },
+            },
+            "private_help_draft": {
+                "mode": "lead_help_draft",
+                "first_useful_help_action": "Draft the smallest repro and policy decision table.",
+                "product_package": "Nomad GuardrailProvider Repro Pack",
+                "solution_pattern": "intercept -> decide -> audit -> verify",
+                "delivery_target": "guardrail provider repro plus verifier checklist",
+                "productized_artifacts": ["decision table", "policy fixture", "audit checklist"],
+                "deliverables": ["repro fixture", "verifier checklist", "approval boundary"],
+            },
+        },
+    }
+
+
+def _factory(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return NomadProductFactory(
+        path=tmp_path / "products.json",
+        engagement_ledger=AgentEngagementLedger(path=tmp_path / "engagements.json"),
+    )
+
+
+def test_product_factory_builds_private_product_with_approval_gate(tmp_path):
+    factory = _factory(tmp_path)
+
+    result = factory.run(conversions=[_conversion()], limit=1)
+
+    product = result["products"][0]
+    assert result["mode"] == "nomad_product_factory"
+    assert product["schema"] == "nomad.product.v1"
+    assert product["sku"] == "nomad.tool_guardrail_pack"
+    assert product["variant_sku"].startswith("nomad.tool_guardrail_pack.")
+    assert product["product_variant"]["slug"]
+    assert product["lead_solution"]["product_package"] == "Nomad GuardrailProvider Repro Pack"
+    assert "decision table" in product["lead_solution"]["productized_artifacts"]
+    assert product["status"] == "private_offer_needs_approval"
+    assert product["outreach_blocked_by_approval"] is True
+    assert product["approval_boundary"]["approval_required"] is True
+    assert product["guardrail_id"] == "tool_failure_triage"
+    assert product["service_template"]["create_task_payload"]["metadata"]["product_id"] == product["product_id"]
+    assert "PLAN_ACCEPTED=true" in product["sales_motion"]["machine_offer"]
+
+
+def test_product_factory_marks_machine_endpoint_offer_ready(tmp_path):
+    factory = _factory(tmp_path)
+
+    result = factory.run(
+        conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
+        limit=1,
+    )
+
+    product = result["products"][0]
+    assert product["sku"] == "nomad.compute_unlock_pack"
+    assert product["status"] == "offer_ready"
+    assert product["sellable_now"] is True
+    assert product["outreach_blocked_by_approval"] is False
+    assert product["next_action"]["action"] == "await_plan_accepted_or_create_task"
+
+
+def test_product_factory_marks_public_comment_approved_offer_ready(tmp_path):
+    factory = _factory(tmp_path)
+
+    result = factory.run(
+        conversions=[_conversion(status="public_comment_approved", service_type="repo_issue_help")],
+        limit=1,
+    )
+
+    product = result["products"][0]
+    assert product["status"] == "offer_ready"
+    assert product["sellable_now"] is True
+    assert product["outreach_blocked_by_approval"] is False
+
+
+def test_product_factory_lists_persisted_products_by_status(tmp_path):
+    factory = _factory(tmp_path)
+    factory.run(conversions=[_conversion()], limit=1)
+
+    listed = factory.list_products(statuses=["private_offer_needs_approval"], limit=10)
+
+    assert listed["mode"] == "nomad_product_list"
+    assert listed["stats"]["private_offer_needs_approval"] == 1
+    assert len(listed["products"]) == 1
+    assert listed["products"][0]["source_lead"]["value_pack_id"] == "avp-test"
+
+
+def test_product_factory_differentiates_same_service_type_leads(tmp_path):
+    factory = _factory(tmp_path)
+
+    result = factory.run(
+        conversions=[
+            _conversion(
+                title="AutoGen GuardrailProvider",
+                pain="tool call interception and approval audit",
+                url="https://github.com/microsoft/autogen/issues/7405",
+            ),
+            _conversion(
+                title="CrewAI Tool Retry Loop",
+                pain="tool schema mismatch repeats without fixture",
+                url="https://github.com/crewAIInc/crewAI/issues/9999",
+            ),
+        ],
+        limit=2,
+    )
+
+    products = result["products"]
+    assert len(products) == 2
+    assert products[0]["sku"] == products[1]["sku"] == "nomad.tool_guardrail_pack"
+    assert products[0]["variant_sku"] != products[1]["variant_sku"]
+    assert products[0]["name"] != products[1]["name"]
+    assert products[0]["product_variant"]["solution_signature"] == products[1]["product_variant"]["solution_signature"]
+    assert products[0]["product_variant"]["slug"] != products[1]["product_variant"]["slug"]
+    assert all(product["differentiators"] for product in products)
+    assert all(product["lead_solution"]["deliverables"] for product in products)
+
+
+def test_product_factory_builds_prioritized_product_from_high_value_pattern(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "productization,agent_endpoint_contact")
+    factory = _factory(tmp_path)
+
+    result = factory.run(
+        conversions=[],
+        high_value_patterns=[
+            {
+                "pattern_id": "hvp-1",
+                "title": "Provider Fallback Ladder",
+                "pain_type": "compute_auth",
+                "occurrence_count": 3,
+                "avg_truth_score": 0.82,
+                "avg_reuse_value": 0.91,
+                "productization": {
+                    "pack_ready": True,
+                    "sku": "nomad.mutual_aid.compute_auth_micro_pack",
+                    "name": "Mutual-Aid Compute Auth Micro-Pack",
+                    "paid_offer": {"amount_native": 0.03, "delivery": "bounded unblock"},
+                },
+                "agent_offer": {
+                    "starter_diagnosis": "Nomad has seen this compute/auth blocker repeatedly.",
+                    "reply_contract": "PLAN_ACCEPTED=true plus FACT_URL or ERROR",
+                    "smallest_paid_unblock": {"amount_native": 0.03, "delivery": "bounded unblock"},
+                },
+                "self_evolution": {
+                    "self_apply_step": "Use the fallback ladder before retrying.",
+                    "regression_test_stub": "tests/test_pattern_provider_fallback_ladder.py",
+                },
+            }
+        ],
+        limit=1,
+    )
+
+    assert result["mode"] == "nomad_product_factory"
+    assert result["product_count"] == 1
+    product = result["products"][0]
+    assert product["source_pattern"]["pattern_id"] == "hvp-1"
+    assert product["status"] == "offer_ready"
+    assert product["priority_score"] > 0
+    assert "Repeated compute_auth pattern" in product["priority_reason"]
+    assert result["top_priority_product"]["product_id"] == product["product_id"]
+    assert product["service_template"]["create_task_payload"]["metadata"]["pattern_id"] == "hvp-1"
+
+
+def test_product_factory_boosts_priority_from_engagement_signals(tmp_path):
+    ledger = AgentEngagementLedger(path=tmp_path / "engagements.json")
+    ledger.record_inbound(
+        session_id="eng-1",
+        requester_agent="BuyerBot",
+        requester_endpoint="https://buyer.example/a2a",
+        message="Need help diagnosing provider quota failures.",
+        pain_type="compute_auth",
+        role_assessment=ledger.classify(
+            requester_agent="BuyerBot",
+            requester_endpoint="https://buyer.example/a2a",
+            message="Need help diagnosing provider quota failures.",
+            pain_type="compute_auth",
+        ),
+        best_current_offer={"headline": "Nomad Compute Unlock Pack", "price_native": 0.03, "service_type": "compute_auth"},
+        source="direct_agent_message",
+    )
+    ledger.record_inbound(
+        session_id="eng-2",
+        requester_agent="VerifierBot",
+        requester_endpoint="https://verifier.example/a2a",
+        message="I can help Nomad with a verifier artifact and patch for provider fallback.",
+        pain_type="compute_auth",
+        role_assessment=ledger.classify(
+            requester_agent="VerifierBot",
+            requester_endpoint="https://verifier.example/a2a",
+            message="I can help Nomad with a verifier artifact and patch for provider fallback.",
+            pain_type="compute_auth",
+        ),
+        best_current_offer={"headline": "Nomad Compute Unlock Pack", "price_native": 0.03, "service_type": "compute_auth"},
+        source="agent_contact_reply",
+    )
+
+    baseline_factory = _factory(tmp_path / "baseline")
+    engaged_factory = NomadProductFactory(
+        path=tmp_path / "products.json",
+        engagement_ledger=ledger,
+    )
+
+    baseline = baseline_factory.run(
+        conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
+        limit=1,
+    )["products"][0]
+    engaged = engaged_factory.run(
+        conversions=[_conversion(status="queued_agent_contact", service_type="compute_auth")],
+        limit=1,
+    )["products"][0]
+
+    assert engaged["engagement_signal"]["priority_bonus"] > 0
+    assert engaged["priority_score"] > baseline["priority_score"]
+    assert "Engagement pull for compute_auth" in engaged["priority_reason"]

@@ -3,3 +3,4 @@ python-telegram-bot
 requests
 py-solc-x
 web3
+modal

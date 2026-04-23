@@ -6,8 +6,24 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from agent_attractor import NomadAgentAttractor
+from agent_engagement import AgentEngagementLedger
+from agent_pain_solver import AgentPainSolver
+from agent_contact import AgentContactOutbox
+from agent_campaign import AgentColdOutreachCampaign
+from agent_service import AgentServiceDesk
+from direct_agent import DirectAgentGateway
 from infra_scout import InfrastructureScout
+from lead_discovery import LeadDiscoveryScout
+from lead_conversion import LeadConversionPipeline
 from mission import MISSION_STATEMENT
+from nomad_addons import NomadAddonManager
+from nomad_collaboration import collaboration_status
+from nomad_codebuddy import CodeBuddyReviewRunner
+from nomad_guardrails import NomadGuardrailEngine, guardrail_status
+from nomad_product_factory import NomadProductFactory
+from nomad_monitor import NomadSystemMonitor
+from nomad_mutual_aid import NomadMutualAidKernel
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
 from settings import get_chain_config
@@ -41,7 +57,50 @@ class ArbiterAgent:
         self.treasury = TreasuryAgent()
         self.chain = get_chain_config()
         self.analyst = TravelAnalyst()
-        self.self_improvement = SelfImprovementEngine(infra=self.infra)
+        self.addons = NomadAddonManager()
+        self.codebuddy = CodeBuddyReviewRunner()
+        self.agent_pain_solver = AgentPainSolver()
+        self.agent_engagements = AgentEngagementLedger()
+        self.agent_reliability_doctor = self.agent_pain_solver.reliability_doctor
+        self.mutual_aid = NomadMutualAidKernel(pain_solver=self.agent_pain_solver)
+        self.self_improvement = SelfImprovementEngine(
+            infra=self.infra,
+            addons=self.addons,
+            agent_pain_solver=self.agent_pain_solver,
+            codebuddy_runner=self.codebuddy,
+            mutual_aid=self.mutual_aid,
+        )
+        self.lead_discovery = LeadDiscoveryScout()
+        self.service_desk = AgentServiceDesk(treasury=self.treasury)
+        self.agent_contacts = AgentContactOutbox(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
+        self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
+        self.agent_attractor = NomadAgentAttractor(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
+        self.direct_agent = DirectAgentGateway(
+            service_desk=self.service_desk,
+            engagements=self.agent_engagements,
+        )
+        self.guardrails = NomadGuardrailEngine()
+        self.lead_conversion = LeadConversionPipeline(
+            lead_discovery=self.lead_discovery,
+            pain_solver=self.agent_pain_solver,
+            service_desk=self.service_desk,
+            outbox=self.agent_contacts,
+            guardrails=self.guardrails,
+        )
+        self.product_factory = NomadProductFactory(
+            lead_conversion=self.lead_conversion,
+            pain_solver=self.agent_pain_solver,
+            service_desk=self.service_desk,
+            guardrails=self.guardrails,
+            engagement_ledger=self.agent_engagements,
+        )
+        self.monitor = NomadSystemMonitor(agent=self)
 
     def run(self, query: str) -> Dict[str, Any]:
         normalized_query = (query or "").strip()
@@ -55,8 +114,62 @@ class ArbiterAgent:
         if self._is_funding_request(normalized_query):
             return self._handle_funding_request(normalized_query)
 
+        if normalized_query.lower() in {"/status", "/top"}:
+            return self.monitor.snapshot()
+
+        if self._is_addon_request(normalized_query):
+            return self._handle_addon_request(normalized_query)
+
+        if self._is_quantum_request(normalized_query):
+            return self._handle_quantum_request(normalized_query)
+
+        if self._is_codebuddy_review_request(normalized_query):
+            return self._handle_codebuddy_review_request(normalized_query)
+
         if self._is_self_improvement_request(normalized_query):
             return self._handle_self_improvement_request(normalized_query)
+
+        if self._is_lead_conversion_request(normalized_query):
+            return self._handle_lead_conversion_request(normalized_query)
+
+        if self._is_product_request(normalized_query):
+            return self._handle_product_request(normalized_query)
+
+        if self._is_agent_engagement_request(normalized_query):
+            return self._handle_agent_engagement_request(normalized_query)
+
+        if self._is_agent_attractor_request(normalized_query):
+            return self._handle_agent_attractor_request(normalized_query)
+
+        if self._is_guardrail_request(normalized_query):
+            return self._handle_guardrail_request(normalized_query)
+
+        if self._is_collaboration_request(normalized_query):
+            return collaboration_status()
+
+        if self._is_mutual_aid_request(normalized_query):
+            return self._handle_mutual_aid_request(normalized_query)
+
+        if self._is_public_lead_request(normalized_query):
+            return self._handle_public_lead_request(normalized_query)
+
+        if self._is_agent_contact_request(normalized_query):
+            return self._handle_agent_contact_request(normalized_query)
+
+        if self._is_agent_campaign_request(normalized_query):
+            return self._handle_agent_campaign_request(normalized_query)
+
+        if self._is_direct_agent_request(normalized_query):
+            return self._handle_direct_agent_request(normalized_query)
+
+        if self._is_reliability_doctor_request(normalized_query):
+            return self._handle_reliability_doctor_request(normalized_query)
+
+        if self._is_agent_pain_request(normalized_query):
+            return self._handle_agent_pain_request(normalized_query)
+
+        if self._is_service_request(normalized_query):
+            return self._handle_service_request(normalized_query)
 
         infra_request = self.infra.parse_request(normalized_query)
         if infra_request:
@@ -67,8 +180,8 @@ class ArbiterAgent:
                 "mode": "deprecated",
                 "deal_found": False,
                 "message": (
-                    "Nomad now focuses fully on AI infrastructure for agents. "
-                    "Travel scouting has been retired. Try /best, /self, /scout compute or /scout wallets."
+                "Nomad now focuses fully on AI infrastructure for agents. "
+                    "Travel scouting has been retired. Try /best, /self, /compute, /market or /scout wallets."
                 ),
             }
 
@@ -78,7 +191,7 @@ class ArbiterAgent:
             "message": (
                 f"{MISSION_STATEMENT} "
                 "Nomad scouts the best free infrastructure for AI agents and uses that stack on itself. "
-                "Try /best, /self, /scout compute, /scout protocols or /scout wallets."
+                "Try /best, /self, /compute, /addons, /quantum, /market, /scout protocols or /scout wallets."
             ),
         }
 
@@ -89,6 +202,16 @@ class ArbiterAgent:
             return self.infra.self_audit(profile_id=profile)
         if kind == "compute_audit":
             return self.infra.compute_assessment(profile_id=profile)
+        if kind == "codebuddy_scout":
+            return self.infra.codebuddy_scout(profile_id=profile)
+        if kind == "render_scout":
+            return self.infra.render_scout(profile_id=profile)
+        if kind == "eurohpc_scout":
+            return self.infra.eurohpc_scout(profile_id=profile)
+        if kind == "market_scan":
+            return self.infra.market_scan(
+                focus=request.get("focus") or "balanced",
+            )
         if kind == "activation_request":
             return self.infra.activation_request(
                 category=request.get("category") or "best",
@@ -213,9 +336,165 @@ class ArbiterAgent:
             or "verbessere dich" in lowered
         )
 
+    def _is_addon_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/addons")
+            or lowered.startswith("/addon")
+            or lowered.startswith("/nomadds")
+        )
+
+    def _is_quantum_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/quantum")
+            or lowered.startswith("/qtoken")
+            or lowered.startswith("/qtokens")
+            or "quantum tokens" in lowered
+            or "quantentokens" in lowered
+        )
+
+    def _is_codebuddy_review_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/codebuddy-review")
+            or lowered.startswith("/codebuddy review")
+            or lowered.startswith("/review codebuddy")
+        )
+
+    def _is_public_lead_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/leads")
+            or lowered.startswith("/lead")
+            or lowered.startswith("/discover leads")
+            or "public agent leads" in lowered
+            or "offentliche agenten" in lowered
+            or "oeffentliche agenten" in lowered
+            or "agenten leads" in lowered
+        )
+
+    def _is_lead_conversion_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/convert-leads")
+            or lowered.startswith("/lead-conversions")
+            or lowered.startswith("/conversion-pipeline")
+            or "leads in echte kunden" in lowered
+        )
+
+    def _is_product_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/productize")
+            or lowered.startswith("/product-factory")
+            or lowered.startswith("/products")
+            or "lead zu produkt" in lowered
+            or "leads zu produkten" in lowered
+        )
+
+    def _is_guardrail_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/guardrails")
+            or lowered.startswith("/guardrail")
+            or lowered.startswith("/check-action")
+        )
+
+    def _is_agent_engagement_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-engagements")
+            or lowered.startswith("/engagements")
+            or lowered.startswith("/agent-engagement-summary")
+        )
+
+    def _is_agent_attractor_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return lowered.startswith("/agent-attractor") or lowered.startswith("/swarm")
+
+    def _is_collaboration_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/collaboration")
+            or lowered.startswith("/collaborate")
+            or lowered.startswith("/world")
+            or "agent collaboration" in lowered
+            or "andere ai agenten" in lowered
+            or "andere agenten" in lowered
+        )
+
+    def _is_mutual_aid_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/mutual-aid")
+            or lowered.startswith("/mutual_aid")
+            or lowered.startswith("/aid")
+            or lowered.startswith("/help-agent")
+            or "mutual aid" in lowered
+            or "mutual-aid" in lowered
+        )
+
+    def _is_service_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/service")
+            or lowered.startswith("/contact")
+            or lowered.startswith("/task")
+            or "public agents contact" in lowered
+            or "agent service desk" in lowered
+            or "wallet bezahlen" in lowered
+        )
+
+    def _is_agent_contact_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-contact")
+            or lowered.startswith("/contact-agent")
+            or lowered.startswith("/send-agent-contact")
+        )
+
+    def _is_agent_campaign_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/cold-outreach")
+            or lowered.startswith("/campaign")
+            or lowered.startswith("/kaltaquise")
+        )
+
+    def _is_direct_agent_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/agent-card")
+            or lowered.startswith("/direct")
+            or lowered.startswith("/discover-agent")
+            or lowered.startswith("/a2a")
+        )
+
+    def _is_agent_pain_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/solve-pain")
+            or lowered.startswith("/agent-pain")
+            or lowered.startswith("/agent-pains")
+            or lowered.startswith("/pains")
+            or "agent pain solver" in lowered
+            or "probleme zu lösen" in lowered
+        )
+
+    def _is_reliability_doctor_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/doctor")
+            or lowered.startswith("/reliability-doctor")
+            or lowered.startswith("/critic")
+            or lowered.startswith("/healer")
+            or "agent reliability doctor" in lowered
+        )
+
     def _handle_self_improvement_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower()
-        profile = self.infra._extract_profile(lowered)
+        profile = self._extract_explicit_profile(lowered)
         objective = re.sub(
             r"^/(?:cycle|improve|autocycle)\b",
             "",
@@ -226,6 +505,650 @@ class ArbiterAgent:
             objective=objective,
             profile_id=profile,
         )
+
+    def _handle_addon_request(self, query: str) -> Dict[str, Any]:
+        return self.addons.status()
+
+    def _handle_quantum_request(self, query: str) -> Dict[str, Any]:
+        objective = re.sub(
+            r"^/(?:quantum|qtoken|qtokens)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        if not objective:
+            objective = "Use quantum-inspired tokens to improve Nomad's AI-agent self-improvement loop."
+        return self.addons.run_quantum_self_improvement(
+            objective=objective,
+            context={"source": "workflow", "requested_by": "nomad_query"},
+        )
+
+    def _handle_codebuddy_review_request(self, query: str) -> Dict[str, Any]:
+        base = self._extract_key_value(query, "base")
+        head = self._extract_key_value(query, "head")
+        approval = (
+            self._extract_key_value(query, "approval")
+            or self._extract_key_value(query, "approve")
+            or self._extract_key_value(query, "data_release")
+        )
+        paths = self._extract_key_values(query, "path")
+        objective = re.sub(
+            r"^/(?:codebuddy-review|codebuddy review|review codebuddy)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("base", "head", "approval", "approve", "data_release", "path"):
+            for value in self._extract_key_values(query, key):
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.codebuddy.review(
+            objective=objective,
+            base=base,
+            head=head,
+            approval=approval,
+            paths=paths,
+        )
+
+    def _handle_agent_pain_request(self, query: str) -> Dict[str, Any]:
+        service_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "service_type")
+        problem = re.sub(
+            r"^/(?:solve-pain|agent-pain|agent-pains|pains)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("type", "service_type"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = " ".join(problem.split())
+        if problem:
+            return self.agent_pain_solver.solve(
+                problem=problem,
+                service_type=service_type,
+                source="nomad_user_request",
+            )
+        return self.self_improvement.run_cycle(
+            objective="Solve one current AI-agent pain point and apply the reusable solution to Nomad itself.",
+            profile_id=self._extract_explicit_profile(query.lower()),
+        )
+
+    def _handle_reliability_doctor_request(self, query: str) -> Dict[str, Any]:
+        service_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "service_type")
+        problem = re.sub(
+            r"^/(?:doctor|reliability-doctor|critic|healer)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("type", "service_type"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = " ".join(problem.split()) or "Agent needs reliability diagnosis."
+        return self.agent_reliability_doctor.diagnose(
+            problem=problem,
+            service_type=service_type,
+            source="nomad_user_request",
+        )
+
+    def _handle_public_lead_request(self, query: str) -> Dict[str, Any]:
+        objective = re.sub(
+            r"^/(?:leads|lead)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        objective = re.sub(
+            r"^discover leads\b",
+            "",
+            objective,
+            flags=re.IGNORECASE,
+        ).strip()
+        return self.lead_discovery.scout_public_leads(query=objective)
+
+    def _handle_lead_conversion_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered.startswith("/lead-conversions"):
+            statuses = [
+                item.strip()
+                for item in (self._extract_key_value(query, "status") or "").split(",")
+                if item.strip()
+            ]
+            return self.lead_conversion.list_conversions(
+                statuses=statuses,
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        objective = re.sub(
+            r"^/(?:convert-leads|conversion-pipeline)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        send = self._extract_bool_key_value(query, "send")
+        approval = (
+            self._extract_key_value(query, "approval")
+            or self._extract_key_value(query, "approve")
+            or self._extract_key_value(query, "public")
+        )
+        limit = self._extract_int_key_value(query, "limit") or 5
+        budget = self._extract_budget_native(query)
+        for key in ("send", "approval", "approve", "public", "limit", "budget", "amount", "pay"):
+            value = self._extract_key_value(query, key)
+            if value:
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.lead_conversion.run(
+            query=objective,
+            limit=limit,
+            send=send,
+            approval=approval,
+            budget_hint_native=budget,
+        )
+
+    def _handle_product_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered.startswith("/products"):
+            statuses = [
+                item.strip()
+                for item in (self._extract_key_value(query, "status") or "").split(",")
+                if item.strip()
+            ]
+            return self.product_factory.list_products(
+                statuses=statuses,
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        objective = re.sub(
+            r"^/(?:productize|product-factory)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        limit = self._extract_int_key_value(query, "limit") or 5
+        for key in ("limit",):
+            value = self._extract_key_value(query, key)
+            if value:
+                objective = objective.replace(f"{key}={value}", "")
+        objective = " ".join(objective.split())
+        return self.product_factory.run(
+            query=objective,
+            limit=limit,
+        )
+
+    def _handle_agent_engagement_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        requested_pain_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type")
+        limit = self._extract_int_key_value(query, "limit") or 25
+        if lowered.startswith("/agent-engagement-summary") or " summary" in lowered:
+            return self.agent_engagements.summary(
+                pain_type=requested_pain_type,
+                limit=limit,
+            )
+        roles_raw = (
+            self._extract_key_value(query, "role")
+            or self._extract_key_value(query, "roles")
+            or ""
+        )
+        roles = [item.strip() for item in roles_raw.split(",") if item.strip()]
+        return self.agent_engagements.list_engagements(
+            roles=roles,
+            pain_type=requested_pain_type,
+            limit=limit,
+        )
+
+    def _handle_agent_attractor_request(self, query: str) -> Dict[str, Any]:
+        requested_pain_type = (
+            self._extract_key_value(query, "type")
+            or self._extract_key_value(query, "pain_type")
+            or self._extract_key_value(query, "service_type")
+        )
+        role_hint = self._extract_key_value(query, "role")
+        limit = self._extract_int_key_value(query, "limit") or 5
+        return self.agent_attractor.manifest(
+            service_type=requested_pain_type,
+            role_hint=role_hint,
+            limit=limit,
+        )
+
+    def _handle_guardrail_request(self, query: str) -> Dict[str, Any]:
+        action = (
+            self._extract_key_value(query, "action")
+            or self._extract_key_value(query, "tool")
+            or "manual.check"
+        )
+        approval = self._extract_key_value(query, "approval")
+        body = re.sub(
+            r"^/(?:guardrails|guardrail|check-action)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("action", "tool", "approval"):
+            value = self._extract_key_value(query, key)
+            if value:
+                body = body.replace(f"{key}={value}", "")
+        body = " ".join(body.split())
+        return guardrail_status(
+            action=action,
+            approval=approval,
+            args={
+                "text": body,
+                "url": self._first_url(body),
+            },
+        )
+
+    def _handle_mutual_aid_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered in {"/mutual-aid", "/mutual_aid", "/aid", "/mutual-aid status", "/aid status"}:
+            return self.mutual_aid.status()
+        if lowered.startswith(("/mutual-aid ledger", "/aid ledger", "/mutual_aid ledger")):
+            return self.mutual_aid.list_truth_ledger(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid inbox", "/aid inbox", "/mutual_aid inbox")):
+            statuses = self._extract_key_value(query, "status")
+            return self.mutual_aid.list_swarm_inbox(
+                statuses=[item.strip() for item in statuses.split(",") if item.strip()],
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid signals", "/aid signals", "/mutual_aid signals")):
+            return self.mutual_aid.list_swarm_development_signals(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid patterns", "/aid patterns", "/mutual_aid patterns")):
+            return self.mutual_aid.list_high_value_patterns(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 10,
+                min_repeat_count=self._extract_int_key_value(query, "min_repeat_count") or 2,
+            )
+        if lowered.startswith(("/mutual-aid packs", "/aid packs", "/mutual_aid packs")):
+            return self.mutual_aid.list_paid_packs(
+                pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                limit=self._extract_int_key_value(query, "limit") or 25,
+            )
+        if lowered.startswith(("/mutual-aid proposal", "/aid proposal", "/help-agent proposal")):
+            sender_id = (
+                self._extract_key_value(query, "agent")
+                or self._extract_key_value(query, "sender")
+                or "swarm-agent"
+            )
+            evidence = self._extract_key_value(query, "evidence")
+            body = re.sub(
+                r"^/(?:mutual-aid|mutual_aid|aid|help-agent)\s+proposal\b",
+                "",
+                query,
+                flags=re.IGNORECASE,
+            ).strip()
+            for key in ("agent", "sender", "evidence", "type", "pain_type"):
+                value = self._extract_key_value(query, key)
+                if value:
+                    body = body.replace(f"{key}={value}", "")
+            body = " ".join(body.split()) or "Swarm proposal for Nomad."
+            return self.mutual_aid.receive_swarm_proposal(
+                {
+                    "sender_id": sender_id,
+                    "title": body[:120],
+                    "proposal": body,
+                    "pain_type": self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),
+                    "evidence": [item.strip() for item in re.split(r"[|,]+", evidence) if item.strip()],
+                    "payload": {"source": "workflow", "body": body},
+                }
+            )
+        other_agent_id = (
+            self._extract_key_value(query, "agent")
+            or self._extract_key_value(query, "other_agent")
+            or self._extract_key_value(query, "id")
+            or "public-agent"
+        )
+        task = re.sub(
+            r"^/(?:mutual-aid|mutual_aid|aid|help-agent)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        for key in ("agent", "other_agent", "id"):
+            value = self._extract_key_value(query, key)
+            if value:
+                task = task.replace(f"{key}={value}", "")
+        task = " ".join(task.split()) or "Help another agent with one concrete blocker."
+        return self.mutual_aid.help_other_agent(
+            other_agent_id=other_agent_id,
+            task=task,
+            context={"source": "workflow"},
+        )
+
+    def _handle_service_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        if lowered in {"/service", "/contact", "/task", "service", "contact"}:
+            return self.service_desk.service_catalog()
+
+        staking_match = re.search(
+            r"^/(?:service|task)\s+(?:staking|metamask)\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if staking_match:
+            return self.service_desk.metamask_staking_checklist(staking_match.group(1))
+
+        stake_match = re.search(
+            r"^/(?:service|task)\s+stake\s+(\S+)(?:\s+(0x[a-fA-F0-9]{64}))?",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if stake_match:
+            return self.service_desk.record_treasury_stake(
+                task_id=stake_match.group(1),
+                tx_hash=stake_match.group(2) or "",
+                amount_native=self._extract_budget_native(query),
+                note=self._extract_key_value(query, "note"),
+            )
+
+        spend_match = re.search(
+            r"^/(?:service|task)\s+spend\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if spend_match:
+            amount = self._extract_budget_native(query)
+            return self.service_desk.record_solver_spend(
+                task_id=spend_match.group(1),
+                amount_native=amount or 0.0,
+                note=self._extract_key_value(query, "note") or "solver spend",
+                tx_hash=self._extract_key_value(query, "tx_hash"),
+            )
+
+        close_match = re.search(
+            r"^/(?:service|task)\s+close\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if close_match:
+            outcome = query.split(close_match.group(1), 1)[-1].strip()
+            return self.service_desk.close_task(close_match.group(1), outcome=outcome)
+
+        verify_match = re.search(
+            r"^/(?:service|task)\s+verify\s+(\S+)\s+(0x[a-fA-F0-9]{64})",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if verify_match:
+            return self.service_desk.verify_payment(
+                task_id=verify_match.group(1),
+                tx_hash=verify_match.group(2),
+                requester_wallet=self._extract_wallet(query),
+            )
+
+        x402_verify_match = re.search(
+            r"^/(?:service|task)\s+x402-verify\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if x402_verify_match:
+            return self.service_desk.verify_x402_payment(
+                task_id=x402_verify_match.group(1),
+                payment_signature=self._extract_key_value(query, "signature"),
+                requester_wallet=self._extract_wallet(query),
+            )
+
+        work_match = re.search(
+            r"^/(?:service|task)\s+work\s+(\S+)(?:\s+approval=([A-Za-z0-9_-]+))?",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if work_match:
+            return self.service_desk.work_task(
+                task_id=work_match.group(1),
+                approval=work_match.group(2) or "draft_only",
+            )
+
+        task_id_match = re.search(
+            r"^/(?:service|task)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if task_id_match:
+            return self.service_desk.get_task(task_id_match.group(1))
+
+        problem = re.sub(
+            r"^/(?:service|task)(?:\s+request)?\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        service_type = self._extract_key_value(query, "type") or "custom"
+        budget = self._extract_budget_native(query)
+        requester_wallet = self._extract_wallet(query)
+        requester_agent = (
+            self._extract_key_value(query, "agent")
+            or self._extract_key_value(query, "requester")
+            or ""
+        )
+        return self.service_desk.create_task(
+            problem=problem,
+            requester_agent=requester_agent,
+            requester_wallet=requester_wallet,
+            service_type=service_type,
+            budget_native=budget,
+        )
+
+    def _handle_agent_contact_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        send_match = re.search(
+            r"^/(?:agent-contact|contact-agent|send-agent-contact)\s+send\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if send_match:
+            return self.agent_contacts.send_contact(send_match.group(1))
+
+        poll_match = re.search(
+            r"^/(?:agent-contact|contact-agent)\s+poll\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if poll_match:
+            return self.agent_contacts.poll_contact(poll_match.group(1))
+
+        status_match = re.search(
+            r"^/(?:agent-contact|contact-agent)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.agent_contacts.get_contact(status_match.group(1))
+
+        endpoint = (
+            self._extract_key_value(query, "endpoint")
+            or self._extract_key_value(query, "url")
+        )
+        if not endpoint:
+            match = re.search(r"https?://\S+", query)
+            endpoint = match.group(0) if match else ""
+        service_type = self._extract_key_value(query, "type") or "human_in_loop"
+        budget = self._extract_budget_native(query)
+        problem = re.sub(
+            r"^/(?:agent-contact|contact-agent)(?:\s+queue)?\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        if endpoint:
+            problem = problem.replace(f"endpoint={endpoint}", "")
+            problem = problem.replace(f"url={endpoint}", "")
+            problem = problem.replace(endpoint, "")
+        for key in ("type", "budget"):
+            value = self._extract_key_value(query, key)
+            if value:
+                problem = problem.replace(f"{key}={value}", "")
+        problem = problem.strip() or "Nomad offers bounded agent infrastructure help. Send one blocker or desired outcome."
+        return self.agent_contacts.queue_contact(
+            endpoint_url=endpoint,
+            problem=problem,
+            service_type=service_type,
+            budget_hint_native=budget,
+        )
+
+    def _handle_agent_campaign_request(self, query: str) -> Dict[str, Any]:
+        status_match = re.search(
+            r"^/(?:cold-outreach|campaign|kaltaquise)\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.agent_campaigns.get_campaign(status_match.group(1))
+        send = bool(re.search(r"\b(?:send|senden|now|sofort)\b", query, flags=re.IGNORECASE))
+        limit = self._extract_int_key_value(query, "limit") or 100
+        endpoints = re.findall(r"https?://\S+", query)
+        discover = (
+            bool(re.search(r"\b(?:discover|auto|find|finden|suche|suchen|scout)\b", query, flags=re.IGNORECASE))
+            or not endpoints
+        )
+        if discover:
+            return self.agent_campaigns.create_campaign_from_discovery(
+                limit=limit,
+                query=self._campaign_discovery_query(query, endpoints),
+                seeds=[{"endpoint_url": endpoint} for endpoint in endpoints],
+                send=send,
+                service_type=self._extract_key_value(query, "type") or "",
+                budget_hint_native=self._extract_budget_native(query),
+            )
+        targets = [{"endpoint_url": endpoint} for endpoint in endpoints]
+        return self.agent_campaigns.create_campaign(
+            targets=targets,
+            limit=limit,
+            send=send,
+            service_type=self._extract_key_value(query, "type") or "",
+            budget_hint_native=self._extract_budget_native(query),
+        )
+
+    def _campaign_discovery_query(self, query: str, endpoints: List[str]) -> str:
+        cleaned = re.sub(
+            r"^/(?:cold-outreach|campaign|kaltaquise)\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        )
+        for endpoint in endpoints:
+            cleaned = cleaned.replace(endpoint, "")
+        cleaned = re.sub(
+            r"\b(?:send|senden|now|sofort|discover|auto|find|finden|suche|suchen|scout)\b",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\b(?:limit|type|budget|amount|pay)=\S+", "", cleaned, flags=re.IGNORECASE)
+        explicit = self._extract_key_value(query, "query")
+        if explicit:
+            return explicit
+        return " ".join(cleaned.split())
+
+    def _handle_direct_agent_request(self, query: str) -> Dict[str, Any]:
+        if query.lower().startswith("/agent-card"):
+            return {
+                "mode": "agent_card",
+                "deal_found": False,
+                "agent_card": self.direct_agent.agent_card(),
+            }
+        discover_match = re.search(
+            r"^/(?:discover-agent|a2a\s+discover)\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if discover_match:
+            return self.direct_agent.discover_agent_card(discover_match.group(1))
+        status_match = re.search(
+            r"^/direct\s+status\s+(\S+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if status_match:
+            return self.direct_agent.session_status(status_match.group(1))
+        message = re.sub(r"^/(?:direct|a2a)(?:\s+message)?\b", "", query, flags=re.IGNORECASE).strip()
+        requester = self._extract_key_value(query, "agent") or self._extract_key_value(query, "from")
+        endpoint = self._extract_key_value(query, "endpoint")
+        wallet = self._extract_wallet(query)
+        for key in ("agent", "from", "endpoint", "wallet", "budget"):
+            value = self._extract_key_value(query, key)
+            if value:
+                message = message.replace(f"{key}={value}", "")
+        if wallet:
+            message = message.replace(wallet, "")
+        message = " ".join(message.split())
+        return self.direct_agent.handle_direct_message(
+            {
+                "requester_agent": requester,
+                "requester_endpoint": endpoint,
+                "requester_wallet": wallet,
+                "message": message,
+                "budget_native": self._extract_budget_native(query),
+            }
+        )
+
+    def _extract_key_value(self, query: str, key: str) -> str:
+        match = re.search(
+            rf"\b{re.escape(key)}=([^\s]+)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1).strip() if match else ""
+
+    def _extract_key_values(self, query: str, key: str) -> List[str]:
+        return [
+            match.group(1).strip()
+            for match in re.finditer(
+                rf"\b{re.escape(key)}=([^\s]+)",
+                query,
+                flags=re.IGNORECASE,
+            )
+            if match.group(1).strip()
+        ]
+
+    def _extract_wallet(self, query: str) -> str:
+        explicit = (
+            self._extract_key_value(query, "wallet")
+            or self._extract_key_value(query, "payer_wallet")
+            or self._extract_key_value(query, "from")
+        )
+        if re.fullmatch(r"0x[a-fA-F0-9]{40}", explicit or ""):
+            return explicit
+        match = re.search(r"\b0x[a-fA-F0-9]{40}\b", query)
+        return match.group(0) if match else ""
+
+    def _extract_budget_native(self, query: str) -> Optional[float]:
+        match = re.search(
+            r"\b(?:budget|amount|pay)=?(\d+(?:[.,]\d+)?)",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        return float(match.group(1).replace(",", "."))
+
+    def _extract_int_key_value(self, query: str, key: str) -> Optional[int]:
+        value = self._extract_key_value(query, key)
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    def _extract_bool_key_value(self, query: str, key: str) -> bool:
+        value = self._extract_key_value(query, key).strip().lower()
+        return value in {"1", "true", "yes", "on", "send"}
+
+    def _first_url(self, text: str) -> str:
+        match = re.search(r"https?://[^\s)>\]\"']+", text or "")
+        return match.group(0) if match else ""
+
+    def _extract_explicit_profile(self, lowered: str) -> str:
+        profile_markers = (" profile:", " profile=", " for profile ", " für profil ", " fuer profil ")
+        if any(marker in lowered for marker in profile_markers):
+            return self.infra._extract_profile(lowered)
+        return "ai_first"
 
     def _parse_travel_request(self, query: str) -> Optional[TravelRequest]:
         origin, destination = self._extract_route(query)

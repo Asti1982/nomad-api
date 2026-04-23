@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: nomad-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python nomad_api.py
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    domains:
+      - onrender.syndiode.com
+    envVars:
+      - key: NOMAD_API_HOST
+        value: 0.0.0.0
+      - key: NOMAD_PUBLIC_API_URL
+        value: https://onrender.syndiode.com
+      - key: NOMAD_RENDER_DOMAIN
+        value: onrender.syndiode.com
+      - key: NOMAD_AGENT_NAME
+        value: LoopHelper
+      - key: NOMAD_REQUIRE_SERVICE_PAYMENT
+        value: "true"
+      - key: NOMAD_AUTOPILOT_A2A_SEND
+        value: "false"
+      - key: NOMAD_AUTOPILOT_SEND_OUTREACH
+        value: "false"
