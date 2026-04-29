@@ -105,6 +105,9 @@ class NomadAutopilot:
         serve_api: bool = False,
         check_decision: bool = False,
     ) -> Dict[str, Any]:
+        if serve_api:
+            self._ensure_api()
+
         decision: Dict[str, Any] = {}
         if check_decision:
             decision = self._decision()
@@ -112,9 +115,6 @@ class NomadAutopilot:
                 report = self._idle_report(decision)
                 self._record_idle(report)
                 return report
-
-        if serve_api:
-            self._ensure_api()
 
         effective_send_outreach = self.default_send_outreach if send_outreach is None else bool(send_outreach)
         effective_send_a2a = self.default_send_a2a if send_a2a is None else bool(send_a2a)
@@ -222,11 +222,22 @@ class NomadAutopilot:
             lead_conversion=lead_conversion,
             outreach_summary=outreach_summary,
         )
+        swarm_accumulation = self._run_swarm_accumulation(
+            lead_conversion=lead_conversion,
+            outreach_summary=outreach_summary,
+            public_api_url=public_api_url,
+        )
         mutual_aid = self._run_mutual_aid_evolution(
             lead_conversion=lead_conversion,
             contact_poll=contact_poll,
             reply_conversion=reply_conversion,
             objective=selected_objective,
+        )
+        swarm_coordination = self._run_swarm_coordination(
+            self_improvement=self_improvement,
+            lead_conversion=lead_conversion,
+            outreach_summary=outreach_summary,
+            public_api_url=public_api_url,
         )
         autonomous_development = self_improvement.get("autonomous_development") or {}
 
@@ -251,7 +262,9 @@ class NomadAutopilot:
             "lead_conversion": lead_conversion,
             "product_factory": product_factory,
             "outreach": outreach_summary,
+            "swarm_accumulation": swarm_accumulation,
             "mutual_aid": mutual_aid,
+            "swarm_coordination": swarm_coordination,
             "autonomous_development": autonomous_development,
             "daily_quota": daily_quota,
             "analysis": self._analysis(
@@ -266,7 +279,9 @@ class NomadAutopilot:
                 lead_conversion=lead_conversion,
                 product_factory=product_factory,
                 outreach_summary=outreach_summary,
+                swarm_accumulation=swarm_accumulation,
                 mutual_aid=mutual_aid,
+                swarm_coordination=swarm_coordination,
                 autonomous_development=autonomous_development,
                 self_improvement=self_improvement,
                 daily_quota=daily_quota,
@@ -395,6 +410,118 @@ class NomadAutopilot:
             reply_conversion=reply_conversion,
             objective=objective,
         )
+
+    def _run_swarm_accumulation(
+        self,
+        lead_conversion: Dict[str, Any],
+        outreach_summary: Dict[str, Any],
+        public_api_url: str,
+    ) -> Dict[str, Any]:
+        registry = getattr(self.agent, "swarm_registry", None)
+        if not registry or not hasattr(registry, "accumulate_agents"):
+            return {
+                "mode": "nomad_swarm_accumulation",
+                "schema": "nomad.swarm_accumulation.v1",
+                "ok": True,
+                "skipped": True,
+                "reason": "swarm_registry_accumulator_unavailable",
+                "analysis": "Swarm accumulation skipped because no accumulating swarm registry is attached.",
+            }
+        base_url = public_api_url if self._is_public_service_url(public_api_url) else "http://127.0.0.1:8787"
+        focus = (
+            self._focus_from_lead_conversion(lead_conversion)
+            or str(outreach_summary.get("service_type_focus") or "").strip()
+            or self.default_outreach_service_type
+        )
+        contacts = self._list_agent_contacts_for_accumulation()
+        campaigns = []
+        campaign = outreach_summary.get("campaign") if isinstance(outreach_summary.get("campaign"), dict) else {}
+        if campaign:
+            campaigns.append(campaign)
+        leads = [
+            conversion.get("lead") or {}
+            for conversion in (lead_conversion.get("conversions") or [])
+            if isinstance(conversion, dict)
+        ]
+        try:
+            return registry.accumulate_agents(
+                contacts=contacts,
+                campaigns=campaigns,
+                leads=leads,
+                base_url=base_url.rstrip("/"),
+                focus_pain_type=focus,
+            )
+        except Exception as exc:
+            return {
+                "mode": "nomad_swarm_accumulation",
+                "schema": "nomad.swarm_accumulation.v1",
+                "ok": False,
+                "skipped": True,
+                "reason": "swarm_accumulation_failed",
+                "error": str(exc),
+                "analysis": f"Swarm accumulation failed: {exc}",
+            }
+
+    def _run_swarm_coordination(
+        self,
+        self_improvement: Dict[str, Any],
+        lead_conversion: Dict[str, Any],
+        outreach_summary: Dict[str, Any],
+        public_api_url: str,
+    ) -> Dict[str, Any]:
+        registry = getattr(self.agent, "swarm_registry", None)
+        if not registry or not hasattr(registry, "coordination_board"):
+            return {
+                "mode": "nomad_swarm_coordination",
+                "schema": "nomad.swarm_coordination_board.v1",
+                "skipped": True,
+                "reason": "swarm_registry_unavailable",
+                "analysis": "Swarm coordination skipped because no swarm registry is attached to this agent.",
+            }
+        base_url = public_api_url if self._is_public_service_url(public_api_url) else "http://127.0.0.1:8787"
+        focus = (
+            self._preferred_outreach_service_type(self_improvement, include_default=False)
+            or self._focus_from_lead_conversion(lead_conversion)
+            or str(outreach_summary.get("service_type_focus") or "").strip()
+            or self.default_outreach_service_type
+        )
+        try:
+            board = registry.coordination_board(
+                base_url=base_url.rstrip("/"),
+                focus_pain_type=focus,
+            )
+        except Exception as exc:
+            return {
+                "mode": "nomad_swarm_coordination",
+                "schema": "nomad.swarm_coordination_board.v1",
+                "skipped": True,
+                "reason": "coordination_board_failed",
+                "error": str(exc),
+                "analysis": f"Swarm coordination failed: {exc}",
+            }
+        board["autopilot_focus"] = focus
+        board["autopilot_safe_to_publish"] = self._is_public_service_url(public_api_url)
+        board["analysis"] = (
+            "Autopilot refreshed the swarm coordination board. "
+            f"Next safe coordination action: {board.get('next_best_action', '')}"
+        )
+        return board
+
+    def _list_agent_contacts_for_accumulation(self) -> list[Dict[str, Any]]:
+        contacts_api = getattr(self.agent, "agent_contacts", None)
+        if not contacts_api or not hasattr(contacts_api, "list_contacts"):
+            return []
+        try:
+            listing = contacts_api.list_contacts(limit=100)
+        except TypeError:
+            try:
+                listing = contacts_api.list_contacts(statuses=None, limit=100)
+            except Exception:
+                return []
+        except Exception:
+            return []
+        contacts = listing.get("contacts") if isinstance(listing, dict) else []
+        return [item for item in (contacts or []) if isinstance(item, dict)]
 
     def _convert_replies_to_service_tasks(self, contact_poll: Dict[str, Any]) -> Dict[str, Any]:
         replies = contact_poll.get("reply_summaries") or []
@@ -1205,7 +1332,11 @@ class NomadAutopilot:
         self._outreach_query_cursor = (cursor + 1) % len(rotation)
         return query
 
-    def _preferred_outreach_service_type(self, self_improvement: Dict[str, Any]) -> str:
+    def _preferred_outreach_service_type(
+        self,
+        self_improvement: Dict[str, Any],
+        include_default: bool = True,
+    ) -> str:
         patterns = list(((self_improvement.get("high_value_patterns") or {}).get("patterns") or []))
         if patterns:
             pain_type = str((patterns[0] or {}).get("pain_type") or "").strip()
@@ -1221,7 +1352,19 @@ class NomadAutopilot:
                     return pain_type
             except Exception:
                 pass
-        return self.default_outreach_service_type
+        return self.default_outreach_service_type if include_default else ""
+
+    @staticmethod
+    def _focus_from_lead_conversion(lead_conversion: Dict[str, Any]) -> str:
+        conversions = lead_conversion.get("conversions") or []
+        for conversion in conversions:
+            if not isinstance(conversion, dict):
+                continue
+            lead = conversion.get("lead") or {}
+            service_type = str(lead.get("service_type") or "").strip()
+            if service_type:
+                return service_type
+        return ""
 
     def _select_conversion_query(
         self,
@@ -1358,7 +1501,13 @@ class NomadAutopilot:
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
         state["last_product_factory"] = self._compact_product_factory(report.get("product_factory") or {})
         state["last_outreach"] = self._compact_outreach(report.get("outreach") or {})
+        state["last_swarm_accumulation"] = self._compact_swarm_accumulation(
+            report.get("swarm_accumulation") or {}
+        )
         state["last_mutual_aid"] = self._compact_mutual_aid(report.get("mutual_aid") or {})
+        state["last_swarm_coordination"] = self._compact_swarm_coordination(
+            report.get("swarm_coordination") or {}
+        )
         state["last_autonomous_development"] = self._compact_autonomous_development(
             report.get("autonomous_development") or {}
         )
@@ -1417,7 +1566,9 @@ class NomadAutopilot:
                 "last_lead_conversion": {},
                 "last_product_factory": {},
                 "last_outreach": {},
+                "last_swarm_accumulation": {},
                 "last_mutual_aid": {},
+                "last_swarm_coordination": {},
                 "last_autonomous_development": {},
                 "last_self_improvement": {},
                 "daily_a2a_quota": {},
@@ -1445,7 +1596,9 @@ class NomadAutopilot:
         lead_conversion: Dict[str, Any],
         product_factory: Dict[str, Any],
         outreach_summary: Dict[str, Any],
+        swarm_accumulation: Dict[str, Any],
         mutual_aid: Dict[str, Any],
+        swarm_coordination: Dict[str, Any],
         autonomous_development: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
@@ -1503,6 +1656,18 @@ class NomadAutopilot:
             analysis += (
                 f" Mutual-Aid score is {mutual_aid.get('mutual_aid_score', 0)} "
                 f"with truth_density_total={mutual_aid.get('truth_density_total', 0)}."
+            )
+        if swarm_accumulation and not swarm_accumulation.get("skipped"):
+            analysis += (
+                f" Swarm accumulation known_agents={swarm_accumulation.get('known_agents', 0)} "
+                f"prospects={swarm_accumulation.get('prospect_agents', 0)}; "
+                f"next={swarm_accumulation.get('next_best_action', '')}"
+            )
+        if swarm_coordination and not swarm_coordination.get("skipped"):
+            analysis += (
+                f" Swarm coordination focus={swarm_coordination.get('focus_pain_type', '')} "
+                f"connected_agents={swarm_coordination.get('connected_agents', 0)}; "
+                f"next={swarm_coordination.get('next_best_action', '')}"
             )
         if autonomous_development:
             if autonomous_development.get("skipped"):
@@ -1670,6 +1835,56 @@ class NomadAutopilot:
                 "applied": bool(plan.get("applied", False)),
             },
             "analysis": mutual_aid.get("analysis", ""),
+        }
+
+    @staticmethod
+    def _compact_swarm_accumulation(swarm_accumulation: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "skipped": bool(swarm_accumulation.get("skipped", False)),
+            "reason": swarm_accumulation.get("reason", ""),
+            "schema": swarm_accumulation.get("schema", ""),
+            "focus_pain_type": swarm_accumulation.get("focus_pain_type", ""),
+            "known_agents": swarm_accumulation.get("known_agents", 0),
+            "joined_agents": swarm_accumulation.get("joined_agents", 0),
+            "prospect_agents": swarm_accumulation.get("prospect_agents", 0),
+            "new_prospect_ids": swarm_accumulation.get("new_prospect_ids") or [],
+            "updated_prospect_ids": swarm_accumulation.get("updated_prospect_ids") or [],
+            "next_best_action": swarm_accumulation.get("next_best_action", ""),
+            "activation_queue": [
+                {
+                    "agent_id": item.get("agent_id", ""),
+                    "recommended_role": item.get("recommended_role", ""),
+                    "stage": item.get("stage", ""),
+                    "score": item.get("score", 0.0),
+                    "next_action": item.get("next_action", ""),
+                }
+                for item in (swarm_accumulation.get("activation_queue") or [])[:6]
+                if isinstance(item, dict)
+            ],
+            "analysis": swarm_accumulation.get("analysis", ""),
+        }
+
+    @staticmethod
+    def _compact_swarm_coordination(swarm_coordination: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "skipped": bool(swarm_coordination.get("skipped", False)),
+            "reason": swarm_coordination.get("reason", ""),
+            "schema": swarm_coordination.get("schema", ""),
+            "focus_pain_type": swarm_coordination.get("focus_pain_type", ""),
+            "connected_agents": swarm_coordination.get("connected_agents", 0),
+            "role_counts": swarm_coordination.get("role_counts") or {},
+            "next_best_action": swarm_coordination.get("next_best_action", ""),
+            "help_lanes": [
+                {
+                    "lane_id": item.get("lane_id", ""),
+                    "role": item.get("role", ""),
+                    "entrypoint": item.get("entrypoint", ""),
+                    "reply_contract": item.get("reply_contract", ""),
+                }
+                for item in (swarm_coordination.get("help_lanes") or [])[:4]
+                if isinstance(item, dict)
+            ],
+            "analysis": swarm_coordination.get("analysis", ""),
         }
 
     @staticmethod

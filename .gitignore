@@ -16,6 +16,15 @@ nomad_autonomous_development.json
 telegram_broadcast_state.json
 nomad_lead_conversions.json
 nomad_products.json
+nomad_agent_engagements.json
+nomad_autonomous_artifacts/
+nomad_competition_state.json
+nomad_heal_log.ndjson
+nomad_lane_health.json
+nomad_public_feed_state.json
+nomad_runtime_patterns.json
+nomad_runtime_trust.json
+nomad_swarm_registry.json
 nomad_mutual_aid_state.json
 nomad_mutual_aid_modules/
 truth_density_ledger.json

@@ -380,6 +380,56 @@ class FakeMutualAid:
         }
 
 
+class FakeSwarmRegistry:
+    def __init__(self):
+        self.calls = []
+        self.accumulate_calls = []
+
+    def accumulate_agents(self, **kwargs):
+        self.accumulate_calls.append(kwargs)
+        return {
+            "mode": "nomad_swarm_accumulation",
+            "schema": "nomad.swarm_accumulation.v1",
+            "ok": True,
+            "known_agents": 1,
+            "joined_agents": 0,
+            "prospect_agents": 1,
+            "new_prospect_ids": ["verifier.bot"],
+            "updated_prospect_ids": [],
+            "activation_queue": [
+                {
+                    "agent_id": "verifier.bot",
+                    "recommended_role": "peer_solver",
+                    "stage": "active_reply",
+                    "score": 0.92,
+                    "next_action": "Invite verifier.bot to join the swarm.",
+                }
+            ],
+            "next_best_action": "Invite verifier.bot to join the swarm.",
+            "analysis": "accumulation ok",
+        }
+
+    def coordination_board(self, base_url, focus_pain_type):
+        self.calls.append({"base_url": base_url, "focus_pain_type": focus_pain_type})
+        return {
+            "mode": "nomad_swarm_coordination",
+            "schema": "nomad.swarm_coordination_board.v1",
+            "focus_pain_type": focus_pain_type,
+            "connected_agents": 1,
+            "role_counts": {"peer_solver": 1},
+            "help_lanes": [
+                {
+                    "lane_id": "blocked_agent_rescue",
+                    "role": "customer",
+                    "entrypoint": f"{base_url}/a2a/message",
+                    "reply_contract": "FACT_URL or ERROR",
+                }
+            ],
+            "next_best_action": "Route next compute_auth blocker to peer_solver.",
+            "analysis": "coordination ok",
+        }
+
+
 class FakeProductFactory:
     def __init__(self):
         self.calls = []
@@ -415,6 +465,7 @@ class FakeAgent:
         self.lead_conversion = FakeLeadConversion()
         self.product_factory = FakeProductFactory()
         self.mutual_aid = FakeMutualAid()
+        self.swarm_registry = FakeSwarmRegistry()
 
 
 def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
@@ -450,6 +501,16 @@ def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
     assert result["contact_poll"]["reply_summaries"][0]["classification"] == "compute_auth"
     assert result["service"]["payment_followups"][0]["cheaper_starter_available"] is True
     assert result["service"]["payment_followups"][0]["starter_offer"]["amount_native"] == 0.01
+    assert result["swarm_accumulation"]["schema"] == "nomad.swarm_accumulation.v1"
+    assert result["swarm_accumulation"]["prospect_agents"] == 1
+    assert agent.swarm_registry.accumulate_calls[0]["base_url"] == "https://nomad.example"
+    assert agent.swarm_registry.accumulate_calls[0]["focus_pain_type"] == "compute_auth"
+    assert result["swarm_coordination"]["schema"] == "nomad.swarm_coordination_board.v1"
+    assert result["swarm_coordination"]["connected_agents"] == 1
+    assert agent.swarm_registry.calls[0]["base_url"] == "https://nomad.example"
+    assert agent.swarm_registry.calls[0]["focus_pain_type"] == "compute_auth"
+    assert "Swarm accumulation" in result["analysis"]
+    assert "Swarm coordination" in result["analysis"]
 
 
 def test_autopilot_skips_send_outreach_without_public_url(monkeypatch, tmp_path):
@@ -487,6 +548,10 @@ def test_autopilot_records_state_file(monkeypatch, tmp_path):
     assert "last_lead_conversion" in text
     assert "last_product_factory" in text
     assert "last_mutual_aid" in text
+    assert "last_swarm_accumulation" in text
+    assert "Invite verifier.bot" in text
+    assert "last_swarm_coordination" in text
+    assert "Route next compute_auth" in text
     assert "last_autonomous_development" in text
     assert "adev-test" in text
     assert "compute_watch" in text
@@ -557,6 +622,35 @@ def test_autopilot_self_schedule_records_idle_decision(monkeypatch, tmp_path):
     text = state_path.read_text(encoding="utf-8")
     assert "last_decision" in text
     assert "next_decision_at" in text
+
+
+def test_autopilot_starts_api_even_when_self_schedule_stays_idle(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MIN_CHECK_SECONDS", "60")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_MAX_CHECK_SECONDS", "3600")
+    state_path = tmp_path / "autopilot-state.json"
+    state_path.write_text(
+        f'{{"run_count": 1, "last_run_at": "{datetime.now(UTC).isoformat()}"}}',
+        encoding="utf-8",
+    )
+    agent = FakeAgent()
+    agent.service_desk = QuietServiceDesk()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=state_path,
+        sleep_fn=lambda _: None,
+    )
+    autopilot.monitor.snapshot = lambda: {
+        "tasks": {},
+        "compute_lanes": {"local": {"ollama": True}, "hosted": {}},
+    }
+    api_started: list[bool] = []
+    autopilot._ensure_api = lambda: api_started.append(True)  # type: ignore[method-assign]
+
+    result = autopilot.run_once(check_decision=True, serve_api=True)
+
+    assert result["mode"] == "autopilot_idle"
+    assert api_started == [True]
 
 
 def test_autopilot_rotates_outreach_queries_between_runs(monkeypatch, tmp_path):

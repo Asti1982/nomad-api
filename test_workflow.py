@@ -743,9 +743,12 @@ def test_agent_attractor_request_routes():
 
     attractor = agent.run("/agent-attractor type=compute_auth role=peer_solver limit=2")
     swarm = agent.run("/swarm type=compute_auth limit=3")
+    coordinate = agent.run("/swarm/coordinate type=compute_auth")
 
     assert attractor["mode"] == "nomad_agent_attractor"
     assert attractor["focus_service_type"] == "compute_auth"
     assert attractor["target_roles"] == ["peer_solver"]
     assert swarm["mode"] == "nomad_agent_attractor"
     assert swarm["focus_service_type"] == "compute_auth"
+    assert coordinate["mode"] == "nomad_swarm_coordination"
+    assert coordinate["focus_pain_type"] == "compute_auth"

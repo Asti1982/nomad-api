@@ -775,6 +775,12 @@ def test_cli_builds_service_and_lead_queries():
     attractor_args = build_parser().parse_args(["agent-attractor", "--service-type", "compute_auth", "--role", "peer_solver", "--limit", "2"])
     assert build_query(attractor_args) == "/agent-attractor type=compute_auth role=peer_solver limit=2"
 
+    swarm_coordinate_args = build_parser().parse_args(["swarm-coordinate", "--pain-type", "compute_auth"])
+    assert build_query(swarm_coordinate_args) == "/swarm/coordinate type=compute_auth"
+
+    swarm_accumulate_args = build_parser().parse_args(["swarm-accumulate", "--pain-type", "compute_auth", "--refresh"])
+    assert build_query(swarm_accumulate_args) == "/swarm/accumulate type=compute_auth run"
+
     addons_args = build_parser().parse_args(["addons"])
     assert build_query(addons_args) == "/addons"
 

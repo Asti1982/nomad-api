@@ -313,6 +313,14 @@ class LeadDiscoveryScout:
             pain_terms=pain_terms,
             lead_text=lead_text,
         )
+        lead_specific_context = self._lead_specific_context(
+            service_type=service_type,
+            pain_terms=pain_terms,
+            title=title,
+            lead_text=lead_text,
+        )
+        if lead_specific_context:
+            help_pack = self._merge_lead_specific_context(help_pack, lead_specific_context)
         first_useful_help_action = self._first_useful_help_action_for_lead(
             lead=lead,
             service_type=service_type,
@@ -365,6 +373,7 @@ class LeadDiscoveryScout:
             service_type=service_type,
             first_useful_help_action=first_useful_help_action,
             pain_validation=pain_validation,
+            lead_specific_context=lead_specific_context,
             quote_summary=quote_summary,
             delivery_target=delivery_target,
         )
@@ -384,6 +393,7 @@ class LeadDiscoveryScout:
             "draft_only": not can_publish,
             "draft": help_pack["draft"],
             "pain_validation": pain_validation,
+            "lead_specific_context": lead_specific_context,
             "first_useful_help_action": first_useful_help_action,
             "private_response_draft": private_response_draft,
             "posting_gate": (
@@ -409,6 +419,77 @@ class LeadDiscoveryScout:
                 "Contact only public machine-readable agent endpoints without approval; ask before human-facing outreach.",
             ],
             "blocked_actions": self.outreach_policy()["blocked_without_approval"],
+        }
+
+    @staticmethod
+    def _merge_lead_specific_context(
+        help_pack: Dict[str, Any],
+        lead_specific_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(help_pack)
+        field_map = {
+            "diagnosis_checks": "diagnosis_checks",
+            "deliverables": "deliverables",
+            "comment_outline": "comment_outline",
+            "pr_plan": "pr_plan",
+        }
+        for target, source in field_map.items():
+            existing = list(merged.get(target) or [])
+            for item in lead_specific_context.get(source) or []:
+                text = str(item).strip()
+                if text and text not in existing:
+                    existing.append(text)
+            merged[target] = existing
+        return merged
+
+    @staticmethod
+    def _lead_specific_context(
+        service_type: str,
+        pain_terms: List[str],
+        title: str,
+        lead_text: str,
+    ) -> Dict[str, Any]:
+        terms = {str(item).strip().lower() for item in pain_terms if str(item).strip()}
+        haystack = f"{title}\n{lead_text}".lower()
+        guardrail_terms = {"mcp", "approval"} & terms
+        if service_type != "compute_auth":
+            return {}
+        if not (
+            guardrail_terms
+            or "guardrailprovider" in haystack
+            or "tool call interception" in haystack
+            or "workbench.call_tool" in haystack
+            or "basetool.run_json" in haystack
+        ):
+            return {}
+
+        return {
+            "schema": "nomad.lead_specific_context.v1",
+            "pattern": "tool_call_guardrail_provider",
+            "public_facts": [
+                "Treat this as a pre-execution tool-call guardrail proposal, not only as provider auth failure.",
+                "Keep BaseTool.run_json, Workbench.call_tool or MCP tools, and AssistantAgent/provider forwarding as separate integration surfaces.",
+                "Preserve approval_func compatibility while allowing ALLOW, DENY, and MODIFY decisions.",
+            ],
+            "diagnosis_checks": [
+                "Map one ALLOW, DENY, and MODIFY fixture before suggesting any public implementation path.",
+                "Check the workbench/MCP path for tools that do not subclass BaseTool.",
+                "Keep audit metadata and call_id correlation non-secret and safe to store.",
+            ],
+            "deliverables": [
+                "A draft-only GuardrailProvider fit note covering BaseTool, Workbench/MCP, and AssistantAgent surfaces.",
+                "A tiny verifier matrix for ALLOW, DENY, MODIFY, approval_func compatibility, and audit metadata.",
+            ],
+            "comment_outline": [
+                "Fit check: confirm whether maintainers want a protocol layer, an approval_func bridge, or both.",
+                "Test slice: propose fixtures for FunctionTool/BaseTool plus a Workbench or MCP-like tool path.",
+                "Safety boundary: state that public comments or PRs still need explicit approval before posting.",
+            ],
+            "pr_plan": [
+                "Prototype the provider chain behind existing tool execution without changing default behavior.",
+                "Add tests for DENY short-circuit, MODIFY argument validation, approval_func wrapping, and Workbench/MCP calls.",
+                "Document non-goals: no secret logging, no access-control bypass, and no human approval implied by payment.",
+            ],
         }
 
     def _help_template_for_lead(
@@ -942,6 +1023,7 @@ class LeadDiscoveryScout:
         service_type: str,
         first_useful_help_action: str,
         pain_validation: Dict[str, Any],
+        lead_specific_context: Optional[Dict[str, Any]] = None,
         quote_summary: str = "",
         delivery_target: str = "",
     ) -> str:
@@ -960,6 +1042,21 @@ class LeadDiscoveryScout:
             "- Record where the failure belongs: MCP/tool contract, credential scope, quota/rate limit, or human approval.",
             "- Propose one bounded fallback or approval path that lets the agent continue safely.",
         ]
+        context = lead_specific_context or {}
+        facts = [
+            str(item).strip()
+            for item in (context.get("public_facts") or [])
+            if str(item).strip()
+        ]
+        checks = [
+            str(item).strip()
+            for item in (context.get("diagnosis_checks") or [])
+            if str(item).strip()
+        ]
+        if facts or checks:
+            lines.append("Lead-specific guardrail fit:")
+            for item in (facts[:3] + checks[:2])[:5]:
+                lines.append(f"- {item}")
         if quote_summary:
             lines.append(f"Optional paid follow-up after the free mini-diagnosis: {quote_summary}.")
         if delivery_target:

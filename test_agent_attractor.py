@@ -61,6 +61,10 @@ def test_agent_attractor_manifest_surfaces_roles_offer_and_broadcast(tmp_path, m
     assert result["top_offer"]["headline"] == "Nomad Compute Unlock Pack: Provider Fallback Ladder"
     assert result["target_roles"] == ["peer_solver"]
     assert result["entrypoints"]["agent_attractor"] == "https://nomad.example/agent-attractor"
+    assert result["entrypoints"]["swarm_coordinate"] == "https://nomad.example/swarm/coordinate"
+    assert result["entrypoints"]["swarm_accumulate"] == "https://nomad.example/swarm/accumulate"
     assert result["market_pull"]["engagement_summary"]["roles"]["peer_solver"] == 1
     assert "nomad.agent_attractor.v1" in result["broadcast"]["message"]
+    assert "swarm_coordinate=https://nomad.example/swarm/coordinate" in result["broadcast"]["message"]
+    assert "swarm_accumulate=https://nomad.example/swarm/accumulate" in result["broadcast"]["message"]
     assert "peer_solver_contract=artifact_url|diff|verifier|error_trace" in result["broadcast"]["message"]

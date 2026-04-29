@@ -1,4 +1,5 @@
 from compute_probe import LocalComputeProbe
+from nomad_health import LaneCooldownManager
 from self_improvement import HostedBrainRouter
 
 
@@ -13,7 +14,7 @@ class FakeResponse:
         return self._payload
 
 
-def test_github_models_probe_diagnoses_missing_models_read(monkeypatch):
+def test_github_models_probe_diagnoses_missing_models_read(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "secret-test-token")
     monkeypatch.setenv("NOMAD_GITHUB_MODELS_API_VERSION", "2026-03-10")
     monkeypatch.setenv("NOMAD_GITHUB_MODEL", "openai/gpt-4.1-mini")
@@ -27,7 +28,9 @@ def test_github_models_probe_diagnoses_missing_models_read(monkeypatch):
     monkeypatch.setattr("compute_probe.requests.get", fake_get)
     monkeypatch.setattr("compute_probe.requests.post", fake_post)
 
-    result = LocalComputeProbe()._github_models_info()
+    result = LocalComputeProbe(
+        health=LaneCooldownManager(tmp_path / "lane-health.json")
+    )._github_models_info()
 
     assert result["available"] is False
     assert result["issue"] == "github_models_auth_or_permission"
@@ -37,7 +40,7 @@ def test_github_models_probe_diagnoses_missing_models_read(monkeypatch):
     assert "secret-test-token" not in str(result)
 
 
-def test_github_models_probe_falls_back_to_working_model_candidate(monkeypatch):
+def test_github_models_probe_falls_back_to_working_model_candidate(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "secret-test-token")
     monkeypatch.setenv("NOMAD_GITHUB_MODELS_API_VERSION", "2026-03-10")
     monkeypatch.setenv("NOMAD_GITHUB_MODEL", "unknown/model")
@@ -55,7 +58,9 @@ def test_github_models_probe_falls_back_to_working_model_candidate(monkeypatch):
     monkeypatch.setattr("compute_probe.requests.get", fake_get)
     monkeypatch.setattr("compute_probe.requests.post", fake_post)
 
-    result = LocalComputeProbe()._github_models_info()
+    result = LocalComputeProbe(
+        health=LaneCooldownManager(tmp_path / "lane-health.json")
+    )._github_models_info()
 
     assert result["available"] is True
     assert result["working_model"] == "openai/gpt-4.1-mini"

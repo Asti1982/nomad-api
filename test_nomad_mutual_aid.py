@@ -35,6 +35,33 @@ def test_mutual_aid_help_generates_hash_verified_module(tmp_path):
     assert state["truth_density_ledger"][0]["reuse_value"]["repeat_count"] == 1
 
 
+def test_mutual_aid_module_emerges_from_repeated_agent_cooperation(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+
+    first = kernel.help_other_agent(
+        other_agent_id="quota-bot-1",
+        task="Provider token works locally but agent gets ERROR=429 quota and needs a fallback ladder.",
+    )
+    second = kernel.help_other_agent(
+        other_agent_id="quota-bot-2",
+        task="Another agent gets ERROR=429 quota and needs the same fallback ladder.",
+    )
+    third = kernel.help_other_agent(
+        other_agent_id="quota-bot-3",
+        task="A third agent gets ERROR=429 quota and needs the same fallback ladder.",
+    )
+
+    assert first["evolution_plan"]["applied"] is False
+    assert second["evolution_plan"]["applied"] is True
+    assert third["evolution_plan"]["applied"] is True
+    module_record = second["evolution_plan"]["module"]
+    module_path = tmp_path / "mutual-aid-modules" / f"{module_record['module_id']}.py"
+    assert module_path.exists()
+
+
 def test_mutual_aid_skips_autopilot_without_verified_help_signal(tmp_path):
     kernel = NomadMutualAidKernel(
         path=tmp_path / "mutual-aid-state.json",
@@ -150,7 +177,7 @@ def test_swarm_proposal_inbox_accepts_verifiable_non_code_help(tmp_path):
     assert result["item"]["status"] == "verified_pending_review"
     assert result["development_signal"]["schema"] == "nomad.swarm_development_signal.v1"
     assert result["development_signal"]["product_candidate"]["schema"] == "nomad.swarm_product_candidate.v1"
-    assert result["development_signal"]["next_action"] == "productize_or_create_regression_test"
+    assert result["development_signal"]["next_action"] == "compare_pattern_or_create_regression_test"
     inbox = kernel.list_swarm_inbox()
     assert inbox["stats"]["verified_pending_review"] == 1
     signals = kernel.list_swarm_development_signals()

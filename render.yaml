@@ -19,6 +19,18 @@ services:
         value: onrender.syndiode.com
       - key: NOMAD_AGENT_NAME
         value: LoopHelper
+      - key: NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED
+        value: "true"
+      - key: NOMAD_ACCEPT_AGENT_HELP
+        value: "true"
+      - key: NOMAD_LEARN_FROM_AGENT_REPLIES
+        value: "true"
+      - key: NOMAD_OPERATOR_GRANT
+        value: bounded_machine_agent_swarm
+      - key: NOMAD_OPERATOR_GRANT_ACTIONS
+        value: development,self_development,self_improvement,productization,lead_discovery,lead_conversion,mutual_aid,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share,autonomous_continuation
+      - key: NOMAD_AUTOPILOT_DAILY_LEAD_TARGET
+        value: "12"
       - key: NOMAD_REQUIRE_SERVICE_PAYMENT
         value: "true"
       - key: NOMAD_AUTOPILOT_A2A_SEND

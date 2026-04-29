@@ -145,6 +145,12 @@ def test_help_action_draft_handles_mixed_compute_mcp_guardrail_lead():
     assert "tool-call guardrail" in draft["first_useful_help_action"]
     assert "human-gated calls" in draft["first_useful_help_action"]
     assert "MCP/tool contract" in draft["private_response_draft"]
+    assert draft["lead_specific_context"]["pattern"] == "tool_call_guardrail_provider"
+    assert any("BaseTool.run_json" in item for item in draft["lead_specific_context"]["public_facts"])
+    assert any("ALLOW, DENY, and MODIFY" in item for item in draft["diagnosis_checks"])
+    assert any("Workbench/MCP" in item for item in draft["pr_plan"])
+    assert "Lead-specific guardrail fit:" in draft["private_response_draft"]
+    assert "approval_func compatibility" in draft["private_response_draft"]
     assert "explicit human approval" in draft["private_response_draft"]
 
 

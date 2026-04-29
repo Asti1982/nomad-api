@@ -61,14 +61,40 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
         )
 
     monkeypatch.setattr("render_hosting.requests.request", fake_request)
+    monkeypatch.setattr(
+        "render_hosting.requests.get",
+        lambda url, **kwargs: FakeResponse(status_code=200, payload={"ok": True}),
+    )
 
     result = RenderHostingProbe(repo_root=tmp_path).snapshot(verify=True)
 
     assert result["configured"] is True
+    assert result["public_checks"]["ok"] is True
     assert result["verification"]["ok"] is True
     assert result["verification"]["selected_service"]["id"] == "srv-test"
     assert result["owners"]["selected_owner"]["id"] == "tea-test"
     assert result["service_url"] == "https://nomad-api.onrender.com"
+
+
+def test_render_probe_public_checks_work_without_api_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("RENDER_API_KEY", "")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad-api.onrender.com")
+
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return FakeResponse(status_code=200, payload={"ok": True})
+
+    monkeypatch.setattr("render_hosting.requests.get", fake_get)
+
+    result = RenderHostingProbe(repo_root=tmp_path).snapshot(verify=True)
+
+    assert result["api_key_configured"] is False
+    assert result["public_checks"]["ok"] is True
+    assert result["public_checks"]["swarm_ready"] is True
+    assert result["public_checks"]["accumulation_ready"] is True
+    assert calls[0] == "https://nomad-api.onrender.com/health"
 
 
 def test_render_deploy_requires_explicit_approval(monkeypatch, tmp_path):

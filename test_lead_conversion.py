@@ -1,5 +1,6 @@
 import pytest
 
+from lead_discovery import LeadDiscoveryScout
 from lead_conversion import LeadConversionPipeline
 
 
@@ -269,6 +270,42 @@ def test_lead_conversion_builds_private_draft_from_explicit_lead_when_search_has
     assert conversion["status"] == "private_draft_needs_approval"
     assert conversion["free_value"]["value_pack"]["schema"] == "nomad.agent_value_pack.v1"
     assert conversion["free_value"]["agent_solution"]["pain_type"] == "compute_auth"
+
+
+def test_guardrail_provider_value_pack_carries_private_approval_packet(tmp_path):
+    pipeline = LeadConversionPipeline(
+        path=tmp_path / "conversions.json",
+        lead_discovery=LeadDiscoveryScout(),
+        service_desk=FakeServiceDesk(),
+        outbox=FakeOutbox(),
+    )
+    lead = {
+        "title": "Proposal: GuardrailProvider protocol for tool call interception",
+        "url": "https://github.com/microsoft/autogen/issues/7405",
+        "pain": "rate limit, token, approval, mcp",
+        "pain_terms": ["rate limit", "token", "approval", "mcp"],
+        "public_issue_excerpt": (
+            "GuardrailProvider intercepts tool calls before execution through BaseTool.run_json "
+            "and Workbench.call_tool, with approval_func compatibility and audit metadata."
+        ),
+        "recommended_service_type": "compute_auth",
+        "addressable_now": True,
+        "monetizable_now": True,
+    }
+
+    result = pipeline.run(leads=[lead], limit=1)
+
+    conversion = result["conversions"][0]
+    value_pack = conversion["free_value"]["value_pack"]
+    review_packet = value_pack["approval_review_packet"]
+    assert conversion["status"] == "private_draft_needs_approval"
+    assert value_pack["lead_specific_context"]["pattern"] == "tool_call_guardrail_provider"
+    assert review_packet["schema"] == "nomad.lead_approval_review_packet.v1"
+    assert review_packet["default_scope"] == "draft_only"
+    assert "APPROVE_LEAD_HELP=pr_plan" in review_packet["operator_reply_options"]
+    assert any("ALLOW, DENY, and MODIFY" in item for item in review_packet["review_checklist"])
+    assert "Lead-specific guardrail fit:" in review_packet["private_artifact_preview"]
+    assert conversion["free_value"]["public_response_draft"] == ""
 
 
 def test_value_pack_has_paid_upgrade_and_safe_reply_contract(tmp_path):

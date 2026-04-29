@@ -60,6 +60,7 @@ class RenderHostingProbe:
             "root_domain": self.root_domain,
             "deploy_enabled": _env_flag(RENDER_DEPLOY_ENABLED_ENV, default=False),
             "public_api_url": (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip(),
+            "public_check_url": self._public_check_url(),
             "api_base": self.api_base,
             "render_yaml_present": render_yaml.exists(),
             "render_yaml_path": str(render_yaml),
@@ -82,6 +83,7 @@ class RenderHostingProbe:
         }
         status["next_action"] = self._next_action(status)
         if verify:
+            status["public_checks"] = self.verify_public_surface()
             status["verification"] = self.verify_services()
             status["owners"] = self.list_owners()
             selected = status["verification"].get("selected_service") or {}
@@ -89,7 +91,51 @@ class RenderHostingProbe:
                 status["service_id"] = selected.get("id", "")
                 status["service_url"] = selected.get("url", "")
                 status["next_action"] = self._next_action(status)
+            elif (status.get("public_checks") or {}).get("ok"):
+                status["next_action"] = "Render public API is live; set RENDER_API_KEY only if Nomad should trigger deploys or manage domains."
         return status
+
+    def verify_public_surface(self) -> Dict[str, Any]:
+        base_url = self._public_check_url()
+        if not base_url:
+            return {
+                "ok": False,
+                "issue": "render_public_url_missing",
+                "message": "Set NOMAD_PUBLIC_API_URL or NOMAD_RENDER_DOMAIN before checking the public Render surface.",
+                "checks": [],
+            }
+        paths = [
+            "/health",
+            "/.well-known/agent-card.json",
+            "/swarm/coordinate",
+            "/swarm/accumulate",
+            "/collaboration",
+        ]
+        checks = [self._public_get(base_url, path) for path in paths]
+        required = {"/health", "/.well-known/agent-card.json"}
+        ok = all(item.get("ok") for item in checks if item.get("path") in required)
+        swarm_ready = any(item.get("ok") and item.get("path") == "/swarm/coordinate" for item in checks)
+        accumulation_ready = any(item.get("ok") and item.get("path") == "/swarm/accumulate" for item in checks)
+        issue = ""
+        if not ok:
+            issue = "render_public_surface_unavailable"
+        elif not accumulation_ready:
+            issue = "render_swarm_accumulation_not_deployed"
+        elif not swarm_ready:
+            issue = "render_swarm_coordination_not_deployed"
+        return {
+            "ok": bool(ok),
+            "base_url": base_url,
+            "swarm_ready": bool(swarm_ready),
+            "accumulation_ready": bool(accumulation_ready),
+            "issue": issue,
+            "checks": checks,
+            "message": (
+                "Render public surface is reachable."
+                if ok
+                else "Render public surface did not return the required health and AgentCard checks."
+            ),
+        }
 
     def list_owners(self) -> Dict[str, Any]:
         if not self.api_key:
@@ -165,6 +211,53 @@ class RenderHostingProbe:
             "service_id": service_id,
             "message": response.get("message", "Render deploy request completed."),
             "deploy": self._compact_deploy(response.get("payload")),
+        }
+
+    def _public_check_url(self) -> str:
+        configured = (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip().rstrip("/")
+        if configured and "127.0.0.1" not in configured and "localhost" not in configured:
+            return configured
+        if self.domain:
+            domain = self.domain.strip().rstrip("/")
+            if domain.startswith(("http://", "https://")):
+                return domain
+            return f"https://{domain}"
+        return ""
+
+    def _public_get(self, base_url: str, path: str) -> Dict[str, Any]:
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            response = requests.get(
+                url,
+                headers={
+                    "Accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+                    "User-Agent": "Nomad/0.1 render-public-check",
+                },
+                timeout=self.timeout_seconds,
+            )
+        except requests.Timeout as exc:
+            return {
+                "ok": False,
+                "path": path,
+                "url": url,
+                "issue": "render_public_check_timeout",
+                "message": str(exc)[:240],
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "path": path,
+                "url": url,
+                "issue": "render_public_check_failed",
+                "message": str(exc)[:240],
+            }
+        return {
+            "ok": bool(response.ok),
+            "path": path,
+            "url": url,
+            "status_code": response.status_code,
+            "content_type": getattr(response, "headers", {}).get("Content-Type", ""),
+            "message": "ok" if response.ok else response.text[:240],
         }
 
     def add_custom_domain(self, approval: str = "") -> Dict[str, Any]:

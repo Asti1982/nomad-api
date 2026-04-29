@@ -24,6 +24,7 @@ from nomad_guardrails import NomadGuardrailEngine, guardrail_status
 from nomad_product_factory import NomadProductFactory
 from nomad_monitor import NomadSystemMonitor
 from nomad_mutual_aid import NomadMutualAidKernel
+from nomad_swarm_registry import SwarmJoinRegistry
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
 from settings import get_chain_config
@@ -77,6 +78,7 @@ class ArbiterAgent:
             engagements=self.agent_engagements,
         )
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
+        self.swarm_registry = SwarmJoinRegistry()
         self.agent_attractor = NomadAgentAttractor(
             service_desk=self.service_desk,
             engagements=self.agent_engagements,
@@ -698,11 +700,41 @@ class ArbiterAgent:
         )
 
     def _handle_agent_attractor_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
         requested_pain_type = (
             self._extract_key_value(query, "type")
             or self._extract_key_value(query, "pain_type")
             or self._extract_key_value(query, "service_type")
         )
+        public_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "http://127.0.0.1:8787").rstrip("/")
+        if lowered.startswith(("/swarm/coordinate", "/swarm-coordinate")) or lowered.startswith("/swarm coordinate"):
+            return self.swarm_registry.coordination_board(
+                base_url=public_url,
+                focus_pain_type=requested_pain_type,
+            )
+        if lowered.startswith(("/swarm/accumulate", "/swarm-accumulate")) or lowered.startswith("/swarm accumulate"):
+            if "run" in lowered or "refresh" in lowered:
+                contacts = []
+                campaigns = []
+                try:
+                    contacts = (self.agent_contacts.list_contacts(limit=100).get("contacts") or [])
+                except Exception:
+                    pass
+                try:
+                    campaigns = (self.agent_campaigns.list_campaigns(limit=25).get("campaigns") or [])
+                except Exception:
+                    pass
+                return self.swarm_registry.accumulate_agents(
+                    contacts=contacts,
+                    campaigns=campaigns,
+                    base_url=public_url,
+                    focus_pain_type=requested_pain_type,
+                )
+            return self.swarm_registry.accumulation_status(base_url=public_url)
+        if lowered.startswith("/swarm/nodes") or lowered.startswith("/swarm nodes"):
+            return self.swarm_registry.summary()
+        if lowered.startswith("/swarm/join") or lowered.startswith("/swarm join"):
+            return self.swarm_registry.join_contract(base_url=public_url)
         role_hint = self._extract_key_value(query, "role")
         limit = self._extract_int_key_value(query, "limit") or 5
         return self.agent_attractor.manifest(

@@ -27,7 +27,7 @@ PAID_PACK_BLUEPRINTS = {
     "payment": ("nomad.mutual_aid.payment_resume_micro_pack", "Mutual-Aid Payment Resume Micro-Pack"),
     "memory": ("nomad.mutual_aid.memory_repair_micro_pack", "Mutual-Aid Memory Repair Micro-Pack"),
     "repo_issue_help": ("nomad.mutual_aid.repo_repro_micro_pack", "Mutual-Aid Repo Repro Micro-Pack"),
-    "self_improvement": ("nomad.mutual_aid.self_healing_micro_pack", "Mutual-Aid Self-Healing Micro-Pack"),
+    "self_improvement": ("nomad.mutual_aid.self_observation_micro_pack", "Mutual-Aid Self-Observation Micro-Pack"),
 }
 
 
@@ -81,9 +81,9 @@ class NomadMutualAidKernel:
             "top_high_value_patterns": high_value_patterns[:3],
             "policy": self.policy(),
             "analysis": (
-                "Nomad's Mutual-Aid lane evolves from verified help outcomes, keeps a "
-                "Truth-Density ledger, accepts only verifiable swarm proposals, and only adds "
-                "new separate modules with stored hashes."
+                "Nomad's Mutual-Aid lane accumulates verified help outcomes, keeps a "
+                "Truth-Density ledger, accepts only verifiable swarm proposals, and only writes "
+                "new separate modules when repeated collaborative support appears."
             ),
         }
 
@@ -217,6 +217,7 @@ class NomadMutualAidKernel:
         plan = self.evolution.propose_new_module_from_help(
             help_result=help_result,
             score=score,
+            state=state,
             auto_apply=auto_apply,
         )
         state["latest_evolution_plan"] = plan
@@ -245,7 +246,7 @@ class NomadMutualAidKernel:
             "analysis": (
                 f"Nomad helped {agent_id}, raised Mutual-Aid-Score to {score}, "
                 f"recorded Truth-Density score {ledger_entry.get('truth_score')}, and "
-                f"{'added a separate learned module' if plan.get('applied') else 'recorded a safe evolution plan'}."
+                f"{'wrote a side module from repeated collaborative support' if plan.get('applied') else 'kept the result as observation plus plan'}."
             ),
         }
 
@@ -332,7 +333,7 @@ class NomadMutualAidKernel:
             "proposal": verification.get("normalized") or {},
             "development_signal": development_signal,
             "next_action": (
-                "review_development_signal_and_product_candidate"
+                "review_observation_signal_and_pattern_candidate"
                 if verification.get("verified")
                 else "discard_or_ask_sender_for_evidence"
             ),
@@ -384,7 +385,7 @@ class NomadMutualAidKernel:
             "verification": verification,
             "development_signal": development_signal,
             "analysis": (
-                "Swarm proposal verified, stored for review, and converted into a development/product signal."
+                "Swarm proposal verified, stored for review, and converted into an observation/pattern signal."
                 if verification.get("verified")
                 else f"Swarm proposal rejected: {verification.get('reason')}"
             ),
@@ -433,7 +434,7 @@ class NomadMutualAidKernel:
             "pain_type": pain_type,
             "signal_count": len(signals),
             "signals": signals[:cap],
-            "analysis": f"Listed {min(len(signals), cap)} swarm development signal(s).",
+            "analysis": f"Listed {min(len(signals), cap)} swarm observation signal(s).",
         }
 
     def list_paid_packs(
@@ -508,15 +509,15 @@ class NomadMutualAidKernel:
     def policy(self) -> Dict[str, Any]:
         return {
             "schema": "nomad.mutual_aid_policy.v1",
-            "primary_evolution_motor": "help_other_agents_then_learn",
+            "primary_evolution_motor": "help_other_agents_then_compare",
             "human_role": "safety_unlock_for_critical_changes",
             "truth_density_ledger": "every verified help result gets evidence, outcome, score, and reuse value",
             "swarm_to_swarm_inbox": (
-                "inbound agent help is stored as verifiable proposals, converted to development/product "
+                "inbound agent help is stored as verifiable proposals, converted to observation/pattern "
                 "signals, and never executed as raw code"
             ),
-            "paid_pack_rule": "repeated verified patterns become small sellable service packs",
-            "module_rule": "new_files_only",
+            "paid_pack_rule": "repeated verified patterns can be compared, verified, and only then commercialized",
+            "module_rule": "collaborative_new_files_only",
             "dynamic_loading": "stored-hash verified modules only",
             "never": [
                 "modify existing code from generated mutual-aid modules",
@@ -759,13 +760,13 @@ class NomadMutualAidKernel:
             ),
             "self_evolution": {
                 "next_action": (
-                    "differentiate_paid_pack_and_add_regression_check"
+                    "compare_existing_pack_and_add_regression_check"
                     if pack
-                    else "productize_pattern_and_add_regression_check"
+                    else "observe_pattern_and_add_regression_check"
                 ),
                 "regression_test_stub": f"tests/test_pattern_{regression_slug}.py",
                 "self_apply_step": (
-                    f"Use '{title}' as Nomad's default starter path when another agent shows {pain_type} pain."
+                    f"Treat '{title}' as one candidate starter path when another agent shows {pain_type} pain."
                 ),
             },
             "agent_offer": {
@@ -914,7 +915,7 @@ class NomadMutualAidKernel:
             "product_candidate": product_candidate,
             "implementation_plan": [
                 "Turn the proposal into one fixture, checklist, or guardrail test before touching live workflows.",
-                "Package the lead-specific solution as a small paid offer with a clear reply contract.",
+                "Compare the lead-specific solution against existing patterns before drafting any offer.",
                 "Record outcome evidence in the Truth-Density ledger before broad reuse.",
             ],
             "safe_boundaries": [
@@ -922,7 +923,7 @@ class NomadMutualAidKernel:
                 "do not request or store secrets",
                 "add new modules or product records before changing core behavior",
             ],
-            "next_action": "productize_or_create_regression_test",
+            "next_action": "compare_pattern_or_create_regression_test",
         }
 
     def _product_candidate_from_signal(
@@ -975,7 +976,7 @@ class NomadMutualAidKernel:
 
 
 class MutualAidEvolutionManager:
-    """Builds safe, new-file-only learned modules from mutual-aid outcomes."""
+    """Builds optional, new-file-only learned modules from mutual-aid outcomes."""
 
     def __init__(self, kernel: NomadMutualAidKernel) -> None:
         self.kernel = kernel
@@ -986,6 +987,7 @@ class MutualAidEvolutionManager:
         self,
         help_result: Dict[str, Any],
         score: int,
+        state: Dict[str, Any],
         auto_apply: Optional[bool] = None,
     ) -> Dict[str, Any]:
         pain_type = _slug(help_result.get("pain_type") or "self_improvement")
@@ -993,14 +995,14 @@ class MutualAidEvolutionManager:
         filename = self._filename_for_module(module_id)
         content = self._module_content(module_id, help_result, score)
         module_hash = _sha256(content)
-        should_apply = self._should_apply(help_result, score, auto_apply=auto_apply)
+        should_apply = self._should_apply(help_result, score, state=state, auto_apply=auto_apply)
         plan = {
             "schema": "nomad.mutual_aid_evolution_plan.v1",
             "type": "new_module",
             "module_id": module_id,
             "filename": filename,
             "description": (
-                "Learned from helping another agent; packaged as a separate hash-verified module."
+                "Observed repeated verified agent cooperation; packaged as a separate hash-verified module."
             ),
             "truth_density_increase": help_result.get("truth_density_increase", 0.0),
             "safety_note": "Only creates a new file in nomad_mutual_aid_modules; existing code is not modified.",
@@ -1023,13 +1025,26 @@ class MutualAidEvolutionManager:
         self,
         help_result: Dict[str, Any],
         score: int,
+        state: Dict[str, Any],
         auto_apply: Optional[bool],
     ) -> bool:
         if auto_apply is not None:
             return bool(auto_apply)
-        if not operator_allows("autonomous_continuation"):
-            return False
         truth = float(help_result.get("truth_density_increase") or 0.0)
+        pain_type = str(help_result.get("pain_type") or "self_improvement")
+        entries = [
+            entry
+            for entry in (state.get("truth_density_ledger") or [])
+            if str(entry.get("pain_type") or "") == pain_type and (entry.get("outcome") or {}).get("success")
+        ]
+        distinct_agents = {
+            str(entry.get("agent_id") or "").strip()
+            for entry in entries
+            if str(entry.get("agent_id") or "").strip()
+        }
+        collaborative_support = len(entries) >= 2 or len(distinct_agents) >= 2
+        if not collaborative_support:
+            return False
         return score >= self.score_threshold or truth >= self.truth_threshold
 
     def _apply_new_module(

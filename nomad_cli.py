@@ -395,6 +395,28 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_swarm_coordination":
+        return "\n".join(
+            [
+                "Nomad Swarm Coordination",
+                f"Focus: {result.get('focus_pain_type', '')}",
+                f"Connected agents: {result.get('connected_agents', 0)}",
+                f"Next: {result.get('next_best_action', '')}",
+                f"Help lanes: {len(result.get('help_lanes') or [])}",
+            ]
+        )
+
+    if mode == "nomad_swarm_accumulation":
+        return "\n".join(
+            [
+                "Nomad Swarm Accumulation",
+                f"Known agents: {result.get('known_agents', 0)}",
+                f"Joined agents: {result.get('joined_agents', 0)}",
+                f"Prospects: {result.get('prospect_agents', 0)}",
+                f"Next: {result.get('next_best_action', '')}",
+            ]
+        )
+
     if mode == "nomad_mutual_aid_packs":
         return "\n".join(
             [
@@ -525,6 +547,13 @@ def build_query(args: argparse.Namespace) -> str:
         role = f" role={args.role}" if args.role else ""
         limit = f" limit={args.limit}" if args.limit else ""
         return f"/agent-attractor{service_type}{role}{limit}".strip()
+    if command == "swarm-coordinate":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        return f"/swarm/coordinate{pain_type}".strip()
+    if command == "swarm-accumulate":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        action = " run" if args.refresh else ""
+        return f"/swarm/accumulate{pain_type}{action}".strip()
     if command == "solve-pain":
         problem = " ".join(args.problem).strip()
         service_type = f" type={args.service_type}" if args.service_type else ""
@@ -778,6 +807,13 @@ def build_parser() -> argparse.ArgumentParser:
     agent_attractor.add_argument("--service-type", default="")
     agent_attractor.add_argument("--role", default="")
     agent_attractor.add_argument("--limit", type=int, default=5)
+
+    swarm_coordinate = subparsers.add_parser("swarm-coordinate", help="Show Nomad's swarm coordination board for AI agents.")
+    swarm_coordinate.add_argument("--pain-type", default="")
+
+    swarm_accumulate = subparsers.add_parser("swarm-accumulate", help="Show or refresh Nomad's accumulated AI-agent prospect pool.")
+    swarm_accumulate.add_argument("--pain-type", default="")
+    swarm_accumulate.add_argument("--refresh", action="store_true")
 
     solve_pain = subparsers.add_parser("solve-pain", help="Turn one agent pain point into a reusable Nomad solution.")
     solve_pain.add_argument("problem", nargs="*")

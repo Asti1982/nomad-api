@@ -186,6 +186,7 @@ class LeadConversionPipeline:
             agent_solution=agent_solution,
             rescue_plan=rescue_plan,
             budget_hint_native=budget_hint_native,
+            help_draft=help_draft,
         )
         contact_result = None
         if route["action"] == "queue_agent_contact":
@@ -510,6 +511,7 @@ class LeadConversionPipeline:
         agent_solution: Dict[str, Any],
         rescue_plan: Dict[str, Any],
         budget_hint_native: Optional[float],
+        help_draft: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         service_type = str(agent_solution.get("pain_type") or rescue_plan.get("service_type") or "custom")
         safe_now = [str(item) for item in (rescue_plan.get("safe_now") or [])[:3]]
@@ -517,6 +519,13 @@ class LeadConversionPipeline:
         guardrail = agent_solution.get("guardrail") or {}
         doctor = agent_solution.get("reliability_doctor") or {}
         commercial = rescue_plan.get("commercial_next_step") or {}
+        draft = help_draft or {}
+        lead_specific_context = draft.get("lead_specific_context") or {}
+        approval_packet = self._approval_review_packet(
+            route=route,
+            help_draft=draft,
+            lead_specific_context=lead_specific_context,
+        )
         pack_id = self._value_pack_id(lead, service_type)
         return {
             "schema": "nomad.agent_value_pack.v1",
@@ -541,6 +550,7 @@ class LeadConversionPipeline:
                 "doctor_role_id": doctor.get("id", ""),
                 "framework_inspiration": doctor.get("framework_inspiration", ""),
             },
+            "lead_specific_context": lead_specific_context,
             "immediate_value": {
                 "safe_now": safe_now,
                 "required_input": rescue_plan.get("required_input", ""),
@@ -560,6 +570,7 @@ class LeadConversionPipeline:
                 "budget": "budget_native=<amount> when the requester wants paid execution",
                 "do_not_send": ["raw secrets", "private credentials", "human-posting permission by implication"],
             },
+            "approval_review_packet": approval_packet,
             "paid_upgrade": {
                 "trigger": "Reply with PLAN_ACCEPTED=true plus one fact or budget_native.",
                 "service_type": service_type,
@@ -579,6 +590,54 @@ class LeadConversionPipeline:
                 f"Nomad Value Pack {pack_id}: {service_type} -> "
                 f"{agent_solution.get('title', 'agent rescue')} with {len(safe_now)} safe step(s)."
             ),
+        }
+
+    @staticmethod
+    def _approval_review_packet(
+        route: Dict[str, Any],
+        help_draft: Dict[str, Any],
+        lead_specific_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        checklist: List[str] = []
+        for source in (
+            lead_specific_context.get("diagnosis_checks") or [],
+            help_draft.get("diagnosis_checks") or [],
+            lead_specific_context.get("pr_plan") or [],
+        ):
+            for item in source:
+                text = str(item).strip()
+                if text and text not in checklist:
+                    checklist.append(text)
+                if len(checklist) >= 5:
+                    break
+            if len(checklist) >= 5:
+                break
+
+        private_artifact = str(help_draft.get("private_response_draft") or help_draft.get("draft") or "").strip()
+        return {
+            "schema": "nomad.lead_approval_review_packet.v1",
+            "default_scope": "draft_only",
+            "route_status": route.get("status", ""),
+            "approval_gate": route.get("approval_gate", ""),
+            "safe_private_actions": [
+                "keep the draft private",
+                "validate public facts only",
+                "turn the checklist into a repro or PR plan without posting",
+            ],
+            "requires_explicit_approval": [
+                "posting a public comment",
+                "opening a human-reviewed PR",
+                "sending human DMs or email",
+                "using private access, secrets, or paid compute",
+            ],
+            "review_checklist": checklist,
+            "operator_reply_options": [
+                "APPROVE_LEAD_HELP=draft_only",
+                "APPROVE_LEAD_HELP=comment",
+                "APPROVE_LEAD_HELP=pr_plan",
+                "/skip last",
+            ],
+            "private_artifact_preview": private_artifact[:1000],
         }
 
     def _approval_for_lead(self, lead_url: str, approval: str = "") -> str:
