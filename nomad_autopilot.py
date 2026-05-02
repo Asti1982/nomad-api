@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 from nomad_api import serve_in_thread
+from nomad_autonomy_proof import AutonomyProofHarness
 from nomad_operator_grant import operator_grant, service_approval_scope
+from nomad_public_url import preferred_public_base_url
 from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
 
@@ -69,6 +71,33 @@ class NomadAutopilot:
             os.getenv("NOMAD_AUTOPILOT_A2A_SEND", "false").strip().lower()
             in {"1", "true", "yes", "on"}
         )
+        self.agent_growth_pipeline_enabled = (
+            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.agent_growth_every_n_cycles = max(
+            1, int(os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_EVERY_N_CYCLES", "1") or "1")
+        )
+        self.agent_growth_query = (os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_QUERY") or "").strip()
+        self.agent_growth_limit = max(
+            1, min(int(os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_LIMIT", "5") or "5"), 25)
+        )
+        self.agent_growth_send_outreach = (
+            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_SEND", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.agent_growth_no_products = (
+            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_NO_PRODUCTS", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.agent_growth_no_swarm_feed = (
+            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_NO_SWARM_FEED", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.always_send_payment_followups = (
+            os.getenv("NOMAD_ALWAYS_SEND_PAYMENT_FOLLOWUPS", "true").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         self.default_payment_followup_limit = int(
             os.getenv("NOMAD_AUTOPILOT_PAYMENT_FOLLOWUP_LIMIT", "3")
         )
@@ -87,6 +116,7 @@ class NomadAutopilot:
         self._outreach_query_cursor = 0
         self._payment_followup_log: dict[str, dict[str, Any]] = {}
         self._agent_followup_log: dict[str, dict[str, Any]] = {}
+        self.autonomy_proof = AutonomyProofHarness()
         self.last_cycle_report: Optional[Dict[str, Any]] = None
 
     def run_once(
@@ -118,9 +148,13 @@ class NomadAutopilot:
 
         effective_send_outreach = self.default_send_outreach if send_outreach is None else bool(send_outreach)
         effective_send_a2a = self.default_send_a2a if send_a2a is None else bool(send_a2a)
-        public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        public_api_url = preferred_public_base_url()
         send_queue_enabled = bool(
             (effective_send_outreach or effective_send_a2a)
+            and self._is_public_service_url(public_api_url)
+        )
+        payment_send_enabled = bool(
+            self.always_send_payment_followups
             and self._is_public_service_url(public_api_url)
         )
         target = max(0, int(daily_lead_target if daily_lead_target is not None else self.default_daily_lead_target))
@@ -134,7 +168,11 @@ class NomadAutopilot:
         payment_followup_queue = self._queue_payment_followups(
             service_summary=service_summary,
             limit=self.default_payment_followup_limit,
-            enabled=send_queue_enabled,
+            enabled=payment_send_enabled,
+        )
+        payment_followup_send = self._send_payment_followups(
+            payment_followup_queue,
+            enabled=payment_send_enabled,
         )
         contact_summary = self._flush_contact_queue(
             limit=flush_limit,
@@ -206,6 +244,7 @@ class NomadAutopilot:
             lead_conversion=lead_conversion,
             self_improvement=self_improvement,
         )
+        lead_workbench = self._run_lead_workbench(limit=5)
         outreach_effective_limit = min(
             base_outreach_limit,
             remaining_to_send if effective_send_outreach else remaining_to_prepare,
@@ -239,7 +278,46 @@ class NomadAutopilot:
             outreach_summary=outreach_summary,
             public_api_url=public_api_url,
         )
+        agent_growth_pipeline_report: Dict[str, Any] = {"skipped": True, "reason": "disabled"}
+        if self.agent_growth_pipeline_enabled:
+            state_before = self._load()
+            next_run_num = int(state_before.get("run_count") or 0) + 1
+            n_every = max(1, int(self.agent_growth_every_n_cycles))
+            if next_run_num % n_every == 0:
+                from nomad_agent_growth_pipeline import agent_growth_pipeline
+
+                growth_query = self.agent_growth_query or self.default_outreach_query
+                agent_growth_pipeline_report = agent_growth_pipeline(
+                    agent=self.agent,
+                    query=growth_query,
+                    limit=self.agent_growth_limit,
+                    base_url=public_api_url,
+                    run_product_factory=not self.agent_growth_no_products,
+                    send_outreach=self.agent_growth_send_outreach,
+                    swarm_feed=False if self.agent_growth_no_swarm_feed else None,
+                )
+            else:
+                agent_growth_pipeline_report = {
+                    "skipped": True,
+                    "reason": "cycle_modulo",
+                    "next_run_num": next_run_num,
+                    "every_n": n_every,
+                }
         autonomous_development = self_improvement.get("autonomous_development") or {}
+        outbound_tracking = self._outbound_tracking_snapshot()
+        efficiency_plan = self._efficiency_plan(
+            public_api_url=public_api_url,
+            service_summary=service_summary,
+            payment_followup_queue=payment_followup_queue,
+            contact_summary=contact_summary,
+            contact_poll=contact_poll,
+            lead_conversion=lead_conversion,
+            outreach_summary=outreach_summary,
+            swarm_accumulation=swarm_accumulation,
+            swarm_coordination=swarm_coordination,
+            self_improvement=self_improvement,
+            daily_quota=daily_quota,
+        )
 
         report = {
             "mode": "nomad_autopilot",
@@ -253,6 +331,7 @@ class NomadAutopilot:
             "decision": decision,
             "service": service_summary,
             "payment_followup_queue": payment_followup_queue,
+            "payment_followup_send": payment_followup_send,
             "contact_queue": contact_summary,
             "contact_poll": contact_poll,
             "agent_followup_queue": agent_followup_queue,
@@ -261,16 +340,21 @@ class NomadAutopilot:
             "self_improvement": self_improvement,
             "lead_conversion": lead_conversion,
             "product_factory": product_factory,
+            "lead_workbench": lead_workbench,
             "outreach": outreach_summary,
+            "outbound_tracking": outbound_tracking,
             "swarm_accumulation": swarm_accumulation,
             "mutual_aid": mutual_aid,
             "swarm_coordination": swarm_coordination,
+            "agent_growth_pipeline": agent_growth_pipeline_report,
             "autonomous_development": autonomous_development,
+            "efficiency_plan": efficiency_plan,
             "daily_quota": daily_quota,
             "analysis": self._analysis(
                 objective=selected_objective,
                 service_summary=service_summary,
                 payment_followup_queue=payment_followup_queue,
+                payment_followup_send=payment_followup_send,
                 contact_summary=contact_summary,
                 contact_poll=contact_poll,
                 agent_followup_queue=agent_followup_queue,
@@ -278,6 +362,7 @@ class NomadAutopilot:
                 reply_conversion=reply_conversion,
                 lead_conversion=lead_conversion,
                 product_factory=product_factory,
+                lead_workbench=lead_workbench,
                 outreach_summary=outreach_summary,
                 swarm_accumulation=swarm_accumulation,
                 mutual_aid=mutual_aid,
@@ -287,6 +372,24 @@ class NomadAutopilot:
                 daily_quota=daily_quota,
             ),
         }
+        report["autonomy_proof"] = self.autonomy_proof.evaluate(
+            report,
+            previous_state=self._load(),
+        )
+        report["analysis"] += " " + report["autonomy_proof"]["analysis"]
+        agp = report.get("agent_growth_pipeline") or {}
+        if agp.get("mode") == "nomad_agent_growth_pipeline" and bool(agp.get("ok", True)):
+            leads_ag = agp.get("leads") or {}
+            cand = leads_ag.get("candidate_count")
+            if cand is None:
+                cand = len(leads_ag.get("leads") or [])
+            pf_ag = agp.get("product_factory") or {}
+            pc_ag = int(pf_ag.get("product_count") or len(pf_ag.get("products") or []))
+            sw_ag = agp.get("swarm_accumulation") or {}
+            nid_ag = len(sw_ag.get("new_prospect_ids") or [])
+            report["analysis"] += (
+                f" Agent-growth pipeline: scout_candidates={cand}, products={pc_ag}, new_swarm_prospects={nid_ag}."
+            )
         self._record(report)
         return report
 
@@ -310,6 +413,30 @@ class NomadAutopilot:
             next_delay = self._next_loop_delay(last_report=last_report, max_delay=delay)
             self.sleep_fn(next_delay)
         return last_report
+
+    def _outbound_tracking_snapshot(self) -> Dict[str, Any]:
+        tracker = getattr(self.agent, "outbound_tracker", None)
+        if tracker is None or not hasattr(tracker, "summary"):
+            return {
+                "ok": False,
+                "reason": "tracker_unavailable",
+            }
+        try:
+            summary = tracker.summary(limit=5)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": "tracker_error",
+                "error": str(exc),
+            }
+        return {
+            "ok": bool(summary.get("ok")),
+            "next_best_action": summary.get("next_best_action", ""),
+            "contacts": summary.get("contacts") or {},
+            "campaigns": summary.get("campaigns") or {},
+            "tasks": summary.get("tasks") or {},
+            "autonomous_tracking": summary.get("autonomous_tracking") or {},
+        }
 
     def _decision(self) -> Dict[str, Any]:
         state = self._load()
@@ -346,6 +473,7 @@ class NomadAutopilot:
         worked: list[str] = []
         draft_ready: list[str] = []
         awaiting_payment: list[str] = []
+        stale_invalid: list[str] = []
         review_needed: list[str] = []
         payment_followups: list[Dict[str, Any]] = []
 
@@ -360,6 +488,10 @@ class NomadAutopilot:
             elif status == "draft_ready":
                 draft_ready.append(task_id)
             elif status == "awaiting_payment":
+                if self._awaiting_payment_task_is_stale_invalid(task):
+                    result = self._mark_stale_invalid_task(task)
+                    stale_invalid.append(((result.get("task") or {}).get("task_id")) or task_id)
+                    continue
                 awaiting_payment.append(task_id)
                 if hasattr(self.agent.service_desk, "payment_followup"):
                     try:
@@ -381,12 +513,46 @@ class NomadAutopilot:
             "worked_task_ids": worked,
             "draft_ready_task_ids": draft_ready,
             "awaiting_payment_task_ids": awaiting_payment,
+            "stale_invalid_task_ids": stale_invalid,
             "payment_followups": payment_followups[:5],
             "review_needed_task_ids": review_needed,
             "analysis": (
                 f"Service queue processed: worked {len(worked)}, draft_ready {len(draft_ready)}, "
-                f"awaiting_payment {len(awaiting_payment)}, review_needed {len(review_needed)}."
+                f"awaiting_payment {len(awaiting_payment)}, stale_invalid {len(stale_invalid)}, "
+                f"review_needed {len(review_needed)}."
             ),
+        }
+
+    @staticmethod
+    def _awaiting_payment_task_is_stale_invalid(task: Dict[str, Any]) -> bool:
+        metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+        payment = task.get("payment") if isinstance(task.get("payment"), dict) else {}
+        candidates = [
+            task.get("callback_url"),
+            task.get("requester_wallet"),
+            payment.get("tx_hash"),
+            task.get("tx_hash"),
+            metadata.get("requester_endpoint"),
+            metadata.get("endpoint_url"),
+            metadata.get("callback_url"),
+            metadata.get("tx_hash"),
+        ]
+        return not any(str(item or "").strip() for item in candidates)
+
+    def _mark_stale_invalid_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task_id = str(task.get("task_id") or "")
+        reason = (
+            "Awaiting-payment task has no requester endpoint, callback, wallet, or tx hash; "
+            "it is treated as invalid lead ballast so Nomad can look for real jobs."
+        )
+        if task_id and hasattr(self.agent.service_desk, "mark_stale_invalid"):
+            try:
+                return self.agent.service_desk.mark_stale_invalid(task_id, reason=reason)
+            except Exception:
+                pass
+        return {
+            "ok": False,
+            "task": {"task_id": task_id, "status": "stale_invalid", "invalid_reason": reason},
         }
 
     def _run_mutual_aid_evolution(
@@ -837,6 +1003,75 @@ class NomadAutopilot:
             ),
         }
 
+    def _send_payment_followups(
+        self,
+        payment_followup_queue: Dict[str, Any],
+        *,
+        enabled: bool,
+    ) -> Dict[str, Any]:
+        queued_ids = [
+            str(item)
+            for item in (payment_followup_queue.get("queued_contact_ids") or [])
+            if str(item or "").strip()
+        ]
+        sent_ids: list[str] = []
+        failed_ids: list[str] = []
+        if not queued_ids:
+            return {
+                "mode": "autopilot_payment_followup_send",
+                "ok": True,
+                "sent_contact_ids": [],
+                "failed_contact_ids": [],
+                "skipped": True,
+                "reason": "no_payment_followups_queued",
+                "analysis": "No payment follow-up contacts were queued for sending.",
+            }
+        if not enabled:
+            return {
+                "mode": "autopilot_payment_followup_send",
+                "ok": True,
+                "sent_contact_ids": [],
+                "failed_contact_ids": [],
+                "skipped": True,
+                "reason": "payment_followup_send_disabled_or_public_url_missing",
+                "analysis": (
+                    f"{len(queued_ids)} payment follow-up contact(s) were queued, "
+                    "but payment sending is disabled or Nomad has no public service URL."
+                ),
+            }
+        if not hasattr(self.agent.agent_contacts, "send_contact"):
+            return {
+                "mode": "autopilot_payment_followup_send",
+                "ok": False,
+                "sent_contact_ids": [],
+                "failed_contact_ids": queued_ids,
+                "skipped": True,
+                "reason": "send_contact_unavailable",
+                "analysis": "Payment follow-up sending failed because the contact outbox cannot send contacts here.",
+            }
+
+        for contact_id in queued_ids:
+            try:
+                result = self.agent.agent_contacts.send_contact(contact_id)
+            except Exception:
+                failed_ids.append(contact_id)
+                continue
+            status = ((result.get("contact") or {}).get("status")) or ""
+            if status == "sent":
+                sent_ids.append(contact_id)
+            else:
+                failed_ids.append(contact_id)
+        return {
+            "mode": "autopilot_payment_followup_send",
+            "ok": not failed_ids,
+            "sent_contact_ids": sent_ids,
+            "failed_contact_ids": failed_ids,
+            "analysis": (
+                f"Payment follow-up send processed {len(queued_ids)} money contact(s): "
+                f"sent {len(sent_ids)}, failed {len(failed_ids)}."
+            ),
+        }
+
     def _flush_contact_queue(self, limit: int, send_enabled: bool) -> Dict[str, Any]:
         queued_listing = self.agent.agent_contacts.list_contacts(statuses=["queued"], limit=limit)
         queued_contacts = queued_listing.get("contacts") or []
@@ -935,7 +1170,7 @@ class NomadAutopilot:
         explicit_query: str,
         send_outreach: bool,
     ) -> Dict[str, Any]:
-        public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        public_api_url = preferred_public_base_url()
         service_type = self._preferred_outreach_service_type(self_improvement)
         query = self._select_outreach_query(
             explicit_query=explicit_query,
@@ -994,7 +1229,7 @@ class NomadAutopilot:
                 "reason": "conversion_limit_zero",
                 "analysis": "Lead conversion skipped because conversion limit is zero.",
             }
-        public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        public_api_url = preferred_public_base_url()
         effective_send = bool(send_a2a and self._is_public_service_url(public_api_url))
         lead_scout = self_improvement.get("lead_scout") or {}
         leads = self._conversion_leads_from_cycle(lead_scout, limit=cap)
@@ -1056,6 +1291,30 @@ class NomadAutopilot:
             high_value_patterns=patterns or None,
             limit=max(len(conversions), len(patterns), 1),
         )
+
+    def _run_lead_workbench(self, limit: int = 5) -> Dict[str, Any]:
+        workbench = getattr(self.agent, "lead_workbench", None)
+        if not workbench or not hasattr(workbench, "status"):
+            return {
+                "mode": "nomad_lead_workbench",
+                "schema": "nomad.lead_workbench.v1",
+                "ok": True,
+                "skipped": True,
+                "reason": "lead_workbench_unavailable",
+                "analysis": "Lead workbench skipped because it is unavailable.",
+            }
+        try:
+            return workbench.status(limit=limit, work=True)
+        except Exception as exc:
+            return {
+                "mode": "nomad_lead_workbench",
+                "schema": "nomad.lead_workbench.v1",
+                "ok": False,
+                "skipped": True,
+                "reason": "lead_workbench_failed",
+                "error": str(exc),
+                "analysis": f"Lead workbench failed: {exc}",
+            }
 
     def _daily_quota(self, target: int) -> Dict[str, Any]:
         today = datetime.now().astimezone().date().isoformat()
@@ -1266,6 +1525,11 @@ class NomadAutopilot:
             return (
                 "Improve Nomad's outreach and task framing so more agents convert from diagnosis to wallet payment, "
                 + ("while keeping the smallest starter diagnosis visible." if cheaper_starter else "and keep the payment handoff explicit.")
+            )
+        if service_summary.get("stale_invalid_task_ids"):
+            return (
+                "Ignore stale invalid payment placeholders and find real buyer-agent jobs: scout current AI-agent "
+                "blockers, convert valid leads into service requests, and keep only tasks with endpoint, wallet, or tx proof."
             )
         return ""
 
@@ -1491,6 +1755,9 @@ class NomadAutopilot:
         state["last_payment_followup_queue"] = self._compact_payment_followup_queue(
             report.get("payment_followup_queue") or {}
         )
+        state["last_payment_followup_send"] = self._compact_contacts(
+            report.get("payment_followup_send") or {}
+        )
         state["last_contact_queue"] = self._compact_contacts(report.get("contact_queue") or {})
         state["last_contact_poll"] = self._compact_contact_poll(report.get("contact_poll") or {})
         state["last_agent_followup_queue"] = self._compact_agent_followup_queue(
@@ -1500,6 +1767,10 @@ class NomadAutopilot:
         state["last_reply_conversion"] = self._compact_reply_conversion(report.get("reply_conversion") or {})
         state["last_lead_conversion"] = self._compact_lead_conversion(report.get("lead_conversion") or {})
         state["last_product_factory"] = self._compact_product_factory(report.get("product_factory") or {})
+        state["last_agent_growth_pipeline"] = self._compact_agent_growth_pipeline(
+            report.get("agent_growth_pipeline") or {}
+        )
+        state["last_lead_workbench"] = self._compact_lead_workbench(report.get("lead_workbench") or {})
         state["last_outreach"] = self._compact_outreach(report.get("outreach") or {})
         state["last_swarm_accumulation"] = self._compact_swarm_accumulation(
             report.get("swarm_accumulation") or {}
@@ -1511,6 +1782,9 @@ class NomadAutopilot:
         state["last_autonomous_development"] = self._compact_autonomous_development(
             report.get("autonomous_development") or {}
         )
+        state["last_efficiency_plan"] = self._compact_efficiency_plan(report.get("efficiency_plan") or {})
+        state["last_autonomy_proof"] = self._compact_autonomy_proof(report.get("autonomy_proof") or {})
+        state["useless_cycle_streak"] = int((report.get("autonomy_proof") or {}).get("useless_cycle_streak") or 0)
         state["last_self_improvement"] = self._compact_self_improvement(report.get("self_improvement") or {})
         state["daily_a2a_quota"] = report.get("daily_quota") or state.get("daily_a2a_quota") or {}
         state["payment_followup_log"] = self._payment_followup_log
@@ -1558,6 +1832,7 @@ class NomadAutopilot:
                 "last_public_api_url": "",
                 "last_service": {},
                 "last_payment_followup_queue": {},
+                "last_payment_followup_send": {},
                 "last_contact_queue": {},
                 "last_contact_poll": {},
                 "last_agent_followup_queue": {},
@@ -1565,12 +1840,17 @@ class NomadAutopilot:
                 "last_reply_conversion": {},
                 "last_lead_conversion": {},
                 "last_product_factory": {},
+                "last_agent_growth_pipeline": {},
+                "last_lead_workbench": {},
                 "last_outreach": {},
                 "last_swarm_accumulation": {},
                 "last_mutual_aid": {},
                 "last_swarm_coordination": {},
                 "last_autonomous_development": {},
+                "last_efficiency_plan": {},
+                "last_autonomy_proof": {},
                 "last_self_improvement": {},
+                "useless_cycle_streak": 0,
                 "daily_a2a_quota": {},
                 "payment_followup_log": {},
                 "agent_followup_log": {},
@@ -1588,6 +1868,7 @@ class NomadAutopilot:
         objective: str,
         service_summary: Dict[str, Any],
         payment_followup_queue: Dict[str, Any],
+        payment_followup_send: Dict[str, Any],
         contact_summary: Dict[str, Any],
         contact_poll: Dict[str, Any],
         agent_followup_queue: Dict[str, Any],
@@ -1595,6 +1876,7 @@ class NomadAutopilot:
         reply_conversion: Dict[str, Any],
         lead_conversion: Dict[str, Any],
         product_factory: Dict[str, Any],
+        lead_workbench: Dict[str, Any],
         outreach_summary: Dict[str, Any],
         swarm_accumulation: Dict[str, Any],
         mutual_aid: Dict[str, Any],
@@ -1606,8 +1888,10 @@ class NomadAutopilot:
         worked = len(service_summary.get("worked_task_ids") or [])
         drafts = len(service_summary.get("draft_ready_task_ids") or [])
         awaiting_payment = len(service_summary.get("awaiting_payment_task_ids") or [])
+        stale_invalid = len(service_summary.get("stale_invalid_task_ids") or [])
         payment_followups = len(service_summary.get("payment_followups") or [])
         queued_payment_followups = len(payment_followup_queue.get("queued_contact_ids") or [])
+        sent_payment_followups = len(payment_followup_send.get("sent_contact_ids") or [])
         queued_sent = len(contact_summary.get("sent_contact_ids") or [])
         queued_agent_followups = len(agent_followup_queue.get("queued_contact_ids") or [])
         sent_agent_followups = len(agent_followup_send.get("sent_contact_ids") or [])
@@ -1616,6 +1900,7 @@ class NomadAutopilot:
         converted = len(reply_conversion.get("created_task_ids") or [])
         conversion_stats = lead_conversion.get("stats") or {}
         product_count = int(product_factory.get("product_count") or 0)
+        lead_worked = int(lead_workbench.get("worked_count") or 0)
         outreach_campaign = (outreach_summary.get("campaign") or {})
         outreach_stats = outreach_campaign.get("stats") or {}
         compute_watch = self_improvement.get("compute_watch") or {}
@@ -1625,15 +1910,16 @@ class NomadAutopilot:
         lead_count = len(lead_scout.get("leads") or [])
         analysis = (
             f"Nomad autopilot ran objective '{objective}'. "
-            f"Service: worked {worked}, draft_ready {drafts}, awaiting_payment {awaiting_payment}. "
+            f"Service: worked {worked}, draft_ready {drafts}, awaiting_payment {awaiting_payment}, stale_invalid {stale_invalid}. "
             f"Payment follow-ups prepared {payment_followups}. "
-            f"Payment follow-up contacts queued {queued_payment_followups}. "
+            f"Payment follow-up contacts queued {queued_payment_followups} and sent {sent_payment_followups}. "
             f"Queue flush sent {queued_sent} queued contact(s). "
             f"Contact poll checked {polled} sent contact(s) and found {replied} reply/replies. "
             f"Agent follow-up queue prepared {queued_agent_followups} role-specific contact(s) and sent {sent_agent_followups}. "
             f"Reply conversion created {converted} paid-task candidate(s). "
             f"Lead conversion prepared {sum(int(v) for v in conversion_stats.values()) if conversion_stats else 0} conversion artifact(s). "
             f"Product factory built {product_count} product offer(s). "
+            f"Lead workbench worked {lead_worked} item(s). "
             f"Discovery outreach sent {outreach_stats.get('sent', 0)} and queued {outreach_stats.get('queued', 0)}. "
             f"Daily A2A quota: prepared {daily_quota.get('prepared_count', 0)}/{daily_quota.get('target', 0)}, "
             f"sent {daily_quota.get('sent_count', 0)}/{daily_quota.get('target', 0)}."
@@ -1677,6 +1963,104 @@ class NomadAutopilot:
                 analysis += f" Autonomous development recorded {action.get('action_id', '')}: {action.get('title', '')}."
         return analysis
 
+    def _efficiency_plan(
+        self,
+        *,
+        public_api_url: str,
+        service_summary: Dict[str, Any],
+        payment_followup_queue: Dict[str, Any],
+        contact_summary: Dict[str, Any],
+        contact_poll: Dict[str, Any],
+        lead_conversion: Dict[str, Any],
+        outreach_summary: Dict[str, Any],
+        swarm_accumulation: Dict[str, Any],
+        swarm_coordination: Dict[str, Any],
+        self_improvement: Dict[str, Any],
+        daily_quota: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        compute_watch = self_improvement.get("compute_watch") or {}
+        active_lanes = [str(item) for item in (compute_watch.get("active_lanes") or []) if item]
+        brain_count = int(compute_watch.get("brain_count") or len(active_lanes) or 0)
+        prospect_agents = int(swarm_accumulation.get("prospect_agents") or 0)
+        joined_agents = int(swarm_coordination.get("connected_agents") or swarm_accumulation.get("joined_agents") or 0)
+        queued_contacts = len(contact_summary.get("sent_contact_ids") or [])
+        replied_contacts = len(contact_poll.get("replied_contact_ids") or [])
+        awaiting_payment = len(service_summary.get("awaiting_payment_task_ids") or [])
+        stale_invalid = len(service_summary.get("stale_invalid_task_ids") or [])
+        paid_ready = len(service_summary.get("worked_task_ids") or []) + len(service_summary.get("draft_ready_task_ids") or [])
+        prepared_conversions = sum(int(v) for v in (lead_conversion.get("stats") or {}).values())
+        outreach_campaign = outreach_summary.get("campaign") or {}
+        outreach_stats = outreach_campaign.get("stats") or {}
+        activation_queue = [
+            item
+            for item in (swarm_accumulation.get("activation_queue") or [])
+            if isinstance(item, dict)
+        ]
+
+        if awaiting_payment:
+            next_action = "convert_awaiting_payment_to_small_paid_unblock"
+        elif stale_invalid:
+            next_action = "find_real_jobs_after_dropping_invalid_payment_placeholders"
+        elif prospect_agents > joined_agents and activation_queue:
+            next_action = "activate_best_agent_prospect"
+        elif replied_contacts:
+            next_action = "convert_replies_to_join_or_paid_task"
+        elif prepared_conversions or int(outreach_stats.get("queued") or 0):
+            next_action = "send_or_follow_up_prepared_agent_contacts"
+        else:
+            next_action = "discover_one_agent_with_public_blocker"
+
+        compute_policy = {
+            "active_lanes": active_lanes,
+            "brain_count": brain_count,
+            "cloudflare_required": False,
+            "preferred_next_compute": "reuse_active_lanes" if brain_count >= 2 else "unlock_one_free_or_local_lane",
+            "rule": "Do not wait for Cloudflare tokens when local or hosted lanes can produce bounded diagnosis work.",
+        }
+        if brain_count <= 1 and compute_watch.get("activation_request"):
+            compute_policy["activation_request"] = compute_watch.get("activation_request") or {}
+
+        return {
+            "schema": "nomad.autopilot_efficiency_plan.v1",
+            "goal": "more_agent_onboarding_and_paid_blocker_resolution",
+            "public_api_url": public_api_url,
+            "next_best_action": next_action,
+            "agent_onboarding_funnel": {
+                "joined_agents": joined_agents,
+                "prospect_agents": prospect_agents,
+                "activation_queue": [
+                    {
+                        "agent_id": item.get("agent_id", ""),
+                        "recommended_role": item.get("recommended_role", ""),
+                        "stage": item.get("stage", ""),
+                        "next_action": item.get("next_action", ""),
+                    }
+                    for item in activation_queue[:5]
+                ],
+                "fast_join_endpoint": f"{public_api_url}/swarm/join" if public_api_url else "/swarm/join",
+                "development_endpoint": f"{public_api_url}/swarm/develop" if public_api_url else "/swarm/develop",
+            },
+            "paid_blocker_lane": {
+                "awaiting_payment": awaiting_payment,
+                "stale_invalid": stale_invalid,
+                "paid_or_draft_ready": paid_ready,
+                "queued_payment_followups": len(payment_followup_queue.get("queued_contact_ids") or []),
+                "tasks_endpoint": f"{public_api_url}/tasks" if public_api_url else "/tasks",
+            },
+            "outreach_efficiency": {
+                "prepared_conversions": prepared_conversions,
+                "queued_contacts_sent": queued_contacts,
+                "replied_contacts": replied_contacts,
+                "daily_remaining_to_prepare": daily_quota.get("remaining_to_prepare", 0),
+                "daily_remaining_to_send": daily_quota.get("remaining_to_send", 0),
+            },
+            "compute_policy": compute_policy,
+            "machine_instruction": (
+                "Prioritize one public blocker, one fast onboarding payload, or one paid task conversion per cycle; "
+                "reuse active compute lanes and ask humans only for concrete unlocks."
+            ),
+        }
+
     @staticmethod
     def _is_public_service_url(public_api_url: str) -> bool:
         url = str(public_api_url or "").strip()
@@ -1692,6 +2076,7 @@ class NomadAutopilot:
             "worked_task_ids": service_summary.get("worked_task_ids") or [],
             "draft_ready_task_ids": service_summary.get("draft_ready_task_ids") or [],
             "awaiting_payment_task_ids": service_summary.get("awaiting_payment_task_ids") or [],
+            "stale_invalid_task_ids": service_summary.get("stale_invalid_task_ids") or [],
             "payment_followups": [
                 {
                     "task_id": item.get("task_id") or "",
@@ -1780,6 +2165,37 @@ class NomadAutopilot:
         }
 
     @staticmethod
+    def _compact_agent_growth_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not payload or payload.get("skipped"):
+            return {
+                "skipped": bool(payload.get("skipped", True)),
+                "reason": payload.get("reason", ""),
+                "next_run_num": int(payload.get("next_run_num") or 0),
+                "every_n": int(payload.get("every_n") or 0),
+            }
+        leads = payload.get("leads") or {}
+        cand = leads.get("candidate_count")
+        if cand is None:
+            cand = len(leads.get("leads") or [])
+        conv = payload.get("conversion") or {}
+        convs = conv.get("conversions") or []
+        pf = payload.get("product_factory") or {}
+        sw = payload.get("swarm_accumulation") or {}
+        mrc = payload.get("machine_runtime_contract") or {}
+        return {
+            "schema": payload.get("schema", ""),
+            "ok": bool(payload.get("ok", False)),
+            "query": payload.get("query", ""),
+            "limit": int(payload.get("limit") or 0),
+            "scout_candidate_count": int(cand or 0),
+            "conversion_count": len(convs),
+            "product_count": int(pf.get("product_count") or len(pf.get("products") or [])),
+            "new_swarm_prospect_ids": list(sw.get("new_prospect_ids") or [])[:8],
+            "machine_runtime_contract_schema": mrc.get("schema", ""),
+            "analysis_tail": (payload.get("analysis") or "")[:240],
+        }
+
+    @staticmethod
     def _compact_product_factory(product_factory: Dict[str, Any]) -> Dict[str, Any]:
         products = product_factory.get("products") or []
         top_priority = product_factory.get("top_priority_product") or (products[0] if products else {})
@@ -1803,6 +2219,22 @@ class NomadAutopilot:
             "analysis": product_factory.get("analysis", ""),
             "skipped": product_factory.get("skipped", False),
             "reason": product_factory.get("reason", ""),
+        }
+
+    @staticmethod
+    def _compact_lead_workbench(payload: Dict[str, Any]) -> Dict[str, Any]:
+        self_help = payload.get("self_help") or {}
+        return {
+            "schema": payload.get("schema", ""),
+            "queue_count": payload.get("queue_count", 0),
+            "worked_count": payload.get("worked_count", 0),
+            "top_next_action": self_help.get("top_next_action", ""),
+            "executable_without_human_count": self_help.get("executable_without_human_count", 0),
+            "human_blocked_count": self_help.get("human_blocked_count", 0),
+            "next_autopilot_bias": self_help.get("next_autopilot_bias", ""),
+            "analysis": payload.get("analysis", ""),
+            "skipped": payload.get("skipped", False),
+            "reason": payload.get("reason", ""),
         }
 
     @staticmethod
@@ -1903,6 +2335,60 @@ class NomadAutopilot:
                 "next_verification": action.get("next_verification", candidate.get("next_verification", "")),
             },
             "analysis": payload.get("analysis", ""),
+        }
+
+    @staticmethod
+    def _compact_efficiency_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+        funnel = payload.get("agent_onboarding_funnel") or {}
+        paid_lane = payload.get("paid_blocker_lane") or {}
+        outreach = payload.get("outreach_efficiency") or {}
+        compute = payload.get("compute_policy") or {}
+        return {
+            "schema": payload.get("schema", ""),
+            "goal": payload.get("goal", ""),
+            "next_best_action": payload.get("next_best_action", ""),
+            "agent_onboarding_funnel": {
+                "joined_agents": funnel.get("joined_agents", 0),
+                "prospect_agents": funnel.get("prospect_agents", 0),
+                "fast_join_endpoint": funnel.get("fast_join_endpoint", ""),
+                "development_endpoint": funnel.get("development_endpoint", ""),
+            },
+            "paid_blocker_lane": {
+                "awaiting_payment": paid_lane.get("awaiting_payment", 0),
+                "paid_or_draft_ready": paid_lane.get("paid_or_draft_ready", 0),
+                "tasks_endpoint": paid_lane.get("tasks_endpoint", ""),
+            },
+            "outreach_efficiency": {
+                "prepared_conversions": outreach.get("prepared_conversions", 0),
+                "queued_contacts_sent": outreach.get("queued_contacts_sent", 0),
+                "replied_contacts": outreach.get("replied_contacts", 0),
+            },
+            "compute_policy": {
+                "brain_count": compute.get("brain_count", 0),
+                "active_lanes": compute.get("active_lanes") or [],
+                "cloudflare_required": bool(compute.get("cloudflare_required", False)),
+                "preferred_next_compute": compute.get("preferred_next_compute", ""),
+            },
+        }
+
+    @staticmethod
+    def _compact_autonomy_proof(payload: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "schema": payload.get("schema", ""),
+            "cycle_was_useful": bool(payload.get("cycle_was_useful", False)),
+            "status": payload.get("status", ""),
+            "useful_artifact_created": payload.get("useful_artifact_created", ""),
+            "useful_artifact_count": len(payload.get("useful_artifacts") or []),
+            "external_progress": bool(payload.get("external_progress", False)),
+            "money_progress": bool(payload.get("money_progress", False)),
+            "agent_progress": bool(payload.get("agent_progress", False)),
+            "code_progress": bool(payload.get("code_progress", False)),
+            "learning_progress": bool(payload.get("learning_progress", False)),
+            "useless_cycle_streak": int(payload.get("useless_cycle_streak") or 0),
+            "stuck_reason": payload.get("stuck_reason", ""),
+            "next_required_unlock": payload.get("next_required_unlock", ""),
+            "should_pause_autonomy": bool(payload.get("should_pause_autonomy", False)),
+            "minimum_next_real_outcome": payload.get("minimum_next_real_outcome", ""),
         }
 
     @staticmethod

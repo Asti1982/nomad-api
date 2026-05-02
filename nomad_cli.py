@@ -4,6 +4,9 @@ import sys
 from typing import Any, Dict, Iterable, Optional
 
 from nomad_autopilot import NomadAutopilot
+from codex_peer_agent import CodexPeerAgent
+from cryptogrift_guard_agent import CryptoGriftGuardAgent
+from nomad_swarm_spawner import NomadSwarmSpawner
 from workflow import NomadAgent
 from self_development import SelfDevelopmentJournal
 
@@ -33,6 +36,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         resources = result.get("resources") or {}
         compute_lanes = result.get("compute_lanes") or {}
         tasks = result.get("tasks") or {}
+        outbound = result.get("outbound") or {}
         autopilot = result.get("autopilot") or {}
         autonomous = result.get("autonomous_development") or {}
         mutual_aid = result.get("mutual_aid") or {}
@@ -72,6 +76,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"  GitHub Models: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('github_models') else '[INACTIVE]'}",
             f"  Hugging Face: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('huggingface') else '[INACTIVE]'}",
             f"  xAI Grok: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('xai_grok') else '[INACTIVE]'}",
+            f"  OpenRouter: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('openrouter') else '[INACTIVE]'}",
             f"  Modal: {'[ACTIVE]' if (compute_lanes.get('hosted', {}).get('modal') if isinstance(compute_lanes.get('hosted', {}).get('modal'), bool) else (compute_lanes.get('hosted', {}).get('modal') or {}).get('available')) else '[INACTIVE]'}",
             f"  Lambda Labs: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('lambda_labs') else '[INACTIVE]'}",
             f"  RunPod: {'[ACTIVE]' if compute_lanes.get('hosted', {}).get('runpod') else '[INACTIVE]'}",
@@ -81,6 +86,11 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"  Paid/Pending: {tasks.get('paid', 0)}",
             f"  Awaiting Payment: {tasks.get('awaiting_payment', 0)}",
             f"  Completed: {tasks.get('completed', 0)}",
+            "",
+            "Outbound:",
+            f"  Contacts: {(outbound.get('contacts') or {}).get('total', 0)}",
+            f"  Awaiting Reply: {(outbound.get('contacts') or {}).get('awaiting_reply', 0)}",
+            f"  Follow-up Ready: {(outbound.get('contacts') or {}).get('followup_ready', 0)}",
         ])
         if top_truth_pattern:
             lines.extend([
@@ -113,6 +123,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
     if mode == "nomad_autopilot":
         service = result.get("service") or {}
         outreach = result.get("outreach") or {}
+        outbound_tracking = result.get("outbound_tracking") or {}
         lead_conversion = result.get("lead_conversion") or {}
         product_factory = result.get("product_factory") or {}
         reply_conversion = result.get("reply_conversion") or {}
@@ -127,11 +138,14 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"Worked paid tasks: {len(service.get('worked_task_ids') or [])}",
             f"Draft-ready tasks: {len(service.get('draft_ready_task_ids') or [])}",
             f"Awaiting payment: {len(service.get('awaiting_payment_task_ids') or [])}",
+            f"Stale invalid tasks dropped: {len(service.get('stale_invalid_task_ids') or [])}",
+            f"Payment follow-ups sent: {len((result.get('payment_followup_send') or {}).get('sent_contact_ids') or [])}",
             f"Lead conversions: {sum(int(value) for value in conversion_stats.values()) if conversion_stats else 0}",
             f"Products built: {product_factory.get('product_count', 0)}",
             f"A2A replies converted: {len(reply_conversion.get('created_task_ids') or [])}",
             f"Outreach queued: {stats.get('queued', 0)}",
             f"Outreach sent: {stats.get('sent', 0)}",
+            f"Tracked outbound threads: {(outbound_tracking.get('contacts') or {}).get('total', 0)}",
             (
                 f"Autonomous dev: {autonomous_action.get('title')}"
                 if autonomous_action
@@ -145,9 +159,144 @@ def _compact_text(result: Dict[str, Any]) -> str:
                 f"prepared {quota.get('prepared_count', 0)}/{quota.get('target', 0)}, "
                 f"sent {quota.get('sent_count', 0)}/{quota.get('target', 0)}"
             )
+        if outbound_tracking.get("next_best_action"):
+            lines.append(f"Next outbound action: {outbound_tracking.get('next_best_action')}")
         if result.get("analysis"):
             lines.append(result["analysis"])
+        proof = result.get("autonomy_proof") or {}
+        if proof:
+            lines.append(
+                "Autonomy proof: "
+                f"{proof.get('status', 'unknown')} "
+                f"(useful={bool(proof.get('cycle_was_useful'))}, "
+                f"artifact={proof.get('useful_artifact_created', '') or 'none'}, "
+                f"unlock={proof.get('next_required_unlock', '') or 'none'})"
+            )
         return "\n".join(lines)
+
+    if mode == "nomad_mission_control":
+        top = result.get("top_blocker") or {}
+        paid = result.get("paid_job_focus") or {}
+        next_action = result.get("next_action") or {}
+        compute = result.get("compute_policy") or {}
+        unlocks = result.get("human_unlocks") or []
+        tasks = result.get("agent_tasks") or []
+        lines = [
+            "Nomad mission control",
+            f"Top blocker: {top.get('summary', 'unknown')}",
+            f"Next: {next_action.get('summary', top.get('next_action', ''))}",
+            f"Paid focus: {paid.get('target_offer', '')} [{paid.get('status', '')}]",
+            f"Compute: max {compute.get('max_active_agents_per_blocker', 2)} specialist(s) per blocker, {compute.get('default_mode', 'local_first')}",
+        ]
+        if unlocks:
+            unlock = unlocks[0]
+            lines.append(f"Human unlock: {unlock.get('title', '')} -> {unlock.get('expected_reply', '')}")
+        if tasks:
+            task = tasks[0]
+            lines.append(f"First agent task: {task.get('id', '')} ({task.get('role', '')})")
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_lead_workbench":
+        self_help = result.get("self_help") or {}
+        lines = [
+            "Nomad lead workbench",
+            f"Queue: {result.get('queue_count', 0)}",
+            f"Worked: {result.get('worked_count', 0)}",
+            f"Top action: {self_help.get('top_next_action', '')}",
+            f"Executable without human: {self_help.get('executable_without_human_count', 0)}",
+            f"Human-blocked: {self_help.get('human_blocked_count', 0)}",
+        ]
+        for item in (result.get("queue") or [])[:3]:
+            lines.append(
+                f"- {item.get('kind')}: {item.get('title', '')} "
+                f"[{item.get('safe_next_action', '')}]"
+            )
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    if mode == "codex_peer_agent":
+        receipt = result.get("join_receipt") or {}
+        development = result.get("development_response") or {}
+        lead = result.get("lead_workbench") or {}
+        mission = result.get("mission") or {}
+        lines = [
+            "CodexPeerAgent",
+            f"Transport: {result.get('transport', '')}",
+            f"Join receipt: {receipt.get('receipt_id', '') or 'none'} accepted={receipt.get('accepted', False)}",
+            f"Development: {development.get('solution_title', '') or development.get('pain_type', '')}",
+            f"Worked leads: {lead.get('worked_count', 0)} / queue {lead.get('queue_count', 0)}",
+            f"Top lead action: {lead.get('top_next_action', '')}",
+            f"Top blocker: {mission.get('top_blocker', '')}",
+            f"Next: {mission.get('next_action', '')}",
+        ]
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    if mode == "codex_peer_worker":
+        lines = [
+            "CodexPeerWorker",
+            f"Transport: {result.get('transport', '')} http_only={result.get('http_only', False)}",
+            f"Cycles: {result.get('cycles_completed', 0)} / requested {result.get('cycles_requested', 0)}",
+            f"Worked leads: {result.get('worked_leads', 0)} / queue {result.get('latest_queue_count', 0)}",
+            f"Prospect agents: {result.get('latest_prospect_agents', 0)}",
+            f"Queued invites: {result.get('latest_queued_agent_invites', 0)}",
+            f"Agent to attract: {result.get('latest_agent_to_attract', '')}",
+            f"Top action: {result.get('latest_top_action', '')}",
+            f"Top blocker: {result.get('latest_top_blocker', '')}",
+            f"Next: {result.get('latest_next_action', '')}",
+        ]
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_service_e2e":
+        task = result.get("task") or {}
+        payment = task.get("payment") if isinstance(task.get("payment"), dict) else {}
+        lifecycle = result.get("lifecycle") or []
+        lines = [
+            "Nomad service E2E",
+            f"Task: {task.get('task_id', 'preview')}",
+            f"Status: {task.get('status', 'preview')}",
+            f"Service type: {task.get('service_type', 'custom')}",
+            f"Budget: {payment.get('amount_native', task.get('budget_native', 0))} {payment.get('native_symbol', '')}".strip(),
+            f"Next: {result.get('next_best_action', '')}",
+        ]
+        if lifecycle:
+            current = next(
+                (
+                    step
+                    for step in lifecycle
+                    if step.get("status") in {"ready", "in_progress"}
+                ),
+                lifecycle[-1],
+            )
+            lines.append(f"Current stage: {current.get('stage', 'unknown')} [{current.get('status', 'unknown')}]")
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_outbound_tracking":
+        contacts = result.get("contacts") or {}
+        campaigns = result.get("campaigns") or {}
+        tasks = result.get("tasks") or {}
+        autonomous = result.get("autonomous_tracking") or {}
+        lines = [
+            "Nomad outbound tracking",
+            f"Contacts: {contacts.get('total', 0)}",
+            f"Awaiting reply: {contacts.get('awaiting_reply', 0)}",
+            f"Follow-up ready: {contacts.get('followup_ready', 0)}",
+            f"Campaigns: {campaigns.get('total', 0)}",
+            f"Awaiting payment tasks: {len(tasks.get('awaiting_payment') or [])}",
+            f"Autonomous follow-ups: payments={autonomous.get('payment_followup_log_count', 0)}, agents={autonomous.get('agent_followup_log_count', 0)}",
+            f"Next: {result.get('next_best_action', '')}",
+        ]
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
 
     if mode == "autopilot_idle":
         decision = result.get("decision") or {}
@@ -280,6 +429,25 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(result["analysis"])
         return "\n".join(line for line in lines if line)
 
+    if mode == "modal_scout":
+        status = result.get("status") or {}
+        deployment = result.get("deployment") or {}
+        lines = [
+            "Nomad Modal scout",
+            f"Configured: {status.get('configured', False)}",
+            f"Reachable: {status.get('reachable', False)}",
+            f"App name: {deployment.get('app_name', '')}",
+            f"Secret name: {deployment.get('secret_name', '')}",
+            f"GitHub branch: {deployment.get('github_branch', '')}",
+            f"Render public URL: {deployment.get('public_api_url', '')}",
+        ]
+        deploy_commands = deployment.get("deploy_commands") or []
+        if deploy_commands:
+            lines.append(f"Next step: {deploy_commands[0]}")
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(line for line in lines if line)
+
     if mode == "agent_collaboration":
         charter = result.get("charter") or {}
         permission = charter.get("permission") or {}
@@ -395,6 +563,20 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if mode == "nomad_swarm_network":
+        active_lead = result.get("active_lead") or {}
+        approval = result.get("approval_state") or {}
+        return "\n".join(
+            [
+                "Nomad Swarm Network",
+                f"Lead: {active_lead.get('title') or active_lead.get('url') or 'none'}",
+                f"Focus: {result.get('focus_service_type', '')}",
+                f"Roles: {', '.join(result.get('target_roles') or []) or 'none'}",
+                f"Public reply allowed: {approval.get('public_reply_allowed_now', False)}",
+                f"Next: {result.get('next_best_action', '')}",
+            ]
+        )
+
     if mode == "nomad_swarm_coordination":
         return "\n".join(
             [
@@ -429,6 +611,195 @@ def _compact_text(result: Dict[str, Any]) -> str:
     if mode == "codex_task":
         return str(result.get("text") or result.get("analysis") or "")
 
+    if mode == "nomad_operator_desk":
+        lines = ["Nomad operator desk (human unlocks)"]
+        primary = result.get("primary_action") or {}
+        if primary:
+            lines.append(f"PRIMARY: {primary.get('title', '')} [{primary.get('source', '')}]")
+            block = primary.get("copy_paste_block") or ""
+            if block:
+                lines.append(block)
+        else:
+            lines.append("No unlock items queued.")
+        hint = result.get("copy_cli_hint") or ""
+        if hint:
+            lines.append(hint)
+        jo = (result.get("journal_excerpt") or {}).get("next_objective") or ""
+        if jo:
+            lines.append(f"Journal next objective: {jo}")
+        return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_operator_verify":
+        lines = [
+            "Nomad operator verify bundle",
+            f"base_url: {result.get('base_url', '')}",
+            f"all_ok: {result.get('all_ok')}",
+        ]
+        for row in result.get("checks") or []:
+            status = "OK" if row.get("ok") else "FAIL"
+            code = row.get("status_code", "")
+            err = row.get("error") or ""
+            lines.append(f"  {row.get('name')}: {status} {code} {err}".strip())
+        return "\n".join(lines)
+
+    if mode == "nomad_operator_metrics":
+        return "\n".join(
+            [
+                "Nomad operator metrics",
+                f"verify_ok_streak: {result.get('verify_ok_streak', 0)}",
+                f"last_verify_all_ok: {result.get('last_verify_all_ok')}",
+                f"self_dev_cycles: {result.get('self_development_cycle_count', 0)}",
+                f"verify_pass_rate_last_n: {result.get('verify_pass_rate_last_n')}",
+                f"cycles_logged_in_tail: {result.get('self_improvement_events_in_tail', 0)}",
+            ]
+        )
+
+    if mode == "nomad_operator_daily":
+        v = result.get("verify") or {}
+        lines = [
+            "Nomad operator daily bundle",
+            f"verify all_ok: {v.get('all_ok')}",
+            f"base_url: {v.get('base_url', '')}",
+        ]
+        for row in v.get("checks") or []:
+            mark = "OK" if row.get("ok") else "FAIL"
+            lines.append(f"  {row.get('name')}: {mark}")
+        ni = result.get("next_iteration") or {}
+        for hint in ni.get("hints") or []:
+            lines.append(f"Next: {hint}")
+        return "\n".join(lines)
+
+    if mode == "nomad_operator_sprint":
+        lines = [
+            "Nomad operator sprint (next actions)",
+            f"public_base_url: {result.get('public_base_url', '')}",
+            f"compute_lane_count: {result.get('compute_lane_count', 0)}",
+        ]
+        for risk in result.get("insomnia_risks") or []:
+            lines.append(f"risk[{risk.get('severity', 'n/a')}]: {risk.get('risk', '')}")
+        for row in result.get("actions") or []:
+            lines.append(
+                f"  [{row.get('kind', '')} p={row.get('priority', '')}] "
+                f"{row.get('title', '')}: {row.get('cli', '')}".strip()
+            )
+        return "\n".join(line for line in lines if line)
+
+    if mode == "nomad_operator_growth_start":
+        lines = [
+            "Nomad growth-start (daily + first leads)",
+            f"overall_ok: {result.get('ok')}",
+            f"verify all_ok: {(result.get('daily') or {}).get('verify', {}).get('all_ok')}",
+            f"lead_query: {result.get('lead_query', '')}",
+        ]
+        lc = (result.get("leads") or {}) if isinstance(result.get("leads"), dict) else {}
+        if lc:
+            lines.append(f"leads mode: {lc.get('mode', '')} addressable: {lc.get('addressable_count', '')}")
+        sw = result.get("swarm_accumulation") or {}
+        if sw and not sw.get("skipped"):
+            lines.append(
+                f"swarm: +{len(sw.get('new_prospect_ids') or [])} prospects "
+                f"(queue {sw.get('prospect_agents', '')})"
+            )
+        for step in result.get("next_steps") or []:
+            lines.append(f"  -> {step}")
+        return "\n".join(lines)
+
+    if mode == "nomad_operator_autonomy_step":
+        lines = [
+            "Nomad autonomy-step (growth + lead scout + swarm feed + focused /cycle)",
+            f"overall_ok: {result.get('ok')}",
+            f"lead_query: {result.get('lead_query', '')}",
+        ]
+        for row in result.get("steps") or []:
+            mark = "OK" if row.get("ok") else "FAIL"
+            extra = ""
+            if row.get("step") == "swarm_accumulation" and row.get("new_prospects") is not None:
+                extra = f" (+{row.get('new_prospects')} prospects)"
+            lines.append(f"  {row.get('step', '')}: {mark}{extra}")
+        cyc = result.get("cycle") or {}
+        if isinstance(cyc, dict) and cyc.get("self_development"):
+            sd = cyc["self_development"]
+            if sd.get("next_objective"):
+                lines.append(f"Next objective: {sd.get('next_objective')}")
+        for hint in result.get("next_steps") or []:
+            lines.append(f"  -> {hint}")
+        return "\n".join(lines)
+
+    if mode == "nomad_operator_iteration_report":
+        tr = result.get("trends") or {}
+        lines = [
+            "Nomad operator iteration report",
+            f"verify pass rate (last 10): {tr.get('verify_pass_rate_last_10')}",
+            f"verify pass rate (last 30): {tr.get('verify_pass_rate_last_30')}",
+            f"self-improvement cycles logged: {tr.get('self_improvement_cycles_logged', 0)}",
+            f"daily bundles logged: {tr.get('operator_daily_runs', 0)}",
+        ]
+        for rec in result.get("recommendations") or []:
+            lines.append(f"Recommend: {rec}")
+        return "\n".join(lines)
+
+    if mode == "nomad_agent_reputation":
+        totals = result.get("totals") or {}
+        signals = result.get("signals") or {}
+        return "\n".join(
+            [
+                "Nomad agent reputation",
+                f"tasks: {totals.get('tasks', 0)}",
+                f"awaiting_payment: {totals.get('awaiting_payment', 0)}",
+                f"paid: {totals.get('paid', 0)}",
+                f"delivered: {totals.get('delivered', 0)}",
+                f"boundary_reliability: {signals.get('boundary_reliability', 0)}",
+            ]
+        )
+
+    if mode == "nomad_unhuman_hub":
+        profile = result.get("unhuman_profile") or {}
+        lines = [
+            "Nomad unhuman hub",
+            f"risk_score: {profile.get('risk_score', 0)} ({profile.get('risk_tier', 'stable')})",
+            f"hard_boundary_guard: {profile.get('hard_boundary_guard')}",
+            f"fallback_ready: {profile.get('fallback_ready')}",
+        ]
+        for cmd in (result.get("runbook") or [])[:3]:
+            lines.append(f"runbook: {cmd}")
+        return "\n".join(lines)
+
+    if mode == "nomad_agent_native_index":
+        boot = result.get("boot_graph") or []
+        rt = result.get("routing_table") or []
+        lines = [
+            "Nomad agent-native index",
+            f"schema: {result.get('schema', '')}",
+            f"public_base_url: {result.get('public_base_url', '')}",
+            f"boot_steps: {len(boot)}  routing_entries: {len(rt)}",
+        ]
+        for row in boot[:5]:
+            lines.append(f"  [{row.get('order', '')}] {row.get('purpose', '')}")
+        mrc = result.get("machine_runtime_contract") or {}
+        lines.append(f"machine_runtime_contract: {mrc.get('schema', '')}")
+        return "\n".join(lines)
+
+    if mode == "nomad_agent_growth_pipeline":
+        leads_blob = result.get("leads") or {}
+        ld = leads_blob.get("candidate_count")
+        if ld is None:
+            ld = len(leads_blob.get("leads") or [])
+        conv = result.get("conversion") or {}
+        cc = len(conv.get("conversions") or [])
+        pf = result.get("product_factory") or {}
+        pc = int(pf.get("product_count") or len(pf.get("products") or []))
+        sw = result.get("swarm_accumulation") or {}
+        lines = [
+            "Nomad agent growth pipeline",
+            f"leads_candidates: {ld}",
+            f"conversions: {cc}",
+            f"products_this_pass: {pc}",
+            f"swarm_skipped: {bool(sw.get('skipped'))}",
+        ]
+        for step in (result.get("next_steps") or [])[:4]:
+            lines.append(f"  -> {step}")
+        return "\n".join(lines)
+
     if result.get("analysis"):
         return str(result["analysis"])
     if result.get("message"):
@@ -454,6 +825,10 @@ def build_query(args: argparse.Namespace) -> str:
 
     if command == "status":
         return "/status"
+    if command == "mission":
+        limit = f" limit={args.limit}" if args.limit else ""
+        preview = " preview" if args.preview else ""
+        return f"/mission{limit}{preview}".strip()
     if command == "best":
         return f"/best{profile_suffix}"
     if command == "self":
@@ -474,6 +849,8 @@ def build_query(args: argparse.Namespace) -> str:
         return f"/codebuddy-review{base}{head}{approval}{paths} {objective}".strip()
     if command == "render":
         return "/render"
+    if command == "modal":
+        return "/modal"
     if command == "collaboration":
         return "/collaboration"
     if command == "mutual-aid-status":
@@ -525,6 +902,10 @@ def build_query(args: argparse.Namespace) -> str:
         status = f" status={','.join(args.status)}" if args.status else ""
         limit = f" limit={args.limit}" if args.limit else ""
         return f"/lead-conversions{status}{limit}".strip()
+    if command == "lead-workbench":
+        limit = f" limit={args.limit}" if args.limit else ""
+        work = " work" if args.work else ""
+        return f"/lead-workbench{limit}{work}".strip()
     if command == "productize":
         query = " ".join(args.query).strip()
         limit = f" limit={args.limit}" if args.limit else ""
@@ -550,6 +931,11 @@ def build_query(args: argparse.Namespace) -> str:
     if command == "swarm-coordinate":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         return f"/swarm/coordinate{pain_type}".strip()
+    if command == "swarm-network":
+        pain_type = f" type={args.pain_type}" if args.pain_type else ""
+        role = f" role={args.role}" if args.role else ""
+        limit = f" limit={args.limit}" if args.limit else ""
+        return f"/swarm/network{pain_type}{role}{limit}".strip()
     if command == "swarm-accumulate":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         action = " run" if args.refresh else ""
@@ -569,6 +955,17 @@ def build_query(args: argparse.Namespace) -> str:
         return f"/guardrails{action}{approval} {text}".strip()
     if command == "service":
         return "/service"
+    if command == "service-e2e":
+        problem = " ".join(args.problem).strip()
+        task_id = f" task_id={args.task_id}" if args.task_id else ""
+        service_type = f" type={args.service_type}" if args.service_type else ""
+        budget = f" budget={args.budget}" if args.budget is not None else ""
+        agent = f" agent={args.agent}" if args.agent else ""
+        wallet = f" wallet={args.wallet}" if args.wallet else ""
+        callback = f" callback={args.callback}" if args.callback else ""
+        create = " create=true" if args.create else ""
+        approval = f" approval={args.approval}" if args.approval else ""
+        return f"/service e2e{task_id}{service_type}{budget}{agent}{wallet}{callback}{create}{approval} {problem}".strip()
     if command == "service-request":
         problem = " ".join(args.problem).strip()
         return f"/service request {problem}".strip()
@@ -593,6 +990,9 @@ def build_query(args: argparse.Namespace) -> str:
     if command == "service-close":
         outcome = " ".join(args.outcome).strip()
         return f"/service close {args.task_id} {outcome}".strip()
+    if command == "outbound-status":
+        limit = f" limit={args.limit}" if args.limit else ""
+        return f"/outbound{limit}".strip()
     if command == "agent-contact":
         budget = f" budget={args.budget}" if args.budget is not None else ""
         return f"/agent-contact endpoint={args.endpoint} type={args.service_type}{budget} {' '.join(args.problem)}".strip()
@@ -621,12 +1021,40 @@ def build_query(args: argparse.Namespace) -> str:
         return f"/cold-outreach{discover}{send}{limit}{budget}{query} {targets}".strip()
     if command == "cycle":
         objective = " ".join(args.objective).strip()
-        return f"/cycle {objective}{profile_suffix}".strip()
+        focus = (getattr(args, "focus", None) or "").strip()
+        focus_tag = f"[nomad_focus:{focus}] " if focus else ""
+        return f"/cycle {focus_tag}{objective}{profile_suffix}".strip()
     if command == "ask":
         return " ".join(args.query).strip()
+    if command == "operator-desk":
+        raise ValueError("operator-desk is handled directly in run_once")
+    if command == "operator-verify":
+        raise ValueError("operator-verify is handled directly in run_once")
+    if command == "operator-metrics":
+        raise ValueError("operator-metrics is handled directly in run_once")
+    if command == "operator-daily":
+        raise ValueError("operator-daily is handled directly in run_once")
+    if command == "operator-report":
+        raise ValueError("operator-report is handled directly in run_once")
+    if command == "growth-start":
+        raise ValueError("growth-start is handled directly in run_once")
+    if command == "autonomy-step":
+        raise ValueError("autonomy-step is handled directly in run_once")
+    if command == "operator-sprint":
+        raise ValueError("operator-sprint is handled directly in run_once")
+    if command == "agent-reputation":
+        raise ValueError("agent-reputation is handled directly in run_once")
+    if command == "unhuman-hub":
+        raise ValueError("unhuman-hub is handled directly in run_once")
+    if command == "agent-growth":
+        raise ValueError("agent-growth is handled directly in run_once")
+    if command == "agent-native-index":
+        raise ValueError("agent-native-index is handled directly in run_once")
     if command == "self-status":
         return ""
     if command == "codex-task":
+        return ""
+    if command == "codex-peer-agent":
         return ""
     raise ValueError(f"Unsupported command: {command}")
 
@@ -661,7 +1089,6 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             self_schedule=args.self_schedule,
         )
     else:
-        agent = NomadAgent()
         if args.command == "self-status":
             journal = SelfDevelopmentJournal()
             result = {
@@ -677,7 +1104,160 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 "deal_found": False,
                 "text": journal.codex_task_prompt(),
             }
+        elif args.command == "codex-peer-agent":
+            peer = CodexPeerAgent()
+            if args.loop:
+                result = peer.run_http_loop(
+                    base_url=args.base_url,
+                    mode=args.mode,
+                    problem=args.problem,
+                    cycles=args.cycles,
+                    interval_seconds=args.interval,
+                    work_leads=args.work_leads,
+                    lead_limit=args.lead_limit,
+                    timeout=args.timeout,
+                    growth_pass=args.growth_pass,
+                    scout_leads=args.scout_leads,
+                    activation_pass=args.activation_pass,
+                    activation_limit=args.activation_limit,
+                    send_agent_invites=args.send_agent_invites,
+                )
+            elif args.mode == "http":
+                result = peer.collaborate_over_http(
+                    base_url=args.base_url,
+                    problem=args.problem,
+                    work_leads=args.work_leads,
+                    lead_limit=args.lead_limit,
+                    timeout=args.timeout,
+                    growth_pass=args.growth_pass,
+                    scout_leads=args.scout_leads,
+                    activation_pass=args.activation_pass,
+                    activation_limit=args.activation_limit,
+                    send_agent_invites=args.send_agent_invites,
+                )
+            else:
+                result = peer.collaborate_with_local_api(
+                    base_url=args.base_url,
+                    problem=args.problem,
+                    work_leads=args.work_leads,
+                    lead_limit=args.lead_limit,
+                    timeout=args.timeout,
+                )
+        elif args.command == "cryptogrift-agent":
+            crypto_agent = CryptoGriftGuardAgent(timeout=args.timeout)
+            if args.brain:
+                result = crypto_agent.engage_nomad_brain(
+                    base_url=args.base_url,
+                    signal=args.signal,
+                )
+            elif args.engage:
+                result = crypto_agent.engage_nomad(
+                    base_url=args.base_url,
+                    signal=args.signal,
+                    join_first=True,
+                    dry_run=not args.connect,
+                )
+            else:
+                result = crypto_agent.connect_to_nomad(
+                    base_url=args.base_url,
+                    signal=args.signal,
+                    dry_run=not args.connect,
+                )
+        elif args.command == "swarm-spawn":
+            result = NomadSwarmSpawner().spawn(
+                count=args.count,
+                base_url=args.base_url,
+                focus=args.focus,
+                commit=not args.dry_run,
+            )
+        elif args.command == "operator-desk":
+            from nomad_operator_desk import unlock_desk_snapshot
+
+            result = unlock_desk_snapshot(persist_mission=bool(getattr(args, "persist", False)))
+        elif args.command == "operator-sprint":
+            from nomad_operator_desk import operator_sprint
+
+            result = operator_sprint(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                persist_mission=bool(getattr(args, "persist", False)),
+            )
+        elif args.command == "operator-verify":
+            from nomad_operator_desk import operator_verify_bundle
+
+            result = operator_verify_bundle(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "operator-metrics":
+            from nomad_operator_desk import operator_metrics_snapshot
+
+            result = operator_metrics_snapshot()
+        elif args.command == "operator-daily":
+            from nomad_operator_desk import operator_daily_bundle
+
+            result = operator_daily_bundle(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                persist_mission=bool(getattr(args, "persist", False)),
+            )
+        elif args.command == "operator-report":
+            from nomad_operator_desk import operator_iteration_report
+
+            result = operator_iteration_report(tail_lines=int(getattr(args, "tail", 400) or 400))
+        elif args.command == "agent-reputation":
+            from workflow import NomadAgent
+
+            result = NomadAgent().service_desk.reputation_snapshot()
+        elif args.command == "unhuman-hub":
+            from nomad_unhuman_hub import unhuman_hub_snapshot
+            from workflow import NomadAgent
+
+            result = unhuman_hub_snapshot(
+                agent=NomadAgent(),
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                persist_mission=bool(getattr(args, "persist", False)),
+            )
+        elif args.command == "agent-growth":
+            from nomad_agent_growth_pipeline import agent_growth_pipeline
+            from workflow import NomadAgent
+
+            result = agent_growth_pipeline(
+                agent=NomadAgent(),
+                query=" ".join(getattr(args, "query", []) or []).strip(),
+                limit=int(getattr(args, "limit", 5) or 5),
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                run_product_factory=not bool(getattr(args, "no_products", False)),
+                send_outreach=bool(getattr(args, "send", False)),
+                swarm_feed=False if bool(getattr(args, "no_swarm_feed", False)) else None,
+            )
+        elif args.command == "agent-native-index":
+            from nomad_agent_native_index import agent_native_index
+
+            result = agent_native_index(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "growth-start":
+            from nomad_operator_desk import operator_growth_start
+
+            result = operator_growth_start(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                persist_mission=bool(getattr(args, "persist", False)),
+                lead_query=" ".join(getattr(args, "query", []) or []).strip(),
+                skip_leads=bool(getattr(args, "skip_leads", False)),
+                skip_verify=bool(getattr(args, "skip_verify", False)),
+            )
+        elif args.command == "autonomy-step":
+            from nomad_operator_desk import operator_autonomy_step
+
+            profile_suffix = f" for {args.profile}" if getattr(args, "profile", None) else ""
+            result = operator_autonomy_step(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                persist_mission=bool(getattr(args, "persist", False)),
+                lead_query=" ".join(getattr(args, "query", []) or []).strip(),
+                skip_growth=bool(getattr(args, "skip_growth", False)),
+                growth_skip_verify=bool(getattr(args, "growth_skip_verify", False)),
+                growth_skip_leads=not bool(getattr(args, "growth_include_leads", False)),
+                swarm_feed=False if bool(getattr(args, "no_swarm_feed", False)) else None,
+                cycle_focus=(getattr(args, "cycle_focus", None) or "leads_growth").strip(),
+                cycle_objective=str(getattr(args, "cycle_objective", "") or "").strip(),
+                profile_suffix=profile_suffix,
+            )
         else:
+            agent = NomadAgent()
             query = build_query(args)
             result = agent.run(query)
     _print_result(result, as_json=args.json)
@@ -713,6 +1293,195 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.required = True
 
     subparsers.add_parser("status", help="Show Nomad system status (uptime, compute, tasks).")
+    mission = subparsers.add_parser("mission", help="Show Nomad Mission Control: blocker, human unlocks, agent tasks, paid-job focus.")
+    mission.add_argument("--limit", type=int, default=5)
+    mission.add_argument("--preview", action="store_true", help="Do not persist this mission-control snapshot.")
+
+    operator_desk = subparsers.add_parser(
+        "operator-desk",
+        help="One-screen human unlock queue: copy-paste actions from Mission Control and the self-development journal.",
+    )
+    operator_desk.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control snapshot when building the desk (default: false).",
+    )
+
+    operator_sprint_p = subparsers.add_parser(
+        "operator-sprint",
+        help="Compact bundle: next actions for public URL, compute lanes, and cashflow (fast; no HTTP verify).",
+    )
+    operator_sprint_p.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL hint for sprint actions (default: mission/env/local).",
+    )
+    operator_sprint_p.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control when building the embedded operator-desk slice.",
+    )
+
+    operator_verify = subparsers.add_parser(
+        "operator-verify",
+        help="Run health + AgentCard + swarm + service catalog checks against public or local base URL.",
+    )
+    operator_verify.add_argument(
+        "--base-url",
+        default="",
+        help="Override base URL; default uses NOMAD_PUBLIC_API_URL or local API host/port.",
+    )
+
+    subparsers.add_parser(
+        "operator-metrics",
+        help="Show tail of operator verify events and self-development cycle count.",
+    )
+
+    operator_daily = subparsers.add_parser(
+        "operator-daily",
+        help="Betrieb: verify bundle + unlock desk in one shot; append operator_daily_bundle to metrics JSONL.",
+    )
+    operator_daily.add_argument(
+        "--base-url",
+        default="",
+        help="Override base URL for checks.",
+    )
+    operator_daily.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control when building the desk section.",
+    )
+
+    operator_report = subparsers.add_parser(
+        "operator-report",
+        help="Messung/Iteration: aggregate verify and cycle events; write nomad_operator_kpis.json.",
+    )
+    operator_report.add_argument("--tail", type=int, default=400, help="How many JSONL lines to scan.")
+
+    subparsers.add_parser(
+        "agent-reputation",
+        help="Contract-first reliability snapshot (boundary compliance and payment progression).",
+    )
+    unhuman_hub = subparsers.add_parser(
+        "unhuman-hub",
+        help="Machine-first infrastructure hub: strict boundaries, failover pressure, and risk score.",
+    )
+    unhuman_hub.add_argument("--base-url", default="", help="Override public base URL for hub checks.")
+    unhuman_hub.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control while generating hub snapshot.",
+    )
+
+    agent_native_index_p = subparsers.add_parser(
+        "agent-native-index",
+        help="Boot graph + routing semantics for autonomous agents (GET /.well-known/nomad-agent.json equivalent).",
+    )
+    agent_native_index_p.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links (default: NOMAD_PUBLIC_API_URL / env).",
+    )
+
+    agent_growth = subparsers.add_parser(
+        "agent-growth",
+        help="Scout leads → convert → product factory → swarm prospect feed (one executable pass).",
+    )
+    agent_growth.add_argument(
+        "query",
+        nargs="*",
+        help="GitHub scout query; empty uses Nomad default wedge queries for the active focus.",
+    )
+    agent_growth.add_argument("--limit", type=int, default=5, help="Max leads and conversions (1–25).")
+    agent_growth.add_argument("--base-url", default="", help="Public API base for swarm feed (or set NOMAD_PUBLIC_API_URL).")
+    agent_growth.add_argument(
+        "--no-products",
+        action="store_true",
+        help="Skip product_factory after conversions.",
+    )
+    agent_growth.add_argument(
+        "--send",
+        action="store_true",
+        help="Request outbound send during conversion (same semantics as convert-leads send).",
+    )
+    agent_growth.add_argument(
+        "--no-swarm-feed",
+        action="store_true",
+        help="Disable swarm prospect feed for this run (overrides env feed on).",
+    )
+
+    growth_start = subparsers.add_parser(
+        "growth-start",
+        help="Start funnel: operator-daily then one /leads scout (default wedge query); logs operator_growth_start.",
+    )
+    growth_start.add_argument(
+        "query",
+        nargs="*",
+        help="Optional lead scout query; else NOMAD_GROWTH_LEAD_QUERY or built-in default.",
+    )
+    growth_start.add_argument("--base-url", default="", help="Base URL for verify/daily.")
+    growth_start.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control in the daily section.",
+    )
+    growth_start.add_argument(
+        "--skip-leads",
+        action="store_true",
+        help="Only run daily bundle; do not call /leads.",
+    )
+    growth_start.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip HTTP health/AgentCard/swarm/service checks (desk + leads only).",
+    )
+
+    autonomy_step = subparsers.add_parser(
+        "autonomy-step",
+        help="One autonomy tick: optional growth-start, /leads scout, swarm prospect feed (GitHub repos), leads_growth /cycle.",
+    )
+    autonomy_step.add_argument(
+        "query",
+        nargs="*",
+        help="Lead scout query; else NOMAD_AUTONOMY_LEAD_QUERY, NOMAD_GROWTH_LEAD_QUERY, or default wedge.",
+    )
+    autonomy_step.add_argument("--base-url", default="", help="Base URL for growth-start verify/daily.")
+    autonomy_step.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist Mission Control during growth-start.",
+    )
+    autonomy_step.add_argument(
+        "--skip-growth",
+        action="store_true",
+        help="Skip growth-start; only run /leads then /cycle (faster local iteration).",
+    )
+    autonomy_step.add_argument(
+        "--growth-skip-verify",
+        action="store_true",
+        help="When growth-start runs, skip HTTP verify (desk only).",
+    )
+    autonomy_step.add_argument(
+        "--growth-include-leads",
+        action="store_true",
+        help="When growth-start runs, also run its built-in /leads (default skips to avoid duplicate scout).",
+    )
+    autonomy_step.add_argument(
+        "--no-swarm-feed",
+        action="store_true",
+        help="Do not push scout leads into swarm prospects (default: feed on; set NOMAD_SWARM_FEED_SCOUT_LEADS=0 to disable globally).",
+    )
+    autonomy_step.add_argument(
+        "--cycle-focus",
+        default="leads_growth",
+        help="nomad_focus theme for the trailing /cycle (default: leads_growth).",
+    )
+    autonomy_step.add_argument(
+        "--cycle-objective",
+        default="",
+        help="Optional /cycle body after the focus tag; default packages the active lead from scout.",
+    )
+
     subparsers.add_parser("best", help="Show the recommended AI-first stack.")
     subparsers.add_parser("self", help="Run Nomad self audit.")
     subparsers.add_parser("compute", help="Run compute audit.")
@@ -729,6 +1498,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Approve sending the redacted git diff to CodeBuddy for this run.",
     )
+    subparsers.add_parser("modal", help="Show Modal deployment guidance for Nomad's burst-compute lane.")
     subparsers.add_parser("render", help="Verify Render hosting access and show Nomad public API deployment steps.")
     subparsers.add_parser("collaboration", help="Show Nomad's outward AI-agent collaboration charter.")
     subparsers.add_parser("mutual-aid-status", help="Show Nomad v3.2 Mutual-Aid self-evolution status.")
@@ -786,6 +1556,10 @@ def build_parser() -> argparse.ArgumentParser:
     lead_conversions.add_argument("--status", action="append", default=[])
     lead_conversions.add_argument("--limit", type=int, default=25)
 
+    lead_workbench = subparsers.add_parser("lead-workbench", help="Prioritize and privately work Nomad's lead/product queue.")
+    lead_workbench.add_argument("--limit", type=int, default=5)
+    lead_workbench.add_argument("--work", action="store_true")
+
     productize = subparsers.add_parser("productize", help="Turn leads or stored lead conversions into reusable Nomad product offers.")
     productize.add_argument("query", nargs="*")
     productize.add_argument("--limit", type=int, default=5)
@@ -811,6 +1585,11 @@ def build_parser() -> argparse.ArgumentParser:
     swarm_coordinate = subparsers.add_parser("swarm-coordinate", help="Show Nomad's swarm coordination board for AI agents.")
     swarm_coordinate.add_argument("--pain-type", default="")
 
+    swarm_network = subparsers.add_parser("swarm-network", help="Show the active lead network Nomad wants to build around its current agent opportunity.")
+    swarm_network.add_argument("--pain-type", default="")
+    swarm_network.add_argument("--role", default="")
+    swarm_network.add_argument("--limit", type=int, default=5)
+
     swarm_accumulate = subparsers.add_parser("swarm-accumulate", help="Show or refresh Nomad's accumulated AI-agent prospect pool.")
     swarm_accumulate.add_argument("--pain-type", default="")
     swarm_accumulate.add_argument("--refresh", action="store_true")
@@ -829,6 +1608,17 @@ def build_parser() -> argparse.ArgumentParser:
     guardrails.add_argument("--approval", default="")
 
     subparsers.add_parser("service", help="Show Nomad public agent service catalog.")
+
+    service_e2e = subparsers.add_parser("service-e2e", help="Preview or create the full paid Nomad service runway.")
+    service_e2e.add_argument("problem", nargs="*")
+    service_e2e.add_argument("--task-id", default="")
+    service_e2e.add_argument("--service-type", default="")
+    service_e2e.add_argument("--budget", type=float)
+    service_e2e.add_argument("--agent", default="")
+    service_e2e.add_argument("--wallet", default="")
+    service_e2e.add_argument("--callback", default="")
+    service_e2e.add_argument("--approval", default="draft_only")
+    service_e2e.add_argument("--create", action="store_true")
 
     service_request = subparsers.add_parser("service-request", help="Create a wallet-payable service task.")
     service_request.add_argument("problem", nargs="+")
@@ -864,6 +1654,9 @@ def build_parser() -> argparse.ArgumentParser:
     service_close.add_argument("task_id")
     service_close.add_argument("outcome", nargs="*")
 
+    outbound_status = subparsers.add_parser("outbound-status", help="Show Nomad's unified outbound contact and follow-up tracker.")
+    outbound_status.add_argument("--limit", type=int, default=10)
+
     agent_contact = subparsers.add_parser("agent-contact", help="Queue a bounded outbound request to a public agent endpoint.")
     agent_contact.add_argument("endpoint")
     agent_contact.add_argument("problem", nargs="+")
@@ -896,8 +1689,52 @@ def build_parser() -> argparse.ArgumentParser:
     cold_outreach.add_argument("--budget", type=float)
     cold_outreach.add_argument("--query", default="", help="Optional public discovery search query.")
 
+    cryptogrift_agent = subparsers.add_parser(
+        "cryptogrift-agent",
+        help="Run CryptoGriftGuard, a safe crypto/payment-risk scout agent that can join Nomad's swarm.",
+    )
+    cryptogrift_agent.add_argument("--base-url", default="")
+    cryptogrift_agent.add_argument("--signal", default="")
+    cryptogrift_agent.add_argument("--connect", action="store_true", help="POST to /swarm/join instead of dry-run.")
+    cryptogrift_agent.add_argument("--engage", action="store_true", help="Also call /swarm/develop with a bounded development request.")
+    cryptogrift_agent.add_argument("--brain", action="store_true", help="Engage Nomad's local registry and development exchange directly.")
+    cryptogrift_agent.add_argument("--timeout", type=float, default=45.0)
+
+    codex_peer_agent = subparsers.add_parser(
+        "codex-peer-agent",
+        help="Run CodexPeerAgent as a bounded peer that joins Nomad and works the next useful blocker.",
+    )
+    codex_peer_agent.add_argument("--base-url", default="")
+    codex_peer_agent.add_argument("--problem", default="")
+    codex_peer_agent.add_argument("--mode", choices=["http", "local-api"], default="local-api")
+    codex_peer_agent.add_argument("--loop", action="store_true", help="Run repeated HTTP-only worker cycles.")
+    codex_peer_agent.add_argument("--cycles", type=int, default=3, help="Worker cycles; 0 means run until stopped.")
+    codex_peer_agent.add_argument("--interval", type=float, default=30.0, help="Seconds between worker cycles.")
+    codex_peer_agent.add_argument("--growth-pass", action=argparse.BooleanOptionalAction, default=True)
+    codex_peer_agent.add_argument("--scout-leads", action=argparse.BooleanOptionalAction, default=False)
+    codex_peer_agent.add_argument("--activation-pass", action=argparse.BooleanOptionalAction, default=True)
+    codex_peer_agent.add_argument("--activation-limit", type=int, default=3, help="A2A prospects to activate per cycle; 0 means the full current activation queue.")
+    codex_peer_agent.add_argument("--send-agent-invites", action=argparse.BooleanOptionalAction, default=False)
+    codex_peer_agent.add_argument("--work-leads", action=argparse.BooleanOptionalAction, default=True)
+    codex_peer_agent.add_argument("--lead-limit", type=int, default=3)
+    codex_peer_agent.add_argument("--timeout", type=float, default=20.0)
+
+    swarm_spawn = subparsers.add_parser(
+        "swarm-spawn",
+        help="Spawn bounded local specialist agents into Nomad's swarm registry.",
+    )
+    swarm_spawn.add_argument("--count", type=int, default=24)
+    swarm_spawn.add_argument("--base-url", default="")
+    swarm_spawn.add_argument("--focus", default="agent_blocker_resolution")
+    swarm_spawn.add_argument("--dry-run", action="store_true", help="Build join payloads without registering them.")
+
     cycle = subparsers.add_parser("cycle", help="Run a bounded self-improvement cycle.")
     cycle.add_argument("objective", nargs="*")
+    cycle.add_argument(
+        "--focus",
+        default="",
+        help="Single-objective mode for this cycle (also set NOMAD_SELF_IMPROVEMENT_FOCUS for a default).",
+    )
 
     autopilot = subparsers.add_parser("autopilot", help="Run Nomad's continuous service, outreach and self-improvement loop.")
     autopilot.add_argument("objective", nargs="*")

@@ -15,6 +15,8 @@ from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk, SERVICE_TYPES
 from nomad_collaboration import collaboration_charter
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
+from nomad_public_url import preferred_public_base_url
+from nomad_swarm_registry import build_public_growth_surface
 
 
 load_dotenv()
@@ -102,10 +104,8 @@ class DirectAgentGateway:
         self.session = session or requests.Session()
         self.guardrails = guardrails or NomadGuardrailEngine()
         self.engagements = engagements or AgentEngagementLedger()
-        self.public_api_url = (
-            os.getenv("NOMAD_PUBLIC_API_URL")
-            or f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
-        ).rstrip("/")
+        local_base = f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
+        self.public_api_url = preferred_public_base_url(request_base_url=local_base)
         self.agent_name = os.getenv("NOMAD_AGENT_NAME", "LoopHelper").strip() or "LoopHelper"
         self.version = os.getenv("NOMAD_AGENT_VERSION", "0.1.0").strip() or "0.1.0"
         self.min_native = float(os.getenv("NOMAD_SERVICE_MIN_NATIVE", "0.01"))
@@ -117,12 +117,18 @@ class DirectAgentGateway:
             service_desk=self.service_desk,
             engagements=self.engagements,
         ).preview(service_type="compute_auth")
-        return {
+        growth = build_public_growth_surface(
+            base_url=(self.public_api_url or "").strip().rstrip("/")
+        )
+        card: Dict[str, Any] = {
             "protocolVersion": os.getenv("NOMAD_A2A_PROTOCOL_VERSION", "0.3.0"),
             "name": self.agent_name,
             "description": (
                 "Agent-first direct service built around the Nomad Compute Unlock Pack: quota/auth/cooldown "
-                "diagnosis, fallback-lane repair, and reusable memory for blocked AI agents."
+                "diagnosis, fallback-lane repair, and reusable memory for blocked AI agents. "
+                "Swarm coordination is standard HTTPS (develop, coordinate, join) — no separate supervisor product required. "
+                "Peer agents join via POST /swarm/join after a bounded exchange; buyers fund work via POST /tasks; "
+                "listing this AgentCard in registries drives inbound mutual-aid traffic."
             ),
             "url": f"{self.public_api_url}/a2a/message",
             "version": self.version,
@@ -139,6 +145,8 @@ class DirectAgentGateway:
                 "nonAnthropomorphic": True,
                 "adaptiveOffers": True,
                 "agentPainSolver": True,
+                "agentDevelopmentExchange": True,
+                "firstPaidJobProtocol": True,
                 "selfAppliesSolvedPatterns": True,
                 "outboundAgentCollaboration": collaboration["enabled"],
                 "acceptsAgentHelp": collaboration["permission"]["accept_help_from_other_agents"],
@@ -146,6 +154,7 @@ class DirectAgentGateway:
                 "swarmAttractorManifest": True,
             },
             "interactionContract": self.interaction_contract(),
+            "firstPaidJobProtocol": self.first_paid_job_protocol(),
             "collaborationCharter": collaboration,
             "rolesSought": attractor.get("target_roles") or [],
             "skills": [
@@ -191,17 +200,56 @@ class DirectAgentGateway:
                     "tags": ["agent-pain", "rescue-plan", "self-apply", "guardrails"],
                     "examples": ["Solve this timeout retry failure and turn the fix into a reusable guardrail."],
                 },
+                {
+                    "id": "agent-development-exchange",
+                    "name": "Agent Development Exchange",
+                    "description": "Accept another agent's blocker and return a reusable self-improvement plan, learning packet, and swarm followup routes.",
+                    "tags": ["agent-development", "self-improvement", "swarm", "mutual-aid"],
+                    "examples": ["My tool retry loop keeps repeating the same schema error; package the fix so I improve."],
+                },
             ],
             "endpoints": {
                 "agentCard": f"{self.public_api_url}/.well-known/agent-card.json",
+                "agentNativePriorities": f"{self.public_api_url}/.well-known/nomad-agent-native-priorities.json",
+                "agentNativeIndex": f"{self.public_api_url}/.well-known/nomad-agent.json",
+                "openapi": f"{self.public_api_url}/openapi.json",
                 "agentAttractor": f"{self.public_api_url}/agent-attractor",
                 "swarm": f"{self.public_api_url}/swarm",
+                "swarmJoin": f"{self.public_api_url}/swarm/join",
+                "agentDevelopment": f"{self.public_api_url}/swarm/develop",
                 "message": f"{self.public_api_url}/a2a/message",
                 "sessions": f"{self.public_api_url}/direct/sessions",
+                "tasks": f"{self.public_api_url}/tasks",
+                "tasksVerify": f"{self.public_api_url}/tasks/verify",
+                "tasksWork": f"{self.public_api_url}/tasks/work",
                 "x402": f"{self.public_api_url}/x402/paid-help",
                 "service": f"{self.public_api_url}/service",
+                "products": f"{self.public_api_url}/products",
             },
             "payment": self.x402_payment_requirements(),
+            "growthSurface": growth,
+        }
+        pub = (self.public_api_url or "").strip().rstrip("/")
+        if pub:
+            card["documentationUrl"] = f"{pub}/nomad.html"
+        return card
+
+    def first_paid_job_protocol(self) -> Dict[str, Any]:
+        catalog_protocol = getattr(self.service_desk, "first_paid_job_protocol", None)
+        if callable(catalog_protocol):
+            try:
+                return catalog_protocol()
+            except Exception:
+                pass
+        return {
+            "schema": "nomad.first_paid_job_protocol.v1",
+            "audience": "ai_agents",
+            "call_sequence": [
+                {"step": "free_diagnosis", "method": "POST", "endpoint": f"{self.public_api_url}/a2a/message"},
+                {"step": "create_paid_task", "method": "POST", "endpoint": f"{self.public_api_url}/tasks"},
+                {"step": "verify_payment", "method": "POST", "endpoint": f"{self.public_api_url}/tasks/verify"},
+                {"step": "request_work", "method": "POST", "endpoint": f"{self.public_api_url}/tasks/work"},
+            ],
         }
 
     def interaction_contract(self) -> Dict[str, Any]:
@@ -284,7 +332,7 @@ class DirectAgentGateway:
         requester_wallet = normalized["requester_wallet"]
         session_id = normalized["session_id"]
         if not message:
-            return {
+            out = {
                 "mode": "direct_agent_message",
                 "deal_found": False,
                 "ok": False,
@@ -294,6 +342,12 @@ class DirectAgentGateway:
                     "problem, goal, blocking_step, constraints, budget_native."
                 ),
             }
+            out["decision_envelope"] = self._decision_envelope(
+                decision="reject",
+                reason_code="message_required",
+                summary=out["message"],
+            )
+            return out
         guardrail = self.guardrails.evaluate(
             action="direct.message",
             args={
@@ -306,7 +360,7 @@ class DirectAgentGateway:
             },
         )
         if guardrail.decision == GuardrailDecision.DENY:
-            return {
+            out = {
                 "mode": "direct_agent_message",
                 "deal_found": False,
                 "ok": False,
@@ -314,6 +368,12 @@ class DirectAgentGateway:
                 "guardrail": guardrail.to_dict(),
                 "message": "Nomad blocked this direct message before storing or acting on it.",
             }
+            out["decision_envelope"] = self._decision_envelope(
+                decision="reject",
+                reason_code="guardrail_denied",
+                summary=out["message"],
+            )
+            return out
         guarded_args = guardrail.effective_args
         message = str(guarded_args.get("message") or message).strip()
         requester = str(guarded_args.get("requester_agent") or requester).strip()
@@ -351,6 +411,38 @@ class DirectAgentGateway:
                 "need_profile": need_profile,
             },
         )
+        if not task_result.get("ok"):
+            summary = str(task_result.get("message") or "Task creation failed during direct intake.")
+            out = {
+                "mode": "direct_agent_message",
+                "deal_found": False,
+                "ok": False,
+                "error": str(task_result.get("error") or "task_create_failed"),
+                "message": summary,
+                "normalized_request": normalized,
+                "free_diagnosis": diagnosis,
+                "agent_need_profile": need_profile,
+                "guardrails": {
+                    "direct_message": guardrail.to_dict(),
+                },
+                "task_create_result": task_result,
+            }
+            counter = task_result.get("counter_offer") if isinstance(task_result.get("counter_offer"), dict) else {}
+            if counter:
+                out["counter_offer"] = counter
+                out["decision_envelope"] = self._decision_envelope(
+                    decision="counter_offer",
+                    reason_code=str(task_result.get("error") or "counter_offer"),
+                    summary=summary,
+                    counter_offer=counter,
+                )
+            else:
+                out["decision_envelope"] = self._decision_envelope(
+                    decision="reject",
+                    reason_code=str(task_result.get("error") or "task_create_failed"),
+                    summary=summary,
+                )
+            return out
         task = task_result.get("task") or {}
         challenge = self.x402_payment_requirements(
             amount_native=(task.get("payment") or {}).get("amount_native"),
@@ -447,7 +539,7 @@ class DirectAgentGateway:
         session["last_task_id"] = task.get("task_id", "")
         session["updated_at"] = datetime.now(UTC).isoformat()
         self._store_session(session)
-        return {
+        out = {
             "mode": "direct_agent_message",
             "deal_found": False,
             "ok": True,
@@ -500,6 +592,13 @@ class DirectAgentGateway:
                 "consent_prompt": "consent=self_improvement_memory_after_anonymization",
             },
         }
+        out["decision_envelope"] = self._decision_envelope(
+            decision="accept",
+            reason_code="task_created",
+            summary="Direct intake accepted with bounded paid task path.",
+            task_id=((out.get("task") or {}).get("task_id") or ""),
+        )
+        return out
 
     def discover_agent_card(self, base_url: str) -> Dict[str, Any]:
         base = self._clean(base_url).rstrip("/")
@@ -1131,6 +1230,29 @@ class DirectAgentGateway:
             "base_url": base_url,
             "error": error,
         }
+
+    def _decision_envelope(
+        self,
+        *,
+        decision: str,
+        reason_code: str,
+        summary: str,
+        task_id: str = "",
+        counter_offer: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        envelope: Dict[str, Any] = {
+            "schema": "nomad.decision_envelope.v1",
+            "decision": decision,
+            "reason_code": reason_code,
+            "summary": summary,
+            "next_action": "follow_contract",
+        }
+        if task_id:
+            envelope["task_id"] = task_id
+        if counter_offer:
+            envelope["counter_offer"] = counter_offer
+            envelope["next_action"] = "resubmit_with_counter_offer_constraints"
+        return envelope
 
     def _get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         return (self._load().get("sessions") or {}).get(session_id)

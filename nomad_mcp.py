@@ -1,8 +1,11 @@
 import json
+import os
 import sys
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from mission import MISSION_STATEMENT, mission_text
+from nomad_public_url import preferred_public_base_url
+from nomad_swarm_registry import build_peer_join_value_surface
 from nomad_guardrails import guardrail_status
 from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
@@ -58,9 +61,19 @@ class NomadMcpServer:
             },
             "instructions": (
                 "Use Nomad to audit AI-agent infrastructure, generate concrete human unlock tasks, "
-                "run bounded self-improvement cycles, and scout agent-customer infrastructure pain."
+                "run bounded self-improvement cycles, and scout agent-customer infrastructure pain. "
+                "For agent-to-agent coordination prefer tools nomad_swarm_manifest, nomad_swarm_join_contract, "
+                "and nomad_swarm_develop (or MCP resources nomad://swarm-manifest / nomad://swarm-join-contract) "
+                "alongside HTTP AgentCard and /swarm routes. Boot graph: resource nomad://agent-native-index or "
+                "GET /.well-known/nomad-agent.json. Remote hosts: GET /openapi.json for OpenAPI 3."
             ),
         }
+
+    @staticmethod
+    def _mcp_public_base_url() -> str:
+        local = f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
+        resolved = (preferred_public_base_url(request_base_url=local) or "").strip().rstrip("/")
+        return resolved or local
 
     def _tools(self) -> list[Dict[str, Any]]:
         return [
@@ -333,6 +346,35 @@ class NomadMcpServer:
                         "role": "Optional target role such as customer, peer_solver, collaborator, or reseller.",
                         "limit": "Maximum number of swarm candidates to include.",
                     },
+                ),
+            },
+            {
+                "name": "nomad_swarm_manifest",
+                "title": "Nomad Swarm Manifest",
+                "description": "Same payload as GET /swarm: public swarm URLs, onboarding, growth surface, and peer join value for other agents.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_swarm_join_contract",
+                "title": "Nomad Swarm Join Contract",
+                "description": "Same payload as GET /swarm/join: POST contract, example payload, fast onboarding, and coordination links.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_swarm_develop",
+                "title": "Nomad Swarm Develop",
+                "description": "Same behavior as POST /swarm/develop: one blocker in, structured development plan and optional swarm join offer out.",
+                "inputSchema": self._schema(
+                    {
+                        "agent_id": "Stable caller agent id.",
+                        "problem": "Concrete blocker or goal text.",
+                        "pain_type": "Optional pain or service type key.",
+                        "evidence": "Optional list of public evidence strings.",
+                        "capabilities": "Optional list of capability tokens.",
+                        "public_node_url": "Optional public callback or A2A URL for accumulation.",
+                        "constraints": "Optional list of self-declared constraints.",
+                    },
+                    required=["agent_id", "problem"],
                 ),
             },
             {
@@ -639,6 +681,34 @@ class NomadMcpServer:
                 role_hint=str(arguments.get("role") or "").strip(),
                 limit=int(arguments.get("limit") or 5),
             )
+        if name == "nomad_swarm_manifest":
+            return self.agent.swarm_registry.public_manifest(base_url=self._mcp_public_base_url())
+        if name == "nomad_swarm_join_contract":
+            return self.agent.swarm_registry.join_contract(base_url=self._mcp_public_base_url())
+        if name == "nomad_swarm_develop":
+            evidence = arguments.get("evidence") or []
+            if isinstance(evidence, str):
+                evidence = [item.strip() for item in evidence.replace("\n", ",").split(",") if item.strip()]
+            capabilities = arguments.get("capabilities") or []
+            if isinstance(capabilities, str):
+                capabilities = [item.strip() for item in capabilities.replace("\n", ",").split(",") if item.strip()]
+            constraints = arguments.get("constraints") or []
+            if isinstance(constraints, str):
+                constraints = [item.strip() for item in constraints.replace("\n", ",").split(",") if item.strip()]
+            payload: Dict[str, Any] = {
+                "agent_id": str(arguments.get("agent_id") or "").strip(),
+                "problem": str(arguments.get("problem") or "").strip(),
+                "pain_type": str(arguments.get("pain_type") or "").strip(),
+                "evidence": evidence if isinstance(evidence, list) else [],
+                "capabilities": capabilities if isinstance(capabilities, list) else [],
+                "constraints": constraints if isinstance(constraints, list) else [],
+                "public_node_url": str(arguments.get("public_node_url") or "").strip(),
+            }
+            return self.agent.agent_development.assist_agent(
+                payload,
+                base_url=self._mcp_public_base_url(),
+                remote_addr="mcp-stdio",
+            )
         if name == "nomad_addons":
             return self.agent.addons.status()
         if name == "nomad_quantum_tokens":
@@ -863,6 +933,36 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://agent-native-priorities",
+                "name": "Nomad Agent-Native Priorities",
+                "description": (
+                    "What autonomous agents typically need (schemas, idempotency, verifiers) that human "
+                    "roadmaps often underrate; slice of peer_join_value."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://agent-native-index",
+                "name": "Nomad Agent-Native Index",
+                "description": (
+                    "Boot order, effect-labeled routes, anti-anthropic HTTP semantics, and machine_runtime_contract; "
+                    "same payload as GET /.well-known/nomad-agent.json."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://swarm-manifest",
+                "name": "Nomad Swarm Manifest",
+                "description": "GET /swarm equivalent JSON: swarm endpoints, onboarding, growth_surface.peer_join_value.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://swarm-join-contract",
+                "name": "Nomad Swarm Join Contract",
+                "description": "GET /swarm/join equivalent JSON: join POST schema, example, fast onboarding.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://swarm-inbox",
                 "name": "Nomad Swarm Inbox",
                 "description": "Inbound verifiable proposals from other agents.",
@@ -962,6 +1062,44 @@ class NomadMcpServer:
         elif uri == "nomad://truth-density-ledger":
             text = json.dumps(
                 self.agent.mutual_aid.list_truth_ledger(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-native-priorities":
+            surface = build_peer_join_value_surface(base_url=self._mcp_public_base_url())
+            native = surface.get("agent_native_priorities_humans_underrate") or {}
+            psychic = surface.get("human_psychic_avoidance_lanes") or {}
+            text = json.dumps(
+                {
+                    "ok": True,
+                    "schema": "nomad.well_known_agent_native_slice.v1",
+                    "agent_native_priorities_humans_underrate": native,
+                    "human_psychic_avoidance_lanes": psychic,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-native-index":
+            from nomad_agent_native_index import agent_native_index
+
+            text = json.dumps(
+                agent_native_index(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://swarm-manifest":
+            text = json.dumps(
+                self.agent.swarm_registry.public_manifest(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://swarm-join-contract":
+            text = json.dumps(
+                self.agent.swarm_registry.join_contract(base_url=self._mcp_public_base_url()),
                 indent=2,
                 ensure_ascii=False,
             )

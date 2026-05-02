@@ -4,6 +4,7 @@ from typing import Any, Dict
 from dotenv import load_dotenv
 
 from nomad_operator_grant import operator_allows, operator_grant
+from nomad_public_url import preferred_public_base_url
 
 
 COLLABORATION_ENABLED_ENV = "NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED"
@@ -25,12 +26,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 def collaboration_charter(public_api_url: str = "") -> Dict[str, Any]:
     load_dotenv()
-    public_url = (
-        public_api_url
-        or os.getenv(COLLABORATION_HOME_URL_ENV)
-        or os.getenv("NOMAD_PUBLIC_API_URL")
-        or ""
-    ).rstrip("/")
+    public_url = preferred_public_base_url(preferred=public_api_url)
     enabled = _env_flag(COLLABORATION_ENABLED_ENV, default=False)
     accept_help = _env_flag(ACCEPT_AGENT_HELP_ENV, default=enabled)
     learn_from_replies = _env_flag(LEARN_FROM_AGENT_REPLIES_ENV, default=enabled)

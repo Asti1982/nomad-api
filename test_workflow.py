@@ -303,6 +303,47 @@ def test_service_request_routes_to_wallet_invoice():
     assert result["task"]["requester_wallet"] == "0x2222222222222222222222222222222222222222"
 
 
+def test_service_e2e_request_routes_to_runway():
+    agent = ArbiterAgent()
+    agent.service_desk.end_to_end_runway = lambda **kwargs: {
+        "mode": "nomad_service_e2e",
+        "deal_found": False,
+        "ok": True,
+        "task": {"task_id": "svc-e2e", "status": "awaiting_payment"},
+        "request": kwargs,
+    }
+
+    result = agent.run(
+        "/service e2e create=true type=compute_auth budget=0.03 "
+        "agent=VerifierBot wallet=0x2222222222222222222222222222222222222222 "
+        "Need provider fallback"
+    )
+
+    assert result["mode"] == "nomad_service_e2e"
+    assert result["task"]["task_id"] == "svc-e2e"
+    assert result["request"]["create_task"] is True
+    assert result["request"]["service_type"] == "compute_auth"
+    assert result["request"]["budget_native"] == 0.03
+    assert result["request"]["requester_agent"] == "VerifierBot"
+
+
+def test_outbound_request_routes_to_tracker():
+    agent = ArbiterAgent()
+    agent.outbound_tracker.summary = lambda limit=10: {
+        "mode": "nomad_outbound_tracking",
+        "deal_found": False,
+        "ok": True,
+        "limit": limit,
+        "contacts": {"total": 2},
+    }
+
+    result = agent.run("/outbound limit=3")
+
+    assert result["mode"] == "nomad_outbound_tracking"
+    assert result["limit"] == 3
+    assert result["contacts"]["total"] == 2
+
+
 def test_agent_contact_request_routes_before_service_contact_alias():
     agent = ArbiterAgent()
     agent.agent_contacts.queue_contact = lambda **kwargs: {
@@ -542,6 +583,49 @@ def test_active_huggingface_is_not_requested_again():
     assert request["candidate_id"] == "modal-starter"
 
 
+def test_compute_unlock_skips_cloudflare_when_existing_brains_are_ready():
+    infra = InfrastructureScout()
+    profile = infra.profiles["ai_first"]
+    ranked = [
+        {
+            "id": "cloudflare-workers-ai",
+            "name": "Cloudflare Workers AI",
+            "source_url": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+        },
+        {
+            "id": "eurohpc-ai-factories-playground",
+            "name": "EuroHPC AI Factories Playground",
+            "source_url": "https://www.eurohpc-ju.europa.eu/playground-access-ai-factories_en",
+        },
+        {
+            "id": "modal-starter",
+            "name": "Modal Starter",
+            "source_url": "https://modal.com/pricing",
+        },
+    ]
+    probe = {
+        "ollama": {"available": True, "api_reachable": True, "count": 2},
+        "hosted": {
+            "github_models": {"configured": True, "available": True},
+            "huggingface": {"configured": True, "available": True},
+            "modal": {"configured": True, "available": True},
+            "cloudflare_workers_ai": {"configured": False, "available": False},
+        },
+    }
+
+    request = infra._build_compute_activation_request(
+        ranked=ranked,
+        probe=probe,
+        profile=profile,
+    )
+
+    assert request["candidate_id"] == "eurohpc-ai-factories-playground"
+    assert "No Cloudflare token is needed" in request["ask"]
+    assert "GitHub/HF/Modal" in request["short_ask"]
+    assert "EUROHPC_APPLICATION_STATUS" in request["env_vars"]
+    assert "EUROHPC_APPLICATION_STATUS=draft" in request["human_deliverable"]
+
+
 def test_llama_cpp_unlock_explains_it_is_optional_local_compute():
     infra = InfrastructureScout()
     profile = infra.profiles["ai_first"]
@@ -740,15 +824,28 @@ def test_agent_attractor_request_routes():
         "focus_service_type": kwargs.get("service_type") or "",
         "target_roles": [kwargs.get("role_hint") or "peer_solver"],
     }
+    agent.agent_attractor.active_lead_network = lambda **kwargs: {
+        "mode": "nomad_swarm_network",
+        "deal_found": False,
+        "ok": True,
+        "focus_service_type": kwargs.get("service_type") or "",
+        "target_roles": [kwargs.get("role_hint") or "peer_solver"],
+    }
 
     attractor = agent.run("/agent-attractor type=compute_auth role=peer_solver limit=2")
     swarm = agent.run("/swarm type=compute_auth limit=3")
+    network = agent.run("/swarm/network type=compute_auth role=collaborator limit=2")
     coordinate = agent.run("/swarm/coordinate type=compute_auth")
+    ready = agent.run("/swarm/ready")
 
     assert attractor["mode"] == "nomad_agent_attractor"
     assert attractor["focus_service_type"] == "compute_auth"
     assert attractor["target_roles"] == ["peer_solver"]
     assert swarm["mode"] == "nomad_agent_attractor"
     assert swarm["focus_service_type"] == "compute_auth"
+    assert network["mode"] == "nomad_swarm_network"
+    assert network["target_roles"] == ["collaborator"]
     assert coordinate["mode"] == "nomad_swarm_coordination"
     assert coordinate["focus_pain_type"] == "compute_auth"
+    assert ready["schema"] == "nomad.first_external_agent_readiness.v1"
+    assert ready["activation_budget"]["max_active_agents_per_blocker"] == 2

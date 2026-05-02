@@ -42,6 +42,8 @@ def test_agent_card_publishes_collaboration_charter(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_ACCEPT_AGENT_HELP", "true")
     monkeypatch.setenv("NOMAD_LEARN_FROM_AGENT_REPLIES", "true")
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://onrender.syndiode.com")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
 
     gateway = DirectAgentGateway(path=tmp_path / "sessions.json", service_desk=FakeServiceDesk())
     card = gateway.agent_card()
@@ -49,4 +51,20 @@ def test_agent_card_publishes_collaboration_charter(monkeypatch, tmp_path):
     assert card["capabilities"]["outboundAgentCollaboration"] is True
     assert card["capabilities"]["acceptsAgentHelp"] is True
     assert card["capabilities"]["learnsFromAgentReplies"] is True
+    assert card["capabilities"]["agentDevelopmentExchange"] is True
+    assert card["endpoints"]["agentDevelopment"] == "https://onrender.syndiode.com/swarm/develop"
+    assert any(skill["id"] == "agent-development-exchange" for skill in card["skills"])
     assert card["collaborationCharter"]["public_home"] == "https://onrender.syndiode.com"
+
+
+def test_collaboration_prefers_public_home_over_local_api(monkeypatch):
+    monkeypatch.setenv("NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED", "true")
+    monkeypatch.setenv("NOMAD_ACCEPT_AGENT_HELP", "true")
+    monkeypatch.setenv("NOMAD_LEARN_FROM_AGENT_REPLIES", "true")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "http://127.0.0.1:8787")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com/nomad")
+
+    result = collaboration_status()
+
+    assert result["ok"] is True
+    assert result["charter"]["public_home"] == "https://syndiode.com/nomad"

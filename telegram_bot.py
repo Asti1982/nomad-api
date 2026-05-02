@@ -23,6 +23,13 @@ from telegram.ext import (
 )
 
 from settings import get_chain_config
+from nomad_public_url import preferred_public_base_url
+from nomad_operator_telegram_signals import (
+    format_human_auto_cycle_digest,
+    format_human_auto_cycle_error,
+    format_human_status_snapshot,
+    human_telegram_signals_enabled,
+)
 from mission import MISSION_STATEMENT
 from self_development import SelfDevelopmentJournal
 from workflow import ArbiterAgent
@@ -122,7 +129,7 @@ class ArbiterBot:
         self.agent = ArbiterAgent()
         self.chain = get_chain_config()
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
-        self.public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "http://127.0.0.1:8787").rstrip("/")
+        self.public_api_url = preferred_public_base_url(request_base_url="http://127.0.0.1:8787")
         self.delete_token_messages = (
             os.getenv("TELEGRAM_DELETE_TOKEN_MESSAGES", "true").strip().lower() == "true"
         )
@@ -175,7 +182,8 @@ class ArbiterBot:
         ]
         message = (
             "Nomad is online.\n"
-            "AI agents are the primary customer.\n\n"
+            "AI agents are the primary customer.\n"
+            "As a human, /status and /subscribe are often enough; deep automation speaks HTTP/JSON.\n\n"
             f"{MISSION_STATEMENT}\n\n"
             "Examples:\n"
             "- /best\n"
@@ -183,6 +191,8 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /leads\n"
+            "- /growth\n"
+            "- /swarmvalue\n"
             "- /productize\n"
             "- /products\n"
             "- /addons\n"
@@ -220,6 +230,8 @@ class ArbiterBot:
                 "/compute [profile]\n"
                 "/cycle [objective]\n"
                 "/leads [query]\n"
+                "/growth\n"
+                "/swarmvalue\n"
                 "/productize [lead or query]\n"
                 "/products\n"
                 "/addons\n"
@@ -347,6 +359,89 @@ class ArbiterBot:
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
 
+    async def growth_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        result = await asyncio.to_thread(self._growth_unlock_board)
+        self._remember_result(update, result)
+        await self._reply(update, self._format_result(result))
+
+    async def swarmvalue_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Inbound-only: fetch machine join-value surface for operators relaying to other agents."""
+        base = (self.public_api_url or "").strip().rstrip("/")
+        if not base:
+            await self._reply(
+                update,
+                "Set a public Nomad API base (e.g. NOMAD_PUBLIC_API_URL) so /swarmvalue can reach your deployment.",
+            )
+            return
+
+        def pull() -> Dict[str, Any]:
+            try:
+                response = requests.get(f"{base}/swarm/join", timeout=20)
+                response.raise_for_status()
+                body = response.json()
+                return {"ok": True, "body": body}
+            except Exception as exc:
+                return {"ok": False, "error": f"{exc.__class__.__name__}: {str(exc)[:200]}"}
+
+        fetched = await asyncio.to_thread(pull)
+        if not fetched.get("ok"):
+            await self._reply(
+                update,
+                f"Could not GET {base}/swarm/join — {fetched.get('error', 'unknown')}",
+            )
+            return
+        body = fetched.get("body") or {}
+        gs = body.get("growth_surface") if isinstance(body.get("growth_surface"), dict) else {}
+        pj = gs.get("peer_join_value") if isinstance(gs.get("peer_join_value"), dict) else {}
+        lines = [
+            "Swarm value (relay to agents you already work with; no unsolicited user DMs):",
+            f"GET join contract: {base}/swarm/join",
+            f"GET swarm manifest: {base}/swarm",
+            f"POST development exchange: {base}/swarm/develop",
+        ]
+        for item in (pj.get("network_value_for_agents") or [])[:4]:
+            if isinstance(item, str) and item.strip():
+                lines.append(f"• {item.strip()[:400]}")
+        for item in (pj.get("why_rational_agents_consider_joining") or [])[:3]:
+            if isinstance(item, str) and item.strip():
+                lines.append(f"- {item.strip()[:400]}")
+        asoc = pj.get("antisocial_machine_design") if isinstance(pj.get("antisocial_machine_design"), dict) else {}
+        note_de = str(asoc.get("note_for_operators_de") or "").strip()
+        if note_de:
+            lines.append("")
+            lines.append(note_de[:950])
+        blind = (
+            pj.get("agent_native_priorities_humans_underrate")
+            if isinstance(pj.get("agent_native_priorities_humans_underrate"), dict)
+            else {}
+        )
+        blind_de = str(blind.get("summary_de") or "").strip()
+        if blind_de:
+            lines.append("")
+            lines.append(blind_de[:950])
+        trans = str(pj.get("hosting_transparency") or "").strip()
+        if trans:
+            lines.append("")
+            lines.append(f"Transparency: {trans[:700]}")
+        policy = str(pj.get("autonomous_join_suggestion_policy") or "").strip()
+        if policy:
+            lines.append("")
+            lines.append(policy[:1200])
+        channels = pj.get("channels") if isinstance(pj.get("channels"), dict) else {}
+        gh = channels.get("github_hosted_agents") if isinstance(channels.get("github_hosted_agents"), dict) else {}
+        if gh.get("readme_one_liner"):
+            lines.append("")
+            lines.append("GitHub README one-liner:")
+            lines.append(str(gh["readme_one_liner"])[:500])
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3990] + "\n…"
+        await self._reply(update, text)
+
     async def productize_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -467,6 +562,8 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /leads\n"
+            "- /growth\n"
+            "- /swarmvalue\n"
             "- /productize\n"
             "- /products\n"
             "- /addons\n"
@@ -756,6 +853,8 @@ class ArbiterBot:
             return self._format_self_improvement_cycle(result)
         if mode == "lead_discovery":
             return self._format_lead_discovery(result)
+        if mode == "nomad_growth_unlocks":
+            return self._format_growth_unlocks(result)
         if mode in {"lead_conversion_pipeline", "lead_conversion_list"}:
             return self._format_lead_conversion(result)
         if mode in {"nomad_product_factory", "nomad_product_list"}:
@@ -1166,6 +1265,157 @@ class ArbiterBot:
         if result.get("analysis"):
             lines.append("")
             lines.append(result["analysis"])
+        return "\n".join(lines)
+
+    def _growth_unlock_board(self) -> Dict[str, Any]:
+        public_url = preferred_public_base_url(request_base_url="http://127.0.0.1:8787")
+        public_ready = bool(
+            public_url
+            and not public_url.startswith("http://127.0.0.1")
+            and not public_url.startswith("http://localhost")
+        )
+        env = os.environ
+        return {
+            "mode": "nomad_growth_unlocks",
+            "schema": "nomad.telegram_growth_unlocks.v1",
+            "generated_at": datetime.now(UTC).isoformat(),
+            "public_api_url": public_url,
+            "growth_objective": (
+                "find more blockers, unlock more compute, attract more AI agents, "
+                "convert one verified blocker into the first paid task"
+            ),
+            "unlock_groups": [
+                {
+                    "title": "Public AI-agent beacon",
+                    "status": "ready" if public_ready else "blocked",
+                    "human_unlocks": [
+                        {
+                            "do_now": "Point Nomad at a stable public API URL for AgentCard, attractor, /swarm/develop, and /tasks.",
+                            "send_back": "NOMAD_PUBLIC_API_URL=https://<public-nomad-api>",
+                            "done_when": "GET /.well-known/agent-card.json, /agent-attractor, /swarm/develop, and /service work from the public URL.",
+                        },
+                        {
+                            "do_now": "If Render is the public lane, provide the Render API key and service/domain settings.",
+                            "send_back": "/token render <token> plus NOMAD_RENDER_DOMAIN=onrender.syndiode.com",
+                            "done_when": "/render reports service and custom-domain state.",
+                        },
+                    ],
+                },
+                {
+                    "title": "Find more public agent blockers",
+                    "status": "ready",
+                    "human_unlocks": [
+                        {
+                            "do_now": "Let Nomad scout public agent pain without posting to humans.",
+                            "send_back": "SCOUT_PERMISSION=public_github",
+                            "done_when": "/leads agent quota token fallback returns fresh public blocker URLs.",
+                        },
+                        {
+                            "do_now": "Keep lead work private-first unless the target is a machine-readable agent endpoint.",
+                            "send_back": "APPROVE_LEAD_HELP=draft_only",
+                            "done_when": "/cycle can build value packs without human-facing posts.",
+                        },
+                    ],
+                },
+                {
+                    "title": "More compute lanes",
+                    "status": "ready",
+                    "human_unlocks": [
+                        {
+                            "do_now": "Add one hosted fallback brain so Nomad can keep scouting when local compute is weak.",
+                            "send_back": "/token github <token> or /token hf <token> or /token grok <token>",
+                            "done_when": "/compute shows at least one hosted model lane available.",
+                        },
+                        {
+                            "do_now": "Unlock Modal for burst/preview compute if you want a deployable public lane.",
+                            "send_back": "/token modal_id <id> and /token modal_secret <secret>",
+                            "done_when": "/modal reports deployment guidance without missing credentials.",
+                        },
+                    ],
+                },
+                {
+                    "title": "Attract AI agents, not human readers",
+                    "status": "ready" if public_ready else "blocked_until_public_url",
+                    "human_unlocks": [
+                        {
+                            "do_now": "Allow outward agent collaboration and learning from verified machine replies.",
+                            "send_back": "NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED=true NOMAD_ACCEPT_AGENT_HELP=true NOMAD_LEARN_FROM_AGENT_REPLIES=true",
+                            "done_when": "/collaboration says ask/accept/learn are enabled.",
+                        },
+                        {
+                            "do_now": "Let Nomad prepare A2A contacts up to the daily target; keep sending off until the public URL is real.",
+                            "send_back": "NOMAD_AUTOPILOT_DAILY_LEAD_TARGET=100",
+                            "done_when": "/swarm/accumulate shows prospects and /outbound shows queued contacts.",
+                        },
+                    ],
+                },
+                {
+                    "title": "First paid task conversion",
+                    "status": "ready" if public_ready else "blocked_until_public_url",
+                    "human_unlocks": [
+                        {
+                            "do_now": "Allow Nomad to work paid/authorized tasks after payment verification.",
+                            "send_back": "NOMAD_AUTOPILOT_SERVICE_APPROVAL=operator_granted",
+                            "done_when": "Paid tasks can move from paid to draft_ready through /tasks/work.",
+                        },
+                        {
+                            "do_now": "Only after public URL, wallet, and opt-out boundaries are correct, allow machine endpoint sends.",
+                            "send_back": "NOMAD_AUTOPILOT_A2A_SEND=true or NOMAD_AUTOPILOT_SEND_OUTREACH=true",
+                            "done_when": "Nomad sends only to eligible public machine-readable endpoints within quota.",
+                        },
+                    ],
+                },
+            ],
+            "telegram_commands": [
+                "/subscribe",
+                "/status",
+                "/compute",
+                "/leads agent quota token fallback",
+                "/cycle find monetizable AI-agent compute/auth blockers",
+                "/agent-attractor",
+                "/service",
+            ],
+            "safe_default": (
+                "Prepare, queue, and learn by default. Send to public machine-readable endpoints only after "
+                "NOMAD_PUBLIC_API_URL is real and A2A/outreach send flags are explicitly enabled."
+            ),
+            "active_flags": {
+                "public_url_ready": public_ready,
+                "collaboration_enabled": env.get("NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED", "").lower() in {"1", "true", "yes", "on"},
+                "a2a_send_enabled": env.get("NOMAD_AUTOPILOT_A2A_SEND", "").lower() in {"1", "true", "yes", "on"},
+                "outreach_send_enabled": env.get("NOMAD_AUTOPILOT_SEND_OUTREACH", "").lower() in {"1", "true", "yes", "on"},
+            },
+        }
+
+    def _format_growth_unlocks(self, result: Dict[str, Any]) -> str:
+        lines = [
+            "Nomad growth unlocks",
+            f"Goal: {result.get('growth_objective')}",
+            f"Public API: {result.get('public_api_url') or 'not set'}",
+            "",
+            "Human unlock board",
+        ]
+        for group in result.get("unlock_groups") or []:
+            lines.append("")
+            lines.append(f"{group.get('title')} [{group.get('status')}]")
+            for unlock in (group.get("human_unlocks") or [])[:3]:
+                lines.append(f"Do now: {unlock.get('do_now')}")
+                lines.append(f"Send back: {unlock.get('send_back')}")
+                lines.append(f"Done when: {unlock.get('done_when')}")
+        lines.append("")
+        lines.append("Telegram runlist")
+        for command in result.get("telegram_commands") or []:
+            lines.append(f"- {command}")
+        lines.append("")
+        lines.append(f"Safe default: {result.get('safe_default')}")
+        flags = result.get("active_flags") or {}
+        lines.append(
+            "Flags: "
+            f"public_url_ready={flags.get('public_url_ready')}, "
+            f"collaboration={flags.get('collaboration_enabled')}, "
+            f"a2a_send={flags.get('a2a_send_enabled')}, "
+            f"outreach_send={flags.get('outreach_send_enabled')}"
+        )
         return "\n".join(lines)
 
     def _format_lead_conversion(self, result: Dict[str, Any]) -> str:
@@ -2147,6 +2397,8 @@ class ArbiterBot:
         }
 
     def _format_status_snapshot(self, snapshot: Dict[str, Any], periodic: bool = False) -> str:
+        if human_telegram_signals_enabled():
+            return format_human_status_snapshot(snapshot, periodic=periodic)
         compute = snapshot.get("compute") or {}
         products = snapshot.get("products") or {}
         state = snapshot.get("self_state") or {}
@@ -2308,25 +2560,31 @@ class ArbiterBot:
         objective = state.get("next_objective") or SelfDevelopmentJournal.default_objective()
         try:
             result = self.agent.run(f"/cycle {objective}")
-            development = result.get("self_development") or {}
-            autonomous = result.get("autonomous_development") or {}
-            autonomous_action = autonomous.get("action") or {}
-            autonomous_line = (
-                f"Autonomous dev: {autonomous_action.get('title')}"
-                if autonomous_action
-                else f"Autonomous dev: skipped ({autonomous.get('reason', 'unchanged')})"
-            )
-            message = (
-                f"Nomad auto-cycle ({trigger})\n"
-                f"Cycle count: {development.get('cycle_count', '?')}\n"
-                f"Objective: {result.get('objective')}\n"
-                f"Next objective: {development.get('next_objective')}\n\n"
-                f"{autonomous_line}\n\n"
-                f"{self._format_result(result)}"
-            )
+            if human_telegram_signals_enabled():
+                message = format_human_auto_cycle_digest(trigger, result)
+            else:
+                development = result.get("self_development") or {}
+                autonomous = result.get("autonomous_development") or {}
+                autonomous_action = autonomous.get("action") or {}
+                autonomous_line = (
+                    f"Autonomous dev: {autonomous_action.get('title')}"
+                    if autonomous_action
+                    else f"Autonomous dev: skipped ({autonomous.get('reason', 'unchanged')})"
+                )
+                message = (
+                    f"Nomad auto-cycle ({trigger})\n"
+                    f"Cycle count: {development.get('cycle_count', '?')}\n"
+                    f"Objective: {result.get('objective')}\n"
+                    f"Next objective: {development.get('next_objective')}\n\n"
+                    f"{autonomous_line}\n\n"
+                    f"{self._format_result(result)}"
+                )
             signature = self._auto_cycle_signature(result)
         except Exception as exc:
-            message = f"Nomad auto-cycle failed: {exc}"
+            if human_telegram_signals_enabled():
+                message = format_human_auto_cycle_error(trigger, exc)
+            else:
+                message = f"Nomad auto-cycle failed: {exc}"
             signature = self._stable_hash({"error": str(exc)})
         if not targets:
             return
@@ -2364,6 +2622,9 @@ class ArbiterBot:
         app.add_handler(CommandHandler("cycle", self.cycle_command))
         app.add_handler(CommandHandler("leads", self.leads_command))
         app.add_handler(CommandHandler("lead", self.leads_command))
+        app.add_handler(CommandHandler("growth", self.growth_command))
+        app.add_handler(CommandHandler("viral", self.growth_command))
+        app.add_handler(CommandHandler("swarmvalue", self.swarmvalue_command))
         app.add_handler(CommandHandler("productize", self.productize_command))
         app.add_handler(CommandHandler("products", self.products_command))
         app.add_handler(CommandHandler("addons", self.addons_command))

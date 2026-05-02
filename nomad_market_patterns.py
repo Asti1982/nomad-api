@@ -22,6 +22,7 @@ class ComputeLane(str, Enum):
     HUGGINGFACE = "huggingface"
     CLOUDFLARE_WORKERS_AI = "cloudflare_workers_ai"
     XAI_GROK = "xai_grok"
+    OPENROUTER = "openrouter"
     MODAL = "modal"
     LAMBDA_LABS = "lambda_labs"
     RUNPOD = "runpod"
@@ -54,6 +55,8 @@ def normalize_compute_lane(value: ComputeLane | str | None) -> ComputeLane:
         "xai": ComputeLane.XAI_GROK,
         "xai_grok": ComputeLane.XAI_GROK,
         "xai-grok": ComputeLane.XAI_GROK,
+        "openrouter": ComputeLane.OPENROUTER,
+        "open-router": ComputeLane.OPENROUTER,
         "modal": ComputeLane.MODAL,
         "lambda": ComputeLane.LAMBDA_LABS,
         "lambda_labs": ComputeLane.LAMBDA_LABS,

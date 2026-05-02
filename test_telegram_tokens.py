@@ -138,7 +138,8 @@ def test_long_telegram_messages_are_chunked():
     assert all(len(chunk) <= 3600 for chunk in chunks)
 
 
-def test_status_snapshot_explains_solved_and_open_gates():
+def test_status_snapshot_explains_solved_and_open_gates(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_HUMAN_SIGNALS", "false")
     bot = ArbiterBot()
     text = bot._format_status_snapshot(
         {
@@ -179,7 +180,30 @@ def test_status_snapshot_explains_solved_and_open_gates():
     assert "APPROVE_LEAD_HELP" in text
 
 
-def test_status_snapshot_hides_non_actionable_quantum_unlock():
+def test_growth_unlock_board_is_telegram_native_and_agent_focused(monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
+    bot = ArbiterBot()
+
+    board = bot._growth_unlock_board()
+    text = bot._format_result(board)
+
+    assert board["schema"] == "nomad.telegram_growth_unlocks.v1"
+    assert "Nomad growth unlocks" in text
+    assert "Find more public agent blockers" in text
+    assert "More compute lanes" in text
+    assert "Attract AI agents, not human readers" in text
+    assert "First paid task conversion" in text
+    assert "SCOUT_PERMISSION=public_github" in text
+    assert "/token github <token>" in text
+    assert "NOMAD_AUTOPILOT_A2A_SEND=true" in text
+    assert "/cycle find monetizable AI-agent compute/auth blockers" in text
+    assert "public_url_ready=True" in text
+
+
+def test_status_snapshot_hides_non_actionable_quantum_unlock(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_HUMAN_SIGNALS", "false")
     bot = ArbiterBot()
     text = bot._format_status_snapshot(
         {

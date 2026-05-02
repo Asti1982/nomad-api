@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 from agent_attractor import NomadAgentAttractor
+from agent_development_exchange import AgentDevelopmentExchange
 from agent_engagement import AgentEngagementLedger
 from agent_pain_solver import AgentPainSolver
 from agent_contact import AgentContactOutbox
@@ -21,9 +22,13 @@ from nomad_addons import NomadAddonManager
 from nomad_collaboration import collaboration_status
 from nomad_codebuddy import CodeBuddyReviewRunner
 from nomad_guardrails import NomadGuardrailEngine, guardrail_status
+from nomad_lead_workbench import NomadLeadWorkbench
 from nomad_product_factory import NomadProductFactory
 from nomad_monitor import NomadSystemMonitor
+from nomad_mission_control import NomadMissionControl
 from nomad_mutual_aid import NomadMutualAidKernel
+from nomad_public_url import preferred_public_base_url
+from nomad_outbound_tracker import NomadOutboundTracker
 from nomad_swarm_registry import SwarmJoinRegistry
 from open_travel_scout import OpenTravelScout, ScoutError
 from self_improvement import SelfImprovementEngine
@@ -78,10 +83,16 @@ class ArbiterAgent:
             engagements=self.agent_engagements,
         )
         self.agent_campaigns = AgentColdOutreachCampaign(outbox=self.agent_contacts)
+        self.outbound_tracker = NomadOutboundTracker()
         self.swarm_registry = SwarmJoinRegistry()
+        self.agent_development = AgentDevelopmentExchange(
+            pain_solver=self.agent_pain_solver,
+            swarm_registry=self.swarm_registry,
+        )
         self.agent_attractor = NomadAgentAttractor(
             service_desk=self.service_desk,
             engagements=self.agent_engagements,
+            swarm_registry=self.swarm_registry,
         )
         self.direct_agent = DirectAgentGateway(
             service_desk=self.service_desk,
@@ -102,7 +113,9 @@ class ArbiterAgent:
             guardrails=self.guardrails,
             engagement_ledger=self.agent_engagements,
         )
+        self.lead_workbench = NomadLeadWorkbench()
         self.monitor = NomadSystemMonitor(agent=self)
+        self.mission_control = NomadMissionControl(agent=self)
 
     def run(self, query: str) -> Dict[str, Any]:
         normalized_query = (query or "").strip()
@@ -118,6 +131,9 @@ class ArbiterAgent:
 
         if normalized_query.lower() in {"/status", "/top"}:
             return self.monitor.snapshot()
+
+        if self._is_mission_control_request(normalized_query):
+            return self._handle_mission_control_request(normalized_query)
 
         if self._is_addon_request(normalized_query):
             return self._handle_addon_request(normalized_query)
@@ -136,6 +152,9 @@ class ArbiterAgent:
 
         if self._is_product_request(normalized_query):
             return self._handle_product_request(normalized_query)
+
+        if self._is_lead_workbench_request(normalized_query):
+            return self._handle_lead_workbench_request(normalized_query)
 
         if self._is_agent_engagement_request(normalized_query):
             return self._handle_agent_engagement_request(normalized_query)
@@ -160,6 +179,9 @@ class ArbiterAgent:
 
         if self._is_agent_campaign_request(normalized_query):
             return self._handle_agent_campaign_request(normalized_query)
+
+        if self._is_outbound_request(normalized_query):
+            return self._handle_outbound_request(normalized_query)
 
         if self._is_direct_agent_request(normalized_query):
             return self._handle_direct_agent_request(normalized_query)
@@ -206,6 +228,8 @@ class ArbiterAgent:
             return self.infra.compute_assessment(profile_id=profile)
         if kind == "codebuddy_scout":
             return self.infra.codebuddy_scout(profile_id=profile)
+        if kind == "modal_scout":
+            return self.infra.modal_scout(profile_id=profile)
         if kind == "render_scout":
             return self.infra.render_scout(profile_id=profile)
         if kind == "eurohpc_scout":
@@ -395,6 +419,15 @@ class ArbiterAgent:
             or "leads zu produkten" in lowered
         )
 
+    def _is_lead_workbench_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/lead-workbench")
+            or lowered.startswith("/lead-work")
+            or lowered.startswith("/jobs")
+            or "leads abarbeiten" in lowered
+        )
+
     def _is_guardrail_request(self, query: str) -> bool:
         lowered = query.lower()
         return (
@@ -414,6 +447,18 @@ class ArbiterAgent:
     def _is_agent_attractor_request(self, query: str) -> bool:
         lowered = query.lower()
         return lowered.startswith("/agent-attractor") or lowered.startswith("/swarm")
+
+    def _is_mission_control_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/mission")
+            or lowered.startswith("/mission-control")
+            or lowered.startswith("/next-step")
+            or lowered.startswith("/growth")
+            or "mission control" in lowered
+            or "nächster schritt" in lowered
+            or "naechster schritt" in lowered
+        )
 
     def _is_collaboration_request(self, query: str) -> bool:
         lowered = query.lower()
@@ -473,6 +518,14 @@ class ArbiterAgent:
             or lowered.startswith("/a2a")
         )
 
+    def _is_outbound_request(self, query: str) -> bool:
+        lowered = query.lower()
+        return (
+            lowered.startswith("/outbound")
+            or lowered.startswith("/followups")
+            or lowered.startswith("/agent-network-status")
+        )
+
     def _is_agent_pain_request(self, query: str) -> bool:
         lowered = query.lower()
         return (
@@ -497,12 +550,26 @@ class ArbiterAgent:
     def _handle_self_improvement_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower()
         profile = self._extract_explicit_profile(lowered)
-        objective = re.sub(
+        objective_raw = re.sub(
             r"^/(?:cycle|improve|autocycle)\b",
             "",
             query,
             flags=re.IGNORECASE,
         ).strip()
+        focus_inline = ""
+        focus_match = re.search(r"\[nomad_focus:([^\]]+)\]", objective_raw, flags=re.IGNORECASE)
+        if focus_match:
+            focus_inline = focus_match.group(1).strip()
+            objective_raw = re.sub(
+                r"\[nomad_focus:[^\]]+\]\s*",
+                "",
+                objective_raw,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+        from nomad_operator_desk import self_improvement_objective_with_focus
+
+        objective = self_improvement_objective_with_focus(objective_raw, cli_focus=focus_inline)
         return self.self_improvement.run_cycle(
             objective=objective,
             profile_id=profile,
@@ -678,6 +745,17 @@ class ArbiterAgent:
             limit=limit,
         )
 
+    def _handle_lead_workbench_request(self, query: str) -> Dict[str, Any]:
+        lowered = query.lower().strip()
+        work = (
+            " work" in lowered
+            or lowered.startswith("/lead-work")
+            or "run" in lowered
+            or "abarbeiten" in lowered
+        )
+        limit = self._extract_int_key_value(query, "limit") or 5
+        return self.lead_workbench.status(limit=limit, work=work)
+
     def _handle_agent_engagement_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower().strip()
         requested_pain_type = self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type")
@@ -699,6 +777,16 @@ class ArbiterAgent:
             limit=limit,
         )
 
+    def _handle_mission_control_request(self, query: str) -> Dict[str, Any]:
+        public_url = preferred_public_base_url(request_base_url="http://127.0.0.1:8787")
+        limit = self._extract_int_key_value(query, "limit") or 5
+        persist = "dry" not in query.lower() and "preview" not in query.lower()
+        return self.mission_control.snapshot(
+            base_url=public_url,
+            persist=persist,
+            limit=limit,
+        )
+
     def _handle_agent_attractor_request(self, query: str) -> Dict[str, Any]:
         lowered = query.lower().strip()
         requested_pain_type = (
@@ -706,11 +794,40 @@ class ArbiterAgent:
             or self._extract_key_value(query, "pain_type")
             or self._extract_key_value(query, "service_type")
         )
-        public_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "http://127.0.0.1:8787").rstrip("/")
+        public_url = preferred_public_base_url(request_base_url="http://127.0.0.1:8787")
+        if lowered.startswith(("/swarm/develop", "/swarm-develop", "/agent-development")) or lowered.startswith("/swarm develop"):
+            problem = re.sub(
+                r"^/(?:swarm/develop|swarm-develop|agent-development|swarm\s+develop)\b",
+                "",
+                query,
+                flags=re.IGNORECASE,
+            ).strip()
+            for key in ("agent", "agent_id", "type", "pain_type", "service_type", "endpoint"):
+                value = self._extract_key_value(query, key)
+                if value:
+                    problem = problem.replace(f"{key}={value}", "")
+            problem = " ".join(problem.split())
+            if not problem:
+                return self.agent_development.status(base_url=public_url)
+            return self.agent_development.assist_agent(
+                {
+                    "agent_id": self._extract_key_value(query, "agent") or self._extract_key_value(query, "agent_id") or "cli_agent",
+                    "problem": problem,
+                    "pain_type": requested_pain_type,
+                    "public_node_url": self._extract_key_value(query, "endpoint"),
+                },
+                base_url=public_url,
+            )
         if lowered.startswith(("/swarm/coordinate", "/swarm-coordinate")) or lowered.startswith("/swarm coordinate"):
             return self.swarm_registry.coordination_board(
                 base_url=public_url,
                 focus_pain_type=requested_pain_type,
+            )
+        if lowered.startswith(("/swarm/network", "/swarm-network")) or lowered.startswith("/swarm network"):
+            return self.agent_attractor.active_lead_network(
+                service_type=requested_pain_type,
+                role_hint=self._extract_key_value(query, "role"),
+                limit=self._extract_int_key_value(query, "limit") or 5,
             )
         if lowered.startswith(("/swarm/accumulate", "/swarm-accumulate")) or lowered.startswith("/swarm accumulate"):
             if "run" in lowered or "refresh" in lowered:
@@ -733,6 +850,8 @@ class ArbiterAgent:
             return self.swarm_registry.accumulation_status(base_url=public_url)
         if lowered.startswith("/swarm/nodes") or lowered.startswith("/swarm nodes"):
             return self.swarm_registry.summary()
+        if lowered.startswith(("/swarm/ready", "/swarm/readiness")) or lowered.startswith("/swarm ready"):
+            return self.swarm_registry.first_agent_readiness(base_url=public_url)
         if lowered.startswith("/swarm/join") or lowered.startswith("/swarm join"):
             return self.swarm_registry.join_contract(base_url=public_url)
         role_hint = self._extract_key_value(query, "role")
@@ -856,6 +975,72 @@ class ArbiterAgent:
         lowered = query.lower().strip()
         if lowered in {"/service", "/contact", "/task", "service", "contact"}:
             return self.service_desk.service_catalog()
+
+        e2e_match = re.search(
+            r"^/(?:service|task)\s+e2e\b",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if e2e_match:
+            problem = re.sub(
+                r"^/(?:service|task)\s+e2e\b",
+                "",
+                query,
+                flags=re.IGNORECASE,
+            ).strip()
+            create_task = (
+                self._extract_bool_key_value(query, "create")
+                or bool(re.search(r"\bcreate\b", query, flags=re.IGNORECASE))
+            )
+            task_id = self._extract_key_value(query, "task_id")
+            service_type = (
+                self._extract_key_value(query, "type")
+                or self._extract_key_value(query, "service_type")
+            )
+            requester_agent = (
+                self._extract_key_value(query, "agent")
+                or self._extract_key_value(query, "requester")
+            )
+            callback_url = (
+                self._extract_key_value(query, "callback")
+                or self._extract_key_value(query, "callback_url")
+            )
+            approval = self._extract_key_value(query, "approval") or "draft_only"
+            requester_wallet = self._extract_wallet(query)
+            for key in (
+                "task_id",
+                "create",
+                "type",
+                "service_type",
+                "agent",
+                "requester",
+                "callback",
+                "callback_url",
+                "approval",
+                "budget",
+                "amount",
+                "pay",
+                "wallet",
+                "payer_wallet",
+                "from",
+            ):
+                value = self._extract_key_value(query, key)
+                if value:
+                    problem = problem.replace(f"{key}={value}", "")
+            if requester_wallet:
+                problem = problem.replace(requester_wallet, "")
+            problem = " ".join(problem.split())
+            return self.service_desk.end_to_end_runway(
+                task_id=task_id,
+                problem=problem,
+                service_type=service_type,
+                budget_native=self._extract_budget_native(query),
+                requester_agent=requester_agent,
+                requester_wallet=requester_wallet,
+                callback_url=callback_url,
+                create_task=create_task,
+                approval=approval,
+            )
 
         staking_match = re.search(
             r"^/(?:service|task)\s+(?:staking|metamask)\s+(\S+)",
@@ -1054,6 +1239,11 @@ class ArbiterAgent:
             send=send,
             service_type=self._extract_key_value(query, "type") or "",
             budget_hint_native=self._extract_budget_native(query),
+        )
+
+    def _handle_outbound_request(self, query: str) -> Dict[str, Any]:
+        return self.outbound_tracker.summary(
+            limit=self._extract_int_key_value(query, "limit") or 10,
         )
 
     def _campaign_discovery_query(self, query: str, endpoints: List[str]) -> str:

@@ -1,3 +1,5 @@
+# Blueprint: push to the linked GitHub branch (e.g. syndiode) → Render auto-deploys (autoDeployTrigger: commit).
+# Agent-facing links must use the public edge URL (syndiode.com/nomad), not an unrouted Render hostname.
 services:
   - type: web
     name: nomad-api
@@ -9,12 +11,15 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: commit
     domains:
+      # Optional direct Render custom host; public AgentCard/swarm URLs use NOMAD_PUBLIC_API_URL below.
       - onrender.syndiode.com
     envVars:
       - key: NOMAD_API_HOST
         value: 0.0.0.0
       - key: NOMAD_PUBLIC_API_URL
-        value: https://onrender.syndiode.com
+        value: https://syndiode.com/nomad
+      - key: NOMAD_COLLABORATION_HOME_URL
+        value: https://syndiode.com/nomad
       - key: NOMAD_RENDER_DOMAIN
         value: onrender.syndiode.com
       - key: NOMAD_AGENT_NAME

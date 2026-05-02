@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 
+from nomad_deployment import DEFAULT_GITHUB_DEPLOY_BRANCH
+
 
 RENDER_API_KEY_ENV = "RENDER_API_KEY"
 RENDER_SERVICE_ID_ENV = "NOMAD_RENDER_SERVICE_ID"
@@ -15,6 +17,8 @@ RENDER_ROOT_DOMAIN_ENV = "NOMAD_RENDER_ROOT_DOMAIN"
 RENDER_DEPLOY_ENABLED_ENV = "NOMAD_RENDER_DEPLOY_ENABLED"
 RENDER_API_BASE_ENV = "NOMAD_RENDER_API_BASE"
 RENDER_TIMEOUT_ENV = "NOMAD_RENDER_TIMEOUT_SECONDS"
+GITHUB_REPOSITORY_ENV = "NOMAD_GITHUB_REPOSITORY"
+GITHUB_DEPLOY_BRANCH_ENV = "NOMAD_GITHUB_DEPLOY_BRANCH"
 
 DEFAULT_RENDER_API_BASE = "https://api.render.com/v1"
 DEFAULT_RENDER_SERVICE_NAME = "nomad-api"
@@ -45,6 +49,15 @@ class RenderHostingProbe:
         self.root_domain = (os.getenv(RENDER_ROOT_DOMAIN_ENV) or "").strip()
         self.api_base = (os.getenv(RENDER_API_BASE_ENV) or DEFAULT_RENDER_API_BASE).rstrip("/")
         self.timeout_seconds = float(os.getenv(RENDER_TIMEOUT_ENV, "12"))
+        self.github_repository = (
+            os.getenv(GITHUB_REPOSITORY_ENV)
+            or os.getenv("GITHUB_REPOSITORY")
+            or ""
+        ).strip()
+        self.github_branch = (
+            os.getenv(GITHUB_DEPLOY_BRANCH_ENV)
+            or DEFAULT_GITHUB_DEPLOY_BRANCH
+        ).strip()
 
     def snapshot(self, verify: bool = False) -> Dict[str, Any]:
         render_yaml = self.repo_root / "render.yaml"
@@ -62,6 +75,8 @@ class RenderHostingProbe:
             "public_api_url": (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip(),
             "public_check_url": self._public_check_url(),
             "api_base": self.api_base,
+            "github_repository": self.github_repository,
+            "desired_branch": self.github_branch,
             "render_yaml_present": render_yaml.exists(),
             "render_yaml_path": str(render_yaml),
             "docs": {
@@ -425,8 +440,14 @@ class RenderHostingProbe:
         service_id = status.get("service_id") or self.service_id
         if not service_id:
             if not self.owner_id:
-                return "Set NOMAD_RENDER_OWNER_ID, then create or link a Render web service for Nomad."
-            return "Create or link a Render web service, then set NOMAD_RENDER_SERVICE_ID for Nomad."
+                return (
+                    "Set NOMAD_RENDER_OWNER_ID, then create or link a Render web service "
+                    f"for Nomad from {self.github_repository or 'your GitHub repo'}@{self.github_branch}."
+                )
+            return (
+                "Create or link a Render web service, then set NOMAD_RENDER_SERVICE_ID for Nomad. "
+                f"Target branch: {self.github_branch}."
+            )
         if self.domain:
             return f"Add/verify {self.domain} as the Render custom domain and point DNS at Render."
         return "Set NOMAD_RENDER_DOMAIN to the desired public API hostname."

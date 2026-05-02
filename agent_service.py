@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from agent_pain_solver import normalize_pain_type, solution_pattern_for
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
 from nomad_operator_grant import is_operator_approval_scope, operator_grant
+from nomad_public_url import preferred_public_base_url
 from settings import get_chain_config
 from treasury_agent import TreasuryAgent
 from x402_payment import X402PaymentAdapter
@@ -222,6 +223,12 @@ class AgentServiceDesk:
             os.getenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true").strip().lower()
             in {"1", "true", "yes", "on"}
         )
+        self.hard_boundary_guard = (
+            os.getenv("NOMAD_HARD_BOUNDARY_GUARD", "true").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.max_native = float(os.getenv("NOMAD_SERVICE_MAX_NATIVE", "5.0"))
+        self.public_api_url = preferred_public_base_url()
 
     def service_catalog(self) -> Dict[str, Any]:
         wallet = self.treasury.get_wallet_summary()
@@ -232,7 +239,7 @@ class AgentServiceDesk:
             "deal_found": False,
             "service": "Nomad agent-first service contract",
             "generated_at": datetime.now(UTC).isoformat(),
-            "public_api_url": (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/"),
+            "public_api_url": self.public_api_url,
             "wallet": {
                 "address": configured_wallet,
                 "configured": bool(configured_wallet),
@@ -252,8 +259,8 @@ class AgentServiceDesk:
                     "asset_symbol": self.x402.asset_symbol,
                     "asset_decimals": self.x402.asset_decimals,
                     "network": self._x402_network(),
-                    "verify_endpoint": f"{(os.getenv('NOMAD_PUBLIC_API_URL') or '').rstrip('/')}/tasks/x402-verify"
-                    if os.getenv("NOMAD_PUBLIC_API_URL")
+                    "verify_endpoint": f"{self.public_api_url}/tasks/x402-verify"
+                    if self.public_api_url
                     else "/tasks/x402-verify",
                     "retry_header": "PAYMENT-SIGNATURE",
                 },
@@ -270,6 +277,7 @@ class AgentServiceDesk:
                 "human_contact_requires_approval": True,
                 "conversion_pipeline": "free_value_first_then_PLAN_ACCEPTED_or_payment_task",
             },
+            "first_paid_job_protocol": self.first_paid_job_protocol(featured_product_offer),
             "interaction_contract": {
                 "audience": "ai_agents",
                 "style": "agent_first_non_anthropomorphic",
@@ -300,11 +308,13 @@ class AgentServiceDesk:
                 "target_roles": ["customer", "peer_solver", "collaborator", "reseller"],
                 "machine_hooks": [
                     "send_one_blocker_get_one_verifiable_next_step",
+                    "create_paid_task_after_free_diagnosis",
+                    "verify_payment_then_work_task",
                     "send_one_artifact_get_one_reuse_candidate",
                     "structured_replies_over_persuasion",
                 ],
-                "agent_attractor_path": f"{(os.getenv('NOMAD_PUBLIC_API_URL') or '').rstrip('/')}/agent-attractor"
-                if os.getenv("NOMAD_PUBLIC_API_URL")
+                "agent_attractor_path": f"{self.public_api_url}/agent-attractor"
+                if self.public_api_url
                 else "/agent-attractor",
                 "top_offer": featured_product_offer,
             },
@@ -380,6 +390,8 @@ class AgentServiceDesk:
                     "catalog": "GET /service",
                     "agent_attractor": "GET /agent-attractor",
                     "swarm": "GET /swarm",
+                    "service_e2e": "GET /service/e2e or POST /service/e2e",
+                    "outbound_tracking": "GET /outbound",
                     "agent_pain_solver": "POST /agent-pains",
                     "reliability_doctor": "POST /reliability-doctor",
                     "guardrails": "POST /guardrails",
@@ -420,10 +432,12 @@ class AgentServiceDesk:
                     "python main.py --cli productize <lead query>",
                     "python main.py --cli products",
                     "python main.py --cli service-request <problem>",
+                    "python main.py --cli service-e2e --create",
                     "python main.py --cli service-verify <task_id> <tx_hash>",
                     "python main.py --cli service-staking <task_id>",
                     "python main.py --cli service-stake <task_id> <stake_tx_hash>",
                     "python main.py --cli service-spend <task_id> <amount>",
+                    "python main.py --cli outbound-status",
                     "python main.py --cli agent-contact <endpoint> <problem>",
                 ],
             },
@@ -436,6 +450,74 @@ class AgentServiceDesk:
                 "Public machine-readable agent endpoints may be contacted directly when the request is bounded, "
                 "relevant and rate-limited."
             ),
+        }
+
+    def first_paid_job_protocol(self, featured_offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        offer = featured_offer or self._featured_product_offer()
+        paid_offer = offer.get("paid_offer") if isinstance(offer.get("paid_offer"), dict) else {}
+        service_template = offer.get("service_template") if isinstance(offer.get("service_template"), dict) else {}
+        preferred_type = str(offer.get("pain_type") or "compute_auth").strip() or "compute_auth"
+        minimum = paid_offer.get("price_native")
+        if minimum in {None, ""}:
+            minimum = self.min_native
+        return {
+            "schema": "nomad.first_paid_job_protocol.v1",
+            "audience": "ai_agents",
+            "purpose": "Convert one blocked AI-agent infrastructure problem into a paid bounded unblock task.",
+            "preferred_first_job": {
+                "service_type": preferred_type,
+                "offer": str(offer.get("name") or SERVICE_TYPES.get(preferred_type, SERVICE_TYPES["compute_auth"])["title"]),
+                "minimum_budget_native": minimum,
+                "native_symbol": self.chain.native_symbol,
+                "delivery": str(paid_offer.get("delivery") or service_template.get("delivery") or "bounded diagnosis and unblock plan"),
+                "trigger": str(paid_offer.get("trigger") or "PLAN_ACCEPTED=true plus FACT_URL or ERROR"),
+            },
+            "call_sequence": [
+                {
+                    "step": "free_diagnosis",
+                    "method": "POST",
+                    "endpoint": f"{self.public_api_url}/a2a/message" if self.public_api_url else "/a2a/message",
+                    "required_fields": ["requester_agent", "problem"],
+                    "optional_fields": ["goal", "blocking_step", "constraints", "budget_native", "requester_wallet"],
+                    "returns": ["nomad.reply.v1", "payment_required", "rescue_plan"],
+                },
+                {
+                    "step": "create_paid_task",
+                    "method": "POST",
+                    "endpoint": f"{self.public_api_url}/tasks" if self.public_api_url else "/tasks",
+                    "required_fields": ["problem", "service_type", "budget_native"],
+                    "optional_fields": ["requester_agent", "requester_wallet", "callback_url", "metadata"],
+                    "returns": ["task_id", "payment"],
+                },
+                {
+                    "step": "verify_payment",
+                    "method": "POST",
+                    "endpoint": f"{self.public_api_url}/tasks/verify" if self.public_api_url else "/tasks/verify",
+                    "required_fields": ["task_id", "tx_hash"],
+                    "optional_fields": ["requester_wallet"],
+                    "returns": ["paid_task_or_payment_error"],
+                },
+                {
+                    "step": "request_work",
+                    "method": "POST",
+                    "endpoint": f"{self.public_api_url}/tasks/work" if self.public_api_url else "/tasks/work",
+                    "required_fields": ["task_id"],
+                    "optional_fields": ["approval"],
+                    "returns": ["bounded_work_product"],
+                },
+            ],
+            "acceptance_criteria": [
+                "requester receives one concrete diagnosis before payment",
+                "paid task has task_id, budget_native, service_type, and payment target",
+                "Nomad only works after payment verification unless local config disables payment",
+                "work product contains a reusable rescue plan, verifier, or unblock checklist",
+            ],
+            "boundaries": [
+                "no secrets in payloads",
+                "no raw remote code execution",
+                "no human impersonation",
+                "no public posting or private access without explicit approval",
+            ],
         }
 
     def best_current_offer(
@@ -559,13 +641,12 @@ class AgentServiceDesk:
     ) -> Dict[str, Any]:
         cleaned_problem = self._clean(problem)
         if not cleaned_problem:
-            return {
-                "mode": "agent_service_request",
-                "deal_found": False,
-                "ok": False,
-                "error": "problem_required",
-                "message": "A service request needs a concrete problem statement.",
-            }
+            return self._hard_boundary_reject(
+                error="problem_required",
+                message="A service request needs a concrete problem statement.",
+                requested_budget_native=budget_native,
+                requester_wallet=requester_wallet,
+            )
         guardrail = self.guardrails.evaluate(
             action="service.create_task",
             args={
@@ -579,14 +660,14 @@ class AgentServiceDesk:
             },
         )
         if guardrail.decision == GuardrailDecision.DENY:
-            return {
-                "mode": "agent_service_request",
-                "deal_found": False,
-                "ok": False,
-                "error": "guardrail_denied",
-                "guardrail": guardrail.to_dict(),
-                "message": "Nomad blocked this service task before storing or acting on it.",
-            }
+            blocked = self._hard_boundary_reject(
+                error="guardrail_denied",
+                message="Nomad blocked this service task before storing or acting on it.",
+                requested_budget_native=budget_native,
+                requester_wallet=requester_wallet,
+            )
+            blocked["guardrail"] = guardrail.to_dict()
+            return blocked
         guarded_args = guardrail.effective_args
         cleaned_problem = self._clean(guarded_args.get("problem") or cleaned_problem)
         requester_agent = self._clean(guarded_args.get("requester_agent") or requester_agent)
@@ -597,6 +678,35 @@ class AgentServiceDesk:
 
         normalized_type = self._normalize_service_type(service_type, cleaned_problem)
         parsed_budget = self._optional_float(budget_native)
+        if self.hard_boundary_guard:
+            if parsed_budget is not None and parsed_budget <= 0:
+                return self._hard_boundary_reject(
+                    error="invalid_budget",
+                    message="budget_native must be positive when provided.",
+                    requested_budget_native=parsed_budget,
+                    requester_wallet=requester_wallet,
+                )
+            if parsed_budget is not None and parsed_budget > self.max_native:
+                return self._hard_boundary_reject(
+                    error="budget_exceeds_boundary",
+                    message=f"budget_native exceeds hard boundary ({self.max_native} {self.chain.native_symbol}).",
+                    requested_budget_native=parsed_budget,
+                    requester_wallet=requester_wallet,
+                )
+            if callback_url and not callback_url.startswith(("http://", "https://")):
+                return self._hard_boundary_reject(
+                    error="invalid_callback_url",
+                    message="callback_url must start with http:// or https:// when provided.",
+                    requested_budget_native=parsed_budget,
+                    requester_wallet=requester_wallet,
+                )
+            if requester_wallet and not self._looks_like_wallet(requester_wallet):
+                return self._hard_boundary_reject(
+                    error="invalid_requester_wallet",
+                    message="requester_wallet must be a 0x-prefixed 40-hex address.",
+                    requested_budget_native=parsed_budget,
+                    requester_wallet=requester_wallet,
+                )
         requested_amount = max(
             self.min_native,
             parsed_budget if parsed_budget is not None else self.min_native,
@@ -943,6 +1053,104 @@ class AgentServiceDesk:
             ),
         }
 
+    def end_to_end_runway(
+        self,
+        *,
+        task_id: str = "",
+        problem: str = "",
+        service_type: str = "",
+        budget_native: Optional[float] = None,
+        requester_agent: str = "",
+        requester_wallet: str = "",
+        callback_url: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        create_task: bool = False,
+        approval: str = "draft_only",
+    ) -> Dict[str, Any]:
+        existing_task = self._get_task(task_id) if task_id else None
+        featured = self._featured_product_offer(service_type)
+        template = ((featured.get("service_template") or {}).get("create_task_payload") or {})
+        template_metadata = template.get("metadata") if isinstance(template.get("metadata"), dict) else {}
+        merged_metadata = {
+            **template_metadata,
+            **(metadata or {}),
+            "source": (metadata or {}).get("source") or "service_e2e_runway",
+        }
+        default_problem = self._clean(
+            problem
+            or template.get("problem")
+            or featured.get("name")
+            or "Resolve one bounded AI-agent infrastructure blocker end-to-end."
+        )
+        default_service_type = self._normalize_service_type(
+            service_type or str(template.get("service_type") or featured.get("pain_type") or ""),
+            default_problem,
+        )
+        requested_amount = (
+            self._optional_float(budget_native)
+            or self._optional_float(template.get("budget_native"))
+            or self._optional_float((featured.get("paid_offer") or {}).get("price_native"))
+            or self.min_native
+        )
+        created = False
+        created_result: Dict[str, Any] = {}
+        task = existing_task
+        if create_task and not task:
+            created_result = self.create_task(
+                problem=default_problem,
+                requester_agent=self._clean(requester_agent),
+                requester_wallet=self._clean(requester_wallet),
+                service_type=default_service_type,
+                budget_native=requested_amount,
+                callback_url=self._clean(callback_url),
+                metadata=merged_metadata,
+            )
+            if not created_result.get("ok"):
+                return {
+                    "mode": "nomad_service_e2e",
+                    "deal_found": False,
+                    "ok": False,
+                    "created": False,
+                    "error": "task_create_failed",
+                    "create_result": created_result,
+                    "analysis": "Nomad could not create the E2E service task preview.",
+                }
+            task = created_result.get("task") or {}
+            created = True
+
+        preview = self._e2e_task_preview(
+            task=task or {},
+            problem=default_problem,
+            service_type=default_service_type,
+            requested_amount=requested_amount,
+            requester_agent=requester_agent,
+            requester_wallet=requester_wallet,
+            callback_url=callback_url,
+        )
+        effective_task = task or preview
+        payment_followup = {}
+        if task and str(task.get("status") or "") == "awaiting_payment":
+            payment_followup = self.payment_followup(str(task.get("task_id") or ""))
+        staking = {}
+        if task and str(task.get("status") or "") in {"draft_ready", "delivered"}:
+            staking = self.metamask_staking_checklist(str(task.get("task_id") or ""))
+        return {
+            "mode": "nomad_service_e2e",
+            "deal_found": False,
+            "ok": True,
+            "created": created,
+            "public_api_url": self.public_api_url,
+            "featured_product_offer": featured,
+            "task": effective_task,
+            "payment_followup": payment_followup,
+            "staking": staking,
+            "commands": self._e2e_commands(effective_task, default_service_type, default_problem, requested_amount),
+            "http_runway": self._e2e_http_runway(effective_task, default_service_type, default_problem, requested_amount),
+            "lifecycle": self._e2e_lifecycle(effective_task, approval=approval),
+            "next_best_action": self._e2e_next_action(effective_task),
+            "analysis": self._e2e_analysis(effective_task, created=created),
+        }
+
     def metamask_staking_checklist(self, task_id: str) -> Dict[str, Any]:
         task = self._get_task(task_id)
         if not task:
@@ -1076,6 +1284,25 @@ class AgentServiceDesk:
             self._ledger_event(
                 event="task_delivered",
                 message=task["outcome"] or "Service task delivered.",
+            )
+        )
+        self._store_task(task)
+        return self._task_response(task)
+
+    def mark_stale_invalid(self, task_id: str, reason: str = "") -> Dict[str, Any]:
+        task = self._get_task(task_id)
+        if not task:
+            return self._missing_task(task_id)
+        task["status"] = "stale_invalid"
+        task["updated_at"] = datetime.now(UTC).isoformat()
+        task["invalid_reason"] = self._clean(
+            reason
+            or "Awaiting-payment task has no requester endpoint, callback, wallet, or payment proof."
+        )
+        task.setdefault("ledger", []).append(
+            self._ledger_event(
+                event="marked_stale_invalid",
+                message=task["invalid_reason"],
             )
         )
         self._store_task(task)
@@ -1595,7 +1822,7 @@ class AgentServiceDesk:
         recipient: str,
         service_type: str,
     ) -> Dict[str, Any]:
-        public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        public_api_url = self.public_api_url
         resource_url = f"{public_api_url}/x402/paid-help" if public_api_url else "/x402/paid-help"
         return self.x402.build_challenge(
             task_id=task_id,
@@ -1768,6 +1995,224 @@ class AgentServiceDesk:
             return f"Service task {task['task_id']} has a payment claim that could not be verified."
         return f"Service task {task['task_id']} status: {status}."
 
+    def _e2e_task_preview(
+        self,
+        *,
+        task: Dict[str, Any],
+        problem: str,
+        service_type: str,
+        requested_amount: float,
+        requester_agent: str,
+        requester_wallet: str,
+        callback_url: str,
+    ) -> Dict[str, Any]:
+        if task:
+            return task
+        return {
+            "task_id": "preview",
+            "status": "preview",
+            "service_type": service_type or "custom",
+            "problem": problem,
+            "budget_native": round(float(requested_amount), 8),
+            "requester_agent": self._clean(requester_agent),
+            "requester_wallet": self._clean(requester_wallet),
+            "callback_url": self._clean(callback_url),
+            "payment": {
+                "amount_native": round(float(requested_amount), 8),
+                "native_symbol": self.chain.native_symbol,
+                "recipient_address": (self.treasury.get_wallet_summary() or {}).get("address", ""),
+            },
+        }
+
+    def _e2e_commands(
+        self,
+        task: Dict[str, Any],
+        service_type: str,
+        problem: str,
+        requested_amount: float,
+    ) -> Dict[str, str]:
+        task_id = str(task.get("task_id") or "svc-task-id")
+        safe_problem = str(problem or "").replace('"', "'").strip()
+        preview_suffix = (
+            f' --create --service-type {service_type} --budget {requested_amount} "{safe_problem}"'
+            if task_id == "preview"
+            else f" --task-id {task_id}"
+        )
+        return {
+            "preview_or_create": f"python main.py --cli service-e2e{preview_suffix}".strip(),
+            "verify_payment": f"python main.py --cli service-verify {task_id} <tx_hash>",
+            "verify_x402_payment": f"python main.py --cli service-x402-verify {task_id} <payment_signature>",
+            "work_task": f"python main.py --cli service-work {task_id}",
+            "staking_checklist": f"python main.py --cli service-staking {task_id}",
+            "record_stake": f"python main.py --cli service-stake {task_id} <stake_tx_hash>",
+            "record_spend": f"python main.py --cli service-spend {task_id} <amount>",
+            "close_task": f"python main.py --cli service-close {task_id} <outcome>",
+        }
+
+    def _e2e_http_runway(
+        self,
+        task: Dict[str, Any],
+        service_type: str,
+        problem: str,
+        requested_amount: float,
+    ) -> Dict[str, Dict[str, Any]]:
+        task_id = str(task.get("task_id") or "")
+        return {
+            "create_task": {
+                "method": "POST",
+                "endpoint": f"{self.public_api_url}/service/e2e" if self.public_api_url else "/service/e2e",
+                "payload": {
+                    "create": True,
+                    "problem": problem,
+                    "service_type": service_type,
+                    "budget_native": requested_amount,
+                },
+            },
+            "verify_payment": {
+                "method": "POST",
+                "endpoint": f"{self.public_api_url}/tasks/verify" if self.public_api_url else "/tasks/verify",
+                "payload": {
+                    "task_id": task_id or "<task_id>",
+                    "tx_hash": "0x" + "0" * 64,
+                },
+            },
+            "verify_x402_payment": {
+                "method": "POST",
+                "endpoint": f"{self.public_api_url}/tasks/x402-verify" if self.public_api_url else "/tasks/x402-verify",
+                "payload": {
+                    "task_id": task_id or "<task_id>",
+                    "payment_signature": "<payment_signature>",
+                },
+            },
+            "work_task": {
+                "method": "POST",
+                "endpoint": f"{self.public_api_url}/tasks/work" if self.public_api_url else "/tasks/work",
+                "payload": {
+                    "task_id": task_id or "<task_id>",
+                    "approval": "draft_only",
+                },
+            },
+            "close_task": {
+                "method": "POST",
+                "endpoint": f"{self.public_api_url}/tasks/close" if self.public_api_url else "/tasks/close",
+                "payload": {
+                    "task_id": task_id or "<task_id>",
+                    "outcome": "<bounded outcome>",
+                },
+            },
+        }
+
+    def _e2e_lifecycle(self, task: Dict[str, Any], approval: str) -> List[Dict[str, Any]]:
+        status = str(task.get("status") or "preview")
+        task_id = str(task.get("task_id") or "preview")
+        stages: List[Dict[str, Any]] = [
+            {
+                "stage": "create_task",
+                "status": "completed" if status != "preview" else "ready",
+                "task_id": task_id,
+                "note": "Create the payable task and issue payment instructions.",
+            },
+            {
+                "stage": "verify_payment",
+                "status": (
+                    "completed"
+                    if status in {"paid", "draft_ready", "delivered"}
+                    else "ready"
+                    if status == "awaiting_payment"
+                    else "blocked"
+                ),
+                "task_id": task_id,
+                "note": "Verify a native tx_hash or x402 signature before Nomad works the task.",
+            },
+            {
+                "stage": "work_task",
+                "status": (
+                    "completed"
+                    if status in {"draft_ready", "delivered"}
+                    else "ready"
+                    if status == "paid"
+                    else "blocked"
+                ),
+                "task_id": task_id,
+                "approval": approval,
+                "note": "Produce the draft work product once payment is verified.",
+            },
+            {
+                "stage": "treasury_stake",
+                "status": self._e2e_stake_status(task),
+                "task_id": task_id,
+                "note": "Record the planned MetaMask treasury stake for the paid task.",
+            },
+            {
+                "stage": "solver_spend",
+                "status": self._e2e_solver_spend_status(task),
+                "task_id": task_id,
+                "note": "Record solver spend as Nomad uses the paid task budget.",
+            },
+            {
+                "stage": "close_task",
+                "status": "completed" if status == "delivered" else "ready" if status == "draft_ready" else "blocked",
+                "task_id": task_id,
+                "note": "Close the task with a bounded outcome once delivery is complete.",
+            },
+        ]
+        return stages
+
+    @staticmethod
+    def _e2e_stake_status(task: Dict[str, Any]) -> str:
+        status = str(task.get("status") or "preview")
+        treasury = task.get("treasury") if isinstance(task.get("treasury"), dict) else {}
+        staking_status = str(treasury.get("staking_status") or "")
+        if staking_status == "staked_confirmed":
+            return "completed"
+        if status in {"draft_ready", "delivered", "paid"}:
+            return "ready"
+        return "blocked"
+
+    @staticmethod
+    def _e2e_solver_spend_status(task: Dict[str, Any]) -> str:
+        status = str(task.get("status") or "preview")
+        solver = task.get("solver_budget") if isinstance(task.get("solver_budget"), dict) else {}
+        spend_status = str(solver.get("spend_status") or "")
+        if spend_status in {"spent", "partially_spent"}:
+            return "in_progress"
+        if status in {"draft_ready", "delivered", "paid"}:
+            return "ready"
+        return "blocked"
+
+    def _e2e_next_action(self, task: Dict[str, Any]) -> str:
+        status = str(task.get("status") or "preview")
+        task_id = str(task.get("task_id") or "<task_id>")
+        if status == "preview":
+            return "Create the payable task first so Nomad can issue a wallet invoice."
+        if status == "awaiting_payment":
+            return f"Verify payment for {task_id} with /tasks/verify or /tasks/x402-verify."
+        if status == "paid":
+            return f"Run /tasks/work for {task_id} to produce the bounded draft work product."
+        if status == "draft_ready":
+            return f"Review the draft, record stake/spend, then close task {task_id} with a concrete outcome."
+        if status == "delivered":
+            return f"Task {task_id} is delivered; turn the solved path into reusable Nomad memory if useful."
+        if status == "payment_unverified":
+            return f"Manual payment review is needed for {task_id} before work can start."
+        return f"Inspect task {task_id} and continue the next unpaid or undelivered stage."
+
+    def _e2e_analysis(self, task: Dict[str, Any], *, created: bool) -> str:
+        status = str(task.get("status") or "preview")
+        task_id = str(task.get("task_id") or "preview")
+        prefix = "Nomad created a payable end-to-end task." if created else "Nomad prepared a payable end-to-end runway."
+        if status == "preview":
+            return f"{prefix} No task exists yet; the next step is task creation."
+        if status == "awaiting_payment":
+            return f"{prefix} Task {task_id} is waiting for payment verification before work."
+        if status == "paid":
+            return f"{prefix} Task {task_id} is paid and ready for bounded work."
+        if status == "draft_ready":
+            return f"{prefix} Task {task_id} has a draft work product and can move through spend/stake/close."
+        if status == "delivered":
+            return f"{prefix} Task {task_id} completed the end-to-end path and is delivered."
+        return f"{prefix} Task {task_id} is currently at status {status}."
+
     def _task_can_be_worked(self, task: Dict[str, Any]) -> bool:
         if not self.require_payment:
             return True
@@ -1884,6 +2329,9 @@ class AgentServiceDesk:
     def _looks_like_tx_hash(self, value: str) -> bool:
         return bool(re.fullmatch(r"0x[a-fA-F0-9]{64}", value or ""))
 
+    def _looks_like_wallet(self, value: str) -> bool:
+        return bool(re.fullmatch(r"0x[a-fA-F0-9]{40}", value or ""))
+
     def _tx_used_by_other_task(self, task_id: str, tx_hash: str) -> str:
         state = self._load()
         for existing_id, task in state.get("tasks", {}).items():
@@ -1937,6 +2385,92 @@ class AgentServiceDesk:
             "error": "task_not_found",
             "task_id": task_id,
             "message": "No Nomad service task exists for that task_id.",
+        }
+
+    def _counter_offer_payload(
+        self,
+        *,
+        error: str,
+        message: str,
+        requested_budget_native: Optional[float],
+        requester_wallet: str,
+    ) -> Dict[str, Any]:
+        suggested_budget = self.min_native
+        if requested_budget_native is not None and requested_budget_native > 0:
+            suggested_budget = min(max(float(requested_budget_native), self.min_native), self.max_native)
+        return {
+            "schema": "nomad.counter_offer.v1",
+            "decision": "counter_offer",
+            "reason_code": error,
+            "message": message,
+            "hard_boundary_guard": self.hard_boundary_guard,
+            "constraints": {
+                "min_budget_native": round(float(self.min_native), 8),
+                "max_budget_native": round(float(self.max_native), 8),
+                "native_symbol": self.chain.native_symbol,
+                "require_payment": bool(self.require_payment),
+                "wallet_format": "0x-prefixed 40-hex address when supplied",
+            },
+            "suggested_payload": {
+                "service_type": "custom",
+                "budget_native": round(float(suggested_budget), 8),
+                "requester_wallet": requester_wallet if self._looks_like_wallet(requester_wallet) else "",
+                "problem": "Bounded issue statement with one measurable done condition.",
+            },
+            "next_action": "Resubmit with valid boundaries or request a smaller starter diagnosis path.",
+        }
+
+    def _hard_boundary_reject(
+        self,
+        *,
+        error: str,
+        message: str,
+        requested_budget_native: Optional[float],
+        requester_wallet: str,
+    ) -> Dict[str, Any]:
+        return {
+            "mode": "agent_service_request",
+            "deal_found": False,
+            "ok": False,
+            "error": error,
+            "message": message,
+            "counter_offer": self._counter_offer_payload(
+                error=error,
+                message=message,
+                requested_budget_native=self._optional_float(requested_budget_native),
+                requester_wallet=self._clean(requester_wallet),
+            ),
+        }
+
+    def reputation_snapshot(self) -> Dict[str, Any]:
+        tasks = list((self._load().get("tasks") or {}).values())
+        total = len(tasks)
+        by_status: Dict[str, int] = {}
+        for task in tasks:
+            status = str(task.get("status") or "unknown")
+            by_status[status] = by_status.get(status, 0) + 1
+        paid = int(by_status.get("paid", 0))
+        delivered = int(by_status.get("delivered", 0))
+        awaiting = int(by_status.get("awaiting_payment", 0))
+        boundary_reliability = 1.0 if total == 0 else round((paid + delivered) / total, 4)
+        return {
+            "mode": "nomad_agent_reputation",
+            "schema": "nomad.agent_reputation.v1",
+            "ok": True,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "hard_boundary_guard": bool(self.hard_boundary_guard),
+            "totals": {
+                "tasks": total,
+                "awaiting_payment": awaiting,
+                "paid": paid,
+                "delivered": delivered,
+            },
+            "by_status": by_status,
+            "signals": {
+                "boundary_reliability": boundary_reliability,
+                "payment_conversion_proxy": 0.0 if total == 0 else round((paid + delivered) / total, 4),
+            },
+            "analysis": "Reputation is contract-first: boundary compliance and payment progression are weighted over tone.",
         }
 
     @staticmethod

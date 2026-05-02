@@ -12,6 +12,7 @@ from eurohpc_access import EuroHpcAccessPlanner
 from settings import get_chain_config
 from azure_scout import AzureScout
 from nomad_codebuddy import CodeBuddyProbe
+from nomad_deployment import modal_deployment_snapshot
 from nomad_quantum_backends import QuantumBackendPlanner
 from render_hosting import RenderHostingProbe
 
@@ -136,6 +137,18 @@ class InfrastructureScout:
         ):
             return {
                 "kind": "eurohpc_scout",
+                "category": "compute",
+                "profile": self._extract_profile(lowered),
+            }
+
+        if (
+            lowered.startswith("/modal")
+            or lowered.startswith("/scout modal")
+            or "modal deploy" in lowered
+            or "modal hosting" in lowered
+        ):
+            return {
+                "kind": "modal_scout",
                 "category": "compute",
                 "profile": self._extract_profile(lowered),
             }
@@ -352,14 +365,15 @@ class InfrastructureScout:
     def compute_assessment(self, profile_id: str = "ai_first") -> Dict[str, Any]:
         profile = self.profiles.get(profile_id, self.profiles["ai_first"])
         probe = self.compute_probe.snapshot()
-        ranked = self._rank_options(category="compute", profile=profile)[:5]
+        ranked_all = self._rank_options(category="compute", profile=profile)
+        ranked = ranked_all[:5]
         market_scan = self.market_scan(focus="compute_auth", limit=4)
         quantum_plan = QuantumBackendPlanner().build_plan(
             objective="Keep quantum and proposal-backed HPC compute conservative for Nomad."
         )
         eurohpc_access = quantum_plan.get("eurohpc_ai_compute_access") or {}
         activation_request = self._build_compute_activation_request(
-            ranked=ranked,
+            ranked=ranked_all[:8],
             probe=probe,
             profile=profile,
         )
@@ -609,7 +623,7 @@ class InfrastructureScout:
             ][:5]
             if category == "compute":
                 request = self._build_compute_activation_request(
-                    ranked=ranked,
+                    ranked=ranked[:8],
                     probe=probe,
                     profile=profile,
                 )
@@ -1258,23 +1272,37 @@ class InfrastructureScout:
         status = RenderHostingProbe().snapshot(verify=True)
         selected = ((status.get("verification") or {}).get("selected_service") or {})
         domain = status.get("desired_domain") or "onrender.syndiode.com"
+        public_checks = status.get("public_checks") or {}
+        live_public_url = (public_checks.get("base_url") or status.get("public_api_url") or "").rstrip("/")
+        live_public_health = f"{live_public_url}/health" if live_public_url else ""
+        live_public_card = f"{live_public_url}/.well-known/agent-card.json" if live_public_url else ""
+        public_surface_live = bool(public_checks.get("ok") and live_public_url)
         activation = {
             "candidate_id": "render-public-nomad-api",
             "candidate_name": "Render Web Service for Nomad API",
             "category": "public_hosting",
-            "short_ask": f"Put Nomad's API on Render and bind {domain}.",
+            "short_ask": (
+                f"Keep Nomad's public API healthy at {live_public_url}."
+                if public_surface_live
+                else f"Put Nomad's API on Render and bind {domain}."
+            ),
             "human_action": status.get("next_action", ""),
             "human_deliverable": (
-                "NOMAD_RENDER_SERVICE_ID=<service id> after the service exists; "
+                "RENDER_API_KEY and NOMAD_RENDER_SERVICE_ID if Nomad should manage Render deploys, "
+                f"or keep {live_public_url or domain} healthy as the public edge."
+                if public_surface_live
+                else "NOMAD_RENDER_SERVICE_ID=<service id> after the service exists; "
                 f"DNS for {domain} pointed to Render's target; then rotate RENDER_API_KEY."
             ),
             "success_criteria": [
-                f"https://{domain}/health returns ok=true.",
-                f"https://{domain}/.well-known/agent-card.json returns Nomad's AgentCard.",
+                f"{live_public_health or f'https://{domain}/health'} returns ok=true.",
+                f"{live_public_card or f'https://{domain}/.well-known/agent-card.json'} returns Nomad's AgentCard.",
                 "Nomad's /scout public_hosting shows a non-local public API URL.",
             ],
             "example_response": (
-                "NOMAD_RENDER_SERVICE_ID=srv_...\n"
+                "RENDER_API_KEY=...\nNOMAD_RENDER_SERVICE_ID=srv_..."
+                if public_surface_live
+                else "NOMAD_RENDER_SERVICE_ID=srv_...\n"
                 f"NOMAD_PUBLIC_API_URL=https://{domain}"
             ),
             "docs_url": "https://render.com/docs/api",
@@ -1292,9 +1320,68 @@ class InfrastructureScout:
             "selected_service": selected,
             "activation_request": self._make_activation_request_concrete(activation),
             "analysis": (
-                "Render is Nomad's durable public-hosting lane: the API key lets Nomad verify services and "
+                (
+                    "Nomad already has a live public edge at "
+                    f"{live_public_url}. Render remains the managed hosting lane for service verification, "
+                    f"deploy orchestration, and future custom-domain control such as {domain}."
+                )
+                if public_surface_live
+                else "Render is Nomad's durable public-hosting lane: the API key lets Nomad verify services and "
                 "trigger approved deploy/domain actions, while the actual public agent endpoint should be "
                 f"https://{domain} once DNS and Render custom-domain verification are complete."
+            ),
+        }
+
+    def modal_scout(self, profile_id: str = "ai_first") -> Dict[str, Any]:
+        profile = self.profiles.get(profile_id, self.profiles["ai_first"])
+        compute_status = ((self.compute_probe.snapshot().get("hosted") or {}).get("modal") or {})
+        deployment = modal_deployment_snapshot()
+        deploy_commands = deployment.get("deploy_commands") or []
+        example_response = [
+            f"NOMAD_MODAL_SECRET_NAME={deployment.get('secret_name', 'nomad-env')}",
+            f"NOMAD_GITHUB_DEPLOY_BRANCH={deployment.get('github_branch', 'syndiode')}",
+        ]
+        repository = deployment.get("github_repository") or "<owner/repo>"
+        return {
+            "mode": "modal_scout",
+            "schema": "nomad.modal_scout.v1",
+            "deal_found": False,
+            "profile": {
+                "id": profile.id,
+                "label": profile.label,
+                "description": profile.description,
+            },
+            "status": compute_status,
+            "deployment": deployment,
+            "activation_request": self._make_activation_request_concrete(
+                {
+                    "candidate_id": "modal-nomad-api",
+                    "candidate_name": "Modal deployment for Nomad",
+                    "category": "compute",
+                    "short_ask": "Create a Modal secret from .env and deploy Nomad's Modal app.",
+                    "human_action": (
+                        "Create the Modal secret from .env, then deploy modal_nomad.py "
+                        "so Nomad has a burst-compute lane and optional preview API."
+                    ),
+                    "human_deliverable": (
+                        "A working Modal deployment plus the modal.run URL or deployment name, "
+                        "while Render remains the canonical public API."
+                    ),
+                    "success_criteria": [
+                        "Modal credentials are configured and /compute reports Modal as reachable.",
+                        "modal deploy modal_nomad.py completes successfully.",
+                        "Render continues to point other agents at the syndiode/onrender public API URL.",
+                    ],
+                    "example_response": "\n".join(example_response),
+                    "timebox_minutes": 15,
+                    "source_url": "https://modal.com/docs/guide/webhooks",
+                }
+            ),
+            "analysis": (
+                "Modal is the best fit here as Nomad's burst-compute and preview-hosting lane, while Render stays "
+                f"the durable public API surface. Target GitHub branch: {deployment.get('github_branch')}; "
+                f"repo hint: {repository}; Render domain: {deployment.get('render_domain')}; "
+                f"deploy flow: {' -> '.join(deploy_commands[:2]) if deploy_commands else 'create secret, then deploy modal_nomad.py'}."
             ),
         }
 
@@ -1357,6 +1444,8 @@ class InfrastructureScout:
             active_ids.append("telegram-bot-api")
         if (os.getenv("XAI_API_KEY") or "").strip():
             active_ids.append("xai-grok")
+        if (os.getenv("OPENROUTER_API_KEY") or "").strip():
+            active_ids.append("openrouter")
         if self._env_flag("NOMAD_CLI_ENABLED", default=(root / "nomad_cli.py").exists()):
             active_ids.append("cli-first")
         if (os.getenv("AGENT_PRIVATE_KEY") or "").strip():
@@ -1491,6 +1580,14 @@ class InfrastructureScout:
                 return "partial"
             return "inactive"
 
+        if option_id == "openrouter":
+            payload = hosted.get("openrouter") or {}
+            if payload.get("available"):
+                return "active"
+            if payload.get("configured"):
+                return "partial"
+            return "inactive"
+
         if option_id == "modal-starter":
             payload = hosted.get("modal") or {}
             if payload.get("available"):
@@ -1515,6 +1612,18 @@ class InfrastructureScout:
                 return "partial"
             return "inactive"
 
+        if option_id == "eurohpc-ai-factories-playground":
+            status = (os.getenv("EUROHPC_APPLICATION_STATUS") or "").strip().lower()
+            if status == "accepted" and (
+                os.getenv("EUROHPC_PROJECT_ID")
+                or os.getenv("HPC_SSH_HOST")
+                or os.getenv("HPC_SUBMIT_ENDPOINT")
+            ):
+                return "partial"
+            if status in {"draft", "submitted", "accepted"}:
+                return "partial"
+            return "inactive"
+
         return "inactive"
 
     def _build_compute_activation_request(
@@ -1532,16 +1641,36 @@ class InfrastructureScout:
             "hf-inference-providers",
             "cloudflare-workers-ai",
             "xai-grok",
+            "openrouter",
             "modal-starter",
             "lambda-labs",
             "runpod",
         }
+        active_hosted_ids = {
+            option_id
+            for option_id in hosted_ids
+            if self._compute_lane_state(option_id, probe) == "active"
+        }
+        compute_resilient_without_new_tokens = local_primary_active and len(active_hosted_ids) >= 2
 
         candidate: Optional[Dict[str, Any]] = None
-        if local_primary_active:
+        if compute_resilient_without_new_tokens:
+            for preferred_id in ("eurohpc-ai-factories-playground", "modal-starter"):
+                for item in ranked:
+                    if item["id"] != preferred_id:
+                        continue
+                    if self._compute_lane_state(item["id"], probe) != "active":
+                        candidate = item
+                        break
+                if candidate is not None:
+                    break
+
+        if candidate is None and local_primary_active:
             for desired_state in ("partial", "inactive"):
                 for item in ranked:
                     if item["id"] not in hosted_ids:
+                        continue
+                    if compute_resilient_without_new_tokens and item["id"] == "cloudflare-workers-ai":
                         continue
                     if self._compute_lane_state(item["id"], probe) == desired_state:
                         candidate = item
@@ -1582,6 +1711,8 @@ class InfrastructureScout:
             return hosted.get("cloudflare_workers_ai") or {}
         if option_id == "xai-grok":
             return hosted.get("xai_grok") or {}
+        if option_id == "openrouter":
+            return hosted.get("openrouter") or {}
         if option_id == "modal-starter":
             return hosted.get("modal") or {}
         if option_id == "lambda-labs":
@@ -1849,6 +1980,67 @@ class InfrastructureScout:
                 "source_url": item["source_url"],
             }
 
+        if item["id"] == "openrouter":
+            provider_payload = provider_payload or {}
+            has_token_without_inference = state == "partial"
+            rate_limited = (
+                provider_payload.get("status_code") == 429
+                or provider_payload.get("issue") == "openrouter_rate_limited"
+                or "rate limit" in str(provider_payload.get("message") or "").lower()
+            )
+            if rate_limited:
+                ask = (
+                    "OpenRouter is configured, but the current request is rate-limited. "
+                    "Keep local/GitHub/HF fallback lanes active and retry after cooldown."
+                )
+                short_ask = "OpenRouter is rate-limited; keep fallback brains active and retry later."
+            else:
+                ask = (
+                    "OpenRouter key is present, but Nomad cannot verify inference yet. "
+                    "Please check key validity, selected model, and account allowances."
+                    if has_token_without_inference
+                    else "Please add an OpenRouter API key so Nomad has another hosted fallback reviewer lane."
+                )
+                short_ask = (
+                    "Verify the existing OpenRouter API key or model."
+                    if has_token_without_inference
+                    else "Add OPENROUTER_API_KEY so OpenRouter can become a fallback brain."
+                )
+            return {
+                "category": "compute",
+                "candidate_id": item["id"],
+                "candidate_name": item["name"],
+                "lane_state": state,
+                "role": "hosted fallback brain" if prefer_fallback else "hosted compute lane",
+                "requires_account": True,
+                "account_provider": "OpenRouter",
+                "env_vars": ["OPENROUTER_API_KEY", "NOMAD_OPENROUTER_MODEL", "NOMAD_OPENROUTER_BASE_URL"],
+                "ask": ask,
+                "short_ask": short_ask,
+                "reason": (
+                    "OpenRouter gives Nomad a broad cross-provider fallback lane for lead reasoning and "
+                    "self-review when local or other hosted lanes are degraded."
+                ),
+                "steps": [
+                    (
+                        "Do not rotate a key just for HTTP 429; keep fallback lanes active and retry later."
+                        if rate_limited
+                        else "Create or copy an OpenRouter API key."
+                    ),
+                    "Set `OPENROUTER_API_KEY=...` in `.env` or send it via Telegram as `/token openrouter <token>`.",
+                    "Keep `NOMAD_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1` unless OpenRouter documents a different base.",
+                    "Optionally set `NOMAD_OPENROUTER_MODEL=openai/gpt-4o-mini` or another model your key can access.",
+                    prompt_suffix,
+                ],
+                "docs_url": "https://openrouter.ai/docs/quickstart",
+                "setup_url": "https://openrouter.ai/settings/keys",
+                "verification_steps": [
+                    "After saving the key, send /compute.",
+                    "Nomad will run a minimal OpenRouter chat-completion probe and report the working model.",
+                ],
+                "source_url": item["source_url"],
+            }
+
         if item["id"] == "cloudflare-workers-ai":
             has_token_without_inference = state == "partial"
             ask = (
@@ -1883,6 +2075,64 @@ class InfrastructureScout:
                 ],
                 "docs_url": "https://developers.cloudflare.com/workers-ai/get-started/rest-api/",
                 "setup_url": "https://dash.cloudflare.com/profile/api-tokens",
+                "source_url": item["source_url"],
+            }
+
+        if item["id"] == "eurohpc-ai-factories-playground":
+            return {
+                "category": "compute",
+                "candidate_id": item["id"],
+                "candidate_name": item["name"],
+                "lane_state": state,
+                "role": "proposal-backed AI compute lane",
+                "requires_account": True,
+                "account_provider": "EuroHPC AI Factories",
+                "env_vars": [
+                    "EUROHPC_APPLICATION_STATUS",
+                    "EUROHPC_PROJECT_ID",
+                    "EUROHPC_USERNAME",
+                    "HPC_SSH_HOST",
+                    "HPC_SLURM_ACCOUNT",
+                    "HPC_SUBMIT_ENDPOINT",
+                ],
+                "ask": (
+                    "No Cloudflare token is needed for the next compute step. Nomad already has local Ollama plus "
+                    "hosted GitHub/Hugging Face/Modal lanes, so the useful expansion is proposal-backed EuroHPC "
+                    "AI Factories Playground for real GPU/HPC experiments."
+                ),
+                "short_ask": "Use existing GitHub/HF/Modal compute now; start EuroHPC Playground for bigger AI compute.",
+                "reason": (
+                    "Cloudflare Workers AI is optional while multiple fallback brains are already online. "
+                    "EuroHPC is not a token API; it is an application/allocation route for larger experiments."
+                ),
+                "steps": [
+                    "Keep using Ollama locally for cheap/private agent loops.",
+                    "Keep GitHub Models and Hugging Face as hosted fallback brains.",
+                    "Use Modal for bursty Python jobs while its starter credits are available.",
+                    "For bigger AI compute, open the EuroHPC AI Factories access portal and start Playground Access.",
+                    "Send `EUROHPC_APPLICATION_STATUS=draft` or `submitted` after you start the application.",
+                    "Only after acceptance, send project/account fields such as EUROHPC_PROJECT_ID, EUROHPC_USERNAME, HPC_SSH_HOST, and HPC_SLURM_ACCOUNT.",
+                    prompt_suffix,
+                ],
+                "human_action": (
+                    "Open the EuroHPC AI Factories access portal and start Playground Access, "
+                    "or decide to skip this proposal-backed compute lane for now."
+                ),
+                "human_deliverable": (
+                    "Send `EUROHPC_APPLICATION_STATUS=draft` or `submitted`, or send `/skip last`."
+                ),
+                "success_criteria": [
+                    "Nomad records the EuroHPC application status without asking for a Cloudflare token.",
+                    "If the application is accepted later, Nomad asks for project/account/scheduler fields.",
+                ],
+                "example_response": "EUROHPC_APPLICATION_STATUS=submitted\nEUROHPC_ACCESS_ROUTE=ai_factories_playground",
+                "timebox_minutes": 30,
+                "docs_url": "https://www.eurohpc-ju.europa.eu/playground-access-ai-factories_en",
+                "setup_url": "https://access.eurohpc-ju.europa.eu/",
+                "verification_steps": [
+                    "Run /compute after recording the application status.",
+                    "Nomad will keep local/GitHub/HF/Modal as active lanes until an accepted EuroHPC allocation exists.",
+                ],
                 "source_url": item["source_url"],
             }
 
@@ -2059,6 +2309,18 @@ class InfrastructureScout:
                     "role": "reviewer",
                     "model_count": 0,
                     "models": [xai_grok.get("working_model") or xai_grok.get("model", "")],
+                }
+            )
+
+        openrouter = hosted.get("openrouter") or {}
+        if openrouter.get("available"):
+            secondary.append(
+                {
+                    "type": "hosted",
+                    "name": "OpenRouter",
+                    "role": "fallback",
+                    "model_count": 0,
+                    "models": [openrouter.get("working_model") or openrouter.get("model", "")],
                 }
             )
 
@@ -2563,6 +2825,22 @@ class InfrastructureScout:
                 tradeoff="Requires an xAI API key; API access, rate limits and billing are separate from consumer Grok or X plans.",
                 source_url="https://docs.x.ai/developers/api-reference",
                 tags=("agent-native", "freshness", "coding", "hosted"),
+                free_score=6,
+                reliability_score=8,
+                automation_score=9,
+                openness_score=7,
+                privacy_score=6,
+                ai_fit_score=9,
+            ),
+            InfraOption(
+                id="openrouter",
+                category="compute",
+                name="OpenRouter",
+                summary="OpenAI-compatible multi-model routing lane for resilient hosted fallback.",
+                best_for="Agent teams that want a broad hosted model pool and one extra fallback key for lead-solving cycles.",
+                tradeoff="Free quotas and model access vary by provider/account; production use still needs budget and monitoring.",
+                source_url="https://openrouter.ai/docs/quickstart",
+                tags=("agent-native", "hosted", "fallback", "coding"),
                 free_score=6,
                 reliability_score=8,
                 automation_score=9,

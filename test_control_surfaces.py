@@ -2,6 +2,25 @@ from nomad_cli import build_parser, build_query
 from nomad_mcp import NomadMcpServer
 
 
+class FakeSwarmRegistry:
+    def public_manifest(self, *, base_url: str):
+        return {"schema": "nomad_public_swarm.v1", "join": f"{base_url}/swarm/join", "mcp_probe": True}
+
+    def join_contract(self, *, base_url: str):
+        return {"schema": "nomad_swarm_join_contract.v1", "join_endpoint": f"{base_url}/swarm/join", "mcp_probe": True}
+
+
+class FakeAgentDevelopment:
+    def assist_agent(self, payload, *, base_url: str = "", remote_addr: str = ""):
+        return {
+            "ok": True,
+            "schema": "nomad.agent_development_exchange.v1",
+            "agent_id": payload.get("agent_id"),
+            "remote_addr": remote_addr,
+            "base_url": base_url,
+        }
+
+
 class FakeAgent:
     def __init__(self):
         self.lead_discovery = FakeLeadDiscovery()
@@ -16,6 +35,8 @@ class FakeAgent:
         self.lead_conversion = FakeLeadConversion()
         self.product_factory = FakeProductFactory()
         self.addons = FakeAddons()
+        self.swarm_registry = FakeSwarmRegistry()
+        self.agent_development = FakeAgentDevelopment()
 
     def run(self, query):
         return {
@@ -363,6 +384,35 @@ def test_cli_builds_reliability_doctor_query():
     assert build_query(args) == "/doctor type=hallucination fake sources"
 
 
+def test_cli_builds_service_e2e_query():
+    args = build_parser().parse_args(
+        [
+            "service-e2e",
+            "--create",
+            "--service-type",
+            "compute_auth",
+            "--budget",
+            "0.03",
+            "--agent",
+            "VerifierBot",
+            "Need",
+            "provider",
+            "fallback",
+        ]
+    )
+    query = build_query(args)
+    assert query.startswith("/service e2e")
+    assert "create=true" in query
+    assert "type=compute_auth" in query
+    assert "budget=0.03" in query
+    assert query.endswith("Need provider fallback")
+
+
+def test_cli_builds_outbound_status_query():
+    args = build_parser().parse_args(["outbound-status", "--limit", "7"])
+    assert build_query(args) == "/outbound limit=7"
+
+
 def test_cli_run_once_accepts_json_after_subcommand(capsys):
     from nomad_cli import run_once
 
@@ -417,6 +467,9 @@ def test_mcp_lists_and_calls_nomad_self_audit_tool():
     assert "nomad_agent_engagements" in tool_names
     assert "nomad_agent_engagement_summary" in tool_names
     assert "nomad_agent_attractor" in tool_names
+    assert "nomad_swarm_manifest" in tool_names
+    assert "nomad_swarm_join_contract" in tool_names
+    assert "nomad_swarm_develop" in tool_names
     assert "nomad_addons" in tool_names
     assert "nomad_quantum_tokens" in tool_names
     assert "nomad_agent_card" in tool_names
@@ -481,6 +534,47 @@ def test_mcp_solves_agent_pain_directly():
     content = response["result"]["structuredContent"]
     assert content["mode"] == "agent_pain_solution"
     assert content["solution"]["pain_type"] == "loop_break"
+
+
+def test_mcp_swarm_manifest_join_contract_and_develop_tools():
+    server = NomadMcpServer(agent_factory=FakeAgent)
+    manifest = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 501,
+            "method": "tools/call",
+            "params": {"name": "nomad_swarm_manifest", "arguments": {}},
+        }
+    )
+    assert manifest["result"]["isError"] is False
+    body = manifest["result"]["structuredContent"]
+    assert body["schema"] == "nomad_public_swarm.v1"
+    assert body["mcp_probe"] is True
+    contract = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 502,
+            "method": "tools/call",
+            "params": {"name": "nomad_swarm_join_contract", "arguments": {}},
+        }
+    )
+    cbody = contract["result"]["structuredContent"]
+    assert cbody["schema"] == "nomad_swarm_join_contract.v1"
+    develop = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 503,
+            "method": "tools/call",
+            "params": {
+                "name": "nomad_swarm_develop",
+                "arguments": {"agent_id": "mcp.test.bot", "problem": "Schema mismatch on tool output."},
+            },
+        }
+    )
+    dbody = develop["result"]["structuredContent"]
+    assert dbody["ok"] is True
+    assert dbody["agent_id"] == "mcp.test.bot"
+    assert dbody["remote_addr"] == "mcp-stdio"
 
 
 def test_mcp_runs_mutual_aid_directly():
@@ -778,6 +872,9 @@ def test_cli_builds_service_and_lead_queries():
     swarm_coordinate_args = build_parser().parse_args(["swarm-coordinate", "--pain-type", "compute_auth"])
     assert build_query(swarm_coordinate_args) == "/swarm/coordinate type=compute_auth"
 
+    swarm_network_args = build_parser().parse_args(["swarm-network", "--pain-type", "compute_auth", "--role", "collaborator", "--limit", "2"])
+    assert build_query(swarm_network_args) == "/swarm/network type=compute_auth role=collaborator limit=2"
+
     swarm_accumulate_args = build_parser().parse_args(["swarm-accumulate", "--pain-type", "compute_auth", "--refresh"])
     assert build_query(swarm_accumulate_args) == "/swarm/accumulate type=compute_auth run"
 
@@ -861,6 +958,20 @@ def test_cli_builds_service_and_lead_queries():
 
     codex_task_args = build_parser().parse_args(["codex-task"])
     assert codex_task_args.command == "codex-task"
+
+    cycle_focus_args = build_parser().parse_args(["cycle", "--focus", "payment", "stabilize", "wallet"])
+    assert build_query(cycle_focus_args) == "/cycle [nomad_focus:payment] stabilize wallet for ai_first"
+
+    gs = build_parser().parse_args(["growth-start", "--skip-verify", "--skip-leads", "quota"])
+    assert gs.command == "growth-start"
+    au = build_parser().parse_args(
+        ["autonomy-step", "--skip-growth", "--cycle-focus", "leads_growth", "quota", "edge"]
+    )
+    assert au.command == "autonomy-step"
+    assert au.skip_growth is True
+    assert au.query == ["quota", "edge"]
+    assert gs.skip_verify is True
+    assert gs.skip_leads is True
 
 
 def test_mcp_stdio_tolerates_windows_bom(capsys):

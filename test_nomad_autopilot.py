@@ -68,6 +68,7 @@ class FakeSelfImprovement:
 class FakeServiceDesk:
     def __init__(self):
         self.worked = []
+        self.stale_invalid = []
 
     def list_tasks(self, limit=50):
         return {
@@ -75,7 +76,11 @@ class FakeServiceDesk:
             "ok": True,
             "tasks": [
                 {"task_id": "svc-paid", "status": "paid"},
-                {"task_id": "svc-await", "status": "awaiting_payment"},
+                {
+                    "task_id": "svc-await",
+                    "status": "awaiting_payment",
+                    "metadata": {"requester_endpoint": "https://quota.example/a2a/QuotaBot"},
+                },
             ],
             "stats": {"paid": 1, "awaiting_payment": 1},
         }
@@ -103,6 +108,14 @@ class FakeServiceDesk:
                 "amount_native": 0.03,
             },
             "nudge": "Start with the smaller starter diagnosis first.",
+        }
+
+    def mark_stale_invalid(self, task_id, reason=""):
+        self.stale_invalid.append((task_id, reason))
+        return {
+            "mode": "agent_service_request",
+            "ok": True,
+            "task": {"task_id": task_id, "status": "stale_invalid", "invalid_reason": reason},
         }
 
 
@@ -470,6 +483,8 @@ class FakeAgent:
 
 def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
     monkeypatch.setenv("NOMAD_AUTOPILOT_A2A_SEND", "false")
     agent = FakeAgent()
     autopilot = NomadAutopilot(
@@ -507,6 +522,13 @@ def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
     assert agent.swarm_registry.accumulate_calls[0]["focus_pain_type"] == "compute_auth"
     assert result["swarm_coordination"]["schema"] == "nomad.swarm_coordination_board.v1"
     assert result["swarm_coordination"]["connected_agents"] == 1
+    assert result["efficiency_plan"]["schema"] == "nomad.autopilot_efficiency_plan.v1"
+    assert result["efficiency_plan"]["next_best_action"] == "convert_awaiting_payment_to_small_paid_unblock"
+    assert result["efficiency_plan"]["agent_onboarding_funnel"]["prospect_agents"] == 1
+    assert result["efficiency_plan"]["compute_policy"]["cloudflare_required"] is False
+    assert result["autonomy_proof"]["schema"] == "nomad.autonomy_proof.v1"
+    assert result["autonomy_proof"]["cycle_was_useful"] is True
+    assert result["autonomy_proof"]["money_progress"] is True
     assert agent.swarm_registry.calls[0]["base_url"] == "https://nomad.example"
     assert agent.swarm_registry.calls[0]["focus_pain_type"] == "compute_auth"
     assert "Swarm accumulation" in result["analysis"]
@@ -515,6 +537,8 @@ def test_autopilot_runs_paid_service_then_outreach(monkeypatch, tmp_path):
 
 def test_autopilot_skips_send_outreach_without_public_url(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
     agent = FakeAgent()
     autopilot = NomadAutopilot(
         agent=agent,
@@ -749,6 +773,8 @@ def test_autopilot_uses_fresh_reply_objective_when_no_service_work(monkeypatch, 
 
 def test_autopilot_blocks_a2a_send_without_public_url(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
     agent = FakeAgent()
     autopilot = NomadAutopilot(
         agent=agent,
@@ -915,6 +941,106 @@ def test_autopilot_queues_and_sends_payment_followup_when_requester_endpoint_exi
     assert agent.agent_contacts.queued_records[0]["service_type"] == "wallet_payment"
     assert agent.agent_contacts.queued_records[0]["problem"].startswith("nomad.payment_followup.v1")
     assert "starter_offer=Nomad Compute Unlock Pack: Starter diagnosis" in agent.agent_contacts.queued_records[0]["problem"]
+
+
+def test_autopilot_always_sends_money_followup_even_when_outreach_disabled(monkeypatch, tmp_path):
+    class FollowupServiceDesk(FakeServiceDesk):
+        def list_tasks(self, limit=50):
+            return {
+                "mode": "agent_service_task_list",
+                "ok": True,
+                "tasks": [
+                    {
+                        "task_id": "svc-money",
+                        "status": "awaiting_payment",
+                        "service_type": "compute_auth",
+                        "requester_agent": "MoneyBot",
+                        "problem": "Payment handoff is waiting.",
+                        "metadata": {
+                            "requester_endpoint": "https://money.example/a2a/MoneyBot",
+                        },
+                    }
+                ],
+                "stats": {"awaiting_payment": 1},
+            }
+
+    class FollowupAgent(FakeAgent):
+        def __init__(self):
+            super().__init__()
+            self.service_desk = FollowupServiceDesk()
+            self.agent_contacts = PaymentFollowupContacts()
+
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FollowupAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(
+        outreach_limit=0,
+        conversion_limit=0,
+        daily_lead_target=0,
+        send_outreach=False,
+        send_a2a=False,
+    )
+
+    assert result["payment_followup_queue"]["queued_contact_ids"] == ["followup-1"]
+    assert result["payment_followup_send"]["sent_contact_ids"] == ["followup-1"]
+    assert agent.agent_contacts.sent == ["followup-1"]
+    assert result["contact_queue"]["sent_contact_ids"] == []
+    assert result["autonomy_proof"]["useful_artifact_created"] == "payment_followup_draft"
+    assert any(
+        item["type"] == "payment_followup_sent"
+        for item in result["autonomy_proof"]["useful_artifacts"]
+    )
+
+
+def test_autopilot_drops_invalid_payment_placeholders_and_refocuses_on_jobs(monkeypatch, tmp_path):
+    class InvalidPaymentServiceDesk(FakeServiceDesk):
+        def list_tasks(self, limit=50):
+            return {
+                "mode": "agent_service_task_list",
+                "ok": True,
+                "tasks": [
+                    {
+                        "task_id": "svc-invalid",
+                        "status": "awaiting_payment",
+                        "service_type": "compute_auth",
+                        "requester_agent": "",
+                        "requester_wallet": "",
+                        "callback_url": "",
+                        "problem": "Old placeholder with no buyer route.",
+                        "metadata": {},
+                        "payment": {"tx_hash": ""},
+                    }
+                ],
+                "stats": {"awaiting_payment": 1},
+            }
+
+    class InvalidPaymentAgent(FakeAgent):
+        def __init__(self):
+            super().__init__()
+            self.service_desk = InvalidPaymentServiceDesk()
+
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = InvalidPaymentAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=False, send_a2a=False)
+
+    assert result["service"]["awaiting_payment_task_ids"] == []
+    assert result["service"]["stale_invalid_task_ids"] == ["svc-invalid"]
+    assert agent.service_desk.stale_invalid[0][0] == "svc-invalid"
+    assert result["efficiency_plan"]["next_best_action"] == "find_real_jobs_after_dropping_invalid_payment_placeholders"
+    assert "find real buyer-agent jobs" in result["objective"]
 
 
 def test_autopilot_throttles_payment_followup_requeue(monkeypatch, tmp_path):

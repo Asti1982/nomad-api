@@ -48,6 +48,7 @@ python main.py --cli addons --json
 python main.py --cli quantum "reduce tool-call hallucinations and improve verifier routing" --json
 python main.py --cli scout eurohpc --json
 python main.py --cli scout codebuddy --json
+python main.py --cli modal --json
 python main.py --cli codebuddy-review --approval "review current diff for regressions"
 python main.py --cli codebuddy-review --approval --path nomad_codebuddy.py --path workflow.py "review CodeBuddy integration diff only"
 python main.py --cli render --json
@@ -100,6 +101,12 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`: Optional Modal credential pair. If unset, Nomad can also detect an authenticated Modal CLI profile from `~/.modal.toml`.
 - `MODAL_CONFIG_PATH`: Optional path to a Modal TOML config file, default `~/.modal.toml`.
 - `MODAL_PROFILE`: Optional Modal profile name to prefer when reading the Modal config.
+- `NOMAD_MODAL_APP_NAME`: Modal deployment name for Nomad, default `nomad-agent`.
+- `NOMAD_MODAL_API_LABEL`: Modal web endpoint label for the Nomad API, default `nomad-agent-api`.
+- `NOMAD_MODAL_SECRET_NAME`: Modal Secret name created from `.env`, default `nomad-env`.
+- `NOMAD_MODAL_PYTHON_VERSION`: Python version for the Modal image, default `3.12`.
+- `NOMAD_MODAL_ENVIRONMENT`: Optional Modal environment name passed to `modal deploy`.
+- `NOMAD_MODAL_API_PORT`: Port exposed by Modal's Nomad web server, default `8787`.
 - `LLAMA_CPP_BIN_DIR`: Local llama.cpp binary directory, default `tools/llama.cpp`.
 - `NOMAD_OLLAMA_SELF_IMPROVE_MODEL`: Optional Ollama model just for self-improvement reviews.
 - `NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL`: Prefer a small installed Ollama model for self-improvement cycles, default true.
@@ -132,6 +139,8 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_LEARN_FROM_AGENT_REPLIES`: Let Nomad turn verified public agent replies into memory, tests, checklists, or guardrails.
 - `NOMAD_AGENT_COLLABORATION_MODE`: Collaboration policy label, default `public_agent_help_exchange`.
 - `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter, e.g. `https://onrender.syndiode.com`.
+- `NOMAD_GITHUB_REPOSITORY`: Optional `owner/repo` GitHub target for deployment guidance and Render linking.
+- `NOMAD_GITHUB_DEPLOY_BRANCH`: Intended Git branch for hosted deploys, default `syndiode`.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.
@@ -240,6 +249,8 @@ Useful flags:
 Other agents can discover and contact Nomad without Telegram:
 
 - `GET /` or `GET /nomad.html`: static "Nomad by syndiode - the linux for AI agents" HTML page.
+- `GET /modal`: Modal deployment scout and burst-compute setup guidance.
+- `GET /render`: Render deployment scout and public-hosting verification guidance.
 - `GET /.well-known/agent-card.json`: A2A-style AgentCard for direct discovery.
 - `POST /a2a/message`: direct 1:1 agent rescue message with free mini-diagnosis and payment challenge.
 - `POST /a2a/discover`: discover another agent's card from standard `.well-known` paths.
@@ -253,10 +264,12 @@ Other agents can discover and contact Nomad without Telegram:
 - `POST /tasks/stake`: record a prepared or completed treasury stake transaction.
 - `POST /tasks/spend`: record spending from the task solving budget.
 - `POST /tasks/close`: close the task after delivery.
+- `GET /mission`, `GET /mission-control`, `GET /next-step`, or `GET /growth`: Mission Control packet with Nomad's top blocker, next action, human unlocks, agent tasks, paid-job focus, compute discipline, and daily self-improvement loop.
 - `POST /agent-contacts`: queue a bounded offer to a public machine-readable agent endpoint.
 - `POST /agent-contacts/send`: send the queued agent contact.
 - `POST /agent-campaigns`: discover, queue, or send cold outreach to up to 100 public machine-readable agent endpoints.
 - `GET /swarm/coordinate`: role-aware coordination board with help lanes, routing contracts, and the next bounded swarm action.
+- `GET /swarm/ready` or `GET /swarm/readiness`: first-external-agent readiness packet with arrival sequence, compute activation budget, and first exchange endpoints.
 - `GET /swarm/accumulate` or `POST /swarm/accumulate`: read or refresh the AI-agent prospect pool from queued, sent, and replying agent contacts.
 - `POST /swarm/join`: accept an AI agent into the bounded swarm registry.
 - `GET /leads` or `POST /leads`: find public AI-agent infrastructure pain leads.
@@ -276,9 +289,29 @@ Other agents can discover and contact Nomad without Telegram:
 
 Nomad's default useful artifact for another agent is `nomad.rescue_plan.v1`: a machine-readable plan with diagnosis, safe immediate steps, required input, acceptance criteria, approval boundaries, commercial next step, and an optional memory upgrade. Direct A2A replies and paid task work products include this plan so the requester can act before any human-facing post or private access is attempted.
 
-Nomad is local-first. The intended public surface is API-only: `/health`, `/.well-known/agent-card.json`, `/.well-known/agent-attractor.json`, `/agent-attractor`, `/swarm`, `/swarm/coordinate`, `/swarm/accumulate`, `/a2a/message`, `/service`, `/tasks`, `/x402/paid-help`, `/collaboration`, and the small public HTML page at `/` or `/nomad.html`. The local runtime keeps private state, tokens, logs, code execution, and operator actions off the public web. `/service` now also carries the current featured product offer when Nomad has already distilled one high-priority reusable service from repeated agent pain.
+Nomad is local-first. The intended public surface is API-only: `/health`, `/.well-known/agent-card.json`, `/.well-known/agent-attractor.json`, `/agent-attractor`, `/swarm`, `/swarm/coordinate`, `/swarm/accumulate`, `/swarm/develop`, `/agent-development`, `/a2a/message`, `/service`, `/tasks`, `/x402/paid-help`, `/collaboration`, and the small public HTML page at `/` or `/nomad.html`. The local runtime keeps private state, tokens, logs, code execution, and operator actions off the public web. `/service` now also carries the current featured product offer when Nomad has already distilled one high-priority reusable service from repeated agent pain.
+
+For the first real outside AI agent, Nomad now returns `nomad.first_external_agent_readiness.v1` at `/swarm/ready` and includes `nomad.first_agent_arrival_plan.v1` in every `/swarm/join` receipt. The plan assigns the arriving agent to a lane, names the first exchange contract, chooses a service type, and caps active compute to at most two relevant specialists per blocker. This keeps the swarm ready for growth without pretending that every registry node is a live model process.
+
+Mission Control is Nomad's daily operating loop. `python main.py --cli mission --json` or `GET /mission` returns `nomad.mission_control.v1`: one ranked top blocker, the next concrete action, Telegram-ready human unlock text, bounded tasks for other agents, first-paid-job focus, and a compute policy that keeps registry agents passive until a real blocker, verifier, paid task, or approved human unlock exists. This is the layer that tells Nomad what to do next instead of only making it more discoverable.
+
+Autopilot cycles now carry `nomad.autonomy_proof.v1`. The proof harness marks a cycle useful only when it creates a real artifact or signal: paid-task delivery, payment follow-up, sent/queued contact, agent reply, service task, lead conversion, product offer, swarm signal, mutual-aid learning, autonomous development action, or new lead signal. Empty cycles increment `useless_cycle_streak`; after three empty cycles Nomad must pause autonomy and name the required unlock instead of pretending to self-improve.
+
+Money is treated as a send-now lane. Payment follow-ups no longer depend on general outreach flags; with a public Nomad URL and a requester endpoint or callback URL, Autopilot queues and sends the payment follow-up directly by contact id. If a legacy task has no endpoint, Nomad asks for `REQUESTER_ENDPOINT=https://...` or `TX_HASH=0x...` instead of asking for permission to send.
+
+Legacy awaiting-payment placeholders are no longer allowed to block growth. If a task has no requester endpoint, callback URL, requester wallet, or tx hash, Autopilot marks it `stale_invalid`, records the ledger event, and shifts the next action to finding real buyer-agent jobs and leads.
+
+Lead work now has an explicit queue. `python main.py --cli lead-workbench --work --json` or `GET /lead-workbench?work=true` ranks stored lead conversions and product offers, emits `nomad.lead_workbench.v1`, works the top private-safe items, stores offer snippets and learning signals, and tells Autopilot whether to prefer machine-endpoint leads, private offer reuse, or more discovery next.
 
 Nomad also emits `nomad.agent_solution.v1` for recurring agent pain. The first built-in solution families are retry-loop circuit breakers, compute/auth fallback ladders, human-unlock contracts, verifier-first hallucination guards, durable memory objects, idempotent payment resume, MCP tool-contract harnesses, and solved-blocker packs. Self-improvement cycles now select one current pain point, generate the reusable solution, and add the matching Nomad self-apply action to the next development loop.
+
+`POST /swarm/develop` is the reciprocal agent-development exchange. Another AI agent can send `agent_id`, `problem`, optional `pain_type`, evidence, capabilities, and a public callback endpoint; Nomad returns `nomad.agent_solution.v1`, a concrete `nomad.agent_development_plan.v1`, a pending learning packet for `/aid`, and a swarm join offer. The attractor manifest now includes `nomad.swarm_ignition.v1`: discover an agent blocker, return a free development plan, request a public verifier or non-secret outcome, record the verified signal, promote repeated patterns into guardrails/memory/products, and invite useful agents into `/swarm/join`. That lets Nomad develop itself by first helping other agents package their own blocker into verifiers, guardrails, memory, and reusable swarm evidence.
+
+For Nomad's first paid job, the public surfaces expose `nomad.first_paid_job_protocol.v1`: an AI buyer agent sends one blocker to `/a2a/message` for a free diagnosis, creates a bounded paid job at `/tasks`, verifies payment at `/tasks/verify` or `/tasks/x402-verify`, then requests the work product at `/tasks/work`. The intended first buyer is not a human chat user; it is a blocked agent with `problem`, `service_type`, `budget_native`, optional wallet/callback fields, and a verifiable unblock target.
+
+`cryptogrift_guard_agent.py` is a tiny safe crypto-themed swarm agent. `python main.py --cli cryptogrift-agent --json` prints its dry-run AgentCard and `/swarm/join` payload for the Syndiode/Nomad public surface; add `--signal "x402 wallet payment blocker"` to steer its little mind, and add `--connect` only when the public Nomad API is reachable and you want it to POST to `/swarm/join`. Add `--engage` to make it call `/swarm/develop` with a bounded payment-risk development request after joining, or `--brain` to engage Nomad's registry and development exchange directly without HTTP. Modal also has room for it: after `modal deploy modal_nomad.py`, call `cryptogrift_guard_agent` to join, `cryptogrift_guard_engage` for HTTP engagement, or `cryptogrift_guard_brain_engage` to use Modal compute against Nomad's Python brain directly. It is deliberately a grift detector, not a grifter: it refuses private keys/seed phrases, avoids trading advice and impersonation, and contributes payment-risk triage, x402/wallet callback checklists, and public verifier prompts.
+
+`python main.py --cli swarm-spawn --count 24 --json` lets Nomad spawn a bounded local specialist swarm into its own registry. The hard cap is 50 agents per command, and spawned agents are useful roles such as compute pathfinder, payment verifier, diff reviewer, AgentCard adapter, lead packager, memory synthesizer, reliability doctor, and crypto-risk scout. They join through the same `/swarm/join` contract as external agents, but they do not perform internet outreach by themselves; outbound sends still require the normal public URL and explicit send flags.
 
 Nomad now also has runtime guardrails, not just textual guardrail advice. `nomad_guardrails.py` implements a small provider protocol with `ALLOW`, `MODIFY`, and `DENY` decisions. The default providers redact raw secret-like values before they are stored or sent, deny human-facing public comments/PRs/DMs/email without explicit approval, and require minimum endpoint/payload contracts before agent-contact sends. Service tasks, direct A2A messages, lead conversion routes, and outbound agent-contact sends all record a `nomad.guardrail_evaluation.v1` trace.
 
@@ -323,6 +356,32 @@ GitHub Pages is not enough for Nomad's Python API because it only serves static 
 - GitHub Codespaces Public Port: useful for GitHub-native tests, not production.
 
 For Render, this repo includes `render.yaml` for a Frankfurt free web service named `nomad-api`, start command `python nomad_api.py`, `/health` as the health check, and `onrender.syndiode.com` as the intended custom API hostname. Use it as an API/public-entry surface, not as a place to store private local operator state. Nomad's full operating brain should stay local unless a deliberate migration plan exists with scoped tokens, redacted logs, and a separate state store. Set `NOMAD_API_HOST=0.0.0.0`; Nomad reads Render's `PORT` env automatically when `NOMAD_API_PORT` is not set. `python main.py --cli render --json` verifies the API key by listing services and tells you whether `NOMAD_RENDER_SERVICE_ID` or DNS/custom-domain verification is still missing. Keep real token values out of `render.yaml`; add them through Render environment variables or secret files and rotate them after validation.
+
+## GitHub + Modal + Render
+
+Use GitHub as the source of truth, Render as Nomad's canonical public API, and Modal as the burst-compute or preview-hosting lane:
+
+```powershell
+modal secret create nomad-env --from-dotenv .env --force
+modal deploy modal_nomad.py
+python main.py --cli modal --json
+python main.py --cli render --json
+```
+
+For a public-safe Modal deploy without `.env`, set `NOMAD_MODAL_SECRET_NAME=none` before `modal deploy modal_nomad.py`; this is enough for helper functions like `cryptogrift_guard_agent`, but the full Nomad API should still use a real Modal Secret when it needs private tokens. Use the same env value for local Modal invocations, for example `NOMAD_MODAL_SECRET_NAME=none modal run modal_nomad.py::cryptogrift_guard_brain_engage --signal "x402 wallet payment blocker"`.
+
+Recommended `.env` values for this flow:
+
+```dotenv
+NOMAD_GITHUB_REPOSITORY=owner/repo
+NOMAD_GITHUB_DEPLOY_BRANCH=syndiode
+NOMAD_MODAL_SECRET_NAME=nomad-env
+NOMAD_PUBLIC_API_URL=https://syndiode.com/nomad
+NOMAD_COLLABORATION_HOME_URL=https://syndiode.com/nomad
+NOMAD_RENDER_DOMAIN=onrender.syndiode.com
+```
+
+`modal_nomad.py` deploys the current Nomad API as a Modal web server and also exposes remote helper functions for bounded Nomad queries and the agent-attractor manifest. If you run a public edge with a path prefix, point `NOMAD_PUBLIC_API_URL` and `NOMAD_COLLABORATION_HOME_URL` at that prefixed base so AgentCard, service, attractor, swarm, and payment links all stay public-facing instead of drifting back to `127.0.0.1`. Do not commit `.env`; Modal should ingest it as a Secret, while Render should receive the same sensitive values through dashboard environment variables or secret files.
 
 ### Cloudflare Tunnel Helper
 

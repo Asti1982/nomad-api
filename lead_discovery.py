@@ -202,6 +202,31 @@ class LeadDiscoveryScout:
                 "or provide SCOUT_SURFACE/LEAD_URL to narrow the next cycle."
             )
 
+        active_lead: Dict[str, Any] = {}
+        if leads:
+            top = leads[0]
+            active_lead = {
+                "name": top.get("title") or "",
+                "title": top.get("title") or "",
+                "url": top.get("url") or "",
+                "html_url": top.get("url") or "",
+                "repo_url": top.get("repo_url") or "",
+                "pain": top.get("pain") or "",
+                "pain_signal": top.get("pain") or "",
+                "pain_terms": top.get("pain_terms") or [],
+                "pain_evidence": top.get("pain_evidence") or [],
+                "public_issue_excerpt": (top.get("public_issue_excerpt") or "")[:1200],
+                "recommended_service_type": top.get("recommended_service_type") or top.get("service_type") or "",
+                "service_type": top.get("recommended_service_type") or top.get("service_type") or "",
+                "addressable_label": top.get("addressable_label") or "",
+                "monetizable_now": bool(top.get("monetizable_now")),
+                "addressable_now": bool(top.get("addressable_now")),
+                "first_help_action": top.get("first_help_action") or "",
+                "product_package": top.get("product_package") or "",
+                "endpoint_url": top.get("endpoint_url") or "",
+                "agent_contact_allowed_without_approval": bool(top.get("agent_contact_allowed_without_approval")),
+            }
+
         return {
             "mode": "lead_discovery",
             "deal_found": False,
@@ -214,6 +239,7 @@ class LeadDiscoveryScout:
             "addressable_count": len(addressable_leads),
             "monetizable_count": len(monetizable_leads),
             "leads": leads[:limit],
+            "active_lead": active_lead,
             "source_plan": source_plan,
             "addressable_portfolio": [
                 {

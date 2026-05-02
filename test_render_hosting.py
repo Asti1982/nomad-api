@@ -15,6 +15,7 @@ class FakeResponse:
 def test_render_probe_defaults_to_locked_public_api_lane(monkeypatch, tmp_path):
     monkeypatch.setenv("RENDER_API_KEY", "")
     monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "onrender.syndiode.com")
+    monkeypatch.delenv("NOMAD_GITHUB_DEPLOY_BRANCH", raising=False)
 
     result = RenderHostingProbe(repo_root=tmp_path).snapshot()
 
@@ -22,6 +23,7 @@ def test_render_probe_defaults_to_locked_public_api_lane(monkeypatch, tmp_path):
     assert result["role"] == "public_api_hosting"
     assert result["api_key_configured"] is False
     assert result["desired_domain"] == "onrender.syndiode.com"
+    assert result["desired_branch"] == "syndiode"
     assert "RENDER_API_KEY" in result["next_action"]
 
 
@@ -29,6 +31,8 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
     monkeypatch.setenv("RENDER_API_KEY", "rnd-not-a-real-token")
     monkeypatch.setenv("NOMAD_RENDER_SERVICE_NAME", "nomad-api")
     monkeypatch.setenv("NOMAD_RENDER_OWNER_ID", "tea-test")
+    monkeypatch.setenv("NOMAD_GITHUB_REPOSITORY", "syndiode/nomad")
+    monkeypatch.setenv("NOMAD_GITHUB_DEPLOY_BRANCH", "syndiode")
 
     def fake_request(method, url, **kwargs):
         assert method == "GET"
@@ -73,6 +77,8 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
     assert result["verification"]["ok"] is True
     assert result["verification"]["selected_service"]["id"] == "srv-test"
     assert result["owners"]["selected_owner"]["id"] == "tea-test"
+    assert result["github_repository"] == "syndiode/nomad"
+    assert result["desired_branch"] == "syndiode"
     assert result["service_url"] == "https://nomad-api.onrender.com"
 
 

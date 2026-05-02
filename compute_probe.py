@@ -41,6 +41,40 @@ DEFAULT_XAI_MODEL_CANDIDATES = (
     "grok-4-1-fast",
 )
 XAI_TOKEN_ENV_VAR = "XAI_API_KEY"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
+DEFAULT_OPENROUTER_MODEL_CANDIDATES = (
+    "openai/gpt-4o-mini",
+    "openai/gpt-4.1-mini",
+    "google/gemini-2.0-flash-001",
+)
+OPENROUTER_TOKEN_ENV_VAR = "OPENROUTER_API_KEY"
+
+
+def openrouter_base_url() -> str:
+    return (os.getenv("NOMAD_OPENROUTER_BASE_URL") or DEFAULT_OPENROUTER_BASE_URL).rstrip("/")
+
+
+def openrouter_chat_completions_url(base_url: str = "") -> str:
+    return f"{(base_url or openrouter_base_url()).rstrip('/')}/chat/completions"
+
+
+def openrouter_model_candidates(configured_model: str = "") -> List[str]:
+    env_candidates = [
+        item.strip()
+        for item in (os.getenv("NOMAD_OPENROUTER_MODEL_CANDIDATES") or "").replace(";", ",").split(",")
+        if item.strip()
+    ]
+    candidates = [
+        configured_model,
+        *env_candidates,
+        *DEFAULT_OPENROUTER_MODEL_CANDIDATES,
+    ]
+    unique: List[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in unique:
+            unique.append(candidate)
+    return unique
 
 
 def _modal_config_path() -> Path:
@@ -265,6 +299,103 @@ def xai_status_help(
     return help_payload
 
 
+def openrouter_status_help(
+    status_code: int | None,
+    *,
+    model: str = "",
+    body: str = "",
+    base_url: str = "",
+) -> Dict[str, Any]:
+    base = (base_url or openrouter_base_url()).rstrip("/")
+    help_payload: Dict[str, Any] = {
+        "status_code": status_code,
+        "token_env_var": OPENROUTER_TOKEN_ENV_VAR,
+        "base_url": base,
+        "chat_completions_url": openrouter_chat_completions_url(base),
+        "openai_compatible_config": {
+            "provider": "openai",
+            "apiBase": base,
+            "apiKey": "${OPENROUTER_API_KEY}",
+            "models": list(DEFAULT_OPENROUTER_MODEL_CANDIDATES),
+        },
+        "curl_hint": (
+            "curl -L -X POST -H \"Authorization: Bearer $OPENROUTER_API_KEY\" "
+            "-H \"Content-Type: application/json\" "
+            f"{openrouter_chat_completions_url(base)} "
+            "-d '{\"model\":\"openai/gpt-4o-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply OK\"}],\"max_tokens\":8}'"
+        ),
+    }
+    if body:
+        help_payload["response_excerpt"] = _safe_openrouter_response_excerpt(body)
+
+    if status_code is None:
+        help_payload.update(
+            {
+                "issue": "openrouter_missing_token",
+                "message": "No OpenRouter API key is configured.",
+                "next_action": "Set OPENROUTER_API_KEY and rerun /compute.",
+                "remediation": [
+                    "Create or copy an OpenRouter API key.",
+                    "Set OPENROUTER_API_KEY locally or send it through Telegram as /token openrouter <token>.",
+                    "Keep NOMAD_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 unless OpenRouter documents a different base URL.",
+                ],
+            }
+        )
+    elif status_code in {401, 403}:
+        help_payload.update(
+            {
+                "issue": "openrouter_auth_or_permission",
+                "message": f"OpenRouter rejected the API key with HTTP {status_code}.",
+                "next_action": "Verify or rotate the OpenRouter API key, then rerun /compute.",
+                "remediation": [
+                    "Check that OPENROUTER_API_KEY is active in OpenRouter settings.",
+                    "Verify your account has access to the selected model.",
+                    "Rotate the key if it was exposed.",
+                ],
+            }
+        )
+    elif status_code in {400, 404, 422}:
+        help_payload.update(
+            {
+                "issue": "openrouter_endpoint_or_model",
+                "message": f"OpenRouter returned HTTP {status_code} for model {model or '<unset>'}.",
+                "next_action": "Try another OpenRouter model candidate or verify NOMAD_OPENROUTER_BASE_URL.",
+                "remediation": [
+                    "Set NOMAD_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1.",
+                    "Try NOMAD_OPENROUTER_MODEL=openai/gpt-4o-mini or another model available to your key.",
+                    "Run /compute again so Nomad can test model candidates.",
+                ],
+            }
+        )
+    elif status_code == 429:
+        help_payload.update(
+            {
+                "issue": "openrouter_rate_limited",
+                "message": "OpenRouter is reachable but rate limited this request.",
+                "next_action": "Retry later or let Nomad fall back to local/GitHub/Hugging Face/Cloudflare.",
+                "remediation": [
+                    "Do not rotate a working key just for HTTP 429.",
+                    "Reduce hosted self-improvement frequency or max tokens.",
+                    "Keep another compute lane active as fallback.",
+                ],
+            }
+        )
+    else:
+        help_payload.update(
+            {
+                "issue": "openrouter_unknown_failure",
+                "message": f"OpenRouter failed with HTTP {status_code}.",
+                "next_action": "Inspect response_excerpt and verify token, endpoint, and model ID.",
+                "remediation": [
+                    "Verify OPENROUTER_API_KEY is valid.",
+                    "Verify NOMAD_OPENROUTER_BASE_URL and NOMAD_OPENROUTER_MODEL.",
+                    "Retry with the curl_hint shown by the probe.",
+                ],
+            }
+        )
+    return help_payload
+
+
 def _safe_response_excerpt(text: str) -> str:
     return " ".join(str(text or "").split())[:500]
 
@@ -272,6 +403,11 @@ def _safe_response_excerpt(text: str) -> str:
 def _safe_xai_response_excerpt(text: str) -> str:
     cleaned = re.sub(r"team/[0-9a-fA-F-]{20,}", "team/<redacted>", str(text or ""))
     cleaned = re.sub(r"xai-[A-Za-z0-9_\-.]+", "xai-<redacted>", cleaned)
+    return _safe_response_excerpt(cleaned)
+
+
+def _safe_openrouter_response_excerpt(text: str) -> str:
+    cleaned = re.sub(r"sk-or-v1-[A-Za-z0-9_\-.]+", "sk-or-v1-<redacted>", str(text or ""))
     return _safe_response_excerpt(cleaned)
 
 
@@ -456,6 +592,11 @@ class LocalComputeProbe:
         self.xai_chat_url = xai_chat_completions_url(self.xai_base_url)
         self.xai_model = (os.getenv("NOMAD_XAI_MODEL") or DEFAULT_XAI_MODEL).strip()
         self.xai_model_candidates = xai_model_candidates(self.xai_model)
+        self.openrouter_token = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        self.openrouter_base_url = openrouter_base_url()
+        self.openrouter_chat_url = openrouter_chat_completions_url(self.openrouter_base_url)
+        self.openrouter_model = (os.getenv("NOMAD_OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL).strip()
+        self.openrouter_model_candidates = openrouter_model_candidates(self.openrouter_model)
         self.lambda_labs_token = (os.getenv("LAMBDA_LABS_API_TOKEN") or "").strip()
         self.runpod_api_key = (os.getenv("RUNPOD_API_KEY") or "").strip()
         configured_llama_dir = (os.getenv("LLAMA_CPP_BIN_DIR") or "tools/llama.cpp").strip()
@@ -633,6 +774,7 @@ class LocalComputeProbe:
             "huggingface": self._huggingface_info(),
             "cloudflare_workers_ai": self._cloudflare_workers_ai_info(),
             "xai_grok": self._xai_grok_info(),
+            "openrouter": self._openrouter_info(),
             "modal": self._modal_info(),
             "lambda_labs": self._lambda_labs_info(),
             "runpod": self._runpod_info(),
@@ -1193,4 +1335,126 @@ class LocalComputeProbe:
                     "Verify NOMAD_XAI_BASE_URL and proxy/firewall settings.",
                 ],
                 "message": f"xAI Grok probe failed: {exc}",
+            }
+
+    def _openrouter_info(self) -> Dict[str, Any]:
+        if not self.openrouter_token:
+            return {
+                "configured": False,
+                "reachable": False,
+                "available": False,
+                "model": self.openrouter_model,
+                **openrouter_status_help(None, model=self.openrouter_model, base_url=self.openrouter_base_url),
+            }
+        return self._openrouter_inference_check()
+
+    def _openrouter_inference_check(self) -> Dict[str, Any]:
+        lane_id = "openrouter"
+        if self.health.is_on_cooldown(lane_id):
+            remaining = self.health.get_cooldown_remaining(lane_id)
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "on_cooldown": True,
+                "cooldown_remaining_seconds": remaining,
+                "message": f"OpenRouter is on cooldown for {remaining}s due to rate limits.",
+            }
+
+        attempts: List[Dict[str, Any]] = []
+        last_help: Dict[str, Any] = {}
+        try:
+            for model in self.openrouter_model_candidates:
+                response = requests.post(
+                    self.openrouter_chat_url,
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "Reply with OK."}],
+                        "max_tokens": 8,
+                        "temperature": 0,
+                    },
+                    timeout=15,
+                )
+                if response.ok:
+                    message = f"OpenRouter inference is reachable with {model}."
+                    if model != self.openrouter_model:
+                        message += f" Set NOMAD_OPENROUTER_MODEL={model} to make it the primary model."
+                    return {
+                        "configured": True,
+                        "reachable": True,
+                        "available": True,
+                        "status_code": response.status_code,
+                        "model": self.openrouter_model,
+                        "working_model": model,
+                        "model_candidates": self.openrouter_model_candidates,
+                        "attempts": attempts,
+                        "base_url": self.openrouter_base_url,
+                        "chat_completions_url": self.openrouter_chat_url,
+                        "openai_compatible_config": openrouter_status_help(
+                            response.status_code,
+                            model=model,
+                            base_url=self.openrouter_base_url,
+                        ).get("openai_compatible_config", {}),
+                        "next_action": (
+                            ""
+                            if model == self.openrouter_model
+                            else f"Set NOMAD_OPENROUTER_MODEL={model}."
+                        ),
+                        "remediation": [],
+                        "message": message,
+                    }
+
+                if response.status_code == 429:
+                    self.health.record_cooldown(lane_id, minutes=60)
+
+                last_help = openrouter_status_help(
+                    response.status_code,
+                    model=model,
+                    body=response.text,
+                    base_url=self.openrouter_base_url,
+                )
+                attempts.append(
+                    {
+                        "model": model,
+                        "status_code": response.status_code,
+                        "issue": last_help.get("issue"),
+                        "next_action": last_help.get("next_action"),
+                    }
+                )
+                if response.status_code not in {400, 404, 422}:
+                    return {
+                        "configured": True,
+                        "reachable": True,
+                        "available": False,
+                        "model": self.openrouter_model,
+                        "attempts": attempts,
+                        **last_help,
+                    }
+
+            return {
+                "configured": True,
+                "reachable": True,
+                "available": False,
+                "model": self.openrouter_model,
+                "attempts": attempts,
+                **last_help,
+            }
+        except Exception as exc:
+            return {
+                "configured": True,
+                "reachable": False,
+                "available": False,
+                "model": self.openrouter_model,
+                "base_url": self.openrouter_base_url,
+                "chat_completions_url": self.openrouter_chat_url,
+                "attempts": attempts,
+                "remediation": [
+                    "Check network access to openrouter.ai.",
+                    "Verify NOMAD_OPENROUTER_BASE_URL and proxy/firewall settings.",
+                ],
+                "message": f"OpenRouter probe failed: {exc}",
             }

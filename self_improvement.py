@@ -23,6 +23,11 @@ from compute_probe import (
     xai_chat_completions_url,
     xai_model_candidates,
     xai_status_help,
+    DEFAULT_OPENROUTER_MODEL,
+    openrouter_base_url,
+    openrouter_chat_completions_url,
+    openrouter_model_candidates,
+    openrouter_status_help,
 )
 from infra_scout import InfrastructureScout
 from lead_discovery import LeadDiscoveryScout
@@ -143,6 +148,11 @@ class HostedBrainRouter:
         self.xai_model_candidates = xai_model_candidates(self.xai_model)
         self.xai_base_url = xai_base_url()
         self.xai_chat_url = xai_chat_completions_url(self.xai_base_url)
+        self.openrouter_token = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        self.openrouter_model = (os.getenv("NOMAD_OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL).strip()
+        self.openrouter_model_candidates = openrouter_model_candidates(self.openrouter_model)
+        self.openrouter_base_url = openrouter_base_url()
+        self.openrouter_chat_url = openrouter_chat_completions_url(self.openrouter_base_url)
         self.github_api_version = (
             os.getenv("NOMAD_GITHUB_MODELS_API_VERSION") or DEFAULT_GITHUB_MODELS_API_VERSION
         ).strip()
@@ -380,6 +390,7 @@ class HostedBrainRouter:
                 "huggingface_available": ((resources.get("huggingface") or {}).get("available", False)),
                 "cloudflare_workers_ai_available": ((resources.get("cloudflare_workers_ai") or {}).get("available", False)),
                 "xai_grok_available": ((resources.get("xai_grok") or {}).get("available", False)),
+                "openrouter_available": ((resources.get("openrouter") or {}).get("available", False)),
             "codebuddy_reviewer": ((resources.get("developer_assistants") or {}).get("codebuddy") or {}),
             "codebuddy_brain_enabled": self._env_flag(CODEBUDDY_BRAIN_ENABLED_ENV, default=False),
         },
@@ -760,6 +771,105 @@ class HostedBrainRouter:
                 "message": f"xAI Grok review failed: {exc}",
             }
 
+    def _openrouter_review(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+        if not self.openrouter_token:
+            return {
+                "provider": "openrouter",
+                "name": "OpenRouter",
+                "configured": False,
+                "ok": False,
+                "model": self.openrouter_model,
+                **openrouter_status_help(None, model=self.openrouter_model, base_url=self.openrouter_base_url),
+            }
+
+        attempts: List[Dict[str, Any]] = []
+        last_help: Dict[str, Any] = {}
+        try:
+            for model in self.openrouter_model_candidates:
+                response = requests.post(
+                    self.openrouter_chat_url,
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "max_tokens": self.max_tokens,
+                        "temperature": 0.2,
+                    },
+                    timeout=self.timeout_seconds,
+                )
+                if response.ok:
+                    parsed = self._parse_chat_response(
+                        response=response,
+                        provider="openrouter",
+                        name="OpenRouter",
+                        model=model,
+                    )
+                    parsed["configured_model"] = self.openrouter_model
+                    parsed["working_model"] = model
+                    parsed["attempts"] = attempts
+                    parsed["base_url"] = self.openrouter_base_url
+                    if model != self.openrouter_model:
+                        parsed["next_action"] = f"Set NOMAD_OPENROUTER_MODEL={model}."
+                        parsed["remediation"] = [
+                            f"Set NOMAD_OPENROUTER_MODEL={model} so self-improvement uses the working OpenRouter model first."
+                        ]
+                    return parsed
+
+                last_help = openrouter_status_help(
+                    response.status_code,
+                    model=model,
+                    body=response.text,
+                    base_url=self.openrouter_base_url,
+                )
+                attempts.append(
+                    {
+                        "model": model,
+                        "status_code": response.status_code,
+                        "issue": last_help.get("issue"),
+                        "next_action": last_help.get("next_action"),
+                    }
+                )
+                if response.status_code not in {400, 404, 422}:
+                    return {
+                        "provider": "openrouter",
+                        "name": "OpenRouter",
+                        "model": model,
+                        "configured_model": self.openrouter_model,
+                        "configured": True,
+                        "ok": False,
+                        "status_code": response.status_code,
+                        "attempts": attempts,
+                        **last_help,
+                    }
+
+            return {
+                "provider": "openrouter",
+                "name": "OpenRouter",
+                "model": self.openrouter_model,
+                "configured": True,
+                "ok": False,
+                "attempts": attempts,
+                **last_help,
+            }
+        except Exception as exc:
+            return {
+                "provider": "openrouter",
+                "name": "OpenRouter",
+                "model": self.openrouter_model,
+                "configured": True,
+                "ok": False,
+                "base_url": self.openrouter_base_url,
+                "attempts": attempts,
+                "remediation": [
+                    "Check network access to openrouter.ai.",
+                    "Run python main.py --cli compute --json for an OpenRouter diagnosis.",
+                ],
+                "message": f"OpenRouter review failed: {exc}",
+            }
+
     def _parse_chat_response(
         self,
         response: requests.Response,
@@ -811,6 +921,8 @@ class HostedBrainRouter:
             providers.append("cloudflare_workers_ai")
         if self._should_use_hosted_provider("xai_grok", resources):
             providers.append("xai_grok")
+        if self._should_use_hosted_provider("openrouter", resources):
+            providers.append("openrouter")
         if self._should_use_codebuddy_brain():
             providers.append("codebuddy_brain")
         return self._rank_review_providers(providers, task_type=task_type)
@@ -833,6 +945,7 @@ class HostedBrainRouter:
             "huggingface": bool(self.hf_token),
             "cloudflare_workers_ai": bool(self.cloudflare_account_id and self.cloudflare_api_token),
             "xai_grok": bool(self.xai_token),
+            "openrouter": bool(self.openrouter_token),
         }.get(provider, False)
         if not configured:
             return False
@@ -960,6 +1073,7 @@ class HostedBrainRouter:
             "huggingface": self._huggingface_review,
             "cloudflare_workers_ai": self._cloudflare_review,
             "xai_grok": self._xai_grok_review,
+            "openrouter": self._openrouter_review,
             "codebuddy_brain": self._codebuddy_brain_review,
         }
         handler = handlers.get(provider)
@@ -1047,6 +1161,7 @@ class HostedBrainRouter:
             "huggingface": 0.0004,
             "cloudflare_workers_ai": 0.0005,
             "xai_grok": 0.003,
+            "openrouter": 0.0012,
             "codebuddy_brain": 0.0003,
         }.get(provider, 0.0)
         if total_tokens <= 0:
@@ -1061,6 +1176,7 @@ class HostedBrainRouter:
             "huggingface": ComputeLane.HUGGINGFACE,
             "cloudflare_workers_ai": ComputeLane.CLOUDFLARE_WORKERS_AI,
             "xai_grok": ComputeLane.XAI_GROK,
+            "openrouter": ComputeLane.OPENROUTER,
             "codebuddy_brain": ComputeLane.CODEBUDDY_BRAIN,
         }
         return mapping.get(provider, ComputeLane.UNKNOWN)
@@ -1326,6 +1442,22 @@ class SelfImprovementEngine:
             "human_unlocks": state.get("self_development_unlocks") or [],
             "high_value_pattern": state.get("last_high_value_pattern"),
         }
+        try:
+            from nomad_operator_desk import operator_metrics_record
+
+            operator_metrics_record(
+                "self_improvement_cycle",
+                {
+                    "objective_preview": str(objective)[:240],
+                    "cycle_count_after": int(state.get("cycle_count") or 0),
+                    "external_review_count": int(result.get("external_review_count") or 0),
+                    "autonomous_skipped": bool((autonomous_development or {}).get("skipped")),
+                    "autonomous_reason": str((autonomous_development or {}).get("reason") or ""),
+                    "human_unlocks_count": len(human_unlocks or []),
+                },
+            )
+        except Exception:
+            pass
         return result
 
     def _active_codebuddy_review(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1398,6 +1530,7 @@ class SelfImprovementEngine:
             "huggingface": self._provider_state(hosted.get("huggingface") or {}),
             "cloudflare_workers_ai": self._provider_state(hosted.get("cloudflare_workers_ai") or {}),
             "xai_grok": self._provider_state(hosted.get("xai_grok") or {}),
+            "openrouter": self._provider_state(hosted.get("openrouter") or {}),
             "ollama": {
                 "available": (probe.get("ollama") or {}).get("available", False),
                 "api_reachable": (probe.get("ollama") or {}).get("api_reachable", False),

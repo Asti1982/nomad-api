@@ -143,3 +143,60 @@ def test_hosted_brain_router_uses_xai_grok_review(monkeypatch):
     assert result["provider"] == "xai_grok"
     assert result["working_model"] == "grok-4.20-reasoning"
     assert "xai-secret-test-token" not in str(result)
+
+
+def test_openrouter_probe_reports_missing_key_without_leaking_env(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "openai/gpt-4o-mini")
+
+    result = LocalComputeProbe()._openrouter_info()
+
+    assert result["available"] is False
+    assert result["issue"] == "openrouter_missing_token"
+    assert result["base_url"] == "https://openrouter.ai/api/v1"
+    assert result["token_env_var"] == "OPENROUTER_API_KEY"
+
+
+def test_openrouter_probe_falls_back_to_working_model_candidate(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-token")
+    monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "unknown-openrouter-model")
+    monkeypatch.delenv("NOMAD_OPENROUTER_MODEL_CANDIDATES", raising=False)
+
+    def fake_post(*args, **kwargs):
+        model = kwargs["json"]["model"]
+        if model == "unknown-openrouter-model":
+            return FakeResponse(404, text='{"message":"model not found"}')
+        return FakeResponse(200, payload={"choices": [{"message": {"content": "OK"}}]})
+
+    monkeypatch.setattr("compute_probe.requests.post", fake_post)
+
+    result = LocalComputeProbe()._openrouter_info()
+
+    assert result["available"] is True
+    assert result["working_model"] == "openai/gpt-4o-mini"
+    assert result["next_action"] == "Set NOMAD_OPENROUTER_MODEL=openai/gpt-4o-mini."
+    assert result["attempts"][0]["model"] == "unknown-openrouter-model"
+    assert "sk-or-v1-test-token" not in str(result)
+
+
+def test_hosted_brain_router_uses_openrouter_review(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-token")
+    monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("NOMAD_HOSTED_BRAIN_MODE", "always")
+    monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
+
+    def fake_post(*args, **kwargs):
+        return FakeResponse(
+            200,
+            payload={"choices": [{"message": {"content": "Diagnosis: ok\nAction1: ship\nAction2: test\nQuery: scout"}}]},
+        )
+
+    monkeypatch.setattr("self_improvement.requests.post", fake_post)
+
+    router = HostedBrainRouter()
+    result = router._openrouter_review([{"role": "user", "content": "review Nomad"}])
+
+    assert result["ok"] is True
+    assert result["provider"] == "openrouter"
+    assert result["working_model"] == "openai/gpt-4o-mini"
+    assert "sk-or-v1-test-token" not in str(result)

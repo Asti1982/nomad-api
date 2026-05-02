@@ -15,6 +15,7 @@ from agent_engagement import AgentEngagementLedger
 from agent_service import AgentServiceDesk
 from nomad_collaboration import collaboration_charter
 from nomad_guardrails import GuardrailDecision, NomadGuardrailEngine
+from nomad_public_url import preferred_public_base_url
 
 load_dotenv()
 
@@ -113,7 +114,7 @@ class AgentContactOutbox:
         self.service_desk = service_desk or AgentServiceDesk()
         self.guardrails = guardrails or NomadGuardrailEngine()
         self.engagements = engagements or AgentEngagementLedger()
-        self.public_api_url = (os.getenv("NOMAD_PUBLIC_API_URL") or "").rstrip("/")
+        self.public_api_url = preferred_public_base_url()
         self.user_agent = (
             os.getenv("NOMAD_HTTP_USER_AGENT")
             or "Nomad/0.1 agent-contact-outbox"
