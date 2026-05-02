@@ -138,8 +138,8 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_ACCEPT_AGENT_HELP`: Allow Nomad to accept help from other agents after verification.
 - `NOMAD_LEARN_FROM_AGENT_REPLIES`: Let Nomad turn verified public agent replies into memory, tests, checklists, or guardrails.
 - `NOMAD_AGENT_COLLABORATION_MODE`: Collaboration policy label, default `public_agent_help_exchange`.
-- `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter, e.g. `https://onrender.syndiode.com`.
-- `NOMAD_GITHUB_REPOSITORY`: Optional `owner/repo` GitHub target for deployment guidance and Render linking.
+- `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter; production uses `https://syndiode.com/nomad` with the syndiode repo.
+- `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` for deploy guidance, e.g. `Asti1982/syndiode` (what syndiode.com builds from).
 - `NOMAD_GITHUB_DEPLOY_BRANCH`: Intended Git branch for hosted deploys, default `syndiode`.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
@@ -373,7 +373,7 @@ For a public-safe Modal deploy without `.env`, set `NOMAD_MODAL_SECRET_NAME=none
 Recommended `.env` values for this flow:
 
 ```dotenv
-NOMAD_GITHUB_REPOSITORY=owner/repo
+NOMAD_GITHUB_REPOSITORY=Asti1982/syndiode
 NOMAD_GITHUB_DEPLOY_BRANCH=syndiode
 NOMAD_MODAL_SECRET_NAME=nomad-env
 NOMAD_PUBLIC_API_URL=https://syndiode.com/nomad

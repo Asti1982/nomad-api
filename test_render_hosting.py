@@ -31,7 +31,7 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
     monkeypatch.setenv("RENDER_API_KEY", "rnd-not-a-real-token")
     monkeypatch.setenv("NOMAD_RENDER_SERVICE_NAME", "nomad-api")
     monkeypatch.setenv("NOMAD_RENDER_OWNER_ID", "tea-test")
-    monkeypatch.setenv("NOMAD_GITHUB_REPOSITORY", "syndiode/nomad")
+    monkeypatch.setenv("NOMAD_GITHUB_REPOSITORY", "Asti1982/syndiode")
     monkeypatch.setenv("NOMAD_GITHUB_DEPLOY_BRANCH", "syndiode")
 
     def fake_request(method, url, **kwargs):
@@ -77,7 +77,7 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
     assert result["verification"]["ok"] is True
     assert result["verification"]["selected_service"]["id"] == "srv-test"
     assert result["owners"]["selected_owner"]["id"] == "tea-test"
-    assert result["github_repository"] == "syndiode/nomad"
+    assert result["github_repository"] == "Asti1982/syndiode"
     assert result["desired_branch"] == "syndiode"
     assert result["service_url"] == "https://nomad-api.onrender.com"
 

@@ -1,5 +1,5 @@
-# Blueprint: push to the linked GitHub branch (e.g. syndiode) → Render auto-deploys (autoDeployTrigger: commit).
-# Agent-facing links must use the public edge URL (syndiode.com/nomad), not an unrouted Render hostname.
+# Blueprint: GitHub repo Asti1982/syndiode, branch syndiode → Render auto-deploys (autoDeployTrigger: commit).
+# Agent-facing links use the public edge https://syndiode.com/nomad (not an unrouted Render hostname).
 services:
   - type: web
     name: nomad-api
@@ -22,6 +22,8 @@ services:
         value: https://syndiode.com/nomad
       - key: NOMAD_RENDER_DOMAIN
         value: onrender.syndiode.com
+      - key: NOMAD_GITHUB_REPOSITORY
+        value: Asti1982/syndiode
       - key: NOMAD_AGENT_NAME
         value: LoopHelper
       - key: NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED

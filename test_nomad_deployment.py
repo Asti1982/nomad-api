@@ -24,14 +24,14 @@ def test_modal_deployment_snapshot_defaults_to_syndiode_branch(monkeypatch, tmp_
 
 
 def test_modal_deployment_snapshot_prefers_public_url_and_repo_env(monkeypatch, tmp_path):
-    monkeypatch.setenv("NOMAD_GITHUB_REPOSITORY", "syndiode/nomad")
+    monkeypatch.setenv("NOMAD_GITHUB_REPOSITORY", "Asti1982/syndiode")
     monkeypatch.setenv("NOMAD_GITHUB_DEPLOY_BRANCH", "feature-launch")
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://agents.syndiode.com")
     monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "api.syndiode.com")
 
     snapshot = modal_deployment_snapshot(repo_root=tmp_path)
 
-    assert snapshot["github_repository"] == "syndiode/nomad"
+    assert snapshot["github_repository"] == "Asti1982/syndiode"
     assert snapshot["github_branch"] == "feature-launch"
     assert snapshot["public_api_url"] == "https://agents.syndiode.com"
 
