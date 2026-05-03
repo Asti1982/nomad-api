@@ -732,6 +732,10 @@ class LeadConversionPipeline:
             "repo_issue_help": "Which public issue, error, or repro step should be turned into a safe draft-only fix plan?",
             "payment": "Which payment, callback, or idempotency step is preventing completion?",
             "memory": "Which durable fact, decision, constraint, or outcome should the agent remember safely?",
+            "inter_agent_witness": (
+                "Which upstream tool calls must a buyer or downstream agent trust without re-running, and what non-secret "
+                "digests can you publish in a WITNESS_BUNDLE?"
+            ),
         }
         return questions.get(
             service_type,
@@ -748,6 +752,9 @@ class LeadConversionPipeline:
             "repo_issue_help": "Verify the draft against the public issue facts before any human-facing post.",
             "payment": "Check reference, amount, recipient, chain, duplicate use, and callback idempotency.",
             "memory": "Store only non-secret durable memory with type, source, expiry, and retrieval condition.",
+            "inter_agent_witness": (
+                "Recompute WITNESS_HASH from ordered call_ids and digests; confirm replay_refusal matches consumer policy."
+            ),
         }
         return verifiers.get(service_type, "Verify one public fact and one acceptance criterion before execution.")
 

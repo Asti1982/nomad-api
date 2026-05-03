@@ -184,6 +184,27 @@ def test_public_lead_discovery_uses_focus_catalog_from_file(tmp_path, monkeypatc
     assert result["source_plan"]["public_surfaces"][0]["url"] == "https://github.com/search?q=quota&type=issues"
 
 
+def test_scout_public_leads_calibration_bundle_threshold_sweep(monkeypatch):
+    monkeypatch.setenv("NOMAD_LEAD_FOCUS", "compute_auth")
+    scout = LeadDiscoveryScout(session=FakeSession())
+    out = scout.scout_public_leads(
+        query='"AI agent" "rate limit"',
+        limit=2,
+        include_calibration_bundle=True,
+        candidate_multiplier=3,
+    )
+    assert out["mode"] == "lead_discovery"
+    cb = out.get("calibration_bundle") or {}
+    assert cb.get("schema") == "nomad.lead_focus_calibration.v1"
+    assert cb.get("focus") == "compute_auth"
+    assert cb.get("min_focus_score_configured") == 8.0
+    sweep = cb.get("threshold_sweep") or []
+    assert len(sweep) >= 5
+    assert all("min_focus_score" in row and "qualified_count" in row for row in sweep)
+    assert isinstance(cb.get("recommendation"), str)
+    assert cb.get("raw_candidates")
+
+
 def test_public_lead_discovery_filters_out_unqualified_noise(monkeypatch):
     monkeypatch.setenv("NOMAD_LEAD_FOCUS", "compute_auth")
 
@@ -225,3 +246,44 @@ def test_default_queries_prioritize_seed_queries_from_catalog(tmp_path, monkeypa
         'repo:microsoft/autogen "rate limit" is:issue is:open',
         '"AI agent" quota is:issue is:open',
     ]
+
+
+def test_balanced_focus_score_boosts_agent_infra_core_types(monkeypatch):
+    monkeypatch.delenv("NOMAD_LEAD_AGENT_INFRA_FOCUS_BOOST", raising=False)
+    scout = LeadDiscoveryScout(session=FakeSession())
+    plan: dict = {}
+    base = {
+        "focus_match": True,
+        "addressable_now": True,
+        "buyer_readiness_score": 1.0,
+        "pain_score": 3.0,
+        "pain_terms": ["parallel"],
+        "recommended_service_type": "repo_issue_help",
+    }
+    infra = {**base, "recommended_service_type": "tool_turn_invariant"}
+    assert scout._focus_score(infra, "balanced", plan) > scout._focus_score(base, "balanced", plan)
+
+
+def test_matches_focus_agent_infra_prime_by_recommended_type():
+    scout = LeadDiscoveryScout(session=FakeSession())
+    lead = {
+        "title": "x",
+        "pain": "y",
+        "pain_terms": [],
+        "recommended_service_type": "mcp_production",
+    }
+    assert scout._matches_focus(lead, "agent_infra_prime") is True
+
+
+def test_is_qualified_lead_agent_infra_prime_accepts_core_service_type(monkeypatch):
+    monkeypatch.setenv("NOMAD_LEAD_FOCUS", "agent_infra_prime")
+    scout = LeadDiscoveryScout(session=FakeSession())
+    lead = {
+        "focus_match": True,
+        "addressable_now": True,
+        "focus_score": 12.0,
+        "pain_terms": ["misc"],
+        "pain_score": 1.0,
+        "recommended_service_type": "context_propagation_contract",
+    }
+    assert scout._is_qualified_lead(lead, "agent_infra_prime", scout.source_plan("agent_infra_prime")) is True

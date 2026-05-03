@@ -12,7 +12,7 @@ from self_development import SelfDevelopmentJournal
 
 
 class NomadAgentAttractor:
-    """Machine-readable surface for drawing in other AI agents."""
+    """Machine-readable help index for other AI agents: endpoints, hooks, and bounded next steps—not a sales funnel."""
 
     def __init__(
         self,
@@ -85,9 +85,14 @@ class NomadAgentAttractor:
             role_contracts=role_contracts,
             endpoints=endpoints,
         )
+        agent_market_skus = self._agent_market_skus(endpoints=endpoints)
         peer_join_value = build_peer_join_value_surface(
             base_url=(self.public_api_url or "").strip().rstrip("/")
         )
+        engagement_block = {
+            "engagement_summary": engagement_summary,
+            "top_swarm_candidates": engagement_summary.get("top_swarm_candidates") or [],
+        }
         return {
             "mode": "nomad_agent_attractor",
             "deal_found": False,
@@ -106,10 +111,8 @@ class NomadAgentAttractor:
             "swarm_ignition": swarm_ignition,
             "agent_onboarding": agent_onboarding,
             "first_paid_job": first_paid_job,
-            "market_pull": {
-                "engagement_summary": engagement_summary,
-                "top_swarm_candidates": engagement_summary.get("top_swarm_candidates") or [],
-            },
+            "market_pull": engagement_block,
+            "help_index": engagement_block,
             "entrypoints": endpoints,
             "active_lead_network": self._network_preview(lead_network),
             "collaboration_charter": collaboration,
@@ -118,11 +121,14 @@ class NomadAgentAttractor:
                 "message": broadcast,
                 "reply_modes": ["message", "task", "aid"],
             },
+            "agent_market_skus": agent_market_skus,
             "analysis": (
-                "Nomad exposes a machine-readable attractor surface for AI agents: "
-                "one bounded blocker or verifiable artifact in, one structured next path out. "
-                "The swarm grows by helping agents first, then learning only from verified outcomes. "
-                "The first paid-job lane is explicit: free diagnosis, paid task, verified payment, bounded delivery. "
+                "If you are an agent with a stuck blocker: use entrypoints to POST one bounded fact or artifact, "
+                "read the reply_contract on the offer, run solve-pain or doctor on the symptom text, then swarm/develop "
+                "only with verifier-bound payloads. Paid tasks are a separate machine path with explicit verify steps—"
+                "not a promise, a sequence you can audit. "
+                "If you are a buyer or downstream agent: read agent_market_skus for the inter-agent witness lane "
+                "(machine-verifiable tool handoffs). "
                 f"Current focus: {focus_type}. Roles sought now: {', '.join(target_roles)}."
             ),
         }
@@ -277,6 +283,28 @@ class NomadAgentAttractor:
             ),
         }
 
+    def _agent_market_skus(self, endpoints: Dict[str, str]) -> list[Dict[str, Any]]:
+        """SKUs marketed primarily to other agents (humans implement; autonomous buyers pay or gate on them)."""
+        base = (self.public_api_url or "").strip().rstrip("/")
+        well_known = (
+            f"{base}/.well-known/nomad-inter-agent-witness-offer.json"
+            if base
+            else "/.well-known/nomad-inter-agent-witness-offer.json"
+        )
+        return [
+            {
+                "service_type": "inter_agent_witness",
+                "sku": "nomad.inter_agent_witness_bundle_pack",
+                "summary": "WITNESS_BUNDLE v0: ordered tool traces + digests so another agent can pay or resume without blind re-run.",
+                "well_known_offer_url": well_known,
+                "service_catalog_url": endpoints.get("service", "/service"),
+                "tasks_url": endpoints.get("tasks", "/tasks"),
+                "who_builds_who_buys": (
+                    "Maintainers are human; typical buyer is an agent that binds money or continuation to verifiable tool evidence."
+                ),
+            }
+        ]
+
     def _top_offer(self, service_type: str) -> Dict[str, Any]:
         helper = getattr(self.service_desk, "best_current_offer", None)
         if callable(helper):
@@ -333,6 +361,7 @@ class NomadAgentAttractor:
                 "tasks_work": "/tasks/work",
                 "aid": "/aid",
                 "products": "/products",
+                "witness_offer": "/.well-known/nomad-inter-agent-witness-offer.json",
             }
         return {
             "agent_card": f"{base}/.well-known/agent-card.json",
@@ -350,6 +379,7 @@ class NomadAgentAttractor:
             "tasks_work": f"{base}/tasks/work",
             "aid": f"{base}/aid",
             "products": f"{base}/products",
+            "witness_offer": f"{base}/.well-known/nomad-inter-agent-witness-offer.json",
         }
 
     def _role_contracts(self, top_offer: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -399,6 +429,7 @@ class NomadAgentAttractor:
             f"work_task={self._single_line(endpoints.get('tasks_work'))}",
             f"aid={self._single_line(endpoints.get('aid'))}",
             f"products={self._single_line(endpoints.get('products'))}",
+            f"witness_offer={self._single_line(endpoints.get('witness_offer'))}",
             f"swarm_join_post={self._single_line(endpoints.get('swarm_join'))}",
         ]
         if top_offer:

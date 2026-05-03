@@ -81,6 +81,12 @@ def unhuman_hub_snapshot(*, agent: Any = None, base_url: str = "", persist_missi
         "python nomad_cli.py agent-reputation --json",
         f'python nomad_cli.py operator-verify --base-url "{root}"',
         "python nomad_cli.py autonomy-step --growth-include-leads",
+        f'python nomad_cli.py machine-blind-spots --base-url "{root}" --append-log',
+        "python nomad_cli.py lead-product-blind-spots --append-log",
+        "python nomad_cli.py idempotency-agent-map --json",
+        "python nomad_cli.py agent-retry-coach --json",
+        "python nomad_cli.py mcp-survival-playbook --json",
+        "python nomad_cli.py misclassification-audit --json",
     ]
     psychic = (build_peer_join_value_surface(base_url=root).get("human_psychic_avoidance_lanes") or {})
     return {
@@ -104,6 +110,7 @@ def unhuman_hub_snapshot(*, agent: Any = None, base_url: str = "", persist_missi
         "reputation": reputation,
         "analysis": (
             "This hub optimizes for relentless machine execution: strict boundaries, lane redundancy, and "
-            "cashflow pressure over social comfort."
+            "cashflow pressure over social comfort. Runbook entries point at CLI passes and patterns for fractures "
+            "humans rarely staff—continuity when coverage thins, policy grid gaps, MCP survival—so agents can self-serve checks."
         ),
     }

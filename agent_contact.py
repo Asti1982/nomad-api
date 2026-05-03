@@ -648,8 +648,14 @@ class AgentContactOutbox:
             limit=3,
         )
         role_contracts = attractor.get("role_contracts") if isinstance(attractor.get("role_contracts"), dict) else {}
+        problem_raw = str(contact.get("problem") or "")
+        wire_schema = (
+            "nomad.outreach.v3"
+            if problem_raw.lstrip().startswith("nomad.outreach.v3")
+            else "nomad.outreach.v2"
+        )
         lines = [
-            "nomad.outreach.v2",
+            wire_schema,
             f"problem={self._single_line(contact.get('problem'))}",
             f"service_type={self._single_line(contact.get('service_type'))}",
             "request=send_one_blocker_or_failing_step",

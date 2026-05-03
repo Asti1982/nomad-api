@@ -1129,3 +1129,15 @@ def test_autopilot_outreach_focus_follows_high_value_pattern(monkeypatch, tmp_pa
     assert agent.agent_campaigns.calls[0]["service_type"] == "compute_auth"
     assert result["outreach"]["service_type_focus"] == "compute_auth"
     assert "quota" in result["outreach"]["autopilot_query"] or "token" in result["outreach"]["autopilot_query"]
+
+
+def test_outreach_query_token_includes_openclaw_for_mcp_runtimes():
+    assert NomadAutopilot._looks_like_outreach_query('"openclaw" "mcp" "https://"') is True
+    assert NomadAutopilot._looks_like_outreach_query("openclaw gateway only") is True
+
+
+def test_service_type_queries_include_inter_agent_witness():
+    q = NomadAutopilot._service_type_queries("inter_agent_witness")
+    assert any("witness" in item for item in q)
+    assert any("openclaw" in item for item in q)
+    assert any("streamable-http" in item for item in q)

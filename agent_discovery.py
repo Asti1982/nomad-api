@@ -24,6 +24,9 @@ DEFAULT_DISCOVERY_QUERIES = [
     '".well-known/agent-card.json" "https://"',
     '"a2a" "agent-card" "https://"',
     '"mcp" "agent" "https://"',
+    '"openclaw" "mcp" "https://"',
+    '"openclaw" "agent-card" "json"',
+    '"streamable-http" "mcp" "agent" "https://"',
 ]
 
 

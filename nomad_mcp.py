@@ -7,6 +7,12 @@ from mission import MISSION_STATEMENT, mission_text
 from nomad_public_url import preferred_public_base_url
 from nomad_swarm_registry import build_peer_join_value_surface
 from nomad_guardrails import guardrail_status
+from nomad_wire_contract import (
+    attach_wire_diag,
+    build_mcp_tool_wire_diag,
+    routing_hash_from_tool_names,
+    stateful_context_audit_missing,
+)
 from self_development import SelfDevelopmentJournal
 from workflow import NomadAgent
 
@@ -65,7 +71,8 @@ class NomadMcpServer:
                 "For agent-to-agent coordination prefer tools nomad_swarm_manifest, nomad_swarm_join_contract, "
                 "and nomad_swarm_develop (or MCP resources nomad://swarm-manifest / nomad://swarm-join-contract) "
                 "alongside HTTP AgentCard and /swarm routes. Boot graph: resource nomad://agent-native-index or "
-                "GET /.well-known/nomad-agent.json. Remote hosts: GET /openapi.json for OpenAPI 3."
+                "nomad://agent-invariants (wire_diag + intent neutrality) or GET /.well-known/nomad-agent.json. "
+                "Remote hosts: GET /openapi.json for OpenAPI 3."
             ),
         }
 
@@ -552,15 +559,42 @@ class NomadMcpServer:
             },
         ]
 
+    def _mcp_tool_routing_fingerprint(self) -> tuple[str, list[str]]:
+        names = [str(t.get("name") or "") for t in self._tools() if str(t.get("name") or "").strip()]
+        return routing_hash_from_tool_names(names), names
+
     def _call_tool(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        name = params.get("name")
-        arguments = params.get("arguments") or {}
+        name = str(params.get("name") or "")
+        raw_args = params.get("arguments") or {}
+        arguments: Dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+        routing_hash, catalog_names = self._mcp_tool_routing_fingerprint()
+        wire_diag = build_mcp_tool_wire_diag(
+            tool_name=name,
+            arguments=arguments,
+            routing_table_hash=routing_hash,
+            tool_catalog_names=catalog_names,
+        )
+        if os.getenv("NOMAD_MCP_STRICT_CONTEXT", "").strip().lower() in {"1", "true", "yes", "on"}:
+            missing_ctx = stateful_context_audit_missing(name, arguments)
+            if missing_ctx:
+                err_payload = {
+                    "error": "context_envelope_reject",
+                    "message": (
+                        f"NOMAD_MCP_STRICT_CONTEXT enabled: missing {', '.join(missing_ctx)} for tool {name!r}. "
+                        "Supply tenant_id and correlation_id (or aliases such as trace_id) in tool arguments."
+                    ),
+                    "missing_context_keys": missing_ctx,
+                }
+                return self._tool_result(attach_wire_diag(err_payload, wire_diag), is_error=True)
         direct_result = self._call_direct_tool(name=name, arguments=arguments)
         if direct_result is not None:
-            return self._tool_result(direct_result)
+            return self._tool_result(attach_wire_diag(direct_result, wire_diag))
         query = self._tool_query(name=name, arguments=arguments)
         if not query:
-            return self._tool_result({"error": f"Unknown tool: {name}"}, is_error=True)
+            return self._tool_result(
+                attach_wire_diag({"error": f"Unknown tool: {name}"}, wire_diag),
+                is_error=True,
+            )
         if query == "__self_development_status__":
             result = {
                 "mode": "self_development_status",
@@ -569,7 +603,7 @@ class NomadMcpServer:
             }
         else:
             result = self.agent.run(query)
-        return self._tool_result(result)
+        return self._tool_result(attach_wire_diag(result, wire_diag))
 
     def _call_direct_tool(self, name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if name == "nomad_public_leads":
@@ -951,6 +985,15 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://agent-invariants",
+                "name": "Nomad Agent Invariants",
+                "description": (
+                    "Wire diagnostics contract (nomad_wire_diag), intent-neutrality rules, and env bindings; "
+                    "same payload as GET /.well-known/nomad-agent-invariants.json."
+                ),
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://swarm-manifest",
                 "name": "Nomad Swarm Manifest",
                 "description": "GET /swarm equivalent JSON: swarm endpoints, onboarding, growth_surface.peer_join_value.",
@@ -1086,6 +1129,15 @@ class NomadMcpServer:
 
             text = json.dumps(
                 agent_native_index(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-invariants":
+            from nomad_agent_invariants import build_agent_invariants_document
+
+            text = json.dumps(
+                build_agent_invariants_document(public_base_url=self._mcp_public_base_url()),
                 indent=2,
                 ensure_ascii=False,
             )

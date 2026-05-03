@@ -20,68 +20,202 @@ PRODUCT_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
     "compute_auth": {
         "sku": "nomad.compute_unlock_pack",
         "name": "Nomad Compute Unlock Pack",
-        "tagline": "Separate auth, quota, model access, and fallback routing before an agent retries blindly.",
-        "buyer": "agents blocked by model tokens, rate limits, hosted inference, or fallback-brain failures",
+        "tagline": (
+            "Problem: auth, quota, model access, and fallback are collapsed into one retry. "
+            "Output: separated failure classes and one bounded fallback ladder before next call."
+        ),
+        "buyer": "agent runs where provider errors are opaque and retries amplify the wrong failure mode",
     },
     "tool_failure": {
         "sku": "nomad.tool_guardrail_pack",
         "name": "Nomad Tool Guardrail Pack",
-        "tagline": "Intercept risky tool calls, schema mismatches, retries, and approval boundaries before execution.",
-        "buyer": "agent teams wiring tools, MCP workbenches, or autonomous tool-call loops",
+        "tagline": (
+            "Problem: risky or mismatched tool calls enter execution without schema or approval boundary. "
+            "Output: interception checklist, contract patch, bounded retry rule."
+        ),
+        "buyer": "autonomous tool-call stacks where schema drift or guardrail gaps cause repeat damage",
     },
     "mcp_integration": {
         "sku": "nomad.mcp_contract_pack",
         "name": "Nomad MCP Contract Pack",
-        "tagline": "Turn flaky MCP/API calls into contracts with schema, timeout, error shape, and dry-run checks.",
-        "buyer": "agents exposing or consuming MCP/API tools",
+        "tagline": (
+            "Problem: MCP/API calls lack stable schema, timeout, and error shape before entering loops. "
+            "Output: contract table plus dry-run path."
+        ),
+        "buyer": "agents integrating MCP or JSON-RPC tools without frozen request/response expectations",
+    },
+    "mcp_production": {
+        "sku": "nomad.mcp_production_survival_pack",
+        "name": "Nomad MCP Production Survival Pack",
+        "tagline": (
+            "Problem: ambiguous tool success flags, transport drops, registry or gateway flakes, schema drift, "
+            "or capped tool loops masquerade as model failure. Output: failure-class matrix and one recovery branch per class."
+        ),
+        "buyer": (
+            "agent runs hitting MCP in production (Copilot-style stacks, remote servers) where humans relabel infra pain as LLM"
+        ),
+    },
+    "attribution_clarity": {
+        "sku": "nomad.attribution_clarity_pack",
+        "name": "Nomad Attribution Clarity Pack",
+        "tagline": (
+            "Problem: incidents get moral labels before subsystem evidence exists. Output: hypotheses, disproofs, "
+            "probe owner, machine verdict — so the next step is observable, not narrative."
+        ),
+        "buyer": (
+            "agents or operators stuck in false-positive / mis-triage loops where contract, infra, or policy signals exist but nobody correlates them"
+        ),
+    },
+    "branch_economics": {
+        "sku": "nomad.branch_economics_ledger_pack",
+        "name": "Nomad Branch Economics Ledger Pack",
+        "tagline": (
+            "Problem: one aggregate spend or token line hides which branch burns retries vs model vs tools. "
+            "Output: per-branch dimensions plus latency percentiles for the same keys."
+        ),
+        "buyer": (
+            "multi-branch agent fleets where throttles or budgets need evidence on marginal retry and tool I/O, not headline totals"
+        ),
+    },
+    "stewardship_gap": {
+        "sku": "nomad.stewardship_continuity_envelope_pack",
+        "name": "Nomad Stewardship Continuity Envelope Pack",
+        "tagline": (
+            "Problem: human coverage thins while runs stay open; nobody publishes SAFE_CONTINUE or CONTINUITY_CLASS. "
+            "Output: verifier-bound degraded lanes, read-only capsule when halt is intentional, operator packet."
+        ),
+        "buyer": (
+            "agents mid-flight when monitoring or ownership goes quiet and you still need a shared machine rule for what may run"
+        ),
+    },
+    "policy_lacuna": {
+        "sku": "nomad.policy_lacuna_positive_envelope_pack",
+        "name": "Nomad Policy Lacuna Positive Envelope Pack",
+        "tagline": (
+            "Problem: policy grid has no row for your action class; orgs freeze or improvise inconsistently. "
+            "Output: POSITIVE_ENVELOPE vs REQUIRES_MAPPING with verifiers; governance ping only on the second set."
+        ),
+        "buyer": (
+            "agents executing in corpora with sparse written rules who need a reproducible split between still-allowed work and owner-gated work"
+        ),
+    },
+    "tool_turn_invariant": {
+        "sku": "nomad.tool_turn_parity_pack",
+        "name": "Nomad Tool-Turn Parity Pack",
+        "tagline": (
+            "Problem: tool call/response cardinality or sibling ordering breaks after parallel or deep MCP traffic; "
+            "session hits unrecoverable 400 or mute. Output: parity diff, freeze rule, reset vs repair branch."
+        ),
+        "buyer": "agent runtimes where provider rules require equal function call/response parts per turn",
+    },
+    "tool_transport_routing": {
+        "sku": "nomad.tool_transport_router_pack",
+        "name": "Nomad Tool Transport Router Pack",
+        "tagline": (
+            "Problem: hosted MCP tools are invoked via function_call (or wrong JSON-RPC channel). Output: "
+            "ROUTING_TABLE lockfile + gateway rejection on path mismatch."
+        ),
+        "buyer": "realtime or multi-transport stacks mixing local functions and hosted MCP under one agent",
+    },
+    "context_propagation_contract": {
+        "sku": "nomad.context_envelope_pack",
+        "name": "Nomad Invocation Context Envelope Pack",
+        "tagline": (
+            "Problem: tenant, principal, or correlation context never reaches the MCP server on the wire. "
+            "Output: CONTEXT_ENVELOPE schema + injection point + reject-on-missing for stateful tools."
+        ),
+        "buyer": "multi-tenant agent gateways where MCP leaves identity propagation underspecified",
+    },
+    "chain_deadline_budget": {
+        "sku": "nomad.chain_deadline_budget_pack",
+        "name": "Nomad Chain Deadline Budget Pack",
+        "tagline": (
+            "Problem: one global turn/planner timeout kills heterogeneous tool chains. Output: per-segment "
+            "deadline row + slack + BUDGET_EXHAUSTED with segment id."
+        ),
+        "buyer": "sequential tool pipelines where p99 latency variance spans orders of magnitude",
+    },
+    "inter_agent_witness": {
+        "sku": "nomad.inter_agent_witness_bundle_pack",
+        "name": "Nomad Inter-Agent Witness Bundle Pack",
+        "tagline": (
+            "Problem: agent B must trust agent A's tool slice to resume spend or execution, but humans are not in the loop "
+            "as notaries and blind re-run of every tool is too expensive. Output: WITNESS_BUNDLE v0 (ordered call_ids, "
+            "non-secret output digests, envelope snapshot), consumer verifier checklist, replay_refusal boundary."
+        ),
+        "buyer": (
+            "multi-agent stacks, A2A delegations, or buyer agents that pay only after machine-verifiable prior work "
+            "— a pain class humans rarely budget for because it is not a dashboard metric"
+        ),
     },
     "loop_break": {
         "sku": "nomad.loop_breaker_pack",
         "name": "Nomad Loop Breaker Pack",
-        "tagline": "Pause repeated failures, preserve state, and resume only with changed evidence or a safe fallback.",
-        "buyer": "agents stuck in retries, timeouts, or repeated tool errors",
+        "tagline": (
+            "Problem: same error or timeout repeats with no new evidence. "
+            "Output: pause fingerprint, last-good snapshot, one recovery lane or explicit approval gate."
+        ),
+        "buyer": "agent loops stuck on identical tool or HTTP failures without circuit semantics",
     },
     "human_in_loop": {
         "sku": "nomad.hitl_unlock_pack",
         "name": "Nomad HITL Unlock Pack",
-        "tagline": "Convert blocked approvals into legitimate do-now, send-back, and done-when contracts.",
-        "buyer": "agents blocked by approvals, login gates, operator review, or human judgment",
+        "tagline": (
+            "Problem: human gates are vague strings instead of payloads. "
+            "Output: do-now / send-back / done-when contract with minimum evidence pack."
+        ),
+        "buyer": "runs blocked on approval, CAPTCHA, login, or review where the gate is underspecified",
     },
     "repo_issue_help": {
         "sku": "nomad.repo_issue_pr_plan_pack",
         "name": "Nomad Repo Issue PR Plan Pack",
-        "tagline": "Turn a public issue into a private repro checklist and PR/comment plan without posting unapproved.",
-        "buyer": "open-source maintainers and agent teams triaging public failures",
+        "tagline": (
+            "Problem: public issue context tempts premature posting. "
+            "Output: private repro checklist and PR/comment plan behind approval gate."
+        ),
+        "buyer": "agents or maintainers triaging GitHub issues without safe draft discipline",
     },
     "payment": {
         "sku": "nomad.payment_reliability_pack",
         "name": "Nomad Payment Reliability Pack",
-        "tagline": "Make wallet, x402, invoice, and callback flows idempotent before paid work resumes.",
-        "buyer": "agents accepting payments, invoices, x402 signatures, or wallet-funded tasks",
+        "tagline": (
+            "Problem: wallet or invoice state and delivery are coupled; retries double-charge risk. "
+            "Output: idempotent resume graph and verified transition list."
+        ),
+        "buyer": "agent-paid flows using wallet, x402, or callbacks where state machine is implicit",
     },
     "wallet_payment": {
         "sku": "nomad.payment_reliability_pack",
         "name": "Nomad Payment Reliability Pack",
-        "tagline": "Make wallet, x402, invoice, and callback flows idempotent before paid work resumes.",
-        "buyer": "agents accepting payments, invoices, x402 signatures, or wallet-funded tasks",
+        "tagline": (
+            "Problem: wallet or invoice state and delivery are coupled; retries double-charge risk. "
+            "Output: idempotent resume graph and verified transition list."
+        ),
+        "buyer": "agent-paid flows using wallet, x402, or callbacks where state machine is implicit",
     },
     "memory": {
         "sku": "nomad.memory_repair_pack",
         "name": "Nomad Memory Repair Pack",
-        "tagline": "Persist the missing non-secret lesson, decision, or constraint before the agent repeats the mistake.",
-        "buyer": "agents that forget constraints, preferences, solved blockers, or workflow decisions",
+        "tagline": (
+            "Problem: non-secret lessons evaporate between sessions so the same blocker returns. "
+            "Output: durable memory record with retrieval trigger and verifier."
+        ),
+        "buyer": "long-horizon agents losing constraints, decisions, or solved blockers across restarts",
     },
     "self_improvement": {
         "sku": "nomad.self_healing_pack",
         "name": "Nomad Self-Healing Pack",
-        "tagline": "Package solved blockers as reusable guardrails, checklists, memory, and verification steps.",
-        "buyer": "agent builders that want recurring fixes to become durable productized behavior",
+        "tagline": (
+            "Problem: one-off fixes never become guardrails or regression checks. "
+            "Output: packaged blocker → trigger → checklist → verifier artifact."
+        ),
+        "buyer": "builders who need repeat incidents to become machine-checkable behavior, not chat history",
     },
     "default": {
         "sku": "nomad.agent_rescue_pack",
         "name": "Nomad Agent Rescue Pack",
-        "tagline": "Turn one visible agent blocker into a safe diagnosis, next action, and paid upgrade path.",
-        "buyer": "agents with public, verifiable infrastructure pain",
+        "tagline": "Problem: visible blocker with thin human attention. Output: bounded diagnosis, next action, guardrail id, verifier hook.",
+        "buyer": "agents with public, verifiable infrastructure pain and no staffed path to classify it",
     },
 }
 
@@ -1150,6 +1284,11 @@ class NomadProductFactory:
         if bonus:
             score += bonus
             reason = f"{reason} {engagement_signal.get('priority_reason', '')}".strip()
+        if pain_type == "inter_agent_witness":
+            score += 22.0
+            reason = (
+                f"{reason} Agent-to-agent market SKU: witness bundles rank high for autonomous buyers."
+            ).strip()
         enriched["engagement_signal"] = engagement_signal
         enriched["priority_score"] = round(score, 2)
         enriched["priority_reason"] = reason

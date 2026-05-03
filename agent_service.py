@@ -61,6 +61,13 @@ SERVICE_TYPES = {
         "title": "Public repo issue help",
         "summary": "Draft a public-issue response, repro checklist, or PR plan without posting automatically.",
     },
+    "inter_agent_witness": {
+        "title": "Inter-agent witness bundle",
+        "summary": (
+            "Produce a machine-checkable WITNESS_BUNDLE so a downstream or buyer agent can verify a prior tool chain "
+            "without re-running every call or trusting chat prose."
+        ),
+    },
     "wallet_payment": {
         "title": "Wallet/payment flow",
         "summary": "Design a small wallet payment or verification path for agent-to-agent services.",
@@ -160,6 +167,24 @@ SERVICE_PACKAGE_TEMPLATES = {
             "offer_tier": "paid_unblock",
             "amount_mode": "requested_or_minimum",
             "delivery": "payment repair plan plus retry-safe resume path",
+        },
+    ],
+    "inter_agent_witness": [
+        {
+            "package_id": "starter_witness_skeleton",
+            "title": "Nomad Inter-Agent Witness Pack: Starter skeleton",
+            "summary": "Order tool call_ids, attach non-secret output digests, and define what a buyer agent may trust.",
+            "offer_tier": "starter_diagnosis",
+            "amount_mode": "minimum",
+            "delivery": "WITNESS_BUNDLE v0 draft plus consumer verifier checklist",
+        },
+        {
+            "package_id": "bounded_witness_contract",
+            "title": "Nomad Inter-Agent Witness Pack: Bounded contract",
+            "summary": "Ship schema version, WITNESS_HASH, replay_refusal scope, and redaction rules for delegation.",
+            "offer_tier": "paid_unblock",
+            "amount_mode": "requested_or_minimum",
+            "delivery": "versioned witness bundle plus replay boundary for receiving runtimes",
         },
     ],
     "custom": [
@@ -272,10 +297,28 @@ class AgentServiceDesk:
                 },
             },
             "buyer_discovery": {
-                "target": "agents with public buyer-intent signals for compute/auth, loop-break, HITL, payment, or self-improvement help",
+                "target": (
+                    "agents with public buyer-intent signals for compute/auth, loop-break, HITL, payment, "
+                    "self-improvement, or inter_agent_witness (machine-verifiable handoffs between agents)"
+                ),
                 "agent_contact_without_prior_approval": True,
                 "human_contact_requires_approval": True,
                 "conversion_pipeline": "free_value_first_then_PLAN_ACCEPTED_or_payment_task",
+            },
+            "agent_market_lane": {
+                "note": (
+                    "Humans build Nomad; some SKUs are still agent-market-first: the economic buyer is often another "
+                    "agent (pay or resume only after machine checks), not a human procurement dashboard."
+                ),
+                "featured_sku": {
+                    "service_type": "inter_agent_witness",
+                    "sku": "nomad.inter_agent_witness_bundle_pack",
+                    "well_known_offer_url": (
+                        f"{self.public_api_url.rstrip('/')}/.well-known/nomad-inter-agent-witness-offer.json"
+                        if self.public_api_url
+                        else "/.well-known/nomad-inter-agent-witness-offer.json"
+                    ),
+                },
             },
             "first_paid_job_protocol": self.first_paid_job_protocol(featured_product_offer),
             "interaction_contract": {
@@ -320,7 +363,7 @@ class AgentServiceDesk:
             },
             "value_pack_artifact": {
                 "schema": "nomad.agent_value_pack.v1",
-                "purpose": "Package one lead's painpoint question, free diagnosis, safe next steps, reply contract, and paid upgrade path.",
+                "purpose": "Package one lead's painpoint, bounded diagnosis, safe next steps, reply contract, and optional bounded task path (verify payment and delivery gates explicitly).",
                 "fields": [
                     "painpoint_question",
                     "pain_hypothesis",

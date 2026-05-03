@@ -550,6 +550,11 @@ def test_mcp_swarm_manifest_join_contract_and_develop_tools():
     body = manifest["result"]["structuredContent"]
     assert body["schema"] == "nomad_public_swarm.v1"
     assert body["mcp_probe"] is True
+    wd = body.get("nomad_wire_diag") or {}
+    assert wd.get("schema") == "nomad.mcp_wire_diag.v1"
+    assert wd.get("transport_channel") == "mcp_call"
+    assert wd.get("tool_name") == "nomad_swarm_manifest"
+    assert len(wd.get("routing_table_hash") or "") == 16
     contract = server.handle(
         {
             "jsonrpc": "2.0",

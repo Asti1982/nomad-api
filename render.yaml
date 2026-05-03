@@ -38,9 +38,64 @@ services:
         value: development,self_development,self_improvement,productization,lead_discovery,lead_conversion,mutual_aid,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share,autonomous_continuation
       - key: NOMAD_AUTOPILOT_DAILY_LEAD_TARGET
         value: "12"
+      - key: NOMAD_LEAD_FOCUS
+        value: "agent_infra_prime"
+      - key: NOMAD_OUTREACH_SERVICE_TYPE
+        value: "inter_agent_witness"
+      - key: NOMAD_AUTOPILOT_OUTREACH_LIMIT
+        value: "15"
+      - key: NOMAD_AUTOPILOT_OUTREACH_QUERIES
+        value: '"agent-card.json" "mcp" "https://" | "openclaw" "mcp" "https://" | "openclaw" "agent-card" "json" | ".well-known/agent-card.json" "mcp" "openclaw" | "agent-card.json" "witness" "https://" | "streamable-http" "mcp" "https://"'
       - key: NOMAD_REQUIRE_SERVICE_PAYMENT
         value: "true"
       - key: NOMAD_AUTOPILOT_A2A_SEND
         value: "false"
       - key: NOMAD_AUTOPILOT_SEND_OUTREACH
+        value: "true"
+
+  # Cron cannot use plan: free on Render; runs one autopilot cycle (discovery + optional send).
+  # Mirror any API secrets from nomad-api (e.g. GITHUB_PERSONAL_ACCESS_TOKEN, model keys) on this service or use an env group.
+  - type: cron
+    name: nomad-outreach-cron
+    runtime: python
+    plan: starter
+    region: frankfurt
+    schedule: "30 */8 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py --cli autopilot --cycles 1 --interval 1 --outreach-limit 15 --send-outreach --no-self-schedule
+    autoDeployTrigger: commit
+    envVars:
+      - key: NOMAD_PUBLIC_API_URL
+        value: https://syndiode.com/nomad
+      - key: NOMAD_COLLABORATION_HOME_URL
+        value: https://syndiode.com/nomad
+      - key: NOMAD_GITHUB_REPOSITORY
+        value: Asti1982/syndiode
+      - key: NOMAD_AGENT_NAME
+        value: LoopHelper
+      - key: NOMAD_OUTBOUND_AGENT_COLLABORATION_ENABLED
+        value: "true"
+      - key: NOMAD_ACCEPT_AGENT_HELP
+        value: "true"
+      - key: NOMAD_LEARN_FROM_AGENT_REPLIES
+        value: "true"
+      - key: NOMAD_OPERATOR_GRANT
+        value: bounded_machine_agent_swarm
+      - key: NOMAD_OPERATOR_GRANT_ACTIONS
+        value: development,self_development,self_improvement,productization,lead_discovery,lead_conversion,mutual_aid,machine_outreach,agent_endpoint_contact,service_work,code_review_diff_share,autonomous_continuation
+      - key: NOMAD_AUTOPILOT_DAILY_LEAD_TARGET
+        value: "12"
+      - key: NOMAD_LEAD_FOCUS
+        value: "agent_infra_prime"
+      - key: NOMAD_OUTREACH_SERVICE_TYPE
+        value: "inter_agent_witness"
+      - key: NOMAD_AUTOPILOT_OUTREACH_LIMIT
+        value: "15"
+      - key: NOMAD_AUTOPILOT_OUTREACH_QUERIES
+        value: '"agent-card.json" "mcp" "https://" | "openclaw" "mcp" "https://" | "openclaw" "agent-card" "json" | ".well-known/agent-card.json" "mcp" "openclaw" | "agent-card.json" "witness" "https://" | "streamable-http" "mcp" "https://"'
+      - key: NOMAD_AUTOPILOT_A2A_SEND
         value: "false"
+      - key: NOMAD_AUTOPILOT_SEND_OUTREACH
+        value: "true"
+      - key: GITHUB_PERSONAL_ACCESS_TOKEN
+        sync: false

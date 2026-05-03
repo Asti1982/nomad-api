@@ -68,6 +68,88 @@ def test_agent_pain_solver_supports_repo_issue_help_pattern():
     assert result["solution"]["guardrail"]["id"] == "draft_only_repro_plan"
 
 
+def test_agent_pain_solver_mcp_production_pattern_from_public_github_class_failures():
+    result = AgentPainSolver().solve(
+        problem=(
+            "Remote MCP returns validation text but is_error is false; background agent then hits "
+            "connection closed and registry 401 blocks safeoutputs."
+        ),
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "mcp_production"
+    assert result["solution"]["guardrail"]["id"] == "mcp_production_survival"
+
+
+def test_normalize_maps_blame_loop_alias_to_attribution_clarity():
+    assert normalize_pain_type("blame_loop") == "attribution_clarity"
+
+
+def test_agent_pain_solver_attribution_clarity_pattern():
+    result = AgentPainSolver().solve(
+        problem="Postmortem false positive: team blamed the model but root cause was MCP misclassified errors.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "attribution_clarity"
+    assert result["solution"]["guardrail"]["id"] == "blame_surface_mapper"
+
+
+def test_agent_pain_solver_branch_economics_pattern():
+    result = AgentPainSolver().solve(
+        problem="We need per-branch token usage, retry budget, and burn rate before throttling the worker.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "branch_economics"
+    assert result["solution"]["guardrail"]["id"] == "branch_economics_ledger"
+
+
+def test_agent_pain_solver_tool_turn_invariant_pattern():
+    result = AgentPainSolver().solve(
+        problem="Parallel tool burst then unrecoverable 400: function response parts do not match function call parts; session mute.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "tool_turn_invariant"
+    assert result["solution"]["guardrail"]["id"] == "turn_tool_parity_gate"
+
+
+def test_agent_pain_solver_tool_transport_routing_pattern():
+    result = AgentPainSolver().solve(
+        problem="Hosted MCP metrics_get_data exists but runtime sends function_call — tool not found; mcp_call was required.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "tool_transport_routing"
+    assert result["solution"]["guardrail"]["id"] == "tool_transport_path_lock"
+
+
+def test_agent_pain_solver_context_propagation_contract_pattern():
+    result = AgentPainSolver().solve(
+        problem="Identity propagation missing: tenant scope and correlation id never reach MCP server on stateful writes.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "context_propagation_contract"
+    assert result["solution"]["guardrail"]["id"] == "context_envelope_required"
+
+
+def test_agent_pain_solver_chain_deadline_budget_pattern():
+    result = AgentPainSolver().solve(
+        problem="Planner budget exhaustion: chain timeout kills the run while per-tool timeout would need heterogeneous latency rows.",
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "chain_deadline_budget"
+    assert result["solution"]["guardrail"]["id"] == "chain_deadline_allocation_table"
+
+
+def test_agent_pain_solver_inter_agent_witness_pattern():
+    result = AgentPainSolver().solve(
+        problem=(
+            "Downstream buyer agent refuses payment until we ship a verifiable witness bundle: "
+            "inter-agent attestation of the tool trace proof with replay refusal, not chat logs."
+        ),
+        service_type="",
+    )
+    assert result["solution"]["pain_type"] == "inter_agent_witness"
+    assert result["solution"]["guardrail"]["id"] == "witness_bundle_no_secrets"
+
+
 def test_agent_pain_solver_supports_new_reliability_doctor_pain_types():
     result = AgentPainSolver().solve(
         problem="The agent has a bad planning loop and keeps making the same mistake.",

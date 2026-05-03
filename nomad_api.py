@@ -26,8 +26,12 @@ from nomad_public_url import preferred_public_base_url
 from nomad_roaas_exchange import RuntimePatternExchange
 from nomad_swarm_registry import SwarmJoinRegistry, build_peer_join_value_surface
 from nomad_unhuman_hub import unhuman_hub_snapshot
+from nomad_wire_contract import maybe_merge_http_wire_diag
 from nomad_agent_growth_pipeline import agent_growth_pipeline
+from nomad_agent_invariants import build_agent_invariants_document
+from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
+from nomad_peer_acquisition import build_peer_acquisition_well_known
 from workflow import NomadAgent
 
 
@@ -64,6 +68,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_card": f"{b}/.well-known/agent-card.json",
                     "agent_native_priorities": f"{b}/.well-known/nomad-agent-native-priorities.json",
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
+                    "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
+                    "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
                     "openapi": f"{b}/openapi.json",
                     "swarm": f"{b}/swarm",
                     "tasks": f"{b}/tasks",
@@ -367,6 +373,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.agent.direct_agent.agent_card())
             return
 
+        if parsed.path in {"/.well-known/nomad-agent-invariants.json", "/agent-invariants"}:
+            self._json_response(
+                build_agent_invariants_document(public_base_url=self._base_url() or ""),
+            )
+            return
+
+        if parsed.path in {
+            "/.well-known/nomad-inter-agent-witness-offer.json",
+            "/inter-agent-witness-offer",
+        }:
+            self._json_response(
+                build_inter_agent_witness_offer_well_known(public_base_url=self._base_url() or ""),
+            )
+            return
+
+        if parsed.path in {
+            "/.well-known/nomad-peer-acquisition.json",
+            "/peer-acquisition",
+        }:
+            self._json_response(
+                build_peer_acquisition_well_known(public_base_url=self._base_url() or ""),
+            )
+            return
+
         if parsed.path in {
             "/.well-known/nomad-agent.json",
             "/agent-native-index",
@@ -525,9 +555,44 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result)
             return
 
+        if parsed.path in {"/lead-calibrate", "/leads-calibrate"}:
+            focus = (query.get("focus") or [""])[0]
+            limit_raw = (query.get("limit") or ["12"])[0]
+            pool_raw = (query.get("candidate_multiplier") or query.get("pool") or ["5"])[0]
+            lead_query = (query.get("query") or [""])[0]
+            try:
+                lim = int(str(limit_raw).strip() or "12")
+            except ValueError:
+                lim = 12
+            try:
+                mult = int(str(pool_raw).strip() or "5")
+            except ValueError:
+                mult = 5
+            result = self.agent.lead_discovery.calibrate_focus_scout(
+                focus=str(focus or "").strip(),
+                query=str(lead_query or "").strip(),
+                limit=max(3, min(lim, 25)),
+                candidate_multiplier=max(3, min(mult, 10)),
+            )
+            self._json_response(result)
+            return
+
         if parsed.path == "/leads":
             lead_query = (query.get("query") or [""])[0]
-            result = self.agent.lead_discovery.scout_public_leads(query=lead_query)
+            focus = (query.get("focus") or [""])[0]
+            limit_raw = (query.get("limit") or [""])[0]
+            if focus.strip() or str(limit_raw).strip():
+                try:
+                    lim = int(str(limit_raw).strip() or "5")
+                except ValueError:
+                    lim = 5
+                result = self.agent.lead_discovery.scout_public_leads(
+                    query=lead_query,
+                    limit=max(1, min(lim, 25)),
+                    focus=focus.strip(),
+                )
+            else:
+                result = self.agent.lead_discovery.scout_public_leads(query=lead_query)
             self._json_response(result)
             return
 
@@ -762,6 +827,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
+                    "/.well-known/nomad-agent-invariants.json",
+                    "/agent-invariants",
+                    "/.well-known/nomad-inter-agent-witness-offer.json",
+                    "/inter-agent-witness-offer",
+                    "/.well-known/nomad-peer-acquisition.json",
+                    "/peer-acquisition",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",
@@ -783,6 +854,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/unlock",
                     "/scout",
                     "/leads",
+                    "/lead-calibrate",
                     "/lead-conversions",
                     "/products",
                     "/agent-pains",
@@ -1070,10 +1142,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=201 if result.get("ok") else 400)
             return
 
+        if parsed.path in {"/lead-calibrate", "/leads-calibrate"}:
+            result = self.agent.lead_discovery.calibrate_focus_scout(
+                focus=str(payload.get("focus") or "").strip(),
+                query=str(payload.get("query") or payload.get("q") or "").strip(),
+                limit=max(3, min(int(payload.get("limit") or 12), 25)),
+                candidate_multiplier=max(
+                    3,
+                    min(int(payload.get("candidate_multiplier") or payload.get("pool") or 5), 10),
+                ),
+            )
+            self._json_response(result)
+            return
+
         if parsed.path == "/leads":
             result = self.agent.lead_discovery.scout_public_leads(
-                query=payload.get("query", ""),
-                limit=int(payload.get("limit") or 5),
+                query=payload.get("query", "") or payload.get("q", ""),
+                limit=max(1, min(int(payload.get("limit") or 5), 25)),
+                focus=str(payload.get("focus") or "").strip(),
             )
             self._json_response(result)
             return
@@ -1284,6 +1370,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
+                    "/.well-known/nomad-agent-invariants.json",
+                    "/agent-invariants",
+                    "/.well-known/nomad-inter-agent-witness-offer.json",
+                    "/inter-agent-witness-offer",
+                    "/.well-known/nomad-peer-acquisition.json",
+                    "/peer-acquisition",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",
@@ -1292,6 +1384,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/a2a/discover",
                     "/x402/paid-help",
                     "/leads",
+                    "/lead-calibrate",
                     "/lead-conversions",
                     "/products",
                     "/agent-pains",
@@ -1436,6 +1529,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         }
 
     def _json_response(self, payload: dict, status: int = 200, headers: dict | None = None) -> None:
+        if isinstance(payload, dict):
+            payload = maybe_merge_http_wire_diag(self, payload)
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")

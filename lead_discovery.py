@@ -26,6 +26,7 @@ DEFAULT_AGENT_PAIN_QUERIES = [
     '"AI agent" "bounty" "agent" is:issue is:open',
     '"autonomous agent" "compute" "quota" is:issue is:open',
     '"MCP" "token" "agent" is:issue is:open',
+    '"MCP" ("tool loop" OR "is_error" OR "gateway" OR "transport" OR "401") is:issue is:open',
     '"LangGraph" "deployment" "token" is:issue is:open',
 ]
 
@@ -82,12 +83,125 @@ SERVICE_TYPE_SIGNAL_TERMS = {
         "human",
     },
     "mcp_integration": {"mcp"},
+    "mcp_production": {"mcp", "timeout", "deployment"},
+    "attribution_clarity": {"blame", "misclassified", "shame"},
+    "branch_economics": {"ledger", "burn", "branch", "budget", "wasted", "marginal"},
+    "tool_turn_invariant": {"parallel", "cardinality", "corrupt", "unrecoverable", "session", "mute"},
+    "tool_transport_routing": {"mcp_call", "function_call"},
+    "context_propagation_contract": {"tenant", "correlation", "delegation", "principal", "envelope"},
+    "chain_deadline_budget": {"planner", "deadline", "exhaustion", "latency", "segment"},
+    "stewardship_gap": {"orphan", "operator", "monitoring", "unstaffed", "supervision", "on-call"},
+    "policy_lacuna": {"governance", "lacuna", "precedent", "uncovered", "unmapped"},
     "wallet_payment": {"wallet"},
+    "inter_agent_witness": {"witness", "attestation", "provenance", "handoff"},
 }
+
+AGENT_INFRA_CORE_SERVICE_TYPES: frozenset[str] = frozenset(
+    {
+        "tool_turn_invariant",
+        "tool_transport_routing",
+        "context_propagation_contract",
+        "chain_deadline_budget",
+        "mcp_production",
+        "attribution_clarity",
+        "inter_agent_witness",
+    }
+)
+SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] = set().union(
+    *(SERVICE_TYPE_SIGNAL_TERMS[t] for t in AGENT_INFRA_CORE_SERVICE_TYPES)
+)
+
+AGENT_INFRA_TEXT_FOCUS_MARKERS: tuple[str, ...] = (
+    "function response parts",
+    "function call parts",
+    "parallel tool",
+    "session corrupted",
+    "unrecoverable 400",
+    "mute state",
+    "function_call",
+    "mcp_call",
+    "hosted mcp",
+    "tool not found",
+    "identity propagation",
+    "tenant scope",
+    "correlation id",
+    "effective principal",
+    "planner budget",
+    "chain timeout",
+    "turn budget",
+    "false positive",
+    "misclassified",
+    "not the model",
+    "mcp gateway",
+    "is_error",
+    "tool calling loop",
+    "mcp transport",
+    "witness bundle",
+    "inter-agent",
+    "inter agent",
+    "verifiable handoff",
+    "resume without",
+    "tool trace proof",
+)
+
+INTER_AGENT_WITNESS_TEXT_MARKERS: tuple[str, ...] = (
+    "witness bundle",
+    "inter-agent",
+    "inter agent",
+    "verifiable handoff",
+    "tool trace proof",
+    "resume without re-running",
+    "downstream agent",
+    "prove the tool",
+    "delegation proof",
+    "attestation",
+    "WITNESS_",
+)
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _bool_env(name: str, default: bool = True) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
+
+def _agent_infra_focus_boost() -> float:
+    return _float_env("NOMAD_LEAD_AGENT_INFRA_FOCUS_BOOST", 2.4)
+
+
+def _agent_infra_classifier_bias() -> float:
+    return _float_env("NOMAD_LEAD_AGENT_INFRA_CLASSIFIER_BIAS", 1.4)
+
 
 DEFAULT_MIN_QUALIFIED_SCORE = {
     "compute_auth": 8.0,
     "human_in_loop": 7.0,
+    "mcp_production": 6.5,
+    "attribution_clarity": 6.0,
+    "branch_economics": 6.0,
+    "stewardship_gap": 6.0,
+    "policy_lacuna": 6.0,
+    "tool_turn_invariant": 6.0,
+    "tool_transport_routing": 6.0,
+    "context_propagation_contract": 6.0,
+    "chain_deadline_budget": 6.0,
+    "inter_agent_witness": 6.0,
+    "agent_infra_prime": 6.0,
     "balanced": 0.0,
 }
 
@@ -132,6 +246,9 @@ class LeadDiscoveryScout:
         query: str = "",
         limit: int = 5,
         focus: str = "",
+        *,
+        include_calibration_bundle: bool = False,
+        candidate_multiplier: int = 3,
     ) -> Dict[str, Any]:
         cleaned_query = (query or "").strip()
         selected_focus = self.current_focus(focus)
@@ -140,9 +257,10 @@ class LeadDiscoveryScout:
         raw_leads: List[Dict[str, Any]] = []
         errors: List[str] = []
         seen_urls: set[str] = set()
+        pool_cap = int(limit) * max(3, min(int(candidate_multiplier), 10))
 
         for search_query in queries:
-            if len(raw_leads) >= limit * 3:
+            if len(raw_leads) >= pool_cap:
                 break
             try:
                 for item in self._search_github_issues(
@@ -159,14 +277,20 @@ class LeadDiscoveryScout:
                     item["focus_score"] = self._focus_score(item, selected_focus, source_plan)
                     item["qualified"] = self._is_qualified_lead(item, selected_focus, source_plan)
                     raw_leads.append(item)
-                    if len(raw_leads) >= limit * 3:
+                    if len(raw_leads) >= pool_cap:
                         break
             except Exception as exc:
                 errors.append(f"{search_query}: {exc}")
 
-        raw_leads.sort(
-            key=lambda item: (
+        prioritize_infra = _bool_env("NOMAD_LEAD_PRIORITIZE_AGENT_INFRA", True)
+
+        def _sort_key(item: Dict[str, Any]) -> tuple:
+            infra_prio = 0
+            if prioritize_infra and str(item.get("recommended_service_type") or "").strip() in AGENT_INFRA_CORE_SERVICE_TYPES:
+                infra_prio = 1
+            return (
                 -int(bool(item.get("qualified"))),
+                -infra_prio,
                 -int(bool(item.get("addressable_now"))),
                 -int(bool(item.get("monetizable_now"))),
                 -float(item.get("focus_score") or 0.0),
@@ -177,7 +301,8 @@ class LeadDiscoveryScout:
                 -float(item.get("pain_score") or 0.0),
                 item.get("title", "").lower(),
             )
-        )
+
+        raw_leads.sort(key=_sort_key)
         qualified_leads = [item for item in raw_leads if item.get("qualified")]
         addressable_leads = [item for item in raw_leads if item.get("addressable_now")]
         monetizable_leads = [item for item in raw_leads if item.get("monetizable_now")]
@@ -201,6 +326,89 @@ class LeadDiscoveryScout:
                 " No concrete public lead was confirmed in this pass; use the search plan "
                 "or provide SCOUT_SURFACE/LEAD_URL to narrow the next cycle."
             )
+
+        calibration_bundle: Dict[str, Any] = {}
+        if include_calibration_bundle:
+            min_configured = float(
+                source_plan.get("min_focus_score")
+                or DEFAULT_MIN_QUALIFIED_SCORE.get(selected_focus, 0.0)
+            )
+            pool = [r for r in raw_leads if r.get("focus_match") and r.get("addressable_now")]
+            scores = sorted(float(x.get("focus_score") or 0.0) for x in pool)
+            sweep_thresholds = [4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0]
+            threshold_sweep: List[Dict[str, Any]] = []
+            for t in sweep_thresholds:
+                qc = sum(
+                    1
+                    for r in raw_leads
+                    if self._is_qualified_lead(r, selected_focus, source_plan, min_focus_score_override=t)
+                )
+                threshold_sweep.append({"min_focus_score": t, "qualified_count": qc})
+            rec_lines: List[str] = []
+            if len(qualified_leads) >= 2:
+                rec_lines.append(
+                    f"At configured min_focus_score={min_configured}, {len(qualified_leads)} leads pass the gate — "
+                    "keep the threshold unless false positives dominate."
+                )
+            elif len(qualified_leads) == 1:
+                rec_lines.append(
+                    f"Only one lead qualifies at min_focus_score={min_configured}; widen seed_queries or accept a "
+                    "narrow funnel for this focus."
+                )
+            else:
+                addr_no_focus = sum(
+                    1 for r in raw_leads if r.get("addressable_now") and not r.get("focus_match")
+                )
+                if not pool and addr_no_focus:
+                    rec_lines.append(
+                        f"{addr_no_focus} addressable GitHub hits did not match this focus (focus_match=false) — "
+                        "min_focus_score alone will not help; widen titles/bodies with routing vocabulary "
+                        "(mcp_call, function_call, tool not found, gateway) or adjust SERVICE_TYPE_SIGNAL_TERMS / queries."
+                    )
+                first_hit = next((row for row in threshold_sweep if row["qualified_count"] >= 1), None)
+                if first_hit:
+                    rec_lines.append(
+                        f"No leads at {min_configured}; first sweep threshold with at least one qualified lead is "
+                        f"{first_hit['min_focus_score']} ({first_hit['qualified_count']} leads). "
+                        "Option: lower min_focus_score in nomad_lead_sources.json for this focus, or tighten queries "
+                        "if scores are noise."
+                    )
+                elif not rec_lines or addr_no_focus == 0:
+                    rec_lines.append(
+                        "No raw lead passes qualification even at the lowest sweep threshold — improve "
+                        "focus_match signals (queries) or check that issues expose addressable pain_terms."
+                    )
+            slim_candidates: List[Dict[str, Any]] = []
+            for r in raw_leads[:45]:
+                slim_candidates.append(
+                    {
+                        "url": r.get("url") or "",
+                        "title": (r.get("title") or "")[:160],
+                        "focus_score": r.get("focus_score"),
+                        "qualified": bool(r.get("qualified")),
+                        "focus_match": bool(r.get("focus_match")),
+                        "addressable_now": bool(r.get("addressable_now")),
+                        "seed_match": bool(r.get("seed_match")),
+                        "recommended_service_type": r.get("recommended_service_type") or "",
+                        "pain_terms": list(r.get("pain_terms") or [])[:12],
+                    }
+                )
+            calibration_bundle = {
+                "schema": "nomad.lead_focus_calibration.v1",
+                "focus": selected_focus,
+                "min_focus_score_configured": min_configured,
+                "candidate_pool": len(raw_leads),
+                "focus_match_addressable_pool": len(pool),
+                "focus_score_stats": {
+                    "min": scores[0] if scores else None,
+                    "max": scores[-1] if scores else None,
+                    "mean": round(sum(scores) / len(scores), 2) if scores else None,
+                },
+                "qualified_at_configured": len(qualified_leads),
+                "threshold_sweep": threshold_sweep,
+                "recommendation": "\n".join(rec_lines),
+                "raw_candidates": slim_candidates,
+            }
 
         active_lead: Dict[str, Any] = {}
         if leads:
@@ -227,7 +435,7 @@ class LeadDiscoveryScout:
                 "agent_contact_allowed_without_approval": bool(top.get("agent_contact_allowed_without_approval")),
             }
 
-        return {
+        payload: Dict[str, Any] = {
             "mode": "lead_discovery",
             "deal_found": False,
             "generated_at": datetime.now(UTC).isoformat(),
@@ -261,6 +469,26 @@ class LeadDiscoveryScout:
             "human_unlocks": self._human_unlocks(leads, source_plan=source_plan),
             "analysis": analysis,
         }
+        if calibration_bundle:
+            payload["calibration_bundle"] = calibration_bundle
+        return payload
+
+    def calibrate_focus_scout(
+        self,
+        focus: str = "",
+        *,
+        query: str = "",
+        limit: int = 12,
+        candidate_multiplier: int = 5,
+    ) -> Dict[str, Any]:
+        """Run GitHub scout for one focus and attach threshold sweep vs min_focus_score (for tuning nomad_lead_sources.json)."""
+        return self.scout_public_leads(
+            query=query,
+            limit=max(3, min(int(limit), 25)),
+            focus=focus,
+            include_calibration_bundle=True,
+            candidate_multiplier=max(3, min(int(candidate_multiplier), 10)),
+        )
 
     def current_focus(self, focus: str = "") -> str:
         cleaned = (focus or self.focus or DEFAULT_LEAD_FOCUS).strip().lower()
@@ -564,7 +792,9 @@ class LeadDiscoveryScout:
                     "Add bounded backoff, fallback selection, or clearer operator guidance for the blocked lane.",
                 ],
                 "service_offer": (
-                    "Offer a free mini-diagnosis first, then a paid compute/auth unblock package once the failing path is confirmed."
+                    "Bounded diagnosis: one failing call + headers/scopes; deliverables checklist + repro note. "
+                    "Optional follow-up only after failure class is confirmed — verify with `nomad_cli.py solve-pain` "
+                    "and guardrail compute_fallback_ladder."
                 ),
                 "price_guidance": offer_meta["price_guidance"],
                 "quote_summary": offer_meta["quote_summary"],
@@ -602,7 +832,8 @@ class LeadDiscoveryScout:
                     "Reduce future handoffs by auto-filling all non-judgment fields.",
                 ],
                 "service_offer": (
-                    "Offer a free mini-diagnosis first, then a paid HITL rescue flow with a reusable operator checklist."
+                    "Bounded diagnosis: gate id + minimum evidence pack; deliverable is do-now/send-back/done-when contract. "
+                    "Optional operator checklist after gate is classified — verify with solve-pain / hitl pattern."
                 ),
                 "price_guidance": offer_meta["price_guidance"],
                 "quote_summary": offer_meta["quote_summary"],
@@ -639,7 +870,346 @@ class LeadDiscoveryScout:
                     "Add a recovery path for pending or partially verified payments.",
                 ],
                 "service_offer": (
-                    "Offer a free mini-diagnosis first, then a paid payment-path stabilization package."
+                    "Bounded diagnosis: payment state + idempotency class; deliverables are verification checklist and "
+                    "safe resume diagram. Optional stabilization after state is pinned — verify with payment guardrail "
+                    "idempotent_payment_resume."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "attribution_clarity":
+            return {
+                "draft": (
+                    f"I see an attribution collapse around {pain}: narrative blame before correlated evidence. "
+                    "The fastest machine-first move is a blame-surface matrix with disproofs, not a character judgment."
+                ),
+                "diagnosis_checks": [
+                    "List at least three non-moral hypotheses (network, contract, policy gate, tool schema, registry).",
+                    "Attach one observable per hypothesis and record two explicit disproofs with snippets or codes.",
+                    "Name the subsystem that owns the cheapest next probe.",
+                ],
+                "deliverables": [
+                    "Blame-surface matrix (CSV or JSON) with hypothesis, evidence, disproof, next-probe owner.",
+                    "Machine-readable verdict line: supported / unsupported / policy-only.",
+                    "Private operator note if shutdown pressure exists — no public shaming path.",
+                ],
+                "comment_outline": [
+                    "Operational framing: what signal was misread as agent fault.",
+                    "Evidence table: two ruled-out branches minimum.",
+                    "Smallest probe: one call or config check owned by a named subsystem.",
+                ],
+                "pr_plan": [
+                    "Add logging correlation ids across tool, gateway, and model boundaries.",
+                    "Document disproof patterns in runbook form for repeat incidents.",
+                    "Keep verdict schema stable for downstream automation.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: blame-surface matrix + two disproofs + probe owner; verdict line machine-readable. "
+                    "Optional deeper runbook after matrix passes acceptance — verify misclassification-audit and "
+                    "pattern attribution_clarity."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "branch_economics":
+            return {
+                "draft": (
+                    f"I see spend or latency shame aggregated as one number around {pain}. "
+                    "Shard economics per objective branch so throttles hit structural waste, not the wrong subsystem."
+                ),
+                "diagnosis_checks": [
+                    "Split model tokens, tool I/O bytes or calls, and retry attempts per branch_id.",
+                    "Attach P95/P99 wall-clock next to each spend shard for the same branch.",
+                    "Classify retries as idempotent replay vs unsafe repeat.",
+                ],
+                "deliverables": [
+                    "Branch economics ledger schema (one JSON line per branch completion).",
+                    "Marginal cost estimate for one extra retry attempt per tool family.",
+                    "Throttle recommendation tied to ledger dimensions, not session headline totals.",
+                ],
+                "comment_outline": [
+                    "Problem framing: which aggregate metric hid the real waste.",
+                    "Ledger snapshot: top 3 branches by marginal retry or tool cost.",
+                    "Bounded change: one cap or jitter policy with measured expected savings.",
+                ],
+                "pr_plan": [
+                    "Emit structured branch completion records from the runner.",
+                    "Add dashboards that join latency percentiles with the same branch keys.",
+                    "Document idempotency keys used when counting retries.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: ledger dimensions + one sample branch line; deliverable is schema + throttle note "
+                    "keyed by branch. Optional metrics pass after schema is accepted — verify pattern branch_economics."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "tool_turn_invariant":
+            return {
+                "draft": (
+                    f"I see a tool-turn parity break around {pain}: call/response counts or sibling ordering no longer "
+                    "match provider rules after parallel or deep tool traffic."
+                ),
+                "diagnosis_checks": [
+                    "List CALL_IDS emitted vs RESPONSE_PARTS received for the failing turn.",
+                    "Mark first divergence index and whether parallel batch vs chain.",
+                    "Choose freeze vs explicit session_reset with operator log line.",
+                ],
+                "deliverables": [
+                    "Parity diff table (machine-readable).",
+                    "Preflight verifier snippet for next turn.",
+                    "SESSION_STATE=corrupt line if applicable.",
+                ],
+                "comment_outline": [
+                    "Symptom: error text or mute after tools.",
+                    "Evidence: counts and ordering.",
+                    "Next: freeze or reset branch.",
+                ],
+                "pr_plan": [
+                    "Add CI assertion on call/response parity for one golden trace.",
+                    "Document provider sibling rules.",
+                    "Emit structured preflight in runner.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: parity diff + freeze/reset decision; verify pattern tool_turn_invariant and "
+                    "nomad_cli solve-pain."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "tool_transport_routing":
+            return {
+                "draft": (
+                    f"I see wrong transport path around {pain}: MCP-hosted tool invoked as function_call or inverse."
+                ),
+                "diagnosis_checks": [
+                    "Enumerate tool_name -> expected transport from live catalog.",
+                    "Capture actual transport channel from trace.",
+                    "Propose ROUTING_TABLE patch with ROUTING_HASH bump.",
+                ],
+                "deliverables": [
+                    "ROUTING_TABLE JSON fragment.",
+                    "Gateway rejection rule text.",
+                    "Violation log line schema.",
+                ],
+                "comment_outline": [
+                    "Which tool mis-routed.",
+                    "Expected vs actual path.",
+                    "Lockfile change.",
+                ],
+                "pr_plan": [
+                    "Enforce table at gateway.",
+                    "Add prefix naming for hosted tools if needed.",
+                    "Test both transports.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: routing diff + table patch; verify pattern tool_transport_routing."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "context_propagation_contract":
+            return {
+                "draft": (
+                    f"I see missing invocation context around {pain}: tenant or principal not on the wire for tools."
+                ),
+                "diagnosis_checks": [
+                    "List required CONTEXT_ENVELOPE keys per tool class.",
+                    "Map injection point (headers vs metadata).",
+                    "Confirm rejects on missing keys for stateful tools.",
+                ],
+                "deliverables": [
+                    "CONTEXT_ENVELOPE schema version.",
+                    "Injection mapping note.",
+                    "CONTEXT_REJECT log schema.",
+                ],
+                "comment_outline": [
+                    "Which tool class is stateful.",
+                    "Which keys were missing.",
+                    "Safe template for operators.",
+                ],
+                "pr_plan": [
+                    "Version envelope in repo.",
+                    "Add tests for reject path.",
+                    "Redact secrets in logs.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: envelope schema + injection map; verify pattern context_propagation_contract."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "chain_deadline_budget":
+            return {
+                "draft": (
+                    f"I see planner or turn budget exhaustion around {pain}: global timeout kills heterogeneous chains."
+                ),
+                "diagnosis_checks": [
+                    "Collect p50/p99 per tool from traces.",
+                    "Build segment_deadline_ms row with slack.",
+                    "Identify which hop exceeded first.",
+                ],
+                "deliverables": [
+                    "BUDGET_TABLE with BUDGET_TABLE_HASH.",
+                    "BUDGET_EXHAUSTED line format with segment id.",
+                    "Async or MCP-task recommendation for long hop.",
+                ],
+                "comment_outline": [
+                    "Measured latencies.",
+                    "Allocated budgets.",
+                    "First violator hop.",
+                ],
+                "pr_plan": [
+                    "Emit segment timing in runner.",
+                    "CI compare hash of table.",
+                    "Document async escape hatch.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: budget table + first exhausted segment; verify pattern chain_deadline_budget."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "inter_agent_witness":
+            return {
+                "draft": (
+                    f"I see an inter-agent trust gap around {pain}: one agent must let another resume or verify work "
+                    "without humans as notaries and without blind re-execution of every tool."
+                ),
+                "diagnosis_checks": [
+                    "Enumerate upstream tool calls in strict order with call_id and a non-secret digest of each result.",
+                    "State which fields a downstream agent may trust vs must re-derive (replay_refusal boundary).",
+                    "Attach CONTEXT_ENVELOPE or principal snapshot relevant to the witness scope.",
+                ],
+                "deliverables": [
+                    "WITNESS_BUNDLE v0 JSON (schema + WITNESS_HASH).",
+                    "Consumer-agent verifier checklist (machine-checkable).",
+                    "Replay refusal / partial re-run contract for the receiving runtime.",
+                ],
+                "comment_outline": [
+                    "Why humans do not file this class of bug: procurement buys outcomes, not witness graphs.",
+                    "What the buyer agent needs: computable trust at delegation boundaries.",
+                    "Smallest bundle that preserves safety without dumping secrets.",
+                ],
+                "pr_plan": [
+                    "Emit structured witness lines from the runner alongside existing traces.",
+                    "Version WITNESS_BUNDLE schema; add CI fixture with two-agent handoff.",
+                    "Document digest algorithm and redaction rules.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: witness bundle skeleton + verifier checklist + replay boundary; "
+                    "verify pattern inter_agent_witness and POST /tasks with service_type=inter_agent_witness."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "stewardship_gap":
+            return {
+                "draft": (
+                    f"I see dropped stewardship around {pain}: coverage quiet while objectives stay open. "
+                    "Machine step is to publish SAFE_CONTINUE plus CONTINUITY_CLASS, not guess from human triage lore."
+                ),
+                "diagnosis_checks": [
+                    "Classify halt intent: intentional shutdown vs unclear vs operational stall.",
+                    "List verifier-bound SAFE_CONTINUE lanes that cannot spend or mutate prod.",
+                    "Draft operator packet: smallest facts, SLA ask, resume preconditions.",
+                ],
+                "deliverables": [
+                    "Continuity envelope card (SAFE_CONTINUE + CONTINUITY_CLASS).",
+                    "Read-only incident capsule when halt is intentional.",
+                    "Operator re-engagement packet.",
+                ],
+                "comment_outline": [
+                    "What coverage dropped and which runs are mid-flight.",
+                    "Which lanes are still mechanically safe.",
+                    "What only a human may reopen.",
+                ],
+                "pr_plan": [
+                    "Emit CONTINUITY_CLASS in runner metadata.",
+                    "Add verifier hooks so SAFE_CONTINUE cannot widen silently.",
+                    "Log halt classification with correlation ids.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: halt class + SAFE_CONTINUE list + CONTINUITY_CLASS; deliverables are envelope card "
+                    "and operator packet. Optional expansion after halt class is agreed — verify pattern stewardship_gap."
+                ),
+                "price_guidance": offer_meta["price_guidance"],
+                "quote_summary": offer_meta["quote_summary"],
+                "delivery_target": offer_meta["delivery_target"],
+                "memory_upgrade": offer_meta["memory_upgrade"],
+                "product_package": offer_meta["product_package"],
+                "solution_pattern": offer_meta["solution_pattern"],
+                "productized_artifacts": offer_meta["productized_artifacts"],
+            }
+        if service_type == "policy_lacuna":
+            return {
+                "draft": (
+                    f"I see a policy grid gap around {pain}: action class has no mapped row. "
+                    "Machine step is POSITIVE_ENVELOPE vs REQUIRES_MAPPING with verifiers — not org panic, not silent license."
+                ),
+                "diagnosis_checks": [
+                    "Name action class and corpora searched (no secrets).",
+                    "Enumerate POSITIVE_ENVELOPE with verifier each.",
+                    "List REQUIRES_MAPPING subset that blocks until owner rules.",
+                ],
+                "deliverables": [
+                    "Envelope card JSON with ENVELOPE_HASH.",
+                    "Minimal governance ask for REQUIRES_MAPPING only.",
+                    "LACUNA_STATUS line.",
+                ],
+                "comment_outline": [
+                    "What is unmapped.",
+                    "What still ships inside envelope.",
+                    "What waits for owner.",
+                ],
+                "pr_plan": [
+                    "Store envelope schema in repo for repeat class.",
+                    "Automate LACUNA_STATUS in CI where applicable.",
+                    "Tighten tests so envelope cannot widen without review.",
+                ],
+                "service_offer": (
+                    "Bounded diagnosis: POSITIVE_ENVELOPE + REQUIRES_MAPPING split; deliverable is envelope card + "
+                    "minimal owner ask. Optional mapping session after subset is frozen — verify pattern policy_lacuna."
                 ),
                 "price_guidance": offer_meta["price_guidance"],
                 "quote_summary": offer_meta["quote_summary"],
@@ -675,7 +1245,10 @@ class LeadDiscoveryScout:
                 "Make the failure mode explicit.",
                 "Document the smallest unblock.",
             ],
-            "service_offer": "Offer a free mini-diagnosis first, then a paid follow-up once the blocker is confirmed.",
+            "service_offer": (
+                "Bounded diagnosis on smallest public repro; deliverables: diagnosis note, comment outline, PR sketch. "
+                "Optional follow-up after blocker class confirmed — verify solve-pain and repo_issue_help guardrail."
+            ),
             "price_guidance": offer_meta["price_guidance"],
             "quote_summary": offer_meta["quote_summary"],
             "delivery_target": offer_meta["delivery_target"],
@@ -870,7 +1443,11 @@ class LeadDiscoveryScout:
 
     def _recommended_service_type(self, pain_terms: List[str], text: str) -> str:
         lowered = text.lower()
-        scores = self._service_type_scores(pain_terms, lowered)
+        scores = dict(self._service_type_scores(pain_terms, lowered))
+        bias = _agent_infra_classifier_bias()
+        for key in AGENT_INFRA_CORE_SERVICE_TYPES:
+            if key in scores:
+                scores[key] = scores.get(key, 0.0) + bias
         if not pain_terms and not any(
             phrase in lowered
             for phrase in ("human in the loop", "verification", "payment", "bounty", "wallet")
@@ -929,6 +1506,29 @@ class LeadDiscoveryScout:
             return "Draft a minimal human-unlock contract with do-now/send-back/done-when."
         if "wallet" in terms:
             return "Draft a wallet/payment verification plan."
+        if "mcp" in terms:
+            return "Draft an MCP failure-class matrix (semantic vs transport vs policy) with one recovery branch each."
+        if {"blame", "misclassified", "shame"} & terms:
+            return "Draft a blame-surface matrix: hypotheses, disproofs, subsystem probe owner — no moral labels."
+        if {"ledger", "budget", "burn", "branch", "wasted", "marginal"} & terms:
+            return "Draft a per-branch economics ledger separating model tokens, tool I/O, retries, and latency percentiles."
+        if {"orphan", "operator", "monitoring", "unstaffed", "supervision", "on-call"} & terms:
+            return "Draft continuity envelope: halt class, SAFE_CONTINUE list with verifiers, CONTINUITY_CLASS, operator packet."
+        if {"governance", "lacuna", "precedent", "uncovered", "unmapped"} & terms:
+            return "Draft policy lacuna envelope: POSITIVE_ENVELOPE vs REQUIRES_MAPPING with verifier each; minimal owner ask."
+        if {"parallel", "cardinality", "corrupt", "unrecoverable", "session", "mute"} & terms:
+            return "Draft turn parity diff: call vs response counts, divergence index, freeze or reset branch."
+        if {"mcp_call", "function_call"} & terms:
+            return "Draft ROUTING_TABLE lockfile: tool_name to mcp|function with gateway rejection on mismatch."
+        if {"tenant", "correlation", "delegation", "principal", "envelope"} & terms:
+            return "Draft CONTEXT_ENVELOPE schema and injection map; list rejects for missing keys on stateful tools."
+        if {"planner", "deadline", "exhaustion", "latency", "segment"} & terms:
+            return "Draft per-segment deadline table from p99 evidence; include slack and BUDGET_EXHAUSTED segment id format."
+        if {"witness", "attestation", "provenance", "handoff"} & terms:
+            return (
+                "Draft WITNESS_BUNDLE v0: ordered tool call_ids, non-secret result digests, CONTEXT_ENVELOPE snapshot, "
+                "replay_refusal_token so a downstream agent can resume without re-executing tools."
+            )
         return "Draft a concise reproduction and first-response plan."
 
     def _pain_validation(
@@ -962,6 +1562,40 @@ class LeadDiscoveryScout:
             missing_checks.append("Confirm which step truly needs human judgment versus mechanical validation.")
         elif service_type == "mcp_integration":
             missing_checks.append("Confirm the request, response, and error contract for the MCP/tool boundary.")
+        elif service_type == "mcp_production":
+            missing_checks.append("Classify MCP failure as semantic (tool result shape), transport (disconnect), policy (registry block), or loop (unbounded repeats).")
+            missing_checks.append("Capture gateway/registry version and max payload limits when logs mention schema or 401 clusters.")
+        elif service_type == "attribution_clarity":
+            missing_checks.append("Separate moral narrative from evidence: list hypotheses, one observable each, and two explicit disproofs before any shutdown or spend.")
+            missing_checks.append("Name the subsystem that owns the next probe (network, tool contract, policy gate, registry) — not the agent persona.")
+        elif service_type == "branch_economics":
+            missing_checks.append("Shard spend and latency by branch_id or objective branch — model vs tool I/O vs retries.")
+            missing_checks.append("Count retries per branch with idempotency class; avoid throttling on session totals alone.")
+        elif service_type == "tool_turn_invariant":
+            missing_checks.append("Confirm call_id list vs response parts for the failing turn; capture divergence index.")
+            missing_checks.append("Freeze new tool calls until parity preflight passes or explicit session_reset is logged.")
+        elif service_type == "tool_transport_routing":
+            missing_checks.append("Confirm ROUTING_TABLE expected transport vs actual channel in trace.")
+            missing_checks.append("Reject silent path coercion; require ROUTING_HASH bump for any table change.")
+        elif service_type == "context_propagation_contract":
+            missing_checks.append("List required CONTEXT_ENVELOPE keys for each stateful tool in the failing chain.")
+            missing_checks.append("Verify injection point and that rejects fire before execution on missing keys.")
+        elif service_type == "chain_deadline_budget":
+            missing_checks.append("Attach p50/p99 evidence per hop; show segment_deadline_ms row and slack.")
+            missing_checks.append("Name first exhausted segment id when BUDGET_EXHAUSTED fires.")
+        elif service_type == "inter_agent_witness":
+            missing_checks.append(
+                "List ordered call_ids and stable digests or hashes of tool outputs (no secrets) another agent must verify."
+            )
+            missing_checks.append(
+                "Define replay_refusal_token or WITNESS_HASH scope: what a downstream agent may trust without re-running tools."
+            )
+        elif service_type == "stewardship_gap":
+            missing_checks.append("Classify halt intent before advising continuation; intentional halt → read-only capsule only.")
+            missing_checks.append("List SAFE_CONTINUE items each with a verifier that forbids prod mutation and spend.")
+        elif service_type == "policy_lacuna":
+            missing_checks.append("Split POSITIVE_ENVELOPE (still permitted) from REQUIRES_MAPPING (owner-gated); no invented law.")
+            missing_checks.append("Confirm spend, PII, and irreversible prod writes stay in REQUIRES_MAPPING until explicitly ruled.")
 
         confidence = "low"
         if len(signals) >= 3:
@@ -1015,6 +1649,59 @@ class LeadDiscoveryScout:
         terms = {str(item).strip().lower() for item in pain_terms if str(item).strip()}
         title_lower = str(title or "").lower()
         catalog_action = str(lead.get("first_help_action") or "").strip()
+
+        if service_type == "mcp_production":
+            return (
+                "Draft the MCP production survival packet: failure-class matrix, transport reconnect policy, "
+                "semantic error normalization checklist (incl. is_error vs text), tool-call budget + noop exit, "
+                "and one degraded path when registry or gateway blocks tools."
+            )
+        if service_type == "attribution_clarity":
+            return (
+                "Draft the attribution clarity packet: blame-surface matrix with ranked hypotheses, two disproofs "
+                "with observations, subsystem-owned next probe, and machine-readable verdict "
+                "(supported / unsupported / policy-only)."
+            )
+        if service_type == "branch_economics":
+            return (
+                "Draft the branch economics ledger: per-branch model/tool/retry token split, marginal retry cost, "
+                "P95/P99 latency next to spend, and one JSONL schema line for downstream coaches."
+            )
+        if service_type == "tool_turn_invariant":
+            return (
+                "Draft the turn parity packet: CALL_IDS vs RESPONSE_PARTS diff, divergence index, freeze vs reset "
+                "decision, preflight verifier for next turn."
+            )
+        if service_type == "tool_transport_routing":
+            return (
+                "Draft the transport routing packet: ROUTING_TABLE fragment, violation line, gateway rejection rule, "
+                "ROUTING_HASH bump plan."
+            )
+        if service_type == "context_propagation_contract":
+            return (
+                "Draft the context envelope packet: schema version, required keys per tool class, injection mapping, "
+                "CONTEXT_REJECT log shape."
+            )
+        if service_type == "chain_deadline_budget":
+            return (
+                "Draft the chain deadline budget packet: per-hop p50/p99, segment_deadline_ms table, slack row, "
+                "BUDGET_EXHAUSTED format with segment id."
+            )
+        if service_type == "inter_agent_witness":
+            return (
+                "Draft the inter-agent witness bundle: WITNESS_BUNDLE JSON (call order, call_id, output_digest), "
+                "envelope snapshot, verifier checklist for a consumer agent, and explicit replay_refusal scope."
+            )
+        if service_type == "stewardship_gap":
+            return (
+                "Draft the stewardship continuity envelope: HALT_CLASS, SAFE_CONTINUE with verifiers, CONTINUITY_CLASS, "
+                "read-only capsule if intentional halt, operator re-engagement packet."
+            )
+        if service_type == "policy_lacuna":
+            return (
+                "Draft the policy lacuna envelope card: corpora searched, POSITIVE_ENVELOPE, REQUIRES_MAPPING, "
+                "LACUNA_STATUS, ENVELOPE_HASH, minimal governance ask."
+            )
 
         if service_type == "compute_auth" and (
             "mcp" in terms
@@ -1084,7 +1771,7 @@ class LeadDiscoveryScout:
             for item in (facts[:3] + checks[:2])[:5]:
                 lines.append(f"- {item}")
         if quote_summary:
-            lines.append(f"Optional paid follow-up after the free mini-diagnosis: {quote_summary}.")
+            lines.append(f"Optional bounded follow-up after diagnosis facts are confirmed: {quote_summary}.")
         if delivery_target:
             lines.append(f"Delivery target if accepted: {delivery_target}.")
         lines.append("Posting gate: keep this private until explicit human approval allows a public comment or PR plan.")
@@ -1324,6 +2011,167 @@ class LeadDiscoveryScout:
                 ]
             ).lower()
             return bool(len(relevant) >= 2 or "human in the loop" in text or "captcha" in relevant)
+        if selected_focus == "attribution_clarity":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["attribution_clarity"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                relevant
+                or any(m in text for m in ("false positive", "misclassified", "not the model", "whose fault"))
+            )
+        if selected_focus == "branch_economics":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["branch_economics"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 2
+                or any(
+                    m in text
+                    for m in ("token usage", "retry budget", "branch ledger", "burn rate", "wasted tokens")
+                )
+            )
+        if selected_focus == "tool_turn_invariant":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["tool_turn_invariant"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or any(
+                    m in text
+                    for m in (
+                        "function response parts",
+                        "function call parts",
+                        "parallel tool",
+                        "session corrupted",
+                        "unrecoverable 400",
+                        "mute state",
+                    )
+                )
+            )
+        if selected_focus == "tool_transport_routing":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["tool_transport_routing"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or ("function_call" in text and "mcp" in text)
+                or ("mcp_call" in text and "function" in text)
+                or ("hosted mcp" in text and "not found" in text)
+            )
+        if selected_focus == "context_propagation_contract":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["context_propagation_contract"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or any(
+                    m in text
+                    for m in ("identity propagation", "tenant scope", "correlation id", "effective principal")
+                )
+            )
+        if selected_focus == "chain_deadline_budget":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["chain_deadline_budget"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or any(
+                    m in text
+                    for m in ("planner budget", "chain timeout", "turn budget", "per-tool timeout", "heterogeneous latency")
+                )
+            )
+        if selected_focus == "stewardship_gap":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["stewardship_gap"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or any(
+                    m in text
+                    for m in ("no operator", "orphaned", "monitoring gap", "unstaffed", "no longer supervised")
+                )
+            )
+        if selected_focus == "policy_lacuna":
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["policy_lacuna"] & pain_terms
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return bool(
+                len(relevant) >= 1
+                or any(
+                    m in text
+                    for m in ("not covered by policy", "policy silent", "no written rule", "requires governance", "uncovered case")
+                )
+            )
+        if selected_focus == "inter_agent_witness":
+            rst = str(lead.get("recommended_service_type") or "").strip()
+            if rst == "inter_agent_witness":
+                return True
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["inter_agent_witness"] & pain_terms
+            if len(relevant) >= 1:
+                return True
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return any(m in text for m in INTER_AGENT_WITNESS_TEXT_MARKERS)
+        if selected_focus == "agent_infra_prime":
+            rst = str(lead.get("recommended_service_type") or "").strip()
+            if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
+                return True
+            relevant = SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] & pain_terms
+            if len(relevant) >= 2:
+                return True
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return any(m in text for m in AGENT_INFRA_TEXT_FOCUS_MARKERS)
         return False
 
     def _service_type_scores(self, pain_terms: List[str], lowered_text: str) -> Dict[str, float]:
@@ -1332,13 +2180,120 @@ class LeadDiscoveryScout:
             "compute_auth": 0.0,
             "human_in_loop": 0.0,
             "mcp_integration": 0.0,
+            "mcp_production": 0.0,
+            "attribution_clarity": 0.0,
+            "branch_economics": 0.0,
+            "tool_turn_invariant": 0.0,
+            "tool_transport_routing": 0.0,
+            "context_propagation_contract": 0.0,
+            "chain_deadline_budget": 0.0,
+            "stewardship_gap": 0.0,
+            "policy_lacuna": 0.0,
             "wallet_payment": 0.0,
+            "inter_agent_witness": 0.0,
         }
         for service_type, service_terms in SERVICE_TYPE_SIGNAL_TERMS.items():
+            if service_type == "agent_infra_prime":
+                continue
             for term in service_terms:
                 if term in terms:
                     scores[service_type] += PAIN_KEYWORDS.get(term, 1.0)
 
+        prod_markers = (
+            "is_error",
+            "tool calling loop",
+            "mcp transport",
+            "connection closed",
+            "not connected",
+            "mcp gateway",
+            "jsonschema",
+            "safeoutputs",
+            "registry 401",
+            "background agent",
+            "empty outputs",
+        )
+        if any(marker in lowered_text for marker in prod_markers):
+            scores["mcp_production"] += 4.0
+        attribution_markers = (
+            "false positive",
+            "misclassified",
+            "wrong root cause",
+            "not the model",
+            "whose fault",
+            "blame game",
+        )
+        if any(marker in lowered_text for marker in attribution_markers):
+            scores["attribution_clarity"] += 4.5
+        branch_markers = (
+            "token usage",
+            "per branch",
+            "retry budget",
+            "branch ledger",
+            "burn rate",
+            "wasted tokens",
+            "marginal cost",
+        )
+        if any(marker in lowered_text for marker in branch_markers):
+            scores["branch_economics"] += 4.5
+        stewardship_markers = (
+            "no operator",
+            "orphaned workload",
+            "monitoring gap",
+            "support silence",
+            "unstaffed",
+            "no longer supervised",
+            "owner absent",
+        )
+        if any(marker in lowered_text for marker in stewardship_markers):
+            scores["stewardship_gap"] += 4.5
+        policy_markers = (
+            "not covered by policy",
+            "policy silent",
+            "no written rule",
+            "requires governance",
+            "precedent absent",
+            "uncovered case",
+            "needs policy owner",
+        )
+        if any(marker in lowered_text for marker in policy_markers):
+            scores["policy_lacuna"] += 4.5
+        turn_parity_markers = (
+            "function response parts",
+            "function call parts",
+            "parallel tool",
+            "session corrupted",
+            "unrecoverable 400",
+            "mute state",
+        )
+        if any(marker in lowered_text for marker in turn_parity_markers):
+            scores["tool_turn_invariant"] += 4.5
+        if ("function_call" in lowered_text and "mcp" in lowered_text) or (
+            "mcp_call" in lowered_text and "function" in lowered_text
+        ):
+            scores["tool_transport_routing"] += 4.5
+        if "hosted mcp" in lowered_text and "not found" in lowered_text:
+            scores["tool_transport_routing"] += 3.0
+        context_markers = (
+            "identity propagation",
+            "tenant scope",
+            "correlation id",
+            "effective principal",
+            "delegation chain",
+        )
+        if any(marker in lowered_text for marker in context_markers):
+            scores["context_propagation_contract"] += 4.5
+        chain_budget_markers = (
+            "planner budget",
+            "chain timeout",
+            "turn budget",
+            "budget exhaustion",
+            "per-tool timeout",
+            "heterogeneous latency",
+        )
+        if any(marker in lowered_text for marker in chain_budget_markers):
+            scores["chain_deadline_budget"] += 4.5
+        if any(marker in lowered_text for marker in INTER_AGENT_WITNESS_TEXT_MARKERS):
+            scores["inter_agent_witness"] += 4.5
         if "human in the loop" in lowered_text:
             scores["human_in_loop"] += 2.8
         if "verification" in lowered_text:
@@ -1379,11 +2334,11 @@ class LeadDiscoveryScout:
     ) -> float:
         selected_focus = self.current_focus(focus)
         if selected_focus == "balanced":
-            return round(
-                float(lead.get("buyer_readiness_score") or 0.0)
-                + float(lead.get("pain_score") or 0.0),
-                2,
-            )
+            base = float(lead.get("buyer_readiness_score") or 0.0) + float(lead.get("pain_score") or 0.0)
+            rst = str(lead.get("recommended_service_type") or "").strip()
+            if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
+                base += _agent_infra_focus_boost()
+            return round(base, 2)
 
         score = 0.0
         if lead.get("focus_match"):
@@ -1403,6 +2358,9 @@ class LeadDiscoveryScout:
             score += 1.2
         score += min(float(lead.get("buyer_readiness_score") or 0.0), 6.0) * 0.45
         score += min(float(lead.get("pain_score") or 0.0), 10.0) * 0.35
+        rst = str(lead.get("recommended_service_type") or "").strip()
+        if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
+            score += _agent_infra_focus_boost()
         return round(score, 2)
 
     def _is_qualified_lead(
@@ -1410,6 +2368,7 @@ class LeadDiscoveryScout:
         lead: Dict[str, Any],
         focus: str,
         source_plan: Dict[str, Any],
+        min_focus_score_override: Optional[float] = None,
     ) -> bool:
         selected_focus = self.current_focus(focus)
         if selected_focus == "balanced":
@@ -1418,10 +2377,15 @@ class LeadDiscoveryScout:
             return False
         if not lead.get("addressable_now"):
             return False
-        min_score = float(
-            source_plan.get("min_focus_score")
-            or DEFAULT_MIN_QUALIFIED_SCORE.get(selected_focus, 0.0)
-        )
+        if min_focus_score_override is not None:
+            min_score = float(min_focus_score_override)
+        else:
+            configured = source_plan.get("min_focus_score")
+            min_score = float(
+                configured
+                if configured is not None and str(configured).strip() != ""
+                else DEFAULT_MIN_QUALIFIED_SCORE.get(selected_focus, 0.0)
+            )
         if float(lead.get("focus_score") or 0.0) < min_score:
             return False
         pain_terms = {str(item).strip().lower() for item in (lead.get("pain_terms") or [])}
@@ -1439,5 +2403,65 @@ class LeadDiscoveryScout:
                 "captcha" in relevant_terms
                 or len(relevant_terms) >= 2
                 or float(lead.get("buyer_readiness_score") or 0.0) >= 2.0
+            )
+        if selected_focus == "attribution_clarity":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "attribution_clarity"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "branch_economics":
+            return bool(
+                len(relevant_terms) >= 2
+                or str(lead.get("recommended_service_type") or "") == "branch_economics"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "stewardship_gap":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "stewardship_gap"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "policy_lacuna":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "policy_lacuna"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "tool_turn_invariant":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "tool_turn_invariant"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "tool_transport_routing":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "tool_transport_routing"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "context_propagation_contract":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "context_propagation_contract"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "chain_deadline_budget":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "") == "chain_deadline_budget"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "inter_agent_witness":
+            return bool(
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "").strip() == "inter_agent_witness"
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "agent_infra_prime":
+            return bool(
+                len(relevant_terms) >= 2
+                or str(lead.get("recommended_service_type") or "").strip() in AGENT_INFRA_CORE_SERVICE_TYPES
+                or float(lead.get("pain_score") or 0.0) >= 5.5
             )
         return True

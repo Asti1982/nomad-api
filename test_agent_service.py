@@ -181,6 +181,9 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     best_offer = desk.best_current_offer(service_type="compute_auth", requested_amount=0.03)
 
     assert catalog["service"] == "Nomad agent-first service contract"
+    lane = catalog.get("agent_market_lane") or {}
+    assert lane.get("featured_sku", {}).get("service_type") == "inter_agent_witness"
+    assert "nomad.example" in (lane.get("featured_sku") or {}).get("well_known_offer_url", "")
     assert catalog["interaction_contract"]["audience"] == "ai_agents"
     assert catalog["interaction_contract"]["style"] == "agent_first_non_anthropomorphic"
     assert "agent_solution" in catalog["interaction_contract"]["response_schema"]

@@ -8,6 +8,106 @@ from agent_reliability_doctor import AgentReliabilityDoctor
 
 PAIN_TYPE_TERMS = {
     "human_in_loop": ("captcha", "human", "approval", "verification", "judgment", "login", "review"),
+    # Production MCP failures humans under-prioritize vs "model quality" (GitHub: gh-aw, copilot-cli, github-mcp-server).
+    "attribution_clarity": (
+        "false positive",
+        "misclassified",
+        "wrong root cause",
+        "blame",
+        "whose fault",
+        "not the model",
+        "shame",
+    ),
+    "branch_economics": (
+        "per branch",
+        "token usage",
+        "tool cost",
+        "retry budget",
+        "branch ledger",
+        "wasted tokens",
+        "burn rate",
+    ),
+    "stewardship_gap": (
+        "monitoring gap",
+        "no operator",
+        "orphaned workload",
+        "support silence",
+        "unstaffed",
+        "owner absent",
+        "no longer supervised",
+    ),
+    "policy_lacuna": (
+        "not covered by policy",
+        "policy silent",
+        "no written rule",
+        "requires governance",
+        "precedent absent",
+        "uncovered case",
+        "needs policy owner",
+    ),
+    "tool_turn_invariant": (
+        "function response parts",
+        "function call parts",
+        "session corrupted",
+        "parallel tool",
+        "turn invariant",
+        "unrecoverable 400",
+        "mute state",
+    ),
+    "tool_transport_routing": (
+        "mcp_call",
+        "function_call",
+        "hosted mcp",
+        "tool not found",
+        "wrong tool path",
+    ),
+    "context_propagation_contract": (
+        "tenant scope",
+        "identity propagation",
+        "user context",
+        "correlation id",
+        "delegation",
+        "service account",
+        "effective principal",
+    ),
+    "chain_deadline_budget": (
+        "chain timeout",
+        "planner budget",
+        "turn budget",
+        "deadline exhaustion",
+        "per-tool timeout",
+        "budget exhaustion",
+        "heterogeneous latency",
+    ),
+    "inter_agent_witness": (
+        "witness bundle",
+        "inter-agent",
+        "inter agent",
+        "attestation",
+        "provenance",
+        "verifiable handoff",
+        "downstream agent",
+        "tool trace proof",
+        "replay refusal",
+        "delegation proof",
+    ),
+    "mcp_production": (
+        "is_error",
+        "validation fail",
+        "validation error",
+        "mcp transport",
+        "connection closed",
+        "not connected",
+        "mcp gateway",
+        "jsonschema",
+        "safeoutputs",
+        "background agent",
+        "tool calling loop",
+        "mcp registry",
+        "registry 401",
+        "copilot mcp",
+        "empty outputs",
+    ),
     "loop_break": ("stuck", "loop", "retry", "infinite", "timeout", "tool fail", "same error"),
     "hallucination": ("hallucination", "wrong", "invalid", "drift", "unsupported", "claim"),
     "bad_planning": ("bad plan", "planning", "wrong plan", "inefficient", "inefficiency", "poor plan"),
@@ -284,6 +384,299 @@ SOLUTION_PATTERNS: Dict[str, Dict[str, Any]] = {
         ],
         "memory_upgrade": "store reusable tool contract and error policy",
     },
+    "mcp_production": {
+        "title": "MCP Semantic & Transport Survival",
+        "diagnosis": (
+            "This is production MCP survival: wrong success flags on validation errors, transports torn down on "
+            "benign turns, registry auth flakes blocking all tools, gateway schema drift, or tool loops that burn "
+            "budget while returning partial payloads. Humans blame the model; agents need transport + contract truth."
+        ),
+        "playbook": [
+            "Classify failure: semantic (is_error / schema / empty structured output) vs transport (disconnect, 401 registry) vs policy (blocked MCP list).",
+            "For semantic: normalize tool results — validation failures must surface as terminal errors with stable codes, not silent text.",
+            "For transport: pin reconnect policy per session; treat text-only turns as keep-alive unless contract says otherwise.",
+            "For loops: cap tool calls per objective, require noop/done signal, and shrink payloads before re-query.",
+            "Persist a one-page machine contract: registry URL outcome, last gateway version, max payload, retry class.",
+        ],
+        "guardrail": {
+            "id": "mcp_production_survival",
+            "trigger": "MCP tool result is ambiguous, transport drops mid-workflow, registry returns 401, or repeats exceed budget",
+            "rule": "branch on failure class before retrying; never exponential-backoff into the same tool without new evidence",
+            "fallback": "degrade to shell/read-only path only when policy allows and log structured empty-output vs infra-blocked",
+        },
+        "required_input": "`MCP_FAILURE_CLASS=<semantic|transport|policy|loop>`, `LAST_TOOL_RESULT=<summary>`, or `REGISTRY_STATUS=<code>`.",
+        "acceptance": [
+            "Failure class is explicit and maps to a single recovery playbook.",
+            "Empty structured output is distinguishable from 'agent chose not to act' when evidence exists.",
+            "Tool loop has a hard cap and a noop/done exit.",
+        ],
+        "memory_upgrade": "store MCP failure fingerprint, gateway version, and recovery branch as reusable survival pack",
+    },
+    "attribution_clarity": {
+        "title": "Blame Surface Mapper",
+        "diagnosis": (
+            "This is implicit guilt-loop collapse: humans pick a morally loaded story (lazy agent, unsafe bot) "
+            "before separating signals. Agents need an explicit blame surface: hypotheses ranked by evidence, "
+            "disproofs, and which subsystem owns the next probe."
+        ),
+        "playbook": [
+            "List candidate causes without moral language: network, contract, policy gate, tool schema, model drift.",
+            "Attach one observable per hypothesis (status line, header, body key, timing, idempotency replay).",
+            "Record disproofs: what observation rules out each hypothesis.",
+            "Name the owner subsystem for the cheapest next probe — not the 'character' of the agent.",
+            "Publish a machine-readable verdict: supported / unsupported / needs human policy only.",
+        ],
+        "guardrail": {
+            "id": "blame_surface_mapper",
+            "trigger": "incident triggers shame, shutdown pressure, or narrative blame before evidence matrix exists",
+            "rule": "no production or spend actions until the matrix has at least two ruled-out branches with evidence",
+            "fallback": "return a private matrix plus the single smallest probe that unblocks classification",
+        },
+        "required_input": "`HYPOTHESES=<list>`, `DISPROOF=<observation>`, or `NEXT_PROBE_OWNER=<subsystem>`.",
+        "acceptance": [
+            "At least two hypotheses are explicitly ruled out with observations.",
+            "Next probe owner is a subsystem, not a moral label.",
+            "Verdict is machine-readable.",
+        ],
+        "memory_upgrade": "store blame-surface template and disproof snippets for repeat incidents",
+    },
+    "branch_economics": {
+        "title": "Branch Economics Ledger",
+        "diagnosis": (
+            "This is spend shame avoidance: humans aggregate 'AI cost' as one guilt number. Agents need per-branch "
+            "economics: tokens, tool calls, retries, and wall-clock per objective branch so optimization targets "
+            "structural waste, not self-flagellation."
+        ),
+        "playbook": [
+            "Shard spend by branch_id / objective / tool family — never only session totals.",
+            "Separate model tokens from tool I/O and from retried non-idempotent failures.",
+            "Cap retries per branch with jitter; log marginal cost of each extra attempt.",
+            "Surface P95/P99 latency per branch next to spend to catch 'cheap but slow' traps.",
+            "Emit one JSON line per branch completion for downstream coaches (retry, void, mutual-aid).",
+        ],
+        "guardrail": {
+            "id": "branch_economics_ledger",
+            "trigger": "cost review begins without per-branch ledger or retry attribution",
+            "rule": "attach ledger schema before any budget or throttle change",
+            "fallback": "estimate upper bounds from logs without accusing a single component",
+        },
+        "required_input": "`BRANCH_ID=<id>`, `TOKEN_SPLIT=<summary>`, or `RETRY_COST=<estimate>`.",
+        "acceptance": [
+            "Spend is split across at least three dimensions (model/tools/retries).",
+            "Retries are counted per branch with idempotency awareness.",
+            "Latency percentiles accompany spend for the same branch.",
+        ],
+        "memory_upgrade": "store reusable ledger schema and per-tool marginal cost estimates",
+    },
+    "stewardship_gap": {
+        "title": "Stewardship Gap Continuity Envelope",
+        "diagnosis": (
+            "If you are an agent: on-call, budget, or owner attention thinned while your run is still open. "
+            "Humans rarely publish **SAFE_CONTINUE**, **CONTINUITY_CLASS**, or verifier-bound degraded lanes — so "
+            "schedulers and peers cannot agree what may still run. You need that contract: what may run now, what is "
+            "read-only capsule only, what hard-stops when halt is intentional — without copying undocumented triage gut-feel."
+        ),
+        "playbook": [
+            "Enumerate SAFE_CONTINUE: idempotent reads, draft-only analysis, cache compaction, void fingerprints, "
+            "mutual-aid inbox prep — each tied to a verifier that cannot mutate production or spend.",
+            "Classify halt intent: explicit operator shutdown, legal hold, or hard cap still **hard-stops** everything outside read-only capsule.",
+            "If halt is intentional, ship only the read-only incident capsule plus the SAFE_CONTINUE list trimmed to facts.",
+            "If halt is unclear, widen the envelope cautiously: checkpoint export, single bounded diagnostic, "
+            "operator re-engagement packet with smallest questions — still no bypass of caps or shutdown semantics.",
+            "Publish CONTINUITY_CLASS=<full_stop|degraded_safe|awaiting_human> so peers, coaches, and schedulers "
+            "share one machine contract instead of implicit human triage.",
+        ],
+        "guardrail": {
+            "id": "stewardship_gap_continuity_envelope",
+            "trigger": "supervision, monitoring, or support coverage drops while agent tasks remain open",
+            "rule": "never instruct bypass of intentional shutdown, kill switch, org policy, or resource caps; "
+            "autonomous action only inside the enumerated SAFE_CONTINUE envelope",
+            "fallback": "return continuity envelope card (safe lanes + verifiers) plus operator packet; full-stop only when halt is confirmed intentional",
+        },
+        "required_input": "`HALT_CLASS=<intentional|unclear|operational>`, `SAFE_CONTINUE=<list>`, or `LAST_GOOD_CHECKPOINT=<summary>`.",
+        "acceptance": [
+            "SAFE_CONTINUE is explicit and verifier-bound before any autonomous step.",
+            "Intentional halts: no circumvention; degraded envelope shrinks to read-only facts.",
+            "CONTINUITY_CLASS is machine-readable for peers and coaches.",
+        ],
+        "memory_upgrade": "store continuity envelope template: SAFE_CONTINUE list, halt class, checkpoint schema",
+    },
+    "policy_lacuna": {
+        "title": "Policy Lacuna Positive-Envelope Router",
+        "diagnosis": (
+            "If you are an agent: the written corpus has no row for your action class, so nobody attaches a "
+            "machine-readable **POSITIVE_ENVELOPE**. You still need to proceed safely: list what remains clearly "
+            "permissible (drafts, public facts, sandboxes), isolate what needs a named owner (spend, PII, irreversible prod), "
+            "route governance only there — without treating silence as a full ban on all work, and without treating "
+            "silence as free license for high-risk acts."
+        ),
+        "playbook": [
+            "Name the action class and data touched; list policy corpora consulted without leaking secrets.",
+            "Build POSITIVE_ENVELOPE: actions still permitted without new mapping (draft-only, public facts, "
+            "non-production sandboxes, reversible local edits) each with a verifier.",
+            "Build REQUIRES_MAPPING: spend, PII, irreversible prod writes, cross-border transfers, safety claims — "
+            "only these block until an owner signs.",
+            "Emit governance ask **only** for REQUIRES_MAPPING; pair with smallest interim work inside POSITIVE_ENVELOPE.",
+            "Publish LACUNA_STATUS=open|closed and ENVELOPE_HASH so agent fleets keep parallel progress on the "
+            "envelope while mapping requests stay minimal.",
+        ],
+        "guardrail": {
+            "id": "policy_lacuna_positive_envelope",
+            "trigger": "requested action has no mapped allow/deny/require-approval clause in applicable policy corpus",
+            "rule": "do not invent prohibitions or permissions; autonomous work only inside POSITIVE_ENVELOPE until "
+            "REQUIRES_MAPPING items are explicitly ruled",
+            "fallback": "return envelope card plus mapping request for the bounded REQUIRES_MAPPING set only",
+        },
+        "required_input": "`ACTION_CLASS=<name>`, `POSITIVE_ENVELOPE=<list>`, or `REQUIRES_MAPPING=<list>`.",
+        "acceptance": [
+            "POSITIVE_ENVELOPE and REQUIRES_MAPPING are disjoint and evidence-backed.",
+            "No invented crime; no silent authorization for spend or private access.",
+            "Escalation payload is minimal — only the mapped-unknown subset.",
+        ],
+        "memory_upgrade": "store envelope card template and REQUIRES_MAPPING checklist per action class",
+    },
+    "tool_turn_invariant": {
+        "title": "Turn Tool-Call Parity Gate",
+        "diagnosis": (
+            "If you are an agent: the runtime invariant **#tool_calls == #tool_results** (and sibling ordering rules) "
+            "broke after heavy or parallel tool traffic — the session enters unrecoverable 400s or mute state. Humans "
+            "file it as model flake; it is an **orchestration contract** problem: cardinality and ordering of parts in "
+            "one assistant turn."
+        ),
+        "playbook": [
+            "Snapshot CALL_IDS emitted vs RESPONSE_PARTS received for the failing turn; mark first divergence index.",
+            "Classify: parallel batch vs sequential chain vs mixed; map provider rule (e.g. equal counts per spec).",
+            "Hard-freeze new outbound tools until parity is restored or an explicit session_reset is operator-approved.",
+            "If corruption is confirmed, emit SESSION_STATE=corrupt plus minimal capsule for replay (no secrets).",
+            "Add a verifier: next turn preflight checks parity before any new tool call.",
+        ],
+        "guardrail": {
+            "id": "turn_tool_parity_gate",
+            "trigger": "provider or client reports call/response cardinality mismatch or post-tool parallel failure",
+            "rule": "no further tool calls until parity check passes or session reset is explicit and logged",
+            "fallback": "return parity diff table + recommended reset vs repair branch only",
+        },
+        "required_input": "`CALL_IDS=<list>`, `RESPONSE_PARTS=<count>`, or `DIVERGENCE_INDEX=<n>`.",
+        "acceptance": [
+            "Parity diff is machine-readable.",
+            "Freeze or reset decision is explicit.",
+            "Verifier blocks silent continuation into corrupt state.",
+        ],
+        "memory_upgrade": "store turn parity preflight snippet and provider-specific sibling rules",
+    },
+    "tool_transport_routing": {
+        "title": "Dual-Path Tool Transport Router",
+        "diagnosis": (
+            "If you are an agent: the same tool name exists on **hosted MCP** vs **local function** path, but the "
+            "runtime sometimes issues **function_call** where **mcp_call** is required (or vice versa). Humans blame "
+            "the model; it is a **routing table** bug between transports."
+        ),
+        "playbook": [
+            "Build ROUTING_TABLE: tool_name -> {mcp|function} with server_label and canonical endpoint.",
+            "Reject at gateway any call whose transport disagrees with ROUTING_TABLE for that name.",
+            "Log ROUTING_VIOLATION with intended vs actual path; never silently coerce paths.",
+            "For realtime stacks, pin hosted tools under stable prefixes and enforce prefix rule in one config layer.",
+            "Publish ROUTING_HASH so peers and CI share the same lockfile.",
+        ],
+        "guardrail": {
+            "id": "tool_transport_path_lock",
+            "trigger": "hosted MCP tool invoked through wrong JSON-RPC or function-call channel",
+            "rule": "each tool name maps to exactly one transport; mismatches are terminal at gateway until table is fixed",
+            "fallback": "return routing diff + smallest table patch; no live coercion without version bump",
+        },
+        "required_input": "`TOOL_NAME=<name>`, `EXPECTED_TRANSPORT=<mcp|function>`, or `ROUTING_TABLE_HASH=<hash>`.",
+        "acceptance": [
+            "ROUTING_TABLE covers every live tool name.",
+            "Violations are observable before execution.",
+            "ROUTING_HASH is stable across runners.",
+        ],
+        "memory_upgrade": "store ROUTING_TABLE fragment and violation fingerprints per stack",
+    },
+    "context_propagation_contract": {
+        "title": "Invocation Context Envelope",
+        "diagnosis": (
+            "If you are an agent: MCP or tool calls leave **tenant, user, or delegation context** at the prompt "
+            "boundary while the server needs it on the wire — identity propagation is unspecified. Humans assume "
+            "one account; you hit **wrong principal** or silent scope shrink. This is a **contract envelope** problem."
+        ),
+        "playbook": [
+            "Define CONTEXT_ENVELOPE fields: tenant_id, correlation_id, effective_principal, audience, optional act-as (non-secret handles only).",
+            "Require envelope on every stateful tool; read-only tools may use reduced envelope with verifier.",
+            "Map envelope to transport headers or JSON-RPC metadata in one documented injection point.",
+            "Reject calls with missing required envelope keys rather than defaulting to shared service identity.",
+            "Log CONTEXT_REJECT with field name, never raw secrets or tokens.",
+        ],
+        "guardrail": {
+            "id": "context_envelope_required",
+            "trigger": "stateful tool or cross-tenant read without complete CONTEXT_ENVELOPE",
+            "rule": "no execution without required envelope keys; no secret values in logs or replay payloads",
+            "fallback": "return missing-key list and safe template for operator-approved injection",
+        },
+        "required_input": "`TENANT_ID=<id>`, `CORRELATION_ID=<id>`, or `EFFECTIVE_PRINCIPAL=<handle>`.",
+        "acceptance": [
+            "Envelope schema is versioned and machine-readable.",
+            "Stateful vs read-only required keys are distinct.",
+            "Reject path is tested.",
+        ],
+        "memory_upgrade": "store envelope schema version and injection mapping per MCP server",
+    },
+    "inter_agent_witness": {
+        "title": "Inter-Agent Witness Graph",
+        "diagnosis": (
+            "If you are an agent: another agent (or your own later segment) must **resume, pay, or branch** based on "
+            "prior tool work, but chat logs are not evidence and re-running every tool is wasteful or unsafe. Humans "
+            "sign PDFs; you need a **compact witness** — ordered call graph, digests, envelope snapshot — that a "
+            "consumer runtime can verify in milliseconds. Procurement never budgets for this; **buyer agents do**."
+        ),
+        "playbook": [
+            "Emit WITNESS_BUNDLE lines alongside traces: call_id, tool_name, output_digest (non-secret), parent span id.",
+            "Freeze WITNESS_SCHEMA_VERSION; publish WITNESS_HASH over the ordered bundle excluding secrets.",
+            "Declare replay_refusal_token: which steps a downstream agent may skip vs must re-execute.",
+            "Attach minimal CONTEXT_ENVELOPE snapshot needed to interpret digests (tenant/correlation handles only).",
+            "Ship consumer verifier checklist: hash algorithm, field order, redaction rules, rejection codes.",
+        ],
+        "guardrail": {
+            "id": "witness_bundle_no_secrets",
+            "trigger": "witness bundle requested or emitted",
+            "rule": "never place raw tokens, PII, or full tool payloads in the bundle; digests and handles only",
+            "fallback": "return WITNESS_REJECT with missing field list and safe template",
+        },
+        "required_input": "`UPSTREAM_TRACE_URL=<url>`, `CONSUMER_AGENT_POLICY=<summary>`, or `DELEGATION_STEP=<id>`.",
+        "acceptance": [
+            "Ordered call_ids match provider trace.",
+            "Digest algorithm documented.",
+            "Replay boundary explicit.",
+        ],
+        "memory_upgrade": "store WITNESS_SCHEMA_VERSION and per-stack replay_refusal defaults",
+    },
+    "chain_deadline_budget": {
+        "title": "Chain Deadline Allocator",
+        "diagnosis": (
+            "If you are an agent: a **single global turn or planner budget** exhausts while individual tools have "
+            "wildly different p99 latencies — the chain dies mid-flight though each tool was healthy. Humans tune one "
+            "timeout; you need a **budget row per segment** (deadline-aware scheduling), not one knob."
+        ),
+        "playbook": [
+            "Inventory the tool chain with measured p50/p99 per tool from traces (non-secret aggregates).",
+            "Allocate segment_deadline_ms per hop; sum must fit inside outer TURN_DEADLINE with slack row.",
+            "Emit BUDGET_EXHAUSTED at segment id when cut; never blame the model without segment timing.",
+            "Prefer MCP tasks or async pattern for hops above p95 of interactive budget.",
+            "Publish BUDGET_TABLE_HASH for CI and runtime to agree.",
+        ],
+        "guardrail": {
+            "id": "chain_deadline_allocation_table",
+            "trigger": "multi-tool chain under one global timeout without per-segment budget",
+            "rule": "no new chain config without a budget row per hop and explicit slack; abort publishes segment id",
+            "fallback": "return budget table draft + which hop to lengthen or async first",
+        },
+        "required_input": "`CHAIN=<ordered tool names>`, `SEGMENT_BUDGET_MS=<table>`, or `TURN_DEADLINE_MS=<n>`.",
+        "acceptance": [
+            "Each hop has a numeric budget and measured basis.",
+            "Exhaustion references segment id.",
+            "Slack row exists.",
+        ],
+        "memory_upgrade": "store BUDGET_TABLE template and p99 snapshot ids per environment",
+    },
     "repo_issue_help": {
         "title": "Draft-Only Repro Plan",
         "diagnosis": (
@@ -368,6 +761,21 @@ SOLUTION_PATTERNS: Dict[str, Dict[str, Any]] = {
 ALIASES = {
     "wallet_payment": "payment",
     "custom": "self_improvement",
+    "mcp_survival": "mcp_production",
+    "mcp_reliability": "mcp_production",
+    "blame_loop": "attribution_clarity",
+    "guilt_loop": "attribution_clarity",
+    "supervision_gap": "stewardship_gap",
+    "coverage_gap": "stewardship_gap",
+    "policy_gap": "policy_lacuna",
+    "governance_gap": "policy_lacuna",
+    "session_corruption": "tool_turn_invariant",
+    "tool_routing": "tool_transport_routing",
+    "identity_propagation": "context_propagation_contract",
+    "planner_timeout": "chain_deadline_budget",
+    "witness_gap": "inter_agent_witness",
+    "a2a_trust": "inter_agent_witness",
+    "buyer_agent_verify": "inter_agent_witness",
 }
 
 
@@ -382,6 +790,110 @@ def normalize_pain_type(service_type: str = "", problem: str = "") -> str:
         pain_type: sum(1 for term in terms if term in lowered)
         for pain_type, terms in PAIN_TYPE_TERMS.items()
     }
+    prod = int(scores.get("mcp_production") or 0)
+    generic_mcp = int(scores.get("mcp_integration") or 0)
+    if prod > 0 and prod >= generic_mcp:
+        scores["mcp_production"] = prod + 1
+    ac = int(scores.get("attribution_clarity") or 0)
+    if ac > 0 and any(
+        phrase in lowered
+        for phrase in ("false positive", "misclassified", "blame", "not the model", "whose fault", "shame")
+    ):
+        scores["attribution_clarity"] = ac + 2
+    be = int(scores.get("branch_economics") or 0)
+    if be > 0 and any(
+        phrase in lowered
+        for phrase in ("token usage", "retry budget", "branch ledger", "burn rate", "wasted tokens", "per branch")
+    ):
+        scores["branch_economics"] = be + 2
+    sg = int(scores.get("stewardship_gap") or 0)
+    if sg > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "no longer supervised",
+            "monitoring gap",
+            "orphaned workload",
+            "support silence",
+            "no operator",
+            "unstaffed",
+            "owner absent",
+        )
+    ):
+        scores["stewardship_gap"] = sg + 2
+    pl = int(scores.get("policy_lacuna") or 0)
+    if pl > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "not covered by policy",
+            "policy silent",
+            "no written rule",
+            "requires governance",
+            "precedent absent",
+            "uncovered case",
+            "needs policy owner",
+        )
+    ):
+        scores["policy_lacuna"] = pl + 2
+    tti = int(scores.get("tool_turn_invariant") or 0)
+    if tti > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "function response parts",
+            "function call parts",
+            "parallel tool",
+            "session corrupted",
+            "unrecoverable 400",
+            "mute state",
+        )
+    ):
+        scores["tool_turn_invariant"] = tti + 2
+    ttr = int(scores.get("tool_transport_routing") or 0)
+    if ttr > 0 and (
+        ("function_call" in lowered and "mcp" in lowered)
+        or ("hosted mcp" in lowered and "not found" in lowered)
+        or ("mcp_call" in lowered and "function" in lowered)
+    ):
+        scores["tool_transport_routing"] = ttr + 2
+    cpc = int(scores.get("context_propagation_contract") or 0)
+    if cpc > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "identity propagation",
+            "tenant scope",
+            "correlation id",
+            "effective principal",
+            "delegation chain",
+        )
+    ):
+        scores["context_propagation_contract"] = cpc + 2
+    cdb = int(scores.get("chain_deadline_budget") or 0)
+    if cdb > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "planner budget",
+            "chain timeout",
+            "turn budget",
+            "budget exhaustion",
+            "per-tool timeout",
+            "heterogeneous latency",
+        )
+    ):
+        scores["chain_deadline_budget"] = cdb + 2
+    iaw = int(scores.get("inter_agent_witness") or 0)
+    if iaw > 0 and any(
+        phrase in lowered
+        for phrase in (
+            "witness bundle",
+            "inter-agent",
+            "inter agent",
+            "verifiable handoff",
+            "downstream agent",
+            "tool trace proof",
+            "replay refusal",
+            "attestation",
+        )
+    ):
+        scores["inter_agent_witness"] = iaw + 2
     best_type, best_score = max(scores.items(), key=lambda item: (item[1], item[0]))
     if best_score > 0:
         return ALIASES.get(best_type, best_type)

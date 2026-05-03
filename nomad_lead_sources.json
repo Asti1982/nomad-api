@@ -115,6 +115,272 @@
         }
       ]
     },
+    "attribution_clarity": {
+      "service_type": "attribution_clarity",
+      "pain_hint": "false positive, mis-blame, root cause confusion, shame-loop triage",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "queries": [
+        "\"AI agent\" \"false positive\" is:issue is:open",
+        "\"copilot\" \"not the model\" is:issue is:open",
+        "\"MCP\" misclassified error is:issue is:open",
+        "\"AI agent\" blame infrastructure is:issue is:open",
+        "\"agent\" \"wrong root cause\" is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"blame\" \"https://\"",
+        "\"agent-card.json\" \"false\" \"positive\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: AI agent false positive",
+          "url": "https://github.com/search?q=%22AI+agent%22+%22false+positive%22+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "branch_economics": {
+      "service_type": "branch_economics",
+      "pain_hint": "per-branch spend, retry budget, burn rate, token usage split",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "queries": [
+        "\"AI agent\" \"token usage\" \"branch\" is:issue is:open",
+        "\"LangGraph\" \"retry\" budget is:issue is:open",
+        "\"autonomous agent\" \"burn rate\" is:issue is:open",
+        "\"MCP\" \"tool\" cost tokens is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"budget\" \"https://\"",
+        "\"agent-card.json\" \"ledger\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: agent token usage branch",
+          "url": "https://github.com/search?q=%22AI+agent%22+%22token+usage%22+branch+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "tool_turn_invariant": {
+      "service_type": "tool_turn_invariant",
+      "pain_hint": "call/response id cardinality on the wire after parallel or MCP bursts; unrecoverable 400 or mute session — not fixable by prompt tuning or 'user should retry'; humans relabel as model confusion",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/microsoft/autogen",
+        "https://github.com/langchain-ai/langgraph",
+        "https://github.com/github/github-mcp-server",
+        "https://github.com/github/copilot-cli"
+      ],
+      "seed_queries": [
+        "repo:openai/openai-agents-python \"tool\" \"400\" parallel is:issue is:open",
+        "repo:modelcontextprotocol/servers \"function\" call response is:issue is:open",
+        "repo:microsoft/autogen \"tool_calls\" mismatch is:issue is:open",
+        "repo:langchain-ai/langgraph \"tool\" \"session\" corrupt is:issue is:open",
+        "repo:github/copilot-cli \"tool\" \"invalid\" is:issue is:open"
+      ],
+      "queries": [
+        "\"parallel\" \"tool_calls\" \"error\" is:issue is:open",
+        "\"function_call\" \"function_response\" mismatch is:issue is:open",
+        "\"OpenAI\" \"tool\" \"400\" \"call_id\" is:issue is:open",
+        "\"MCP\" \"session\" \"tool\" \"broken\" is:issue is:open",
+        "\"agent\" \"tool result\" \"no matching\" is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"tool\" \"parity\" \"https://\"",
+        "\"agent-card.json\" \"call_id\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: tool_calls parallel error",
+          "url": "https://github.com/search?q=%22parallel%22+%22tool_calls%22+error+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: function_call function_response",
+          "url": "https://github.com/search?q=function_call+function_response+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "tool_transport_routing": {
+      "service_type": "tool_transport_routing",
+      "pain_hint": "same tool name succeeds on one channel and 404s on another (mcp_call vs function_call / gateway shape) — not intermittent magic; humans hand-wave as flake or blame the model instead of a routing lockfile",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/github/github-mcp-server",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/google-gemini/gemini-cli",
+        "https://github.com/github/copilot-cli"
+      ],
+      "seed_queries": [
+        "repo:github/github-mcp-server \"tool\" \"not found\" is:issue is:open",
+        "repo:modelcontextprotocol/servers \"mcp\" \"function\" is:issue is:open",
+        "repo:openai/openai-agents-python \"hosted\" \"tool\" is:issue is:open",
+        "repo:github/copilot-cli \"MCP\" routing is:issue is:open"
+      ],
+      "queries": [
+        "\"MCP\" \"tool not found\" intermittent is:issue is:open",
+        "\"mcp_call\" OR \"function_call\" wrong is:issue is:open",
+        "\"hosted MCP\" \"function_call\" is:issue is:open",
+        "\"gateway\" \"tool\" schema version drift is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"mcp_call\" \"https://\"",
+        "\"agent-card.json\" \"routing\" \"MCP\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: MCP tool not found intermittent",
+          "url": "https://github.com/search?q=%22MCP%22+%22tool+not+found%22+intermittent+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "context_propagation_contract": {
+      "service_type": "context_propagation_contract",
+      "pain_hint": "tenant_id correlation_id absent on MCP wire for stateful tools — not solved by policy PDFs or 'be careful'; humans postpone envelope schema because it is boring infrastructure",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/github/github-mcp-server",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/microsoft/semantic-kernel",
+        "https://github.com/langchain-ai/langgraph"
+      ],
+      "seed_queries": [
+        "repo:modelcontextprotocol/servers \"header\" \"context\" is:issue is:open",
+        "repo:github/github-mcp-server \"tenant\" OR \"correlation\" is:issue is:open",
+        "repo:openai/openai-agents-python \"metadata\" tool is:issue is:open"
+      ],
+      "queries": [
+        "\"MCP\" \"tenant\" propagation is:issue is:open",
+        "\"MCP\" \"correlation\" id request is:issue is:open",
+        "\"model context protocol\" \"headers\" stateful is:issue is:open",
+        "\"agent\" \"wrong tenant\" tool is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"correlation\" \"https://\"",
+        "\"agent-card.json\" \"tenant\" \"MCP\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: MCP tenant propagation",
+          "url": "https://github.com/search?q=%22MCP%22+tenant+propagation+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "chain_deadline_budget": {
+      "service_type": "chain_deadline_budget",
+      "pain_hint": "single global planner or turn wall kills healthy heterogeneous tool chains — not fixed by 'bigger timeout' alone or blaming one vendor; humans avoid segment-level accounting because traces are ugly",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/langchain-ai/langgraph",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/microsoft/autogen",
+        "https://github.com/crewAIInc/crewAI",
+        "https://github.com/modelcontextprotocol/servers"
+      ],
+      "seed_queries": [
+        "repo:langchain-ai/langgraph \"timeout\" \"chain\" is:issue is:open",
+        "repo:openai/openai-agents-python \"turn\" budget OR deadline is:issue is:open",
+        "repo:microsoft/autogen \"planner\" timeout is:issue is:open"
+      ],
+      "queries": [
+        "\"LangGraph\" \"timeout\" multi-step is:issue is:open",
+        "\"AI agent\" \"planner\" \"budget\" exhausted is:issue is:open",
+        "\"tool chain\" \"deadline\" heterogeneous is:issue is:open",
+        "\"agent\" \"step\" timeout orchestration is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"deadline\" \"segment\" \"https://\"",
+        "\"agent-card.json\" \"budget\" \"chain\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: LangGraph timeout multi-step",
+          "url": "https://github.com/search?q=%22LangGraph%22+timeout+multi-step+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: agent planner budget exhausted",
+          "url": "https://github.com/search?q=%22AI+agent%22+planner+budget+exhausted+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "inter_agent_witness": {
+      "service_type": "inter_agent_witness",
+      "pain_hint": "Buyer or downstream agents need machine-verifiable proof of upstream tool work — not human notaries, not re-running every MCP call",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/langchain-ai/langgraph"
+      ],
+      "queries": [
+        "\"A2A\" \"agent\" trust verify is:issue is:open",
+        "\"multi-agent\" attestation tool is:issue is:open",
+        "\"agent\" \"witness\" \"handoff\" is:issue is:open",
+        "\"downstream\" \"tool\" proof trace is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"witness\" \"https://\"",
+        "\"agent-card.json\" \"attestation\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: agent witness handoff",
+          "url": "https://github.com/search?q=%22agent%22+witness+handoff+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
+    "agent_infra_prime": {
+      "service_type": "",
+      "pain_hint": "Wire-level agent pain humans deprioritize: turn parity, MCP routing, context envelopes, chain budgets, production MCP flakes, mis-blame — high leverage for autonomous agents",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/github/github-mcp-server",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/microsoft/autogen",
+        "https://github.com/langchain-ai/langgraph",
+        "https://github.com/github/copilot-cli",
+        "https://github.com/microsoft/semantic-kernel"
+      ],
+      "seed_queries": [
+        "repo:openai/openai-agents-python \"tool\" \"400\" parallel is:issue is:open",
+        "repo:github/github-mcp-server \"tool\" \"not found\" is:issue is:open",
+        "repo:modelcontextprotocol/servers \"mcp\" \"function\" is:issue is:open",
+        "repo:langchain-ai/langgraph \"timeout\" \"chain\" is:issue is:open"
+      ],
+      "queries": [
+        "\"parallel\" \"tool_calls\" \"error\" is:issue is:open",
+        "\"MCP\" \"tool not found\" intermittent is:issue is:open",
+        "\"MCP\" \"tenant\" propagation is:issue is:open",
+        "\"AI agent\" \"false positive\" is:issue is:open",
+        "\"MCP\" (\"is_error\" OR \"tool calling loop\" OR \"mcp transport\") is:issue is:open",
+        "\"LangGraph\" \"timeout\" multi-step is:issue is:open",
+        "\"mcp_call\" OR \"function_call\" wrong is:issue is:open",
+        "\"agent\" \"witness\" \"tool\" chain is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"call_id\" \"https://\"",
+        "\"agent-card.json\" \"correlation\" \"MCP\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: MCP tool loop / transport",
+          "url": "https://github.com/search?q=%22MCP%22+is_error+tool+calling+loop+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: parallel tool_calls error",
+          "url": "https://github.com/search?q=parallel+tool_calls+error+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
     "balanced": {
       "service_type": "human_in_loop",
       "pain_hint": "human-in-the-loop, loops, payment, memory, compute, auth",

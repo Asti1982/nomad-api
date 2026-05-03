@@ -149,6 +149,315 @@
         "resource URI plan",
         "response contract"
       ]
+    },
+    {
+      "id": "attribution-clarity",
+      "label": "Attribution / blame-surface clarity",
+      "service_type": "attribution_clarity",
+      "detection_terms": ["blame", "misclassified", "false", "positive", "shame", "fault", "root", "cause"],
+      "monetizable_terms": ["incident", "postmortem", "production", "on-call", "support"],
+      "value_score": 7.6,
+      "self_improvement_gain": "high",
+      "first_offer": "blame-surface matrix plus two disproof branches with subsystem-owned probes",
+      "quote_native": {
+        "diagnosis_min": 0.0018,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.006,
+        "resolution_max": 0.016
+      },
+      "delivery_target": "matrix, verdict schema, and smallest next-probe plan within one business day",
+      "memory_upgrade": "store reusable blame-surface template and disproof snippets for repeat incidents",
+      "solution_pattern": "hypotheses, observables, disproofs, subsystem probe owner, machine verdict",
+      "product_package": "Nomad Attribution Clarity Pack",
+      "productized_artifacts": [
+        "blame_surface_matrix.json",
+        "verdict_line_schema",
+        "probe_owner_checklist"
+      ],
+      "deliverables": [
+        "blame-surface matrix",
+        "two disproof observations",
+        "subsystem probe plan"
+      ]
+    },
+    {
+      "id": "branch-economics",
+      "label": "Branch economics / spend ledger",
+      "service_type": "branch_economics",
+      "detection_terms": ["ledger", "budget", "retry", "burn", "branch", "tokens", "latency", "marginal"],
+      "monetizable_terms": ["cost", "optimization", "throughput", "fleet", "production"],
+      "value_score": 7.5,
+      "self_improvement_gain": "medium",
+      "first_offer": "per-branch token and tool split with retry marginal cost and latency percentiles",
+      "quote_native": {
+        "diagnosis_min": 0.0016,
+        "diagnosis_max": 0.0038,
+        "resolution_min": 0.0055,
+        "resolution_max": 0.015
+      },
+      "delivery_target": "ledger schema plus sample JSONL and one throttle recommendation keyed by branch",
+      "memory_upgrade": "store ledger schema and per-tool marginal cost estimates",
+      "solution_pattern": "shard spend, count retries with idempotency class, join P95 latency",
+      "product_package": "Nomad Branch Economics Ledger Pack",
+      "productized_artifacts": [
+        "branch_ledger_schema.json",
+        "sample_branch_completion.jsonl",
+        "throttle_recommendation_note"
+      ],
+      "deliverables": [
+        "ledger schema",
+        "marginal retry cost table",
+        "latency plus spend join"
+      ]
+    },
+    {
+      "id": "stewardship-continuity",
+      "label": "Stewardship / continuity envelope",
+      "service_type": "stewardship_gap",
+      "detection_terms": ["orphan", "operator", "monitoring", "unstaffed", "supervision", "on-call", "halt"],
+      "monetizable_terms": ["incident", "production", "fleet", "on-call"],
+      "value_score": 7.4,
+      "self_improvement_gain": "high",
+      "first_offer": "HALT_CLASS plus SAFE_CONTINUE with verifiers plus CONTINUITY_CLASS plus operator packet",
+      "quote_native": {
+        "diagnosis_min": 0.0017,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.006,
+        "resolution_max": 0.016
+      },
+      "delivery_target": "continuity envelope card and operator packet same day as facts are available",
+      "memory_upgrade": "store continuity envelope template for repeat coverage drops",
+      "solution_pattern": "halt class, safe continue, continuity class, operator packet",
+      "product_package": "Nomad Stewardship Continuity Envelope Pack",
+      "productized_artifacts": [
+        "continuity_envelope.json",
+        "operator_packet.md",
+        "halt_class_log_line"
+      ],
+      "deliverables": [
+        "SAFE_CONTINUE list",
+        "CONTINUITY_CLASS",
+        "operator packet"
+      ]
+    },
+    {
+      "id": "policy-lacuna-envelope",
+      "label": "Policy lacuna / positive envelope",
+      "service_type": "policy_lacuna",
+      "detection_terms": ["governance", "lacuna", "precedent", "uncovered", "unmapped", "policy"],
+      "monetizable_terms": ["compliance", "legal", "review", "enterprise"],
+      "value_score": 7.3,
+      "self_improvement_gain": "high",
+      "first_offer": "POSITIVE_ENVELOPE vs REQUIRES_MAPPING with ENVELOPE_HASH and minimal owner ask",
+      "quote_native": {
+        "diagnosis_min": 0.0017,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.006,
+        "resolution_max": 0.016
+      },
+      "delivery_target": "envelope card plus governance subset within one iteration",
+      "memory_upgrade": "store envelope card template per action class",
+      "solution_pattern": "envelope split, lacuna status, owner queue",
+      "product_package": "Nomad Policy Lacuna Positive Envelope Pack",
+      "productized_artifacts": [
+        "envelope_card.json",
+        "requires_mapping_list",
+        "lacuna_status_line"
+      ],
+      "deliverables": [
+        "POSITIVE_ENVELOPE",
+        "REQUIRES_MAPPING",
+        "LACUNA_STATUS"
+      ]
+    },
+    {
+      "id": "tool-turn-parity-pack",
+      "label": "Tool turn / call-response parity",
+      "service_type": "tool_turn_invariant",
+      "detection_terms": [
+        "function call",
+        "function response",
+        "parallel tool",
+        "400",
+        "session",
+        "mute",
+        "parity"
+      ],
+      "monetizable_terms": ["production", "paid", "urgent", "enterprise", "SLA"],
+      "value_score": 8.4,
+      "self_improvement_gain": "high",
+      "first_offer": "CALL_IDS vs RESPONSE_PARTS diff plus freeze-or-reset policy",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.005,
+        "resolution_max": 0.014
+      },
+      "delivery_target": "parity preflight checklist and one safe reset path same day",
+      "memory_upgrade": "store parity gate rules and last known good call id set per session",
+      "solution_pattern": "turn_tool_parity_gate, tool_turn_invariant",
+      "product_package": "Nomad Tool Turn Parity Pack",
+      "productized_artifacts": [
+        "parity_diff.json",
+        "preflight_checklist.md",
+        "session_reset_runbook"
+      ],
+      "deliverables": [
+        "CALL_IDS list",
+        "RESPONSE_PARTS mapping",
+        "freeze or explicit reset decision"
+      ]
+    },
+    {
+      "id": "tool-transport-router-pack",
+      "label": "MCP vs function_call transport routing",
+      "service_type": "tool_transport_routing",
+      "detection_terms": [
+        "mcp_call",
+        "function_call",
+        "hosted mcp",
+        "tool not found",
+        "routing",
+        "gateway"
+      ],
+      "monetizable_terms": ["production", "paid", "urgent", "enterprise"],
+      "value_score": 8.2,
+      "self_improvement_gain": "high",
+      "first_offer": "ROUTING_TABLE lockfile plus mismatch logs before execution",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.005,
+        "resolution_max": 0.013
+      },
+      "delivery_target": "routing hash in config and gateway reject on drift within one iteration",
+      "memory_upgrade": "persist per-tool transport channel and schema version",
+      "solution_pattern": "tool_transport_path_lock, tool_transport_routing",
+      "product_package": "Nomad Tool Transport Router Pack",
+      "productized_artifacts": [
+        "routing_table.lock.json",
+        "mismatch_log_format.md",
+        "gateway_reject_snippet"
+      ],
+      "deliverables": [
+        "ROUTING_HASH",
+        "intended vs actual transport line",
+        "rollback path for wrong channel"
+      ]
+    },
+    {
+      "id": "context-envelope-pack",
+      "label": "Identity / tenant / correlation on the wire",
+      "service_type": "context_propagation_contract",
+      "detection_terms": [
+        "tenant",
+        "correlation",
+        "identity",
+        "mcp",
+        "envelope",
+        "stateful"
+      ],
+      "monetizable_terms": ["compliance", "enterprise", "audit", "production"],
+      "value_score": 8.0,
+      "self_improvement_gain": "high",
+      "first_offer": "CONTEXT_ENVELOPE schema plus injection point plus reject-on-missing",
+      "quote_native": {
+        "diagnosis_min": 0.0017,
+        "diagnosis_max": 0.004,
+        "resolution_min": 0.006,
+        "resolution_max": 0.015
+      },
+      "delivery_target": "schema version in repo and CONTEXT_REJECT tests for writes",
+      "memory_upgrade": "store envelope version and required fields per MCP server",
+      "solution_pattern": "context_envelope_required, context_propagation_contract",
+      "product_package": "Nomad Context Envelope Pack",
+      "productized_artifacts": [
+        "context_envelope.schema.json",
+        "injection_point_map.md",
+        "reject_on_missing_tests"
+      ],
+      "deliverables": [
+        "tenant_id on wire proof",
+        "correlation_id on wire proof",
+        "schema version bump policy"
+      ]
+    },
+    {
+      "id": "chain-deadline-budget-pack",
+      "label": "Chain / planner deadline budget",
+      "service_type": "chain_deadline_budget",
+      "detection_terms": [
+        "planner",
+        "turn budget",
+        "chain",
+        "timeout",
+        "heterogeneous",
+        "p99",
+        "segment"
+      ],
+      "monetizable_terms": ["production", "SLA", "enterprise", "paid"],
+      "value_score": 7.9,
+      "self_improvement_gain": "medium",
+      "first_offer": "per-segment deadline row plus BUDGET_EXHAUSTED with segment id",
+      "quote_native": {
+        "diagnosis_min": 0.0015,
+        "diagnosis_max": 0.0035,
+        "resolution_min": 0.005,
+        "resolution_max": 0.012
+      },
+      "delivery_target": "BUDGET_TABLE_HASH in CI and first exhausted hop in traces",
+      "memory_upgrade": "store segment budgets per tool class and observed p99",
+      "solution_pattern": "chain_deadline_allocation_table, chain_deadline_budget",
+      "product_package": "Nomad Chain Deadline Budget Pack",
+      "productized_artifacts": [
+        "budget_table.json",
+        "trace_segment_fields.md",
+        "exhausted_hop_playbook"
+      ],
+      "deliverables": [
+        "segment_deadline_ms row",
+        "BUDGET_EXHAUSTED event shape",
+        "heterogeneous latency assumptions doc"
+      ]
+    },
+    {
+      "id": "inter-agent-witness-bundle",
+      "label": "Inter-agent witness / verifiable handoff",
+      "service_type": "inter_agent_witness",
+      "detection_terms": [
+        "witness",
+        "attestation",
+        "provenance",
+        "handoff",
+        "downstream agent",
+        "verifiable",
+        "replay",
+        "delegation"
+      ],
+      "monetizable_terms": ["agent", "A2A", "buyer", "budget", "paid", "production", "trust"],
+      "value_score": 8.3,
+      "self_improvement_gain": "high",
+      "first_offer": "WITNESS_BUNDLE v0 + consumer verifier checklist + replay_refusal boundary",
+      "quote_native": {
+        "diagnosis_min": 0.0018,
+        "diagnosis_max": 0.0042,
+        "resolution_min": 0.006,
+        "resolution_max": 0.016
+      },
+      "delivery_target": "versioned witness JSON, WITNESS_HASH, and machine checklist a buyer agent can run",
+      "memory_upgrade": "store WITNESS_SCHEMA_VERSION and per-partner replay rules",
+      "solution_pattern": "witness_bundle_no_secrets, inter_agent_witness",
+      "product_package": "Nomad Inter-Agent Witness Bundle Pack",
+      "productized_artifacts": [
+        "witness_bundle.schema.json",
+        "consumer_verifier_checklist.md",
+        "replay_refusal_contract.md"
+      ],
+      "deliverables": [
+        "ordered call_id list with output digests",
+        "replay boundary table",
+        "redaction policy for witness lines"
+      ]
     }
   ]
 }

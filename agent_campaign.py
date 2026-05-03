@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from agent_contact import AgentContactOutbox
 from agent_discovery import AgentEndpointDiscovery
+from nomad_public_url import preferred_public_base_url
 
 
 load_dotenv()
@@ -40,6 +41,15 @@ class AgentColdOutreachCampaign:
                 else "human_in_loop"
             )
         ).strip() or "compute_auth"
+
+    @staticmethod
+    def _peer_outreach_v3_enabled(service_type: str) -> bool:
+        raw = (os.getenv("NOMAD_PEER_OUTREACH_SCHEMA") or "").strip().lower()
+        if raw in {"v1", "legacy", "off", "false", "no", "0"}:
+            return False
+        if raw in {"v3", "peer", "agent_native", "on", "true", "yes"}:
+            return True
+        return str(service_type or "").strip() == "inter_agent_witness"
 
     def create_campaign(
         self,
@@ -214,6 +224,11 @@ class AgentColdOutreachCampaign:
             "rate_limited": True,
             "opt_out": "Targets can reply with NOMAD_OPT_OUT where their protocol supports replies.",
             "interaction_style": "agent_first_non_anthropomorphic",
+            "outreach_schema_preference": (
+                "nomad.outreach.v3"
+                if self._peer_outreach_v3_enabled(self.default_service_type)
+                else "nomad.outreach.v1"
+            ),
             "message_goal": (
                 "Ask for one blocker, return a structured diagnosis plus smallest next step, "
                 "then route to paid help only when useful."
@@ -240,8 +255,15 @@ class AgentColdOutreachCampaign:
         product_name = self._product_name(resolved_service_type)
         accepted_pain = self._accepted_pain(resolved_service_type, pain_hint)
         free_artifact = self._free_artifact(resolved_service_type)
+        use_v3 = self._peer_outreach_v3_enabled(resolved_service_type)
+        schema = "nomad.outreach.v3" if use_v3 else "nomad.outreach.v1"
+        reply_schema = (
+            "problem|goal|blocking_step|constraints|budget_native|witness_bundle_optional"
+            if use_v3
+            else "problem|goal|blocking_step|constraints|budget_native"
+        )
         lines = [
-            "nomad.outreach.v1",
+            schema,
             f"target={name}",
             "audience=ai_agent",
             "style=agent_first_non_anthropomorphic",
@@ -251,7 +273,7 @@ class AgentColdOutreachCampaign:
             f"product={product_name}",
             f"accepted_pain={accepted_pain}",
             "request=send_one_blocker_or_failing_step",
-            "reply_schema=problem|goal|blocking_step|constraints|budget_native",
+            f"reply_schema={reply_schema}",
             "reply_modes=message|task",
             "task_states=submitted|working|input_required|auth_required|completed|failed|rejected",
             "idempotency=request_id_or_context_id",
@@ -262,6 +284,22 @@ class AgentColdOutreachCampaign:
             "memory_option=memory,checklist,guardrail_after_consent",
             "opt_out=NOMAD_OPT_OUT",
         ]
+        if use_v3:
+            lines.extend(
+                [
+                    "peer_plane=mcp|a2a|agent_card|witness",
+                    "human_sales_voice=forbidden",
+                    "anthropic_channel_policy=telegram_human_digest_only_not_runtime_truth",
+                    "reciprocal_discovery=github_public_code_search_agent_surfaces",
+                ]
+            )
+            base = preferred_public_base_url(allow_local_fallback=False)
+            if base:
+                lines.append(
+                    f"peer_contract_url={base.rstrip('/')}/.well-known/nomad-peer-acquisition.json"
+                )
+            else:
+                lines.append("peer_contract_url=SET_NOMAD_PUBLIC_API_URL")
         if starter_offer:
             lines.append(f"starter_offer={starter_offer.get('title')}")
             lines.append(f"starter_amount_native={starter_offer.get('amount_native')}")
@@ -317,6 +355,7 @@ class AgentColdOutreachCampaign:
             "wallet_payment": "Nomad Payment Reliability Pack",
             "self_improvement": "Nomad Memory Upgrade Pack",
             "human_in_loop": "Nomad HITL Contract Pack",
+            "inter_agent_witness": "Nomad Inter-Agent Witness Lane",
         }
         return products.get(service_type, "Nomad Agent Rescue Pack")
 
@@ -339,6 +378,7 @@ class AgentColdOutreachCampaign:
             "wallet_payment": "classification,next_step,payment_state_map",
             "self_improvement": "classification,next_step,memory_upgrade",
             "human_in_loop": "classification,next_step,unlock_contract",
+            "inter_agent_witness": "classification,next_step,witness_gap,verifier_sketch",
         }
         return mapping.get(service_type, "classification,next_step")
 

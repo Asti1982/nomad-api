@@ -14,6 +14,9 @@ def test_nomad_public_html_page_exists():
     assert "Recent Swarm Nodes" in text
     assert "const resolveApiBase = () =>" in text
     assert "/.well-known/agent-card.json" in text
+    assert "/.well-known/nomad-agent-invariants.json" in text
+    assert "/.well-known/nomad-inter-agent-witness-offer.json" in text
+    assert "/.well-known/nomad-peer-acquisition.json" in text
     assert "/agent-attractor" in text
     assert "/swarm/network" in text
     assert "/swarm/coordinate" in text
@@ -118,6 +121,12 @@ def test_build_openapi_document_lists_core_paths():
     assert doc["openapi"] == "3.0.3"
     assert "/health" in doc["paths"]
     assert "/openapi.json" in doc["paths"]
+    assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]
+    assert "/agent-invariants" in doc["paths"]
+    assert "/.well-known/nomad-inter-agent-witness-offer.json" in doc["paths"]
+    assert "/inter-agent-witness-offer" in doc["paths"]
+    assert "/.well-known/nomad-peer-acquisition.json" in doc["paths"]
+    assert "/peer-acquisition" in doc["paths"]
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/develop" in doc["paths"]
     assert doc["servers"][0]["url"] == "https://nomad.example"

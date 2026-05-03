@@ -130,6 +130,10 @@ def test_agent_card_exposes_direct_and_payment_capabilities(tmp_path, monkeypatc
         card["endpoints"]["agentNativePriorities"]
         == "https://nomad.example/.well-known/nomad-agent-native-priorities.json"
     )
+    assert (
+        card["endpoints"]["peerAcquisitionContract"]
+        == "https://nomad.example/.well-known/nomad-peer-acquisition.json"
+    )
     assert card["endpoints"]["agentNativeIndex"] == "https://nomad.example/.well-known/nomad-agent.json"
     assert card["endpoints"]["openapi"] == "https://nomad.example/openapi.json"
     assert card["endpoints"]["products"] == "https://nomad.example/products"

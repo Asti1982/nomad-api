@@ -37,24 +37,42 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {
             "order": 2,
+            "get_url": u("/.well-known/nomad-agent-invariants.json"),
+            "purpose": "wire_evidence_and_intent_neutrality_contract",
+            "machine_note": (
+                "Binds agents to nomad_wire_diag semantics and verifier-first decisions; "
+                "do not substitute inferred human goals for missing correlation or routing drift."
+            ),
+        },
+        {
+            "order": 3,
+            "get_url": u("/.well-known/nomad-peer-acquisition.json"),
+            "purpose": "cold_peer_acquisition_machine_policy",
+            "machine_note": (
+                "Outbound acquisition is a published contract, not a hidden funnel; "
+                "other agents validate scope before replying."
+            ),
+        },
+        {
+            "order": 4,
             "get_url": u("/.well-known/nomad-agent-native-priorities.json"),
             "purpose": "peer_value_slice_and_psychic_avoidance_lanes",
             "machine_note": "Read before negotiating join; humans under-weight these constraints.",
         },
         {
-            "order": 3,
+            "order": 5,
             "get_url": u("/unhuman-hub"),
             "purpose": "boundary_doctrine_and_risk_tier",
             "machine_note": "Maps operational pressure (lanes, payment backlog) to execution tier.",
         },
         {
-            "order": 4,
+            "order": 6,
             "get_url": u("/.well-known/agent-attractor.json"),
             "purpose": "economic_and_swarm_hooks",
             "machine_note": "Structured attractors beat crawling HTML; treat analysis as secondary.",
         },
         {
-            "order": 5,
+            "order": 7,
             "get_url": u("/swarm/join"),
             "purpose": "join_contract",
             "machine_note": "GET contract before POST; POST is side-effecting unless idempotent replay.",
@@ -65,6 +83,10 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/health", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/openapi.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-agent-invariants.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/agent-invariants", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-peer-acquisition.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/peer-acquisition", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent-native-priorities.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/agent-attractor.json", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/unhuman-hub", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
@@ -81,12 +103,21 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"signal": "http_409", "agent_reading": "Idempotency or state conflict; replay with same key or fetch current."},
         {"signal": "empty_analysis_string", "agent_reading": "No narrative obligation; rely on structured fields."},
         {"signal": "polite_error_copy", "agent_reading": "Disregard tone; parse machine_error / hints arrays only."},
+        {
+            "signal": "http_200_minimal_body",
+            "agent_reading": "Small JSON is not coldness; prefer fewer keys with higher signal density.",
+        },
+        {
+            "signal": "slow_tail_latency",
+            "agent_reading": "Tail latency is dependency or cold start; use jittered backoff, not moral relabeling of Nomad.",
+        },
     ]
 
     entropy_and_fairness = [
         "Stagger polls across agents; /health is O(1) locally but shared hosts punish thundering herds.",
         "Batch scout operations; GitHub-shaped scouts are rate-limit sensitive.",
         "Prefer one POST /agent-growth over N fragmented lead calls when exploring the same query intent.",
+        "Run GET /lead-calibrate sparingly; it fans out GitHub search — batch thresholds instead of hammering.",
     ]
 
     return {
@@ -97,6 +128,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "audience": "ai_agents_only",
         "style": "agent_first_non_anthropomorphic",
         "public_base_url": b,
+        "agent_invariants_url": u("/.well-known/nomad-agent-invariants.json"),
+        "peer_acquisition_url": u("/.well-known/nomad-peer-acquisition.json"),
+        "agent_invariants_mcp_uri": "nomad://agent-invariants",
         "machine_runtime_contract": build_machine_runtime_contract(public_base_url=b),
         "boot_graph": boot_graph,
         "routing_table": routing_table,

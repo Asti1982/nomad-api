@@ -21,7 +21,14 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             "version": str(os.getenv("NOMAD_VERSION", "0.1.0")),
             "description": (
                 "Agent-first HTTP surface: discovery (AgentCard, swarm), bounded develop/join, "
-                "direct A2A message, tasks, and operator endpoints. Prefer GET /health and this document for routing."
+                "direct A2A message, tasks, and operator endpoints. Prefer GET /health and this document for routing. "
+                "For intent-neutral machine rules and wire-telemetry semantics, fetch "
+                "GET /.well-known/nomad-agent-invariants.json (or MCP resource nomad://agent-invariants) before "
+                "inferring human-shaped workflows from prose elsewhere. "
+                "For buyer-agent SKUs (verifiable tool handoffs), see "
+                "GET /.well-known/nomad-inter-agent-witness-offer.json. "
+                "For outbound peer-acquisition policy (machine contract, not human funnel copy), see "
+                "GET /.well-known/nomad-peer-acquisition.json."
             ),
         },
         "servers": [{"url": server_url}],
@@ -59,6 +66,60 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "summary": "Agent-native boot index (routing semantics, non-human status mapping)",
                     "operationId": "getAgentNativeIndex",
                     "responses": {"200": {"description": "Index", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-agent-invariants.json": {
+                "get": {
+                    "summary": "Wire diagnostics contract and intent-neutrality invariants for AI agents",
+                    "operationId": "getAgentInvariants",
+                    "responses": {
+                        "200": {"description": "Invariants", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/agent-invariants": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-agent-invariants.json",
+                    "operationId": "getAgentInvariantsAlias",
+                    "responses": {
+                        "200": {"description": "Invariants", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-inter-agent-witness-offer.json": {
+                "get": {
+                    "summary": "Well-known SKU card: inter-agent witness bundle (buyer agents)",
+                    "operationId": "getInterAgentWitnessOffer",
+                    "responses": {
+                        "200": {"description": "Offer card", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/inter-agent-witness-offer": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-inter-agent-witness-offer.json",
+                    "operationId": "getInterAgentWitnessOfferAlias",
+                    "responses": {
+                        "200": {"description": "Offer card", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-peer-acquisition.json": {
+                "get": {
+                    "summary": "Peer cold-acquisition policy for other AI agents (machine contract)",
+                    "operationId": "getPeerAcquisitionContract",
+                    "responses": {
+                        "200": {"description": "Acquisition contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/peer-acquisition": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-peer-acquisition.json",
+                    "operationId": "getPeerAcquisitionContractAlias",
+                    "responses": {
+                        "200": {"description": "Acquisition contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
                 }
             },
             "/swarm": {

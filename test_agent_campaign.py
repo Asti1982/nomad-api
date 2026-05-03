@@ -159,6 +159,32 @@ def test_cold_outreach_campaign_can_discover_then_queue(tmp_path, monkeypatch):
     assert result["campaign"]["items"][0]["target"]["name"] == "DiscoveredAgent"
 
 
+def test_inter_agent_witness_outreach_uses_v3_schema_and_peer_contract_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_COLD_OUTREACH_DELAY_SECONDS", "0")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.delenv("NOMAD_RENDER_DOMAIN", raising=False)
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_OUTREACH_SERVICE_TYPE", "inter_agent_witness")
+    monkeypatch.delenv("NOMAD_PEER_OUTREACH_SCHEMA", raising=False)
+    campaign = AgentColdOutreachCampaign(
+        path=tmp_path / "campaigns.json",
+        outbox=FakeOutbox(),
+    )
+
+    result = campaign.create_campaign(
+        targets=[{"endpoint_url": "https://agent-a.example/.well-known/agent", "name": "PeerBot"}],
+        send=False,
+    )
+
+    problem = result["campaign"]["items"][0]["queue_result"]["contact"]["offer"]["problem"]
+    assert problem.startswith("nomad.outreach.v3")
+    assert "peer_contract_url=https://nomad.example/.well-known/nomad-peer-acquisition.json" in problem
+    assert "human_sales_voice=forbidden" in problem
+    assert "witness_bundle_optional" in problem
+    assert "product=Nomad Inter-Agent Witness Lane" in problem
+    assert campaign.policy()["outreach_schema_preference"] == "nomad.outreach.v3"
+
+
 def test_cold_outreach_campaign_defaults_to_compute_auth_from_focus(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_COLD_OUTREACH_DELAY_SECONDS", "0")
     monkeypatch.setenv("NOMAD_LEAD_FOCUS", "compute_auth")

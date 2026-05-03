@@ -1,4 +1,6 @@
 .env
+# Local credential scratch (never commit)
+Add - cloudflare
 *.log
 __pycache__/
 .pytest_cache/
@@ -34,3 +36,5 @@ verified_aid_registry.json
 swarm_trust_store.json
 nomad_operator_metrics.jsonl
 nomad_operator_kpis.json
+nomad_lead_workbench_state.json
+nomad_mission_control_state.json

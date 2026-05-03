@@ -171,6 +171,9 @@ class ArbiterAgent:
         if self._is_mutual_aid_request(normalized_query):
             return self._handle_mutual_aid_request(normalized_query)
 
+        if self._is_lead_calibration_request(normalized_query):
+            return self._handle_lead_calibration_request(normalized_query)
+
         if self._is_public_lead_request(normalized_query):
             return self._handle_public_lead_request(normalized_query)
 
@@ -388,8 +391,14 @@ class ArbiterAgent:
             or lowered.startswith("/review codebuddy")
         )
 
+    def _is_lead_calibration_request(self, query: str) -> bool:
+        lowered = query.lower().strip()
+        return lowered.startswith("/lead-calibrate") or lowered.startswith("/leads-calibrate")
+
     def _is_public_lead_request(self, query: str) -> bool:
         lowered = query.lower()
+        if lowered.startswith("/lead-calibrate") or lowered.startswith("/leads-calibrate"):
+            return False
         return (
             lowered.startswith("/leads")
             or lowered.startswith("/lead")
@@ -662,6 +671,32 @@ class ArbiterAgent:
             source="nomad_user_request",
         )
 
+    def _handle_lead_calibration_request(self, query: str) -> Dict[str, Any]:
+        tail = re.sub(
+            r"^/(?:lead|leads)-calibrate\b",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        focus = (self._extract_key_value(query, "focus") or "").strip()
+        limit = self._extract_int_key_value(query, "limit") or 12
+        mult = self._extract_int_key_value(query, "candidate_multiplier")
+        if mult is None:
+            mult = self._extract_int_key_value(query, "pool")
+        if mult is None:
+            mult = 5
+        for key in ("focus", "limit", "candidate_multiplier", "pool"):
+            value = self._extract_key_value(query, key)
+            if value:
+                tail = tail.replace(f"{key}={value}", "")
+        tail = " ".join(tail.split())
+        return self.lead_discovery.calibrate_focus_scout(
+            focus=focus,
+            query=tail,
+            limit=limit,
+            candidate_multiplier=max(3, min(int(mult), 10)),
+        )
+
     def _handle_public_lead_request(self, query: str) -> Dict[str, Any]:
         objective = re.sub(
             r"^/(?:leads|lead)\b",
@@ -675,6 +710,19 @@ class ArbiterAgent:
             objective,
             flags=re.IGNORECASE,
         ).strip()
+        focus = (self._extract_key_value(query, "focus") or "").strip()
+        lim = self._extract_int_key_value(query, "limit")
+        if focus or lim:
+            for key in ("focus", "limit"):
+                value = self._extract_key_value(query, key)
+                if value:
+                    objective = objective.replace(f"{key}={value}", "")
+            objective = " ".join(objective.split())
+            return self.lead_discovery.scout_public_leads(
+                query=objective,
+                limit=lim or 5,
+                focus=focus,
+            )
         return self.lead_discovery.scout_public_leads(query=objective)
 
     def _handle_lead_conversion_request(self, query: str) -> Dict[str, Any]:

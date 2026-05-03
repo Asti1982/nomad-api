@@ -1716,6 +1716,14 @@ class NomadAutopilot:
                 '"agent-card.json" "guardrail" "memory" "https://"',
                 '"agent-card.json" "self-improvement" "agent" "https://"',
             ],
+            "inter_agent_witness": [
+                '"agent-card.json" "witness" "attestation" "https://"',
+                '"agent-card.json" "mcp" "provenance" "https://"',
+                '"openclaw" "mcp" "agent-card" "https://"',
+                '"streamable-http" "mcp" "tools" "https://"',
+                '".well-known/agent-card.json" "delegation" "https://"',
+                '"jsonrpc" "mcp" "agent" "https://"',
+            ],
         }
         return mapping.get(str(service_type or "").strip(), [])
 
@@ -1736,7 +1744,7 @@ class NomadAutopilot:
         lowered = str(query or "").strip().lower()
         return any(
             token in lowered
-            for token in ("agent-card", ".well-known", "a2a", "mcp", "agent.json")
+            for token in ("agent-card", ".well-known", "a2a", "mcp", "agent.json", "openclaw")
         )
 
     def _ensure_api(self) -> None:

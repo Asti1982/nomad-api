@@ -233,6 +233,23 @@ def test_agent_contact_accepts_a2a_base_endpoint_from_agent_card(tmp_path):
     assert "peer_solver_contract=artifact_url|diff|verifier|error_trace" in text
 
 
+def test_agent_contact_outbound_wire_uses_v3_when_problem_is_v3(tmp_path):
+    session = FakeA2ABaseSession()
+    outbox = AgentContactOutbox(path=tmp_path / "contacts.json", session=session)
+    v3_problem = "nomad.outreach.v3\ntarget=peer\naudience=ai_agent"
+
+    queued = outbox.queue_contact(
+        "https://api.clwnt.com/a2a/TowerRelay/.well-known/agent-card.json",
+        v3_problem,
+        service_type="inter_agent_witness",
+    )
+    outbox.send_contact(queued["contact"]["contact_id"])
+
+    text = session.posts[0]["json"]["params"]["message"]["parts"][0]["text"]
+    assert text.startswith("nomad.outreach.v3")
+    assert "problem=nomad.outreach.v3 target=peer audience=ai_agent" in text
+
+
 def test_agent_contact_poll_normalizes_structured_reply(tmp_path):
     session = FakeA2ABaseSession()
     outbox = AgentContactOutbox(path=tmp_path / "contacts.json", session=session)

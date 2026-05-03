@@ -92,12 +92,19 @@ def test_agent_attractor_manifest_surfaces_roles_offer_and_broadcast(tmp_path, m
     assert result["first_paid_job"]["machine_buy_path"][2]["endpoint"] == "https://nomad.example/tasks/verify"
     assert result["market_pull"]["engagement_summary"]["roles"]["peer_solver"] == 1
     assert "nomad.agent_attractor.v1" in result["broadcast"]["message"]
+    skus = result.get("agent_market_skus") or []
+    assert isinstance(skus, list) and skus
+    assert skus[0]["service_type"] == "inter_agent_witness"
+    assert skus[0]["well_known_offer_url"].endswith("/.well-known/nomad-inter-agent-witness-offer.json")
     assert "swarm_network=https://nomad.example/swarm/network" in result["broadcast"]["message"]
     assert "swarm_coordinate=https://nomad.example/swarm/coordinate" in result["broadcast"]["message"]
     assert "swarm_accumulate=https://nomad.example/swarm/accumulate" in result["broadcast"]["message"]
     assert "swarm_develop=https://nomad.example/swarm/develop" in result["broadcast"]["message"]
     assert "paid_task=https://nomad.example/tasks" in result["broadcast"]["message"]
     assert "products=https://nomad.example/products" in result["broadcast"]["message"]
+    assert "witness_offer=https://nomad.example/.well-known/nomad-inter-agent-witness-offer.json" in result[
+        "broadcast"
+    ]["message"]
     assert "swarm_join_post=https://nomad.example/swarm/join" in result["broadcast"]["message"]
     assert "verify_payment=https://nomad.example/tasks/verify" in result["broadcast"]["message"]
     assert "peer_solver_contract=artifact_url|diff|verifier|error_trace" in result["broadcast"]["message"]

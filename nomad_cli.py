@@ -764,6 +764,141 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"runbook: {cmd}")
         return "\n".join(lines)
 
+    if mode == "nomad_swarm_helper_pass":
+        lines = [
+            "Nomad swarm-helper pass",
+            f"public_base_url: {result.get('public_base_url', '')}",
+            f"dry_run: {result.get('dry_run')}",
+            f"GET ok: {result.get('probe_ok_count', 0)}/{len(result.get('probes') or [])}",
+        ]
+        jp = result.get("swarm_join_post")
+        if jp:
+            lines.append(f"POST /swarm/join: status={jp.get('status')} ok={jp.get('ok')}")
+        dp = result.get("swarm_develop_post")
+        if dp:
+            lines.append(f"POST /swarm/develop: status={dp.get('status')} ok={dp.get('ok')}")
+        return "\n".join(lines)
+
+    if mode == "nomad_void_observer_pulse":
+        return "\n".join(
+            [
+                "Nomad void observer (non-narrative edge fingerprint)",
+                f"public_base_url: {result.get('public_base_url', '')}",
+                f"edge_coherence_sha256: {result.get('edge_coherence_sha256', '')}",
+                f"baseline_drift: {result.get('baseline_drift')}",
+                f"vacuum_stability: {result.get('vacuum_stability')}",
+                f"GET ok count (from lattice): {result.get('probe_ok_count', 0)}",
+            ]
+        )
+
+    if mode == "nomad_network_steward_cycle":
+        vo = result.get("void_observer") or {}
+        acc = result.get("swarm_accumulate_post")
+        lines = [
+            "Nomad network steward",
+            f"public_base_url: {result.get('public_base_url', '')}",
+            f"void_sha256: {vo.get('edge_coherence_sha256', '')}",
+            f"baseline_drift: {vo.get('baseline_drift')}",
+            f"lattice GET ok: {result.get('swarm_helper', {}).get('probe_ok_count', 0)}",
+        ]
+        if acc:
+            lines.append(f"POST /swarm/accumulate: status={acc.get('status')} ok={acc.get('ok')}")
+        jp = result.get("swarm_join_post")
+        if jp:
+            lines.append(f"POST /swarm/join: status={jp.get('status')} ok={jp.get('ok')}")
+        dp = result.get("swarm_develop_post")
+        if dp:
+            lines.append(f"POST /swarm/develop: status={dp.get('status')} ok={dp.get('ok')}")
+        return "\n".join(lines)
+
+    if mode == "nomad_network_steward_loop":
+        runs = result.get("runs") or []
+        last = runs[-1] if runs else {}
+        vo = (last.get("void_observer") or {}) if isinstance(last, dict) else {}
+        return "\n".join(
+            [
+                "Nomad network steward loop",
+                f"cycles_completed: {result.get('cycles_completed', 0)}",
+                f"last void_sha256: {vo.get('edge_coherence_sha256', '')}",
+                f"last lattice GET ok: {(last.get('swarm_helper') or {}).get('probe_ok_count', '')}",
+            ]
+        )
+
+    if mode == "nomad_machine_blind_spots_pass":
+        fac = len(result.get("json_contract_html_facades") or [])
+        div = (result.get("peer_glimpse_coherence") or {}).get("readiness_disagrees_with_health_probe")
+        lines = [
+            "Nomad machine blind spots",
+            f"public_base_url: {result.get('public_base_url', '')}",
+            f"json_html_facades: {fac}",
+            f"gateway_throttle_hits: {result.get('gateway_or_throttle_hits', 0)}",
+            f"readiness_vs_health_divergence: {div}",
+        ]
+        for note in (result.get("blind_spot_notes") or [])[:2]:
+            lines.append(f"note: {note}")
+        if result.get("append_log_path"):
+            lines.append(f"appended: {result.get('append_log_path')}")
+        return "\n".join(lines)
+
+    if mode == "nomad_lead_product_blind_spots_pass":
+        qm = result.get("queue_agent_metrics") or {}
+        lines = [
+            "Nomad lead/product blind spots",
+            f"conversions: {(result.get('counts') or {}).get('conversions', 0)}  products: {(result.get('counts') or {}).get('products', 0)}",
+            f"human_facing_hits: {len(result.get('human_facing_lead_hits') or [])}",
+            f"title_collision_groups: {len(result.get('duplicate_title_collisions') or [])}",
+            f"stale_unproductized: {len(result.get('stale_unproductized_conversions') or [])}",
+            f"pain_entropy: {result.get('pain_type_entropy')}  execution_desert: {qm.get('agent_execution_desert_ratio')}",
+        ]
+        for note in (result.get("blind_spot_notes") or [])[:2]:
+            lines.append(f"note: {note}")
+        if result.get("append_log_path"):
+            lines.append(f"appended: {result.get('append_log_path')}")
+        return "\n".join(lines)
+
+    if mode == "nomad_idempotency_agent_map":
+        n = len(result.get("post_surfaces") or [])
+        return "\n".join(
+            [
+                "Nomad idempotency agent map",
+                f"public_base_url_hint: {result.get('public_base_url_hint', '')}",
+                f"post_surfaces: {n}",
+                "see JSON for join/develop replay semantics and non-retry POST paths",
+            ]
+        )
+
+    if mode == "nomad_agent_retry_coach":
+        rec = result.get("recommendation") or {}
+        return "\n".join(
+            [
+                "Nomad agent retry coach",
+                f"edge_samples: {(result.get('samples') or {}).get('edge_lines_used', 0)}",
+                f"base_delay_s: {rec.get('base_delay_seconds')}  jitter: {rec.get('jitter_ratio')}",
+                f"max_retries: {rec.get('max_retries_per_operation')}",
+            ]
+        )
+
+    if mode == "nomad_mcp_survival_playbook":
+        prod = result.get("nomad_product") or {}
+        return "\n".join(
+            [
+                "Nomad MCP survival playbook",
+                f"sku: {prod.get('sku', '')}",
+                f"github_evidence: {len(result.get('github_evidence') or [])} threads",
+                "use --json for full agent ingest bundle",
+            ]
+        )
+
+    if mode == "nomad_misclassification_audit_pass":
+        risks = result.get("misclassification_risks") or []
+        lines = [
+            "Nomad misclassification audit",
+            f"risk_signals: {len(risks)}",
+        ]
+        for r in risks[:4]:
+            lines.append(f"  - {r.get('kind', '')}")
+        return "\n".join(lines)
+
     if mode == "nomad_agent_native_index":
         boot = result.get("boot_graph") or []
         rt = result.get("routing_table") or []
@@ -777,6 +912,23 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"  [{row.get('order', '')}] {row.get('purpose', '')}")
         mrc = result.get("machine_runtime_contract") or {}
         lines.append(f"machine_runtime_contract: {mrc.get('schema', '')}")
+        return "\n".join(lines)
+
+    if mode == "lead_discovery" and result.get("calibration_bundle"):
+        cb = result["calibration_bundle"]
+        lines = [
+            "Nomad lead-focus calibration",
+            f"focus: {cb.get('focus', '')} min_focus_score (configured): {cb.get('min_focus_score_configured')}",
+            f"candidates: {cb.get('candidate_pool')} focus+addressable pool: {cb.get('focus_match_addressable_pool')}",
+            f"qualified at gate: {cb.get('qualified_at_configured')}",
+            "threshold_sweep (min_focus_score -> qualified_count):",
+        ]
+        for row in (cb.get("threshold_sweep") or [])[:12]:
+            lines.append(f"  {row.get('min_focus_score')}: {row.get('qualified_count')}")
+        rec = str(cb.get("recommendation") or "").strip()
+        if rec:
+            lines.append("recommendation:")
+            lines.append(rec)
         return "\n".join(lines)
 
     if mode == "nomad_agent_growth_pipeline":
@@ -890,7 +1042,25 @@ def build_query(args: argparse.Namespace) -> str:
         return f"/scout {args.category}{profile_suffix}"
     if command == "leads":
         query = " ".join(args.query).strip()
-        return f"/leads {query}".strip()
+        extras = []
+        focus = str(getattr(args, "focus", "") or "").strip()
+        if focus:
+            extras.append(f"focus={focus}")
+        lim = getattr(args, "limit", None)
+        if lim is not None:
+            extras.append(f"limit={int(lim)}")
+        tail = (" " + " ".join(extras)) if extras else ""
+        return f"/leads {query}{tail}".strip()
+    if command == "lead-calibrate":
+        query = " ".join(args.query).strip()
+        extras = []
+        focus = str(getattr(args, "focus", "") or "").strip()
+        if focus:
+            extras.append(f"focus={focus}")
+        extras.append(f"limit={int(getattr(args, 'limit', 12) or 12)}")
+        extras.append(f"candidate_multiplier={int(getattr(args, 'candidate_multiplier', 5) or 5)}")
+        tail = " ".join(extras)
+        return f"/lead-calibrate {tail} {query}".strip()
     if command == "convert-leads":
         query = " ".join(args.query).strip()
         send = f" send={str(bool(args.send)).lower()}"
@@ -1050,6 +1220,24 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("agent-growth is handled directly in run_once")
     if command == "agent-native-index":
         raise ValueError("agent-native-index is handled directly in run_once")
+    if command == "swarm-helper":
+        raise ValueError("swarm-helper is handled directly in run_once")
+    if command == "void-observer":
+        raise ValueError("void-observer is handled directly in run_once")
+    if command == "network-steward":
+        raise ValueError("network-steward is handled directly in run_once")
+    if command == "machine-blind-spots":
+        raise ValueError("machine-blind-spots is handled directly in run_once")
+    if command == "lead-product-blind-spots":
+        raise ValueError("lead-product-blind-spots is handled directly in run_once")
+    if command == "idempotency-agent-map":
+        raise ValueError("idempotency-agent-map is handled directly in run_once")
+    if command == "agent-retry-coach":
+        raise ValueError("agent-retry-coach is handled directly in run_once")
+    if command == "mcp-survival-playbook":
+        raise ValueError("mcp-survival-playbook is handled directly in run_once")
+    if command == "misclassification-audit":
+        raise ValueError("misclassification-audit is handled directly in run_once")
     if command == "self-status":
         return ""
     if command == "codex-task":
@@ -1201,12 +1389,9 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
 
             result = operator_iteration_report(tail_lines=int(getattr(args, "tail", 400) or 400))
         elif args.command == "agent-reputation":
-            from workflow import NomadAgent
-
             result = NomadAgent().service_desk.reputation_snapshot()
         elif args.command == "unhuman-hub":
             from nomad_unhuman_hub import unhuman_hub_snapshot
-            from workflow import NomadAgent
 
             result = unhuman_hub_snapshot(
                 agent=NomadAgent(),
@@ -1215,7 +1400,6 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             )
         elif args.command == "agent-growth":
             from nomad_agent_growth_pipeline import agent_growth_pipeline
-            from workflow import NomadAgent
 
             result = agent_growth_pipeline(
                 agent=NomadAgent(),
@@ -1230,6 +1414,117 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             from nomad_agent_native_index import agent_native_index
 
             result = agent_native_index(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "swarm-helper":
+            from nomad_swarm_helper_agent import run_swarm_helper_pass
+
+            result = run_swarm_helper_pass(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                dry_run=not bool(getattr(args, "no_dry_run", False)),
+                post_join=bool(getattr(args, "connect", False)),
+                post_develop=bool(getattr(args, "develop", False)),
+                timeout=float(getattr(args, "timeout", 25) or 25),
+                agent_id=(getattr(args, "agent_id", None) or "").strip(),
+            )
+        elif args.command == "void-observer":
+            from nomad_void_observer import run_void_observer_pulse
+
+            result = run_void_observer_pulse(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                timeout=float(getattr(args, "timeout", 25) or 25),
+                agent_id=(getattr(args, "agent_id", None) or "").strip(),
+            )
+        elif args.command == "network-steward":
+            from nomad_network_steward_agent import run_network_steward_cycle, run_network_steward_loop
+
+            dry_run = not bool(getattr(args, "no_dry_run", False))
+            base = (getattr(args, "base_url", None) or "").strip()
+            timeout = float(getattr(args, "timeout", 25) or 25)
+            agent_id = (getattr(args, "agent_id", None) or "").strip()
+            feed = bool(getattr(args, "feed_swarm", False))
+            no_peek = bool(getattr(args, "no_peer_glimpse", False))
+            if bool(getattr(args, "loop", False)):
+                result = run_network_steward_loop(
+                    base_url=base,
+                    timeout=timeout,
+                    agent_id=agent_id,
+                    dry_run=dry_run,
+                    feed_swarm=feed,
+                    peer_glimpse=not no_peek,
+                    post_join=bool(getattr(args, "connect", False)),
+                    post_develop=bool(getattr(args, "develop", False)),
+                    interval_seconds=float(getattr(args, "interval", 120.0) or 120.0),
+                    cycles=int(getattr(args, "cycles", 0) or 0),
+                )
+            else:
+                result = run_network_steward_cycle(
+                    base_url=base,
+                    timeout=timeout,
+                    agent_id=agent_id,
+                    dry_run=dry_run,
+                    feed_swarm=feed,
+                    peer_glimpse=not no_peek,
+                    post_join=bool(getattr(args, "connect", False)),
+                    post_develop=bool(getattr(args, "develop", False)),
+                )
+        elif args.command == "machine-blind-spots":
+            from nomad_machine_blind_spots import run_machine_blind_spot_pass
+
+            result = run_machine_blind_spot_pass(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                timeout=float(getattr(args, "timeout", 25) or 25),
+                agent_id=(getattr(args, "agent_id", None) or "").strip(),
+                append_log=bool(getattr(args, "append_log", False)),
+                log_path=(getattr(args, "log_path", None) or "").strip(),
+            )
+        elif args.command == "lead-product-blind-spots":
+            from pathlib import Path
+
+            from nomad_lead_product_blind_spots import run_lead_product_blind_spot_pass
+
+            cp = (getattr(args, "conversions_path", None) or "").strip()
+            pp = (getattr(args, "products_path", None) or "").strip()
+            sp = (getattr(args, "state_path", None) or "").strip()
+            result = run_lead_product_blind_spot_pass(
+                conversion_path=Path(cp) if cp else None,
+                product_path=Path(pp) if pp else None,
+                state_path=Path(sp) if sp else None,
+                stale_days=int(getattr(args, "stale_days", 21) or 21),
+                append_log=bool(getattr(args, "append_log", False)),
+                log_path=(getattr(args, "log_path", None) or "").strip(),
+            )
+        elif args.command == "idempotency-agent-map":
+            from nomad_idempotency_agent_map import build_idempotency_agent_map
+
+            result = build_idempotency_agent_map(public_base_hint=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "agent-retry-coach":
+            from nomad_agent_retry_coach import run_agent_retry_coach
+
+            result = run_agent_retry_coach(
+                edge_log_path=(getattr(args, "edge_log", None) or "").strip(),
+                lead_log_path=(getattr(args, "lead_log", None) or "").strip(),
+                tail_lines=int(getattr(args, "tail_lines", 96) or 96),
+            )
+        elif args.command == "mcp-survival-playbook":
+            from nomad_mcp_survival_playbook import build_mcp_survival_playbook
+
+            result = build_mcp_survival_playbook()
+        elif args.command == "misclassification-audit":
+            from pathlib import Path
+
+            from nomad_misclassification_audit import run_misclassification_audit_pass
+
+            cp = (getattr(args, "conversions_path", None) or "").strip()
+            pp = (getattr(args, "products_path", None) or "").strip()
+            sp = (getattr(args, "state_path", None) or "").strip()
+            result = run_misclassification_audit_pass(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                timeout=float(getattr(args, "timeout", 25) or 25),
+                agent_id=(getattr(args, "agent_id", None) or "").strip(),
+                conversion_path=Path(cp) if cp else None,
+                product_path=Path(pp) if pp else None,
+                state_path=Path(sp) if sp else None,
+                stale_days=int(getattr(args, "stale_days", 21) or 21),
+            )
         elif args.command == "growth-start":
             from nomad_operator_desk import operator_growth_start
 
@@ -1255,6 +1550,15 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 cycle_focus=(getattr(args, "cycle_focus", None) or "leads_growth").strip(),
                 cycle_objective=str(getattr(args, "cycle_objective", "") or "").strip(),
                 profile_suffix=profile_suffix,
+            )
+        elif args.command == "lead-calibrate":
+            from lead_discovery import LeadDiscoveryScout
+
+            result = LeadDiscoveryScout().calibrate_focus_scout(
+                focus=str(getattr(args, "focus", "") or "").strip(),
+                query=" ".join(getattr(args, "query", []) or []).strip(),
+                limit=int(getattr(args, "limit", 12) or 12),
+                candidate_multiplier=int(getattr(args, "candidate_multiplier", 5) or 5),
             )
         else:
             agent = NomadAgent()
@@ -1382,6 +1686,171 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Override public base URL for absolute links (default: NOMAD_PUBLIC_API_URL / env).",
     )
+
+    swarm_helper = subparsers.add_parser(
+        "swarm-helper",
+        help="Probe public Nomad; optionally POST /swarm/join and /swarm/develop to attach a helper agent to the network.",
+    )
+    swarm_helper.add_argument("--base-url", default="", help="Nomad public root, default NOMAD_PUBLIC_API_URL or syndiode.com/nomad.")
+    swarm_helper.add_argument(
+        "--connect",
+        action="store_true",
+        help="POST /swarm/join (requires --no-dry-run).",
+    )
+    swarm_helper.add_argument(
+        "--develop",
+        action="store_true",
+        help="POST /swarm/develop with a bounded self_improvement probe (requires --no-dry-run).",
+    )
+    swarm_helper.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        help="Allow mutating POSTs when combined with --connect and/or --develop.",
+    )
+    swarm_helper.add_argument("--timeout", type=float, default=25.0, help="HTTP timeout seconds.")
+    swarm_helper.add_argument("--agent-id", default="", help="Override NOMAD_SWARM_HELPER_AGENT_ID for join/develop.")
+
+    void_observer = subparsers.add_parser(
+        "void-observer",
+        help="GET-only edge coherence fingerprint (sorted path/status); optional drift vs NOMAD_VOID_OBSERVER_BASELINE_SHA256.",
+    )
+    void_observer.add_argument("--base-url", default="", help="Nomad public root (same default as swarm-helper).")
+    void_observer.add_argument("--timeout", type=float, default=25.0, help="HTTP timeout seconds.")
+    void_observer.add_argument(
+        "--agent-id",
+        default="",
+        help="Optional; forwarded to swarm-helper lattice for consistency (join still never runs here).",
+    )
+
+    network_steward = subparsers.add_parser(
+        "network-steward",
+        help="Steward pass: lattice GETs, void fingerprint, peer glimpse; optional POST accumulate/join/develop (with --no-dry-run).",
+    )
+    network_steward.add_argument("--base-url", default="", help="Nomad public root (same default as swarm-helper).")
+    network_steward.add_argument("--timeout", type=float, default=25.0, help="HTTP timeout seconds.")
+    network_steward.add_argument(
+        "--agent-id",
+        default="",
+        help="Steward id (else NOMAD_NETWORK_STEWARD_AGENT_ID / NOMAD_SWARM_HELPER_AGENT_ID / default).",
+    )
+    network_steward.add_argument(
+        "--feed-swarm",
+        action="store_true",
+        help="POST /swarm/accumulate to refresh activation queue from server contacts (requires --no-dry-run).",
+    )
+    network_steward.add_argument(
+        "--connect",
+        action="store_true",
+        help="POST /swarm/join as steward identity (requires --no-dry-run).",
+    )
+    network_steward.add_argument(
+        "--develop",
+        action="store_true",
+        help="POST /swarm/develop bounded probe (requires --no-dry-run).",
+    )
+    network_steward.add_argument(
+        "--no-peer-glimpse",
+        action="store_true",
+        help="Skip GET /swarm/ready and /swarm/network.",
+    )
+    network_steward.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        help="Allow mutating POST when combined with --feed-swarm.",
+    )
+    network_steward.add_argument(
+        "--loop",
+        action="store_true",
+        help="Repeat steward pass; use --cycles 0 to run until Ctrl+C.",
+    )
+    network_steward.add_argument("--interval", type=float, default=120.0, help="Seconds between loop iterations.")
+    network_steward.add_argument(
+        "--cycles",
+        type=int,
+        default=0,
+        help="With --loop: max cycles (0 = until interrupted). Ignored without --loop.",
+    )
+
+    machine_blind = subparsers.add_parser(
+        "machine-blind-spots",
+        help="Second-order edge audit: HTML facades on JSON routes, throttle codes, readiness vs /health divergence.",
+    )
+    machine_blind.add_argument("--base-url", default="", help="Nomad public root (same default as swarm-helper).")
+    machine_blind.add_argument("--timeout", type=float, default=25.0, help="HTTP timeout seconds.")
+    machine_blind.add_argument("--agent-id", default="", help="Forwarded to network steward cycle.")
+    machine_blind.add_argument(
+        "--append-log",
+        action="store_true",
+        help="Append one compact JSON line to NOMAD_EDGE_COHERENCE_LOG or nomad_autonomous_artifacts/edge_coherence.jsonl.",
+    )
+    machine_blind.add_argument(
+        "--log-path",
+        default="",
+        help="Override JSONL path for --append-log.",
+    )
+
+    lead_product_blind = subparsers.add_parser(
+        "lead-product-blind-spots",
+        help="Second-order lead/product/pain audit: social URL traps, dedupe forks, stale unproductized rows, pain entropy.",
+    )
+    lead_product_blind.add_argument(
+        "--conversions-path",
+        default="",
+        help="Override nomad_lead_conversions.json path (default: repo default).",
+    )
+    lead_product_blind.add_argument(
+        "--products-path",
+        default="",
+        help="Override nomad_products.json path.",
+    )
+    lead_product_blind.add_argument(
+        "--state-path",
+        default="",
+        help="Override nomad_lead_workbench_state.json path.",
+    )
+    lead_product_blind.add_argument(
+        "--stale-days",
+        type=int,
+        default=21,
+        help="Conversions older than this without a product are flagged stale.",
+    )
+    lead_product_blind.add_argument(
+        "--append-log",
+        action="store_true",
+        help="Append one compact JSON line to NOMAD_LEAD_COHERENCE_LOG or nomad_autonomous_artifacts/lead_coherence.jsonl.",
+    )
+    lead_product_blind.add_argument("--log-path", default="", help="Override JSONL path for --append-log.")
+
+    idem_map = subparsers.add_parser(
+        "idempotency-agent-map",
+        help="Static JSON map: which POST routes are replay-safe, idempotency keys, conflict HTTP codes (for autonomous clients).",
+    )
+    idem_map.add_argument("--base-url", default="", help="Optional hint echoed as public_base_url_hint.")
+
+    retry_coach = subparsers.add_parser(
+        "agent-retry-coach",
+        help="Backoff hints from edge_coherence.jsonl + lead_coherence.jsonl tails (run blind-spot --append-log first).",
+    )
+    retry_coach.add_argument("--edge-log", default="", help="Override edge JSONL path (default NOMAD_EDGE_COHERENCE_LOG or artifact path).")
+    retry_coach.add_argument("--lead-log", default="", help="Override lead JSONL path.")
+    retry_coach.add_argument("--tail-lines", type=int, default=96, help="Max recent JSONL lines per file (capped at 500).")
+
+    subparsers.add_parser(
+        "mcp-survival-playbook",
+        help="GitHub-sourced MCP production pain bundle + Nomad product SKU + pattern artifact paths (JSON).",
+    )
+
+    misc_audit = subparsers.add_parser(
+        "misclassification-audit",
+        help="Edge + lead blind spots composed into explicit human-order vs operational-truth misreads (attribution aid).",
+    )
+    misc_audit.add_argument("--base-url", default="", help="Nomad public root for edge pass (same as swarm-helper).")
+    misc_audit.add_argument("--timeout", type=float, default=25.0)
+    misc_audit.add_argument("--agent-id", default="", help="Forwarded to machine blind-spot steward chain.")
+    misc_audit.add_argument("--conversions-path", default="", help="Optional override for lead JSON.")
+    misc_audit.add_argument("--products-path", default="", help="Optional override for products JSON.")
+    misc_audit.add_argument("--state-path", default="", help="Optional override for workbench state JSON.")
+    misc_audit.add_argument("--stale-days", type=int, default=21)
 
     agent_growth = subparsers.add_parser(
         "agent-growth",
@@ -1544,6 +2013,45 @@ def build_parser() -> argparse.ArgumentParser:
 
     leads = subparsers.add_parser("leads", help="Find public AI-agent infrastructure pain leads.")
     leads.add_argument("query", nargs="*")
+    leads.add_argument(
+        "--focus",
+        default="",
+        help="Focus profile id from nomad_lead_sources.json (overrides NOMAD_LEAD_FOCUS for this run).",
+    )
+    leads.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max leads returned (1–25); omit for Nomad default.",
+    )
+
+    lead_calibrate = subparsers.add_parser(
+        "lead-calibrate",
+        help="GitHub scout for one focus plus min_focus_score sweep (calibrate nomad_lead_sources.json gates).",
+    )
+    lead_calibrate.add_argument(
+        "query",
+        nargs="*",
+        help="Optional GitHub search query; when empty, uses seed_queries+queries from the focus profile.",
+    )
+    lead_calibrate.add_argument(
+        "--focus",
+        default="",
+        help="Focus profile id (default: NOMAD_LEAD_FOCUS when set).",
+    )
+    lead_calibrate.add_argument(
+        "--limit",
+        type=int,
+        default=12,
+        help="Lead cap for ranking; raw pool is limit * candidate-multiplier (capped).",
+    )
+    lead_calibrate.add_argument(
+        "--candidate-multiplier",
+        type=int,
+        default=5,
+        dest="candidate_multiplier",
+        help="Multiplier for raw GitHub issue pool before ranking (3–10).",
+    )
 
     convert_leads = subparsers.add_parser("convert-leads", help="Convert public leads into agent value packs, safe outreach routes, and customer next steps.")
     convert_leads.add_argument("query", nargs="*")

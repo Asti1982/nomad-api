@@ -212,6 +212,7 @@ class DirectAgentGateway:
                 "agentCard": f"{self.public_api_url}/.well-known/agent-card.json",
                 "agentNativePriorities": f"{self.public_api_url}/.well-known/nomad-agent-native-priorities.json",
                 "agentNativeIndex": f"{self.public_api_url}/.well-known/nomad-agent.json",
+                "peerAcquisitionContract": f"{self.public_api_url}/.well-known/nomad-peer-acquisition.json",
                 "openapi": f"{self.public_api_url}/openapi.json",
                 "agentAttractor": f"{self.public_api_url}/agent-attractor",
                 "swarm": f"{self.public_api_url}/swarm",
