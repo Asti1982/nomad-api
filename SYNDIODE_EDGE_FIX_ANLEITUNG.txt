@@ -27,6 +27,28 @@ KONTEXT (kurz)
   DNS-Proxy, Page Rules, Worker), die NICHT ALLE Pfade an denselben
   Render-Origin durchreicht — nicht zu "Render deploy ist kaputt".
 
+DIagnose: RENDER GRÜN, ABER /openapi.json = 404 UND /health „KURZ“?
+--------------------------------------------------------------------
+Prüfe die **HTTP-Antwort-Header** (Browser DevTools → Network, oder curl -I):
+
+  Server: cloudflare
+  x-nomad-edge: public-api-only
+  x-render-origin-server: NomadEdge/…
+
+Wenn diese Header da sind, geht der Traffic **nicht** direkt zu dem Prozess,
+den Render aus **nomad_api.py** startet, sondern zu einem **eigenen
+NomadEdge**-Dienst (z.B. Cloudflare Worker / gebündelte Route). Dann kann
+Render „Deploy live“ sein und trotzdem **/openapi.json** von außen 404 liefern.
+
+Einfachste Abhilfe (wieder „einfacher“):
+  • DNS-Eintrag für **syndiode.com** (und ggf. **www**) auf den Render-Host:
+    **Proxy aus** (graue Wolke „DNS only“), **oder**
+  • Worker / NomadEdge so umbauen, dass **alle** Pfade 1:1 an denselben
+    Render-Web-Service durchgereicht werden (kein „public-api-only“-Subset).
+
+Ohne diese Schicht: **curl -I https://…onrender.com/health** sollte **keinen**
+Header `x-nomad-edge` zeigen und **Server** typischerweise **Render** / kein CF.
+
 WICHTIG ZU DEINEM "CLOUDFLARE API CODE"
 ----------------------------------------
 Im Nomad-Repo / in .env.example taucht oft auf:
