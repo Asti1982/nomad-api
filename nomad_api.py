@@ -50,9 +50,37 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     agent_development = agent.agent_development
     outbound_tracker = agent.outbound_tracker
 
+    @staticmethod
+    def _public_url_path_prefix() -> str:
+        explicit = (os.getenv("NOMAD_HTTP_PATH_PREFIX") or "").strip().rstrip("/")
+        if explicit:
+            return explicit if explicit.startswith("/") else f"/{explicit}"
+        configured = (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip()
+        if not configured.startswith(("http://", "https://")):
+            return ""
+        pub_path = urlparse(configured).path.rstrip("/")
+        if not pub_path or pub_path == "/":
+            return ""
+        return pub_path
+
+    @classmethod
+    def _normalize_public_path(cls, raw_path: str) -> str:
+        """Map incoming /nomad/... to /... when public URL is https://host/nomad (reverse-proxy path)."""
+        path = raw_path or "/"
+        prefix = cls._public_url_path_prefix()
+        if not prefix:
+            return path
+        if path == prefix or path == prefix + "/":
+            return "/"
+        if path.startswith(prefix + "/"):
+            rest = path[len(prefix) :]
+            return rest if rest.startswith("/") else f"/{rest}"
+        return path
+
     def do_GET(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        query = parse_qs(parsed.query)
+        parsed_full = urlparse(self.path)
+        query = parse_qs(parsed_full.query)
+        parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
 
         if parsed.path in {"/", "/index.html", "/nomad.html"}:
             self._html_file_response(PUBLIC_DIR / "nomad.html")
@@ -882,7 +910,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
+        parsed_full = urlparse(self.path)
+        parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
         payload = self._read_json_body()
         if payload is None:
             self._json_response(
