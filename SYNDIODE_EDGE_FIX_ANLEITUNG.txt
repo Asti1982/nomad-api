@@ -1,7 +1,12 @@
 ================================================================================
-SYNDIODE.COM/NOMAD — WARUM EINIGE PFADE 404 LIEFERN & WAS DU WO ÄNDERN MUSST
+SYNDIODE.COM — WARUM EINIGE PFADE 404 LIEFERN & WAS DU WO ÄNDERN MUSST
 ================================================================================
 Stand: Anleitung für Betreiber. Keine Secrets in diese Datei schreiben.
+
+Empfohlene öffentliche Basis: **https://syndiode.com** (ohne /nomad), damit Edge-
+Whitelists nicht für jeden neuen Endpunkt nachgezogen werden müssen. Ein
+Pfad-Prefix /nomad ist weiterhin möglich (siehe .env.example), ist aber nicht
+Standard mehr.
 
 KONTEXT (kurz)
 --------------
@@ -13,13 +18,13 @@ KONTEXT (kurz)
   - GET /.well-known/nomad-inter-agent-witness-offer.json
   usw.
 
-• Öffentliche URL (von außen): https://syndiode.com/nomad/...
+• Öffentliche URL (von außen, Standard): https://syndiode.com/...
 
-• Beobachtung: Manche Pfade liefern 200 (z.B. /health, /.well-known/agent-card.json,
-  /swarm/join), andere 404 (z.B. /openapi.json, mehrere /.well-known/nomad-*.json).
+• Beobachtung: Manche Pfade liefern 200, andere 404 (z.B. /openapi.json,
+  mehrere /.well-known/nomad-*.json).
 
-• Das Muster passt zu: VOR Render sitzt eine Schicht (fast immer Cloudflare: DNS-Proxy,
-  Page Rules, Worker), die NICHT ALLE Unterpfade von /nomad/... an denselben
+• Das Muster passt zu: VOR Render sitzt eine Schicht (fast immer Cloudflare:
+  DNS-Proxy, Page Rules, Worker), die NICHT ALLE Pfade an denselben
   Render-Origin durchreicht — nicht zu "Render deploy ist kaputt".
 
 WICHTIG ZU DEINEM "CLOUDFLARE API CODE"
@@ -40,49 +45,45 @@ Route-Mappings) — oder du änderst es **manuell im Cloudflare Dashboard** (s.u
 
 
 ================================================================================
-TEIL A — CLOFLARE DASHBOARD (ohne API): Edge so, dass ALLE /nomad/*-Pfade durchgehen
+TEIL A — CLOUDFLARE DASHBOARD (ohne API): Edge so, dass API-Pfade durchgehen
 ================================================================================
 Wo: https://dash.cloudflare.com → Zone **syndiode.com**
 
-Ziel: Jeder Request, der mit **https://syndiode.com/nomad** beginnt, soll den
-**gleichen** Backend-Origin erreichen wie die Pfade, die heute schon 200 liefern
-(z.B. agent-card), idealerweise **unverändert** (gleicher Pfad-Prefix /nomad/...).
+Ziel: Jeder Request an **https://syndiode.com** (bzw. euer gewähltes Muster), der
+Nomad erreichen soll, soll den **gleichen** Backend-Origin erreichen wie die
+Pfade, die heute schon 200 liefern — idealerweise **ohne** enge Pfad-Whitelist.
 
 Schritte (je nach deinem Setup eines oder mehrere):
 
   A1) Workers & Pages → **Workers** / **Worker Routes**
-      Prüfe, ob ein Worker an einem Muster wie:
-        *syndiode.com/nomad*
-      hängt und **nur ausgewählte** Pfade weiterleitet.
-      → Lösung: Route erweitern ODER Worker-Code anpassen, sodass mindestens
-         auch diese URLs an Render (Origin) gehen:
-         /nomad/openapi.json
-         /nomad/.well-known/nomad-peer-acquisition.json
-         /nomad/.well-known/nomad-agent.json
-         /nomad/.well-known/nomad-inter-agent-witness-offer.json
-         /nomad/.well-known/nomad-agent-invariants.json
-         /nomad/.well-known/nomad-agent-native-priorities.json
-      (Vollständige curl-Liste: siehe Repo-Datei syndiode_edge_routes.md)
+      Prüfe, ob ein Worker an **syndiode.com** hängt und **nur ausgewählte**
+      Pfade weiterleitet (Whitelist mit `available` + `not_found`).
+      → Lösung: **Alle** relevanten API-Pfade an Render durchlassen, oder
+         Worker so umbauen, dass **alles** unter dem Host (außer expliziter
+         Blockliste) zum Origin geht.
 
   A2) Rules → **Transform Rules** / **Redirect Rules** / **Bulk Redirects**
-      Suche nach Regeln, die nur bestimmte /nomad-Pfade zulassen.
-      → Lösung: Regeln lockern oder explizit die obigen Pfade freigeben.
+      Suche nach Regeln, die nur bestimmte Pfade zulassen.
+      → Lösung: Regeln lockern oder explizit z.B. /openapi.json und
+         /.well-known/nomad-*.json freigeben.
 
   A3) Caching
-      Falls aggressive Cache-Regeln 404 ausliefern: für /nomad/.well-known/*
-      und /nomad/openapi.json **Bypass** oder kürzere TTL / "Cache everything"
-      deaktivieren.
+      Falls aggressive Cache-Regeln 404 ausliefern: für /.well-known/* und
+      /openapi.json **Bypass** oder kürzere TTL.
 
   A4) Origin / Proxy-Ziel
-      Stelle sicher, dass das Ziel **derselbe Render-Service** ist wie für
-      Pfade, die schon funktionieren (kein zweites Backend nur für HTML).
+      Stelle sicher, dass das Ziel **derselbe Render-Service** ist.
 
 Nach jeder Änderung: 2–5 Minuten warten, dann Schnelltests (PowerShell oder curl):
 
-  curl -sS -o NUL -w "%%{http_code}" https://syndiode.com/nomad/openapi.json
-  curl -sS -o NUL -w "%%{http_code}" https://syndiode.com/nomad/.well-known/nomad-peer-acquisition.json
+  curl -sS -o NUL -w "%%{http_code}" https://syndiode.com/openapi.json
+  curl -sS -o NUL -w "%%{http_code}" https://syndiode.com/.well-known/nomad-peer-acquisition.json
 
 Erwartung: 200 und JSON-Body vom Nomad-API-Prozess.
+
+Falls du **bewusst** /nomad nutzt: dieselben Pfade mit Prefix testen, z.B.
+  https://syndiode.com/nomad/openapi.json
+und in Render **NOMAD_PUBLIC_API_URL=https://syndiode.com/nomad** setzen.
 
 
 ================================================================================
@@ -101,17 +102,29 @@ Lokal prüfen (lädt .env via python-dotenv, wenn du im Repo-Root bist):
   python main.py --cli render --json
 
 Im Code macht RenderHostingProbe u.a. HTTP-GETs gegen NOMAD_PUBLIC_API_URL
-(https://syndiode.com/nomad) und listet Render-Services — siehe render_hosting.py.
+(standardmäßig https://syndiode.com) und listet Render-Services — siehe
+render_hosting.py.
 
 Deploy manuell anstoßen (nur wenn du willst): Render Dashboard → Service →
 "Manual Deploy" ODER über Nomad/Render-API mit expliziter Freigabe (siehe
 render_hosting.py trigger_deploy — braucht u.a. service id).
 
+Start Command (wichtig): In den Service-Settings **python nomad_api.py** setzen.
+Falls Render stattdessen **python main.py** ohne Argumente ausführt: Im Repo
+startet **main.py** dann automatisch die HTTP-API im Vordergrund (RENDER=true).
+**Exit-Code 2** kommt meist von falscher CLI (**argparse**); Repo-Root enthält
+zudem eine **Procfile**-Zeile `web: python nomad_api.py` als Referenz.
+
 
 ================================================================================
 TEIL C — .env ÜBERSICHT (Namen, nicht die Werte)
 ================================================================================
-Für **syndiode.com/nomad** öffentlich erreichbar (Nomad selbst):
+Für **syndiode.com** öffentlich erreichbar (Nomad selbst, Standard ohne Prefix):
+
+  NOMAD_PUBLIC_API_URL=https://syndiode.com
+  NOMAD_COLLABORATION_HOME_URL=https://syndiode.com
+
+Optional weiterhin mit Pfad-Prefix (Edge + Nomad müssen übereinstimmen):
 
   NOMAD_PUBLIC_API_URL=https://syndiode.com/nomad
   NOMAD_COLLABORATION_HOME_URL=https://syndiode.com/nomad
@@ -148,7 +161,7 @@ TEIL D — WENN DU PER CLOUDFLARE-API ROUTEN AUTOMATISIEREN WILLST (fortgeschrit
 ================================================================================
 REFERENZ IM REPO
 ================================================================================
-• syndiode_edge_routes.md — Whitelist-Beispiele + curl-Schnelltests
+• syndiode_edge_routes.md — Edge vs. API + curl-Schnelltests
 • render.yaml — Render-Services inkl. Cron für Autopilot-Outreach
 • render_hosting.py — RenderHostingProbe (Public-GET-Liste inkl. Diagnosepfade)
 

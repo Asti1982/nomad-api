@@ -36,7 +36,11 @@ from workflow import NomadAgent
 
 
 HOST = os.getenv("NOMAD_API_HOST", "127.0.0.1")
-PORT = int(os.getenv("NOMAD_API_PORT") or os.getenv("PORT") or "8787")
+# On Render, PORT is authoritative; load_dotenv() may inject NOMAD_API_PORT from a local .env — do not let it override Render.
+if (os.environ.get("RENDER") or "").strip().lower() == "true" and (os.environ.get("PORT") or "").strip():
+    PORT = int(os.environ["PORT"])
+else:
+    PORT = int(os.getenv("NOMAD_API_PORT") or os.getenv("PORT") or "8787")
 ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT / "public"
 NOMAD_PROCESS_START = time.time()
