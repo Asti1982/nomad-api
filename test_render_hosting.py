@@ -12,6 +12,43 @@ class FakeResponse:
         return self._payload
 
 
+def test_render_accepts_nomad_prefixed_render_api_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("RENDER_API_KEY", raising=False)
+    monkeypatch.setenv("NOMAD_RENDER_API_KEY", "rnd-prefixed-fake")
+    monkeypatch.setenv("NOMAD_RENDER_SERVICE_NAME", "nomad-api")
+    monkeypatch.setenv("NOMAD_RENDER_OWNER_ID", "tea-test")
+
+    def fake_request(method, url, **kwargs):
+        assert kwargs["headers"]["Authorization"] == "Bearer rnd-prefixed-fake"
+        if url.endswith("/owners"):
+            return FakeResponse(
+                payload=[{"owner": {"id": "tea-test", "name": "Test Workspace", "type": "team"}}]
+            )
+        return FakeResponse(
+            payload=[
+                {
+                    "service": {
+                        "id": "srv-test",
+                        "name": "nomad-api",
+                        "type": "web_service",
+                        "runtime": "python",
+                        "url": "https://nomad-api.onrender.com",
+                    }
+                }
+            ]
+        )
+
+    monkeypatch.setattr("render_hosting.requests.request", fake_request)
+    monkeypatch.setattr(
+        "render_hosting.requests.get",
+        lambda url, **kwargs: FakeResponse(status_code=200, payload={"ok": True}),
+    )
+
+    result = RenderHostingProbe(repo_root=tmp_path).snapshot(verify=True)
+    assert result["configured"] is True
+    assert result["verification"]["selected_service"]["id"] == "srv-test"
+
+
 def test_render_probe_defaults_to_locked_public_api_lane(monkeypatch, tmp_path):
     monkeypatch.setenv("RENDER_API_KEY", "")
     monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "onrender.syndiode.com")

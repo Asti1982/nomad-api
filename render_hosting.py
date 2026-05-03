@@ -9,6 +9,8 @@ from nomad_deployment import DEFAULT_GITHUB_DEPLOY_BRANCH
 
 
 RENDER_API_KEY_ENV = "RENDER_API_KEY"
+# Some operators store the same secret under a Nomad-prefixed name; accept either.
+RENDER_API_KEY_FALLBACK_ENV = "NOMAD_RENDER_API_KEY"
 RENDER_SERVICE_ID_ENV = "NOMAD_RENDER_SERVICE_ID"
 RENDER_SERVICE_NAME_ENV = "NOMAD_RENDER_SERVICE_NAME"
 RENDER_OWNER_ID_ENV = "NOMAD_RENDER_OWNER_ID"
@@ -38,7 +40,10 @@ class RenderHostingProbe:
     def __init__(self, repo_root: Optional[Path | str] = None) -> None:
         load_dotenv()
         self.repo_root = Path(repo_root or Path(__file__).resolve().parent)
-        self.api_key = (os.getenv(RENDER_API_KEY_ENV) or "").strip()
+        self.api_key = (
+            (os.getenv(RENDER_API_KEY_ENV) or "").strip()
+            or (os.getenv(RENDER_API_KEY_FALLBACK_ENV) or "").strip()
+        )
         self.service_id = (os.getenv(RENDER_SERVICE_ID_ENV) or "").strip()
         self.owner_id = (os.getenv(RENDER_OWNER_ID_ENV) or "").strip()
         self.service_name = (
@@ -122,6 +127,9 @@ class RenderHostingProbe:
         paths = [
             "/health",
             "/.well-known/agent-card.json",
+            "/openapi.json",
+            "/.well-known/nomad-peer-acquisition.json",
+            "/.well-known/nomad-agent.json",
             "/swarm/coordinate",
             "/swarm/accumulate",
             "/collaboration",
