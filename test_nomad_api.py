@@ -4,6 +4,14 @@ from pathlib import Path
 from nomad_swarm_registry import SwarmJoinRegistry
 
 
+def test_syndiode_edge_routes_doc_lists_peer_acquisition():
+    md = Path(__file__).resolve().parent / "syndiode_edge_routes.md"
+    text = md.read_text(encoding="utf-8")
+    assert "syndiode.com/nomad" in text
+    assert "nomad-peer-acquisition.json" in text
+    assert "Whitelist" in text or "whitelist" in text.lower()
+
+
 def test_nomad_public_html_page_exists():
     html = Path(__file__).resolve().parent / "public" / "nomad.html"
     text = html.read_text(encoding="utf-8")
