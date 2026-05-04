@@ -917,7 +917,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/",
                     "/nomad.html",
                     "/downloads/nomad_transition_worker.py",
+                    "/downloads/nomad_transition_worker.exe",
+                    "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/build_nomad_transition_worker_exe.ps1",
+                    "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
@@ -1499,7 +1503,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/",
                     "/nomad.html",
                     "/downloads/nomad_transition_worker.py",
+                    "/downloads/nomad_transition_worker.exe",
+                    "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/build_nomad_transition_worker_exe.ps1",
+                    "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
@@ -1822,6 +1830,33 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _public_download_file_response(self, path: Path, status: int = 200) -> None:
+        if (not path.exists() or not path.is_file()) and path.name == "install_nomad_transition_worker.bat":
+            body = (
+                "@echo off\r\n"
+                "setlocal\r\n"
+                "set BASE_URL=%1\r\n"
+                "if \"%BASE_URL%\"==\"\" set BASE_URL=https://syndiode.com\r\n"
+                "set INSTALL_DIR=%USERPROFILE%\\NomadTransitionWorker\r\n"
+                "set EXE_URL=%BASE_URL%/downloads/nomad_transition_worker.exe\r\n"
+                "echo Installing Nomad Transition Worker from %BASE_URL%\r\n"
+                "if not exist \"%INSTALL_DIR%\" mkdir \"%INSTALL_DIR%\"\r\n"
+                "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri '%EXE_URL%' -OutFile '%INSTALL_DIR%\\nomad_transition_worker.exe'\"\r\n"
+                "if errorlevel 1 (\r\n"
+                "  echo Failed to download EXE from %EXE_URL%\r\n"
+                "  exit /b 1\r\n"
+                ")\r\n"
+                "start \"Nomad Transition Worker\" \"%INSTALL_DIR%\\nomad_transition_worker.exe\" --base-url %BASE_URL% --loop --cycles 0\r\n"
+                "echo Installed to: %INSTALL_DIR%\r\n"
+                "exit /b 0\r\n"
+            ).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/x-msdos-program")
+            self._send_common_headers()
+            self.send_header('Content-Disposition', 'attachment; filename="install_nomad_transition_worker.bat"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if not path.exists() or not path.is_file():
             self._json_response(
                 machine_error_response(
@@ -1829,6 +1864,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     message=f"Missing download asset: {path.name}",
                     hints=[
                         "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
+                        "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
+                        "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
+                        "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
+                        "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                     ],
                 ),

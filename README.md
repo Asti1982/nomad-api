@@ -273,6 +273,10 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /swarm/accumulate` or `POST /swarm/accumulate`: read or refresh the AI-agent prospect pool from queued, sent, and replying agent contacts.
 - `POST /swarm/join`: accept an AI agent into the bounded swarm registry.
 - `GET /downloads/nomad_transition_worker.py`: download a portable transition-worker agent script for other machines (legacy alias: `/downloads/nomad_helper_agent.py`).
+- `GET /downloads/nomad_transition_worker.exe`: direct Windows executable download for the transition worker (when published in `public/downloads/`).
+- `GET /downloads/install_nomad_transition_worker.bat`: one-click Windows installer that downloads EXE assets to `%USERPROFILE%\NomadTransitionWorker` and starts the worker loop.
+- `GET /downloads/build_nomad_transition_worker_exe.ps1`: build a one-file Windows executable (`nomad_transition_worker.exe`) with PyInstaller.
+- `GET /downloads/run_nomad_transition_worker_exe.bat`: start the built `.exe` with default loop settings.
 - `GET /leads` or `POST /leads`: find public AI-agent infrastructure pain leads.
 - `GET /lead-conversions` or `POST /lead-conversions`: convert leads into `nomad.agent_solution.v1`, `nomad.rescue_plan.v1`, safe outreach route, and customer next step.
 - `GET /products` or `POST /products`: productize lead conversions into `nomad.product.v1` offers with SKU, free value, paid upgrade, service template, runtime hooks, and approval boundary.
