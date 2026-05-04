@@ -7,6 +7,7 @@ set INSTALL_DIR=%USERPROFILE%\NomadTransitionWorker
 set EXE_URL=%BASE_URL%/downloads/nomad_transition_worker.exe
 set RUNNER_URL=%BASE_URL%/downloads/run_nomad_transition_worker_exe.bat
 set README_URL=%BASE_URL%/downloads/README_NOMAD_TRANSITION_WORKER.md
+set LOG_FILE=%INSTALL_DIR%\worker.log
 
 echo Installing Nomad Transition Worker from %BASE_URL%
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
@@ -22,10 +23,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBa
 
 echo.
 echo Installed to: %INSTALL_DIR%
-echo Starting worker in background loop...
-start "Nomad Transition Worker" "%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %BASE_URL% --loop --cycles 0
+echo Checking local Ollama models...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$r = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 5; if ($r.models) { $r.models | ForEach-Object { $_.name } }" 2>nul
+if errorlevel 1 (
+  echo Ollama not reachable at 127.0.0.1:11434 - worker will still run.
+)
+echo Starting worker loop with auto-local-model selection...
+echo Log file: %LOG_FILE%
+start "Nomad Transition Worker" cmd /k ""%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %BASE_URL% --machine-objective unhuman_supremacy --loop --cycles 0 >> "%LOG_FILE%" 2>&1"
 echo.
 echo Worker started. You can run it manually anytime from:
-echo %INSTALL_DIR%\nomad_transition_worker.exe
+echo %INSTALL_DIR%\nomad_transition_worker.exe --base-url %BASE_URL% --machine-objective unhuman_supremacy --loop --cycles 0
 echo.
 exit /b 0
