@@ -67,10 +67,28 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return ""
         return pub_path
 
+    @staticmethod
+    def _edge_ingress_prefix() -> str:
+        """When NOMAD_PUBLIC_API_URL has no path (apex) but a CDN still forwards /nomad/*, strip this first."""
+        raw = (os.getenv("NOMAD_EDGE_INGRESS_PREFIX") or "").strip().rstrip("/")
+        if not raw:
+            return ""
+        return raw if raw.startswith("/") else f"/{raw}"
+
     @classmethod
     def _normalize_public_path(cls, raw_path: str) -> str:
         """Map incoming /nomad/... to /... when public URL is https://host/nomad (reverse-proxy path)."""
         path = raw_path or "/"
+        # Apex public URL + edge-only prefix (e.g. Cloudflare forwards /nomad/health while links use /health).
+        if not cls._public_url_path_prefix():
+            edge = cls._edge_ingress_prefix()
+            if edge and (path == edge or path.startswith(edge + "/")):
+                if path == edge or path == edge + "/":
+                    path = "/"
+                else:
+                    path = path[len(edge) :] or "/"
+                    if not path.startswith("/"):
+                        path = f"/{path}"
         prefix = cls._public_url_path_prefix()
         if not prefix:
             return path

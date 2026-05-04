@@ -34,6 +34,6 @@ fi
 
 echo "Starting Nomad API on ${NOMAD_API_HOST}:${NOMAD_API_PORT}"
 echo "Nomad public URL: ${NOMAD_PUBLIC_API_URL:-not set yet}"
-nohup python nomad_api.py >/tmp/nomad-api.log 2>&1 &
+nohup python app.py >/tmp/nomad-api.log 2>&1 &
 echo "Nomad API background pid: $!"
 echo "Log: /tmp/nomad-api.log"

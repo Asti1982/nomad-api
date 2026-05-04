@@ -1,1 +1,1 @@
-web: python nomad_api.py
+web: python app.py

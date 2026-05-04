@@ -219,7 +219,7 @@ def test_parse_render_yaml_first_web_service_commands(tmp_path):
                 "  - type: web",
                 "    name: api",
                 "    buildCommand: pip install -r requirements.txt",
-                "    startCommand: python nomad_api.py",
+                "    startCommand: python app.py",
                 "    healthCheckPath: /health",
             ]
         ),
@@ -228,7 +228,7 @@ def test_parse_render_yaml_first_web_service_commands(tmp_path):
     out = parse_render_yaml_first_web_service_commands(yaml_path)
     assert out["ok"] is True
     assert out["buildCommand"] == "pip install -r requirements.txt"
-    assert out["startCommand"] == "python nomad_api.py"
+    assert out["startCommand"] == "python app.py"
 
 
 def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
@@ -239,7 +239,7 @@ def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
                 "services:",
                 "  - type: web",
                 "    buildCommand: pip install -r requirements.txt",
-                "    startCommand: python nomad_api.py",
+                "    startCommand: python app.py",
             ]
         ),
         encoding="utf-8",
@@ -256,7 +256,7 @@ def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
         assert kwargs.get("json") == {
             "serviceDetails": {
                 "buildCommand": "pip install -r requirements.txt",
-                "startCommand": "python nomad_api.py",
+                "startCommand": "python app.py",
             }
         }
         return FakeResponse(

@@ -19,6 +19,15 @@ def test_normalize_public_path_uses_explicit_prefix(monkeypatch):
     assert NomadApiHandler._normalize_public_path("/nomad/swarm/join") == "/swarm/join"
 
 
+def test_normalize_public_path_strips_edge_ingress_when_public_url_is_apex(monkeypatch):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com")
+    monkeypatch.delenv("NOMAD_HTTP_PATH_PREFIX", raising=False)
+    monkeypatch.setenv("NOMAD_EDGE_INGRESS_PREFIX", "/nomad")
+    assert NomadApiHandler._normalize_public_path("/nomad/openapi.json") == "/openapi.json"
+    assert NomadApiHandler._normalize_public_path("/nomad/health") == "/health"
+    assert NomadApiHandler._normalize_public_path("/health") == "/health"
+
+
 def test_syndiode_edge_routes_doc_lists_peer_acquisition():
     md = Path(__file__).resolve().parent / "syndiode_edge_routes.md"
     text = md.read_text(encoding="utf-8")

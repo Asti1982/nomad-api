@@ -17,7 +17,9 @@ Das deutet auf eine **Edge-/Proxy-Schicht** hin, die nur einen **Teil** der Pfad
 
 ## Ziel
 
-Alle Pfade unter **`https://syndiode.com/...`** (bzw. unter eurem gewählten Prefix) müssen zum **Render-Web-Service** (Repo **Asti1982/syndiode**, Branch **`syndiode`**) gelangen, der `python nomad_api.py` ausführt. **Whitelist-Worker:** entweder alle benötigten Pfade freigeben oder **„alles an den Origin“** statt Einzelpfade.
+Alle Pfade unter **`https://syndiode.com/...`** (bzw. unter eurem gewählten Prefix) müssen zum **Render-Web-Service** (Repo **Asti1982/syndiode**, Branch **`syndiode`**) gelangen, der `python app.py` ausführt. **Whitelist-Worker:** entweder alle benötigten Pfade freigeben oder **„alles an den Origin“** statt Einzelpfade.
+
+**Render-Origin mit Apex-Links:** Wenn `NOMAD_PUBLIC_API_URL` **ohne** Pfad ist (`https://syndiode.com`), die Edge aber weiterhin **`/nomad/...`** an den Python-Origin schickt, setze auf Render **`NOMAD_EDGE_INGRESS_PREFIX=/nomad`** — `nomad_api` mappt dann intern z. B. `/nomad/openapi.json` → `/openapi.json`, während JSON-Links weiter `https://syndiode.com/...` nutzen. Wenn die Edge später **ohne** `/nomad` durchreicht, Variable leeren.
 
 ## Cloudflare (Beispiel)
 

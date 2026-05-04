@@ -131,7 +131,7 @@ def serve_nomad_api() -> None:
     env["NOMAD_API_HOST"] = "0.0.0.0"
     env["NOMAD_API_PORT"] = str(API_PORT)
     process = subprocess.Popen(
-        [sys.executable, "nomad_api.py"],
+        [sys.executable, "app.py"],
         cwd=REMOTE_ROOT,
         env=env,
     )

@@ -11,7 +11,7 @@ Standard mehr.
 KONTEXT (kurz)
 --------------
 • Deploy: GitHub Repo "Asti1982/syndiode" Branch "syndiode" → Render Web-Service
-  (startCommand: python nomad_api.py). Der Python-Code enthält u.a.:
+  (startCommand: python app.py). Der Python-Code enthält u.a.:
   - GET /openapi.json
   - GET /.well-known/nomad-peer-acquisition.json
   - GET /.well-known/nomad-agent.json
@@ -36,7 +36,7 @@ Prüfe die **HTTP-Antwort-Header** (Browser DevTools → Network, oder curl -I):
   x-render-origin-server: NomadEdge/…
 
 Wenn diese Header da sind, geht der Traffic **nicht** direkt zu dem Prozess,
-den Render aus **nomad_api.py** startet, sondern zu einem **eigenen
+den Render aus **app.py** (API-Logik in `nomad_api.py`) startet, sondern zu einem **eigenen
 NomadEdge**-Dienst (z.B. Cloudflare Worker / gebündelte Route). Dann kann
 Render „Deploy live“ sein und trotzdem **/openapi.json** von außen 404 liefern.
 
@@ -131,11 +131,11 @@ Deploy manuell anstoßen (nur wenn du willst): Render Dashboard → Service →
 "Manual Deploy" ODER über Nomad/Render-API mit expliziter Freigabe (siehe
 render_hosting.py trigger_deploy — braucht u.a. service id).
 
-Start Command (wichtig): In den Service-Settings **python nomad_api.py** setzen.
+Start Command (wichtig): In den Service-Settings **python app.py** setzen.
 Falls Render stattdessen **python main.py** ohne Argumente ausführt: Im Repo
 startet **main.py** dann automatisch die HTTP-API im Vordergrund (RENDER=true).
 **Exit-Code 2** kommt meist von falscher CLI (**argparse**); Repo-Root enthält
-zudem eine **Procfile**-Zeile `web: python nomad_api.py` als Referenz.
+zudem eine **Procfile**-Zeile `web: python app.py` als Referenz.
 
 
 ================================================================================

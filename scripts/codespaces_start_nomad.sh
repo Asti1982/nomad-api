@@ -17,4 +17,4 @@ echo "Health check: ${NOMAD_PUBLIC_API_URL:-http://127.0.0.1:${PORT_VALUE}}/heal
 echo "Agent card:   ${NOMAD_PUBLIC_API_URL:-http://127.0.0.1:${PORT_VALUE}}/.well-known/agent-card.json"
 echo
 
-python nomad_api.py
+python app.py
