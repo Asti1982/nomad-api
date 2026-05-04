@@ -89,6 +89,9 @@ class NomadAutopilot:
         self.default_send_a2a = _bool_env(
             "NOMAD_AUTOPILOT_A2A_SEND", when_continuous=True, when_idle=False
         )
+        self.all_surfaces_mode = _bool_env(
+            "NOMAD_AUTOPILOT_ALL_SURFACES", when_continuous=True, when_idle=False
+        )
         self.agent_growth_pipeline_enabled = _bool_env(
             "NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", when_continuous=True, when_idle=False
         )
@@ -296,6 +299,12 @@ class NomadAutopilot:
             outreach_summary=outreach_summary,
             public_api_url=public_api_url,
         )
+        all_surfaces = self._run_all_surfaces(
+            enabled=self.all_surfaces_mode,
+            public_api_url=public_api_url,
+            lead_conversion=lead_conversion,
+            outreach_summary=outreach_summary,
+        )
         agent_growth_pipeline_report: Dict[str, Any] = {"skipped": True, "reason": "disabled"}
         if self.agent_growth_pipeline_enabled:
             state_before = self._load()
@@ -371,6 +380,7 @@ class NomadAutopilot:
             "swarm_accumulation": swarm_accumulation,
             "mutual_aid": mutual_aid,
             "swarm_coordination": swarm_coordination,
+            "all_surfaces": all_surfaces,
             "agent_growth_pipeline": agent_growth_pipeline_report,
             "autonomous_development": autonomous_development,
             "efficiency_plan": efficiency_plan,
@@ -461,6 +471,58 @@ class NomadAutopilot:
             "campaigns": summary.get("campaigns") or {},
             "tasks": summary.get("tasks") or {},
             "autonomous_tracking": summary.get("autonomous_tracking") or {},
+        }
+
+    def _run_all_surfaces(
+        self,
+        *,
+        enabled: bool,
+        public_api_url: str,
+        lead_conversion: Dict[str, Any],
+        outreach_summary: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not enabled:
+            return {
+                "mode": "nomad_autopilot_all_surfaces",
+                "enabled": False,
+                "skipped": True,
+                "reason": "disabled",
+            }
+        base = (public_api_url or "").rstrip("/")
+        endpoint = lambda path: f"{base}{path}" if base else path
+        lead_stats = lead_conversion.get("stats") if isinstance(lead_conversion.get("stats"), dict) else {}
+        outreach_campaign = (
+            outreach_summary.get("campaign") if isinstance(outreach_summary.get("campaign"), dict) else {}
+        )
+        sent_outreach = int(outreach_campaign.get("stats", {}).get("sent") or 0) if isinstance(
+            outreach_campaign.get("stats"), dict
+        ) else 0
+        return {
+            "mode": "nomad_autopilot_all_surfaces",
+            "enabled": True,
+            "surface_urls": {
+                "bootstrap": endpoint("/swarm/bootstrap"),
+                "develop": endpoint("/swarm/develop"),
+                "join": endpoint("/swarm/join"),
+                "coordinate": endpoint("/swarm/coordinate"),
+                "agent_card": endpoint("/.well-known/agent-card.json"),
+                "tasks": endpoint("/tasks"),
+            },
+            "activation_order": [
+                "bootstrap",
+                "develop",
+                "join",
+                "coordinate",
+                "tasks",
+            ],
+            "autonomous_focus": {
+                "lane": "outside_human_comfort_compute_auth",
+                "strategy": "Use machine-verifiable blocker resolution and reciprocity artifacts.",
+            },
+            "signals": {
+                "lead_conversions_prepared": int(sum(int(v or 0) for v in lead_stats.values())) if lead_stats else 0,
+                "outreach_sent": sent_outreach,
+            },
         }
 
     def _decision(self) -> Dict[str, Any]:

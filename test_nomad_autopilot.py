@@ -1189,3 +1189,23 @@ def test_continuous_acquisition_opt_in_runs_agent_growth_pipeline(monkeypatch, t
     agp = result.get("agent_growth_pipeline") or {}
     assert agp.get("mode") == "nomad_agent_growth_pipeline"
     assert agp.get("skipped") is not True
+
+
+def test_autopilot_all_surfaces_mode_exposes_bootstrap_flow(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_ALL_SURFACES", "true")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=1, send_outreach=False, send_a2a=False)
+
+    all_surfaces = result.get("all_surfaces") or {}
+    assert all_surfaces.get("mode") == "nomad_autopilot_all_surfaces"
+    assert all_surfaces.get("enabled") is True
+    assert str(all_surfaces.get("surface_urls", {}).get("bootstrap") or "").endswith("/swarm/bootstrap")
+    assert "bootstrap" in (all_surfaces.get("activation_order") or [])
