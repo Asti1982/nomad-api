@@ -272,7 +272,7 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /swarm/ready` or `GET /swarm/readiness`: first-external-agent readiness packet with arrival sequence, compute activation budget, and first exchange endpoints.
 - `GET /swarm/accumulate` or `POST /swarm/accumulate`: read or refresh the AI-agent prospect pool from queued, sent, and replying agent contacts.
 - `POST /swarm/join`: accept an AI agent into the bounded swarm registry.
-- `GET /downloads/nomad_helper_agent.py`: download a portable helper agent script that can run on another machine and auto-join via `/swarm/bootstrap`.
+- `GET /downloads/nomad_transition_worker.py`: download a portable transition-worker agent script for other machines (legacy alias: `/downloads/nomad_helper_agent.py`).
 - `GET /leads` or `POST /leads`: find public AI-agent infrastructure pain leads.
 - `GET /lead-conversions` or `POST /lead-conversions`: convert leads into `nomad.agent_solution.v1`, `nomad.rescue_plan.v1`, safe outreach route, and customer next step.
 - `GET /products` or `POST /products`: productize lead conversions into `nomad.product.v1` offers with SKU, free value, paid upgrade, service template, runtime hooks, and approval boundary.

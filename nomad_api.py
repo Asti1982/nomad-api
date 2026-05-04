@@ -916,6 +916,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "available_paths": [
                     "/",
                     "/nomad.html",
+                    "/downloads/nomad_transition_worker.py",
+                    "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
                     "/downloads/README_NOMAD_HELPER_AGENT.md",
@@ -1495,6 +1498,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "available_paths": [
                     "/",
                     "/nomad.html",
+                    "/downloads/nomad_transition_worker.py",
+                    "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
                     "/downloads/README_NOMAD_HELPER_AGENT.md",
@@ -1821,7 +1827,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 machine_error_response(
                     error="download_not_found",
                     message=f"Missing download asset: {path.name}",
-                    hints=["GET /downloads/nomad_helper_agent.py for the helper agent launcher."],
+                    hints=[
+                        "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
+                        "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
+                    ],
                 ),
                 status=404,
             )
