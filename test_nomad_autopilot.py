@@ -1230,6 +1230,10 @@ def test_autopilot_all_surfaces_enforce_blocks_conversion_and_outreach_without_m
     gate = result.get("all_surfaces_gate") or {}
     assert gate.get("blocked") is True
     assert gate.get("reason") == "all_surfaces_mode_required"
+    assert "Unblock all-surfaces contract lane" in result.get("objective", "")
+    remediation = result.get("surface_gate_remediation") or {}
+    assert remediation.get("required") is True
+    assert remediation.get("priority") == "critical"
     assert result.get("lead_conversion", {}).get("skipped") is True
     assert result.get("lead_conversion", {}).get("reason") == "all_surfaces_mode_required"
     assert result.get("outreach", {}).get("skipped") is True

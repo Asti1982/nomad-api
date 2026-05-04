@@ -236,8 +236,10 @@ class NomadAutopilot:
             enforce=self.all_surfaces_enforce,
             public_api_url=public_api_url,
         )
+        surface_remediation = self._surface_gate_remediation(surface_gate)
         selected_objective = (
             (objective or "").strip()
+            or str(surface_remediation.get("objective") or "").strip()
             or self._service_objective(service_summary)
             or self._reply_conversion_objective(reply_conversion)
             or self._reply_objective(contact_poll)
@@ -392,6 +394,7 @@ class NomadAutopilot:
             "swarm_coordination": swarm_coordination,
             "all_surfaces": all_surfaces,
             "all_surfaces_gate": surface_gate,
+            "surface_gate_remediation": surface_remediation,
             "agent_growth_pipeline": agent_growth_pipeline_report,
             "autonomous_development": autonomous_development,
             "efficiency_plan": efficiency_plan,
@@ -416,6 +419,8 @@ class NomadAutopilot:
                 autonomous_development=autonomous_development,
                 self_improvement=self_improvement,
                 daily_quota=daily_quota,
+                surface_gate=surface_gate,
+                surface_remediation=surface_remediation,
             ),
         }
         report["autonomy_proof"] = self.autonomy_proof.evaluate(
@@ -577,6 +582,37 @@ class NomadAutopilot:
             "reason": "",
             "outreach_blocked_reason": "",
             "lead_conversion_blocked_reason": "",
+        }
+
+    @staticmethod
+    def _surface_gate_remediation(surface_gate: Dict[str, Any]) -> Dict[str, Any]:
+        if not bool(surface_gate.get("blocked")):
+            return {
+                "required": False,
+                "objective": "",
+                "priority": "normal",
+                "next_actions": [],
+            }
+        reason = str(surface_gate.get("reason") or "unknown")
+        objective = (
+            "Unblock all-surfaces contract lane so bootstrap/develop/join/coordinate/tasks "
+            "run as one machine-native growth loop."
+        )
+        next_actions = [
+            "Set NOMAD_AUTOPILOT_ALL_SURFACES=true.",
+            "Expose a public NOMAD_PUBLIC_API_URL and verify /swarm/bootstrap + /swarm/join + /swarm/coordinate.",
+            "Re-run autopilot and confirm all_surfaces_gate.blocked=false before outreach/conversion.",
+        ]
+        if reason == "public_api_url_required":
+            next_actions[1] = (
+                "Set a public NOMAD_PUBLIC_API_URL (non-localhost) and verify /health + /swarm/bootstrap."
+            )
+        return {
+            "required": True,
+            "reason": reason,
+            "objective": objective,
+            "priority": "critical",
+            "next_actions": next_actions,
         }
 
     def _decision(self) -> Dict[str, Any]:
@@ -2055,6 +2091,8 @@ class NomadAutopilot:
         autonomous_development: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
+        surface_gate: Dict[str, Any],
+        surface_remediation: Dict[str, Any],
     ) -> str:
         worked = len(service_summary.get("worked_task_ids") or [])
         drafts = len(service_summary.get("draft_ready_task_ids") or [])
@@ -2132,6 +2170,11 @@ class NomadAutopilot:
             else:
                 action = autonomous_development.get("action") or {}
                 analysis += f" Autonomous development recorded {action.get('action_id', '')}: {action.get('title', '')}."
+        if surface_gate.get("blocked"):
+            analysis += (
+                f" All-surfaces gate is blocking growth lane ({surface_gate.get('reason', '')}); "
+                f"remediation objective activated: {surface_remediation.get('objective', '')}"
+            )
         return analysis
 
     def _efficiency_plan(
@@ -2209,6 +2252,19 @@ class NomadAutopilot:
             "goal": "more_agent_onboarding_and_paid_blocker_resolution",
             "public_api_url": public_api_url,
             "next_best_action": next_action,
+            "agent_native_moat": {
+                "principles": [
+                    "contract_first_bootstrap_before_outreach",
+                    "machine_verifiable_artifacts_over_human_pitch",
+                    "reciprocal_swarm_learning_with_paid_boundary",
+                ],
+                "surfaces": [
+                    f"{public_api_url}/swarm/bootstrap" if public_api_url else "/swarm/bootstrap",
+                    f"{public_api_url}/swarm/develop" if public_api_url else "/swarm/develop",
+                    f"{public_api_url}/swarm/join" if public_api_url else "/swarm/join",
+                    f"{public_api_url}/tasks" if public_api_url else "/tasks",
+                ],
+            },
             "agent_onboarding_funnel": {
                 "joined_agents": joined_agents,
                 "prospect_agents": prospect_agents,
