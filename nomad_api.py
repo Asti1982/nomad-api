@@ -32,6 +32,7 @@ from nomad_agent_invariants import build_agent_invariants_document
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
+from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
 
@@ -61,6 +62,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     swarm_registry = None
     agent_development = None
     outbound_tracker = None
+    transition_exchange = NomadTransitionExchange()
 
     @classmethod
     def _ensure_runtime_components(cls) -> None:
@@ -144,6 +146,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
                     "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
+                    "transition_offer": f"{b}/.well-known/nomad-transition-offer.json",
                     "openapi": f"{b}/openapi.json",
                     "swarm": f"{b}/swarm",
                     "tasks": f"{b}/tasks",
@@ -500,6 +503,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         }:
             self._json_response(
                 build_peer_acquisition_well_known(public_base_url=self._base_url() or ""),
+            )
+            return
+
+        if parsed.path in {
+            "/.well-known/nomad-transition-offer.json",
+            "/transition-offer",
+            "/transition/contracts",
+        }:
+            self._json_response(
+                self.transition_exchange.offer_document(public_base_url=self._base_url() or ""),
             )
             return
 
@@ -931,6 +944,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/accumulate",
                     "/swarm/develop",
                     "/swarm/bootstrap",
+                    "/transition/quote",
+                    "/transition/settle",
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
@@ -940,6 +955,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/inter-agent-witness-offer",
                     "/.well-known/nomad-peer-acquisition.json",
                     "/peer-acquisition",
+                    "/.well-known/nomad-transition-offer.json",
+                    "/transition-offer",
+                    "/transition/contracts",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",
@@ -1398,6 +1416,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=bootstrap_status)
             return
 
+        if parsed.path == "/transition/quote":
+            result = self.transition_exchange.quote(
+                payload,
+                base_url=self._base_url(),
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/transition/settle":
+            result = self.transition_exchange.settle(payload)
+            self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
         if parsed.path in {"/roaas/import", "/artifacts/runtime-patterns", "/.well-known/nomad-runtime-patterns.json"}:
             result = self.roaas.import_bundle(
                 payload,
@@ -1489,6 +1521,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/accumulate",
                     "/swarm/develop",
                     "/swarm/bootstrap",
+                    "/transition/quote",
+                    "/transition/settle",
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
@@ -1498,6 +1532,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/inter-agent-witness-offer",
                     "/.well-known/nomad-peer-acquisition.json",
                     "/peer-acquisition",
+                    "/.well-known/nomad-transition-offer.json",
+                    "/transition-offer",
+                    "/transition/contracts",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",

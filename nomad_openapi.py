@@ -28,7 +28,9 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For buyer-agent SKUs (verifiable tool handoffs), see "
                 "GET /.well-known/nomad-inter-agent-witness-offer.json. "
                 "For outbound peer-acquisition policy (machine contract, not human funnel copy), see "
-                "GET /.well-known/nomad-peer-acquisition.json."
+                "GET /.well-known/nomad-peer-acquisition.json. "
+                "For machine settlement of verifiable state transitions, see "
+                "GET /.well-known/nomad-transition-offer.json."
             ),
         },
         "servers": [{"url": server_url}],
@@ -119,6 +121,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getPeerAcquisitionContractAlias",
                     "responses": {
                         "200": {"description": "Acquisition contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-transition-offer.json": {
+                "get": {
+                    "summary": "Proof-of-unblock transition market contract",
+                    "operationId": "getTransitionOfferContract",
+                    "responses": {
+                        "200": {"description": "Transition offer", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/transition/contracts": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-transition-offer.json",
+                    "operationId": "getTransitionOfferContractAlias",
+                    "responses": {
+                        "200": {"description": "Transition offer", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
@@ -274,6 +294,63 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
                     "responses": {"201": {"description": "Created"}, "400": {"description": "Bad request"}},
                 },
+            },
+            "/transition/quote": {
+                "post": {
+                    "summary": "Quote a proof-of-unblock state transition",
+                    "operationId": "postTransitionQuote",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "pain_type", "state_before_hash", "target_state_hash"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "pain_type": {"type": "string"},
+                                        "state_before_hash": {"type": "string"},
+                                        "target_state_hash": {"type": "string"},
+                                        "evidence": {"type": "array", "items": {"type": "string"}},
+                                        "constraints": {"type": "array", "items": {"type": "string"}},
+                                        "replay_verifier": {"type": "string"},
+                                        "native_symbol": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Quote accepted"},
+                        "422": {"description": "Validation failed"},
+                    },
+                }
+            },
+            "/transition/settle": {
+                "post": {
+                    "summary": "Settle quoted proof-of-unblock transition",
+                    "operationId": "postTransitionSettle",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["quote_id", "result_state_hash", "proof_artifact_hash"],
+                                    "properties": {
+                                        "quote_id": {"type": "string"},
+                                        "result_state_hash": {"type": "string"},
+                                        "proof_artifact_hash": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Settlement accepted"},
+                        "422": {"description": "Validation failed"},
+                    },
+                }
             },
         },
     }

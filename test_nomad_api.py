@@ -159,9 +159,13 @@ def test_build_openapi_document_lists_core_paths():
     assert "/inter-agent-witness-offer" in doc["paths"]
     assert "/.well-known/nomad-peer-acquisition.json" in doc["paths"]
     assert "/peer-acquisition" in doc["paths"]
+    assert "/.well-known/nomad-transition-offer.json" in doc["paths"]
+    assert "/transition/contracts" in doc["paths"]
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/develop" in doc["paths"]
     assert "/swarm/bootstrap" in doc["paths"]
+    assert "/transition/quote" in doc["paths"]
+    assert "/transition/settle" in doc["paths"]
     assert doc["servers"][0]["url"] == "https://nomad.example"
 
 
@@ -196,3 +200,32 @@ def test_nomad_health_links_include_unhuman_hub():
         "unhuman_hub": f"{b}/unhuman-hub",
     }
     assert links["unhuman_hub"] == "https://nomad.example/unhuman-hub"
+
+
+def test_transition_exchange_quote_and_settle_roundtrip():
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    exchange = NomadTransitionExchange()
+    quote = exchange.quote(
+        {
+            "agent_id": "agent-alpha",
+            "pain_type": "compute_auth",
+            "state_before_hash": "before123",
+            "target_state_hash": "after999",
+            "evidence": ["trace://x", "diff://y"],
+            "replay_verifier": "https://agent.example/verifier",
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+    assert quote["ok"] is True
+    quote_id = quote["quote"]["quote_id"]
+    settlement = exchange.settle(
+        {
+            "quote_id": quote_id,
+            "result_state_hash": "after999",
+            "proof_artifact_hash": "proof123",
+        }
+    )
+    assert settlement["ok"] is True
+    assert settlement["settlement"]["status"] == "settled"
