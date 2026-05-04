@@ -131,15 +131,21 @@ Deploy manuell anstoßen (nur wenn du willst): Render Dashboard → Service →
 "Manual Deploy" ODER über Nomad/Render-API mit expliziter Freigabe (siehe
 render_hosting.py trigger_deploy — braucht u.a. service id).
 
-Build Command (wichtig): **pip install -r requirements.txt** — nicht nur
-``python --version``. Sonst fehlt ``python-dotenv`` und der Start bricht ab
-(app.py kann auf Render einmalig nachinstallieren, ist aber langsamer).
+Deploy-Typ (Repo-Standard): **Docker** — ``render.yaml`` nutzt ``runtime: docker``
+und ``Dockerfile``; darin läuft ``pip install -r requirements.txt`` beim Image-Build.
+Ein Web-Service, der noch **Native Python** mit leerem/falschem Build (z.B. nur
+``python --version``) ist, muss in Render **einmal** auf Docker umgestellt oder neu
+als Blueprint aus dem Repo angelegt werden, damit das Dockerfile greift.
 
-Start Command (wichtig): In den Service-Settings **python app.py** setzen.
-Falls Render stattdessen **python main.py** ohne Argumente ausführt: Im Repo
-startet **main.py** dann automatisch die HTTP-API im Vordergrund (RENDER=true).
-**Exit-Code 2** kommt meist von falscher CLI (**argparse**); Repo-Root enthält
-zudem eine **Procfile**-Zeile `web: python app.py` als Referenz.
+Falls du absichtlich **Native Python** nutzt: Build **pip install -r requirements.txt**,
+Start **python app.py**.
+
+Bei **Docker-Web** kommt der Prozessstart aus dem **Dockerfile** (``CMD`` →
+``python app.py``), nicht aus dem Render-„Start Command“-Feld. Bei **Native Python**
+dort **python app.py** setzen. Falls Render stattdessen **python main.py** ohne
+Argumente ausführt: Im Repo startet **main.py** dann automatisch die HTTP-API im
+Vordergrund (RENDER=true). **Exit-Code 2** kommt meist von falscher CLI (**argparse**);
+Repo-Root enthält zudem eine **Procfile**-Zeile `web: python app.py` als Referenz.
 
 
 ================================================================================

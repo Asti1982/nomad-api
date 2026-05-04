@@ -28,7 +28,7 @@ DEFAULT_RENDER_DOMAIN = "onrender.syndiode.com"
 
 
 def parse_render_yaml_first_web_service_commands(render_yaml: Path) -> Dict[str, Any]:
-    """Read the first `type: web` entry under `services:` and return build/start commands (stdlib only)."""
+    """Read the first `type: web` entry under `services:` and return build/start or Docker fields (stdlib only)."""
     if not render_yaml.exists():
         return {
             "ok": False,
@@ -40,6 +40,9 @@ def parse_render_yaml_first_web_service_commands(render_yaml: Path) -> Dict[str,
     in_web = False
     build_cmd = ""
     start_cmd = ""
+    runtime = ""
+    dockerfile_path = ""
+    docker_command = ""
     for line in lines:
         stripped = line.lstrip()
         if not stripped or stripped.startswith("#"):
@@ -54,12 +57,31 @@ def parse_render_yaml_first_web_service_commands(render_yaml: Path) -> Dict[str,
             if not in_web:
                 build_cmd = ""
                 start_cmd = ""
+                runtime = ""
+                dockerfile_path = ""
+                docker_command = ""
             continue
         if in_web:
-            if stripped.startswith("buildCommand:"):
+            if stripped.startswith("runtime:"):
+                runtime = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            elif stripped.startswith("dockerfilePath:"):
+                dockerfile_path = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            elif stripped.startswith("dockerCommand:"):
+                docker_command = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            elif stripped.startswith("buildCommand:"):
                 build_cmd = stripped.split(":", 1)[1].strip().strip('"').strip("'")
             elif stripped.startswith("startCommand:"):
                 start_cmd = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+    if in_web and runtime.lower() == "docker":
+        return {
+            "ok": True,
+            "runtime": "docker",
+            "dockerfilePath": (dockerfile_path or "./Dockerfile").strip() or "./Dockerfile",
+            "dockerCommand": docker_command.strip(),
+            "buildCommand": "",
+            "startCommand": "",
+            "message": "Docker-based web service; build uses Dockerfile (see dockerfilePath).",
+        }
     if not build_cmd or not start_cmd:
         return {
             "ok": False,
@@ -68,6 +90,7 @@ def parse_render_yaml_first_web_service_commands(render_yaml: Path) -> Dict[str,
         }
     return {
         "ok": True,
+        "runtime": runtime or "python",
         "buildCommand": build_cmd,
         "startCommand": start_cmd,
         "message": "Parsed build and start commands from render.yaml.",
@@ -517,6 +540,15 @@ class RenderHostingProbe:
         parsed = parse_render_yaml_first_web_service_commands(self.repo_root / "render.yaml")
         if not parsed.get("ok"):
             return parsed
+        if (parsed.get("runtime") or "").strip().lower() == "docker":
+            return {
+                "ok": True,
+                "skipped": True,
+                "issue": "",
+                "message": "First web service uses Docker; Render build/start is defined by Dockerfile, not PATCHed here.",
+                "render_yaml": str(self.repo_root / "render.yaml"),
+                "dockerfilePath": parsed.get("dockerfilePath") or "./Dockerfile",
+            }
         applied = self.update_service_build_start(
             str(parsed.get("buildCommand") or ""),
             str(parsed.get("startCommand") or ""),

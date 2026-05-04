@@ -231,6 +231,32 @@ def test_parse_render_yaml_first_web_service_commands(tmp_path):
     assert out["startCommand"] == "python app.py"
 
 
+def test_parse_render_yaml_first_web_service_docker(tmp_path):
+    yaml_path = tmp_path / "render.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "services:",
+                "  - type: web",
+                "    name: api",
+                "    runtime: docker",
+                "    dockerfilePath: ./Dockerfile",
+                "    healthCheckPath: /health",
+                "  - type: cron",
+                "    name: job",
+                "    schedule: '0 * * * *'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    out = parse_render_yaml_first_web_service_commands(yaml_path)
+    assert out["ok"] is True
+    assert out["runtime"] == "docker"
+    assert out["dockerfilePath"] == "./Dockerfile"
+    assert out["buildCommand"] == ""
+    assert out["startCommand"] == ""
+
+
 def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
     yaml_path = tmp_path / "render.yaml"
     yaml_path.write_text(
@@ -277,6 +303,30 @@ def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
     assert out["ok"] is True
     assert out["service_id"] == "srv-abc"
     assert len(calls) == 1
+
+
+def test_sync_service_commands_skips_docker_web_service(monkeypatch, tmp_path):
+    yaml_path = tmp_path / "render.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "services:",
+                "  - type: web",
+                "    name: api",
+                "    runtime: docker",
+                "    dockerfilePath: ./Dockerfile",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    monkeypatch.setenv("NOMAD_RENDER_SERVICE_ID", "srv-abc")
+    out = RenderHostingProbe(repo_root=tmp_path).sync_service_commands_from_render_yaml(
+        approval="sync_commands"
+    )
+    assert out["ok"] is True
+    assert out.get("skipped") is True
+    assert "Docker" in out.get("message", "")
 
 
 def test_sync_service_commands_requires_approval(monkeypatch, tmp_path):

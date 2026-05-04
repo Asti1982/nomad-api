@@ -1,13 +1,13 @@
 # Blueprint: GitHub repo Asti1982/syndiode, branch syndiode → Render auto-deploys (autoDeployTrigger: commit).
+# nomad-api web service: runtime docker + Dockerfile (pip install during image build; CMD python app.py).
 # Agent-facing links use the public edge https://syndiode.com (not an unrouted Render hostname).
 services:
   - type: web
     name: nomad-api
-    runtime: python
+    runtime: docker
     plan: free
     region: frankfurt
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     autoDeployTrigger: commit
     domains:
