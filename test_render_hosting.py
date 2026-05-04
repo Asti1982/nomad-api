@@ -162,6 +162,34 @@ def test_render_probe_public_checks_work_without_api_key(monkeypatch, tmp_path):
     assert calls[0] == "https://nomad-api.onrender.com/health"
 
 
+def test_list_recent_logs_hits_render_api(monkeypatch, tmp_path):
+    monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    monkeypatch.setenv("NOMAD_RENDER_OWNER_ID", "tea-1")
+    monkeypatch.setenv("NOMAD_RENDER_SERVICE_ID", "srv-1")
+
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert "/logs" in url
+        assert kwargs.get("params")
+        return FakeResponse(
+            payload={
+                "logs": [
+                    {
+                        "timestamp": "2026-05-03T10:00:00Z",
+                        "level": "error",
+                        "type": "app",
+                        "message": "Exited with status 2",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("render_hosting.requests.request", fake_request)
+    out = RenderHostingProbe(repo_root=tmp_path).list_recent_logs(limit=5)
+    assert out["ok"] is True
+    assert out["lines"][0]["message"] == "Exited with status 2"
+
+
 def test_list_recent_deploys_requires_service_id(monkeypatch, tmp_path):
     monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
     out = RenderHostingProbe(repo_root=tmp_path).list_recent_deploys(service_id="", limit=3)

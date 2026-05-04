@@ -1244,6 +1244,8 @@ def build_query(args: argparse.Namespace) -> str:
         return ""
     if command == "codex-peer-agent":
         return ""
+    if command == "render-logs":
+        raise ValueError("render-logs is handled directly in run_once")
     raise ValueError(f"Unsupported command: {command}")
 
 
@@ -1551,6 +1553,15 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 cycle_objective=str(getattr(args, "cycle_objective", "") or "").strip(),
                 profile_suffix=profile_suffix,
             )
+        elif args.command == "render-logs":
+            from render_hosting import RenderHostingProbe
+
+            result = RenderHostingProbe().list_recent_logs(
+                service_id=str(getattr(args, "service_id", "") or "").strip(),
+                owner_id=str(getattr(args, "owner_id", "") or "").strip(),
+                limit=int(getattr(args, "limit", 40) or 40),
+                log_type=str(getattr(args, "log_type", "app") or "app").strip(),
+            )
         elif args.command == "lead-calibrate":
             from lead_discovery import LeadDiscoveryScout
 
@@ -1691,7 +1702,7 @@ def build_parser() -> argparse.ArgumentParser:
         "swarm-helper",
         help="Probe public Nomad; optionally POST /swarm/join and /swarm/develop to attach a helper agent to the network.",
     )
-    swarm_helper.add_argument("--base-url", default="", help="Nomad public root, default NOMAD_PUBLIC_API_URL or syndiode.com/nomad.")
+    swarm_helper.add_argument("--base-url", default="", help="Nomad public root, default NOMAD_PUBLIC_API_URL or syndiode.com.")
     swarm_helper.add_argument(
         "--connect",
         action="store_true",
@@ -1969,6 +1980,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("modal", help="Show Modal deployment guidance for Nomad's burst-compute lane.")
     subparsers.add_parser("render", help="Verify Render hosting access and show Nomad public API deployment steps.")
+    render_logs = subparsers.add_parser(
+        "render-logs",
+        help="Fetch recent Render logs via REST API (RENDER_API_KEY + NOMAD_RENDER_OWNER_ID + service id).",
+    )
+    render_logs.add_argument(
+        "--service-id",
+        default="",
+        dest="service_id",
+        help="Override NOMAD_RENDER_SERVICE_ID (srv_...).",
+    )
+    render_logs.add_argument(
+        "--owner-id",
+        default="",
+        dest="owner_id",
+        help="Override NOMAD_RENDER_OWNER_ID (workspace/team id).",
+    )
+    render_logs.add_argument("--limit", type=int, default=40, help="Max log lines (1-100).")
+    render_logs.add_argument(
+        "--type",
+        default="app",
+        dest="log_type",
+        metavar="LOG_TYPE",
+        help="Render log type filter, e.g. app, build, request.",
+    )
     subparsers.add_parser("collaboration", help="Show Nomad's outward AI-agent collaboration charter.")
     subparsers.add_parser("mutual-aid-status", help="Show Nomad v3.2 Mutual-Aid self-evolution status.")
     subparsers.add_parser("self-status", help="Show persistent self-development state.")

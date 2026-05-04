@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -254,6 +254,106 @@ class RenderHostingProbe:
                 "(https://render.com/docs/mcp-server) to ~/.cursor/mcp.json with the same API key scope."
             ),
         }
+
+    def list_recent_logs(
+        self,
+        service_id: str = "",
+        owner_id: str = "",
+        limit: int = 40,
+        log_type: str = "app",
+    ) -> Dict[str, Any]:
+        """Fetch recent logs via GET /v1/logs (Render REST). Needs workspace ownerId + service resource id."""
+        sid = (service_id or self.service_id or "").strip()
+        oid = (owner_id or self.owner_id or "").strip()
+        if not self.api_key:
+            return {
+                "ok": False,
+                "issue": "render_api_key_missing",
+                "lines": [],
+                "message": "Set RENDER_API_KEY (or NOMAD_RENDER_API_KEY) in .env.",
+            }
+        if not oid:
+            owners = self.list_owners()
+            if owners.get("ok"):
+                sel = owners.get("selected_owner") or {}
+                oid = str(sel.get("id") or "").strip()
+        if not oid:
+            return {
+                "ok": False,
+                "issue": "render_owner_id_missing",
+                "lines": [],
+                "message": "Set NOMAD_RENDER_OWNER_ID (workspace/team id) for GET /v1/logs.",
+            }
+        if not sid:
+            ver = self.verify_services()
+            sid = str((ver.get("selected_service") or {}).get("id") or "").strip()
+        if not sid:
+            return {
+                "ok": False,
+                "issue": "render_service_id_missing",
+                "lines": [],
+                "message": "Set NOMAD_RENDER_SERVICE_ID or NOMAD_RENDER_SERVICE_NAME.",
+            }
+        lim = max(1, min(100, int(limit)))
+        lt = (log_type or "app").strip() or "app"
+        params: List[Tuple[str, str]] = [
+            ("ownerId", oid),
+            ("resource", sid),
+            ("limit", str(lim)),
+            ("type", lt),
+            ("direction", "backward"),
+        ]
+        response = self._request("GET", "/logs", params=params)
+        if not response.get("ok"):
+            return {
+                "ok": False,
+                "issue": response.get("issue", "render_api_error"),
+                "lines": [],
+                "message": response.get("message", "Render log request failed."),
+                "status_code": response.get("status_code"),
+                "payload_excerpt": str(response.get("payload"))[:800],
+            }
+        lines = self._normalize_log_lines(response.get("payload"), lim)
+        return {
+            "ok": True,
+            "owner_id": oid,
+            "service_id": sid,
+            "log_type": lt,
+            "lines": lines,
+            "message": "Recent log lines from Render API (https://api-docs.render.com/reference/list-logs).",
+        }
+
+    @staticmethod
+    def _normalize_log_lines(payload: Any, cap: int) -> List[Dict[str, Any]]:
+        raw: List[Any] = []
+        if isinstance(payload, dict):
+            raw = (
+                payload.get("logs")
+                or payload.get("items")
+                or payload.get("results")
+                or []
+            )
+        elif isinstance(payload, list):
+            raw = payload
+        if not isinstance(raw, list):
+            return []
+        out: List[Dict[str, Any]] = []
+        for item in raw[:cap]:
+            if not isinstance(item, dict):
+                out.append({"message": str(item)[:2000]})
+                continue
+            msg = item.get("message") or item.get("text") or item.get("msg") or ""
+            if not msg and "labels" in item:
+                msg = str(item.get("labels"))[:500]
+            out.append(
+                {
+                    "timestamp": str(item.get("timestamp") or item.get("time") or ""),
+                    "level": str(item.get("level") or ""),
+                    "type": str(item.get("type") or ""),
+                    "message": str(msg)[:2000],
+                }
+            )
+        return out
 
     @staticmethod
     def _normalize_deploy_list(payload: Any) -> List[Dict[str, Any]]:
