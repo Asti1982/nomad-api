@@ -70,7 +70,7 @@ def test_mission_control_prioritizes_first_paid_customer(tmp_path: Path):
         journal=FakeJournal(),
     )
 
-    report = mission.snapshot(base_url="https://syndiode.com/nomad", persist=True)
+    report = mission.snapshot(base_url="https://syndiode.com", persist=True)
 
     assert report["schema"] == "nomad.mission_control.v1"
     assert report["top_blocker"]["id"] == "no_first_paid_customer"

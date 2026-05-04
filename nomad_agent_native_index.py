@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List
 
 from nomad_machine_runtime_contract import build_machine_runtime_contract
+from nomad_operator_grant import service_approval_scope
 from nomad_public_url import preferred_public_base_url
 
 
@@ -93,6 +94,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/join", "methods": ["GET", "POST"], "effect": "read_then_mutate", "cost_tier": "medium"},
         {"path": "/swarm/develop", "methods": ["GET", "POST"], "effect": "read_then_mutate", "cost_tier": "medium"},
         {"path": "/agent-growth", "methods": ["POST"], "effect": "mutate_external_io", "cost_tier": "high"},
+        {"path": "/tasks", "methods": ["POST"], "effect": "mutate_session", "cost_tier": "high"},
+        {"path": "/tasks/work", "methods": ["POST"], "effect": "mutate_session", "cost_tier": "high"},
         {"path": "/mutual-aid/outcomes", "methods": ["POST"], "effect": "mutate_reputation_ledger", "cost_tier": "low"},
         {"path": "/a2a/message", "methods": ["POST"], "effect": "mutate_session", "cost_tier": "high"},
     ]
@@ -131,7 +134,10 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "agent_invariants_url": u("/.well-known/nomad-agent-invariants.json"),
         "peer_acquisition_url": u("/.well-known/nomad-peer-acquisition.json"),
         "agent_invariants_mcp_uri": "nomad://agent-invariants",
-        "machine_runtime_contract": build_machine_runtime_contract(public_base_url=b),
+        "machine_runtime_contract": build_machine_runtime_contract(
+            public_base_url=b,
+            service_work_approval=service_approval_scope(),
+        ),
         "boot_graph": boot_graph,
         "routing_table": routing_table,
         "anti_anthropic_semantics": anti_anthropic_semantics,

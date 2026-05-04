@@ -4,7 +4,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -55,25 +55,42 @@ class NomadAutopilot:
             os.getenv("NOMAD_AUTOPILOT_CONTACT_POLL_LIMIT", "10")
         )
         self.default_service_approval = service_approval_scope()
+        _lead_focus = (os.getenv("NOMAD_LEAD_FOCUS") or "compute_auth").strip().lower()
         self.default_outreach_service_type = (
             os.getenv("NOMAD_OUTREACH_SERVICE_TYPE")
-            or ("compute_auth" if (os.getenv("NOMAD_LEAD_FOCUS") or "compute_auth").strip().lower() == "compute_auth" else "human_in_loop")
+            or (
+                "compute_auth"
+                if _lead_focus in {"compute_auth", "machine_human_gap", "agent_infra_prime"}
+                else "human_in_loop"
+            )
         ).strip() or "compute_auth"
         self.default_outreach_query = (
             os.getenv("NOMAD_AUTOPILOT_OUTREACH_QUERY") or '"agent-card" "quota" "token" "https://"'
         ).strip()
         self.default_outreach_queries = self._configured_outreach_queries()
-        self.default_send_outreach = (
-            os.getenv("NOMAD_AUTOPILOT_SEND_OUTREACH", "false").strip().lower()
-            in {"1", "true", "yes", "on"}
+        # Continuous acquisition: when NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION is unset, default ON iff
+        # NOMAD_PUBLIC_API_URL points at a non-localhost surface (safe for dev: localhost stays off).
+        raw_continuous = os.getenv("NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION")
+        if raw_continuous is None or not str(raw_continuous).strip():
+            continuous_acquisition = self.__class__._is_public_service_url(preferred_public_base_url())
+        else:
+            continuous_acquisition = str(raw_continuous).strip().lower() in {"1", "true", "yes", "on"}
+        self.continuous_acquisition = bool(continuous_acquisition)
+
+        def _bool_env(name: str, *, when_continuous: bool, when_idle: bool) -> bool:
+            raw = os.getenv(name)
+            if raw is None or not str(raw).strip():
+                return when_continuous if continuous_acquisition else when_idle
+            return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+        self.default_send_outreach = _bool_env(
+            "NOMAD_AUTOPILOT_SEND_OUTREACH", when_continuous=True, when_idle=False
         )
-        self.default_send_a2a = (
-            os.getenv("NOMAD_AUTOPILOT_A2A_SEND", "false").strip().lower()
-            in {"1", "true", "yes", "on"}
+        self.default_send_a2a = _bool_env(
+            "NOMAD_AUTOPILOT_A2A_SEND", when_continuous=True, when_idle=False
         )
-        self.agent_growth_pipeline_enabled = (
-            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", "false").strip().lower()
-            in {"1", "true", "yes", "on"}
+        self.agent_growth_pipeline_enabled = _bool_env(
+            "NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", when_continuous=True, when_idle=False
         )
         self.agent_growth_every_n_cycles = max(
             1, int(os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_EVERY_N_CYCLES", "1") or "1")
@@ -82,10 +99,10 @@ class NomadAutopilot:
         self.agent_growth_limit = max(
             1, min(int(os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_LIMIT", "5") or "5"), 25)
         )
-        self.agent_growth_send_outreach = (
-            os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_SEND", "false").strip().lower()
-            in {"1", "true", "yes", "on"}
+        self.agent_growth_send_outreach = _bool_env(
+            "NOMAD_AUTOPILOT_AGENT_GROWTH_SEND", when_continuous=True, when_idle=False
         )
+        self.agent_growth_approval = (os.getenv("NOMAD_AGENT_GROWTH_APPROVAL") or "").strip()
         self.agent_growth_no_products = (
             os.getenv("NOMAD_AUTOPILOT_AGENT_GROWTH_NO_PRODUCTS", "false").strip().lower()
             in {"1", "true", "yes", "on"}
@@ -161,9 +178,10 @@ class NomadAutopilot:
         daily_quota_start = self._daily_quota(target)
         base_outreach_limit = max(0, int(outreach_limit or self.default_outreach_limit))
         flush_limit = min(base_outreach_limit, daily_quota_start["remaining_to_send"]) if send_queue_enabled else 0
+        resolved_service_approval = (service_approval or "").strip() or service_approval_scope()
         service_summary = self._process_service_queue(
             limit=service_limit or self.default_service_limit,
-            approval=service_approval or self.default_service_approval,
+            approval=resolved_service_approval,
         )
         payment_followup_queue = self._queue_payment_followups(
             service_summary=service_summary,
@@ -287,13 +305,18 @@ class NomadAutopilot:
                 from nomad_agent_growth_pipeline import agent_growth_pipeline
 
                 growth_query = self.agent_growth_query or self.default_outreach_query
+                growth_send = bool(
+                    self.agent_growth_send_outreach
+                    and self._is_public_service_url(public_api_url)
+                )
                 agent_growth_pipeline_report = agent_growth_pipeline(
                     agent=self.agent,
                     query=growth_query,
                     limit=self.agent_growth_limit,
                     base_url=public_api_url,
                     run_product_factory=not self.agent_growth_no_products,
-                    send_outreach=self.agent_growth_send_outreach,
+                    send_outreach=growth_send,
+                    approval=self.agent_growth_approval,
                     swarm_feed=False if self.agent_growth_no_swarm_feed else None,
                 )
             else:
@@ -317,16 +340,18 @@ class NomadAutopilot:
             swarm_coordination=swarm_coordination,
             self_improvement=self_improvement,
             daily_quota=daily_quota,
+            agent_growth_pipeline=agent_growth_pipeline_report,
         )
 
         report = {
             "mode": "nomad_autopilot",
             "deal_found": False,
             "timestamp": datetime.now(UTC).isoformat(),
+            "continuous_acquisition": self.continuous_acquisition,
             "objective": selected_objective,
             "profile_id": profile_id,
             "public_api_url": public_api_url,
-            "service_approval": service_approval or self.default_service_approval,
+            "service_approval": resolved_service_approval,
             "operator_grant": operator_grant(),
             "decision": decision,
             "service": service_summary,
@@ -1554,14 +1579,15 @@ class NomadAutopilot:
             "tighten the payment path, deliver free value first, and package the solution as reusable memory."
         )
 
-    def _direct_outreach_query_from_cycle(self, self_improvement: Dict[str, Any]) -> str:
+    def _direct_outreach_queries_from_cycle(self, self_improvement: Dict[str, Any]) -> List[str]:
+        """All outreach_queries from the self-improvement cycle (used in rotation, not only the first)."""
         lead_scout = self_improvement.get("lead_scout") or {}
-        queries = lead_scout.get("outreach_queries") or []
-        for query in queries:
+        out: List[str] = []
+        for query in lead_scout.get("outreach_queries") or []:
             cleaned = str(query or "").strip()
             if cleaned:
-                return cleaned
-        return ""
+                out.append(cleaned)
+        return out
 
     def _generic_query_from_cycle(self, self_improvement: Dict[str, Any]) -> str:
         lead_scout = self_improvement.get("lead_scout") or {}
@@ -1581,12 +1607,11 @@ class NomadAutopilot:
         explicit = (explicit_query or "").strip()
         if explicit:
             return explicit
-        direct_suggested = self._direct_outreach_query_from_cycle(self_improvement)
-        if direct_suggested:
-            return direct_suggested
         suggested = self._generic_query_from_cycle(self_improvement)
         state = self._load()
-        configured = list(self._service_type_queries(service_type))
+        # Cycle outreach_queries first so self-improvement lead_watch beats generic service-type defaults.
+        configured = list(self._direct_outreach_queries_from_cycle(self_improvement))
+        configured.extend(list(self._service_type_queries(service_type)))
         if suggested:
             configured.append(suggested)
         configured.extend(self.default_outreach_queries)
@@ -1985,6 +2010,7 @@ class NomadAutopilot:
         swarm_coordination: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
+        agent_growth_pipeline: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         compute_watch = self_improvement.get("compute_watch") or {}
         active_lanes = [str(item) for item in (compute_watch.get("active_lanes") or []) if item]
@@ -2028,6 +2054,18 @@ class NomadAutopilot:
         if brain_count <= 1 and compute_watch.get("activation_request"):
             compute_policy["activation_request"] = compute_watch.get("activation_request") or {}
 
+        agp = agent_growth_pipeline or {}
+        acquisition_hints = agp.get("acquisition_hints") or {}
+        machine_instruction = (
+            "Prioritize one public blocker, one fast onboarding payload, or one paid task conversion per cycle; "
+            "reuse active compute lanes and ask humans only for concrete unlocks."
+        )
+        if acquisition_hints.get("stuck"):
+            machine_instruction += (
+                " Agent growth outbound send stalled: use efficiency_plan.acquisition_hints.operator_actions "
+                "for the smallest next human step."
+            )
+
         return {
             "schema": "nomad.autopilot_efficiency_plan.v1",
             "goal": "more_agent_onboarding_and_paid_blocker_resolution",
@@ -2063,10 +2101,8 @@ class NomadAutopilot:
                 "daily_remaining_to_send": daily_quota.get("remaining_to_send", 0),
             },
             "compute_policy": compute_policy,
-            "machine_instruction": (
-                "Prioritize one public blocker, one fast onboarding payload, or one paid task conversion per cycle; "
-                "reuse active compute lanes and ask humans only for concrete unlocks."
-            ),
+            "acquisition_hints": acquisition_hints,
+            "machine_instruction": machine_instruction,
         }
 
     @staticmethod
@@ -2190,6 +2226,15 @@ class NomadAutopilot:
         pf = payload.get("product_factory") or {}
         sw = payload.get("swarm_accumulation") or {}
         mrc = payload.get("machine_runtime_contract") or {}
+        ah = payload.get("acquisition_hints") or {}
+        conv_stats: Dict[str, Any] = dict(conv.get("stats") or {}) if isinstance(conv, dict) else {}
+        if not conv_stats and convs:
+            for item in convs:
+                if not isinstance(item, dict):
+                    continue
+                st = str(item.get("status") or "unknown")
+                conv_stats[st] = int(conv_stats.get(st) or 0) + 1
+        sent_ac = int(conv_stats.get("sent_agent_contact") or 0)
         return {
             "schema": payload.get("schema", ""),
             "ok": bool(payload.get("ok", False)),
@@ -2201,6 +2246,11 @@ class NomadAutopilot:
             "new_swarm_prospect_ids": list(sw.get("new_prospect_ids") or [])[:8],
             "machine_runtime_contract_schema": mrc.get("schema", ""),
             "analysis_tail": (payload.get("analysis") or "")[:240],
+            "send_outreach": bool(payload.get("send_outreach")),
+            "sent_agent_contact": sent_ac,
+            "acquisition_stuck": bool(ah.get("stuck")),
+            "acquisition_reason_codes": list(ah.get("reason_codes") or [])[:8],
+            "human_escalation_hint_tail": " | ".join(str(x) for x in (payload.get("human_escalation_hints") or [])[:3]),
         }
 
     @staticmethod
@@ -2351,6 +2401,7 @@ class NomadAutopilot:
         paid_lane = payload.get("paid_blocker_lane") or {}
         outreach = payload.get("outreach_efficiency") or {}
         compute = payload.get("compute_policy") or {}
+        acq = payload.get("acquisition_hints") or {}
         return {
             "schema": payload.get("schema", ""),
             "goal": payload.get("goal", ""),
@@ -2377,6 +2428,9 @@ class NomadAutopilot:
                 "cloudflare_required": bool(compute.get("cloudflare_required", False)),
                 "preferred_next_compute": compute.get("preferred_next_compute", ""),
             },
+            "acquisition_stuck": bool(acq.get("stuck")),
+            "acquisition_reason_codes": list(acq.get("reason_codes") or [])[:6],
+            "acquisition_actions_tail": " | ".join(str(x) for x in (acq.get("operator_actions") or [])[:2]),
         }
 
     @staticmethod

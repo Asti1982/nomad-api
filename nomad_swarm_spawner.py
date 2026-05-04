@@ -110,7 +110,7 @@ class NomadSwarmSpawner:
     ) -> Dict[str, Any]:
         requested = max(0, int(count or 0))
         capped = min(requested or DEFAULT_SWARM_SPAWN_CAP, HARD_SWARM_SPAWN_CAP)
-        public_base = (base_url or preferred_public_base_url() or "https://syndiode.com/nomad").rstrip("/")
+        public_base = (base_url or preferred_public_base_url() or "https://syndiode.com").rstrip("/")
         focus_text = _clean(focus or "agent_blocker_resolution", limit=80)
         payloads = list(self._payloads(count=capped, base_url=public_base, focus=focus_text))
         receipts = []

@@ -11,7 +11,7 @@ import requests
 from nomad_public_url import preferred_public_base_url
 
 
-DEFAULT_SYNDIODE_NOMAD_URL = "https://syndiode.com/nomad"
+DEFAULT_SYNDIODE_NOMAD_URL = "https://syndiode.com"
 
 
 def _clean_text(value: Any, *, limit: int = 240) -> str:

@@ -112,7 +112,7 @@ def test_agent_attractor_manifest_surfaces_roles_offer_and_broadcast(tmp_path, m
 
 def test_agent_attractor_prefers_collaboration_home_when_local_api(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "http://127.0.0.1:8787")
-    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com")
     desk = AgentServiceDesk(
         path=tmp_path / "tasks.json",
         treasury=FakeTreasury(),
@@ -121,10 +121,10 @@ def test_agent_attractor_prefers_collaboration_home_when_local_api(tmp_path, mon
 
     result = attractor.manifest(limit=1)
 
-    assert result["public_api_url"] == "https://syndiode.com/nomad"
-    assert result["entrypoints"]["agent_attractor"] == "https://syndiode.com/nomad/agent-attractor"
-    assert result["entrypoints"]["service"] == "https://syndiode.com/nomad/service"
-    assert result["swarm_ignition"]["machine_call_sequence"][1]["endpoint"] == "https://syndiode.com/nomad/swarm/develop"
+    assert result["public_api_url"] == "https://syndiode.com"
+    assert result["entrypoints"]["agent_attractor"] == "https://syndiode.com/agent-attractor"
+    assert result["entrypoints"]["service"] == "https://syndiode.com/service"
+    assert result["swarm_ignition"]["machine_call_sequence"][1]["endpoint"] == "https://syndiode.com/swarm/develop"
 
 
 def test_active_lead_network_translates_self_development_into_roles_and_next_step(tmp_path, monkeypatch):

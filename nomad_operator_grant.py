@@ -130,7 +130,22 @@ def is_operator_approval_scope(scope: str) -> bool:
 
 
 def service_approval_scope(default: str = "draft_only") -> str:
+    """Resolve approval passed to POST /tasks/work from autopilot and agent-native callers.
+
+    NOMAD_AGENT_SERVICE_WORK_APPROVAL: optional override for AI-agent paid unblock (e.g. operator_granted).
+    NOMAD_AUTOPILOT_SERVICE_APPROVAL=draft_only keeps legacy meaning: do not treat as a custom scope string;
+    operator_granted is still applied when operator_allows(service_work).
+    """
     load_dotenv()
+    agent_pref = _normalize(os.getenv("NOMAD_AGENT_SERVICE_WORK_APPROVAL", ""))
+    if agent_pref == "draft_only":
+        return "draft_only"
+    if agent_pref in {"operator_granted", "operator", "nomad_operator_grant"}:
+        if operator_allows("service_work") and operator_grant().get("enabled"):
+            return "operator_granted"
+        return "draft_only"
+    if agent_pref:
+        return agent_pref
     explicit = _normalize(os.getenv("NOMAD_AUTOPILOT_SERVICE_APPROVAL", ""))
     if explicit and explicit != "draft_only":
         return explicit

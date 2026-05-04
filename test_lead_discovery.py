@@ -1,4 +1,4 @@
-from lead_discovery import LeadDiscoveryScout
+from lead_discovery import LeadDiscoveryScout, _machine_endpoint_urls_from_text
 
 
 class FakeResponse:
@@ -61,7 +61,8 @@ class FakeMixedSession:
         return FakeMixedResponse()
 
 
-def test_public_lead_discovery_returns_draft_only_lead():
+def test_public_lead_discovery_returns_draft_only_lead(monkeypatch):
+    monkeypatch.setenv("NOMAD_LEAD_FOCUS", "compute_auth")
     scout = LeadDiscoveryScout(session=FakeSession())
     result = scout.scout_public_leads(query='"AI agent" "rate limit"', limit=1)
 
@@ -287,3 +288,59 @@ def test_is_qualified_lead_agent_infra_prime_accepts_core_service_type(monkeypat
         "recommended_service_type": "context_propagation_contract",
     }
     assert scout._is_qualified_lead(lead, "agent_infra_prime", scout.source_plan("agent_infra_prime")) is True
+
+
+def test_matches_focus_machine_human_gap_narrative_marker():
+    scout = LeadDiscoveryScout(session=FakeSession())
+    lead = {
+        "title": "Agent feels flaky only on first request after idle",
+        "pain": "cold start",
+        "pain_terms": [],
+        "recommended_service_type": "repo_issue_help",
+    }
+    assert scout._matches_focus(lead, "machine_human_gap") is True
+
+
+def test_is_qualified_lead_machine_human_gap_single_pain_term(monkeypatch):
+    monkeypatch.setenv("NOMAD_LEAD_FOCUS", "machine_human_gap")
+    scout = LeadDiscoveryScout(session=FakeSession())
+    plan = scout.source_plan("machine_human_gap")
+    lead = {
+        "focus_match": True,
+        "addressable_now": True,
+        "focus_score": 9.0,
+        "pain_terms": ["idempotency"],
+        "pain_score": 4.0,
+        "recommended_service_type": "repo_issue_help",
+    }
+    assert scout._is_qualified_lead(lead, "machine_human_gap", plan) is True
+
+
+def test_machine_endpoint_urls_from_text_prefers_agent_card():
+    text = (
+        "Docs: https://agents.example.com/.well-known/agent-card.json "
+        "and legacy https://agents.example.com/a2a"
+    )
+    urls = _machine_endpoint_urls_from_text(text)
+    assert urls[0] == "https://agents.example.com/.well-known/agent-card.json"
+    assert "https://agents.example.com/a2a" in urls
+
+
+def test_machine_endpoint_urls_from_text_excludes_github_hosts():
+    text = "Never use https://github.com/org/repo/raw/main/.well-known/agent-card.json"
+    assert _machine_endpoint_urls_from_text(text) == []
+
+
+def test_issue_to_lead_sets_endpoint_from_body():
+    scout = LeadDiscoveryScout(session=FakeSession())
+    item = {
+        "title": "Agent quota",
+        "body": "Our A2A entrypoint is https://svc.acme.test/a2a/v1 — still hitting limits.",
+        "html_url": "https://github.com/acme/repo/issues/2",
+        "repository_url": "https://api.github.com/repos/acme/repo",
+        "updated_at": "2026-04-18T00:00:00Z",
+        "user": {"login": "builder"},
+    }
+    lead = scout._issue_to_lead(item, "test-query")
+    assert lead["endpoint_url"] == "https://svc.acme.test/a2a/v1"
+    assert lead["discovered_machine_endpoints"]

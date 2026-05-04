@@ -9,7 +9,7 @@ def test_swarm_spawner_registers_bounded_specialists(tmp_path):
 
     result = spawner.spawn(
         count=10,
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         focus="paid blocker conversion",
         commit=True,
     )
@@ -29,7 +29,7 @@ def test_swarm_spawner_caps_large_requests(tmp_path):
 
     result = NomadSwarmSpawner(registry=registry).spawn(
         count=999,
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         commit=False,
     )
 
@@ -41,7 +41,7 @@ def test_swarm_spawner_caps_large_requests(tmp_path):
 
 
 def test_cli_swarm_spawn_dry_run(monkeypatch):
-    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com")
 
     result = run_once(["swarm-spawn", "--count", "3", "--dry-run", "--json"])
 

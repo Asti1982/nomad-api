@@ -23,7 +23,7 @@ def _base_url(explicit: str = "") -> str:
     pub = (preferred_public_base_url() or "").strip().rstrip("/")
     if pub and "127.0.0.1" not in pub and "localhost" not in pub.lower():
         return pub
-    return "https://syndiode.com/nomad"
+    return "https://syndiode.com"
 
 
 def _get(session: requests.Session, url: str, *, timeout: float) -> Dict[str, Any]:

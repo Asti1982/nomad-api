@@ -381,6 +381,55 @@
         }
       ]
     },
+    "machine_human_gap": {
+      "service_type": "",
+      "pain_hint": "Alpha where human cognition and org habits hide failure: narrative over SLOs, mean over tail, approval fatigue, idempotency dropped across retries, cold-start and sleep blind spots, correlation never propagated, 'flake' labels on routing or transport bugs",
+      "min_focus_score": 6.0,
+      "allow_unqualified_fallback": false,
+      "seed_repos": [
+        "https://github.com/modelcontextprotocol/servers",
+        "https://github.com/github/github-mcp-server",
+        "https://github.com/openai/openai-agents-python",
+        "https://github.com/microsoft/autogen",
+        "https://github.com/langchain-ai/langgraph",
+        "https://github.com/github/copilot-cli"
+      ],
+      "seed_queries": [
+        "repo:openai/openai-agents-python idempotency retry is:issue is:open",
+        "repo:langchain-ai/langgraph \"cold start\" OR spinup is:issue is:open",
+        "repo:modelcontextprotocol/servers \"health\" timeout is:issue is:open",
+        "repo:microsoft/autogen \"retry\" storm OR thundering is:issue is:open",
+        "\"/.well-known/agent-card.json\" is:issue is:open",
+        "\"/.well-known/agent.json\" is:issue is:open",
+        "\"/a2a\" \"https://\" is:issue is:open",
+        "path:.well-known agent-card is:issue is:open"
+      ],
+      "queries": [
+        "\"AI agent\" idempotency duplicate is:issue is:open",
+        "\"agent\" \"cold start\" OR hibernate OR sleep is:issue is:open",
+        "\"readiness\" OR \"liveness\" agent timeout is:issue is:open",
+        "\"p99\" OR \"tail latency\" agent tool is:issue is:open",
+        "\"retry storm\" OR \"thundering herd\" API is:issue is:open",
+        "\"correlation id\" missing distributed is:issue is:open",
+        "\"log sampling\" OR sampled logs error missed is:issue is:open",
+        "\"flaky\" \"MCP\" OR \"tool\" intermittent is:issue is:open",
+        "\"parallel\" \"tool_calls\" \"error\" is:issue is:open"
+      ],
+      "outreach_queries": [
+        "\"agent-card.json\" \"idempotency\" \"https://\"",
+        "\"agent-card.json\" \"SLO\" \"https://\""
+      ],
+      "public_surfaces": [
+        {
+          "name": "GitHub issue search: agent idempotency duplicate",
+          "url": "https://github.com/search?q=%22AI+agent%22+idempotency+duplicate+is%3Aissue+is%3Aopen&type=issues"
+        },
+        {
+          "name": "GitHub issue search: agent cold start readiness",
+          "url": "https://github.com/search?q=agent+cold+start+readiness+is%3Aissue+is%3Aopen&type=issues"
+        }
+      ]
+    },
     "balanced": {
       "service_type": "human_in_loop",
       "pain_hint": "human-in-the-loop, loops, payment, memory, compute, auth",

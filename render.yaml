@@ -1,5 +1,5 @@
 # Blueprint: GitHub repo Asti1982/syndiode, branch syndiode → Render auto-deploys (autoDeployTrigger: commit).
-# Agent-facing links use the public edge https://syndiode.com/nomad (not an unrouted Render hostname).
+# Agent-facing links use the public edge https://syndiode.com (not an unrouted Render hostname).
 services:
   - type: web
     name: nomad-api
@@ -17,9 +17,9 @@ services:
       - key: NOMAD_API_HOST
         value: 0.0.0.0
       - key: NOMAD_PUBLIC_API_URL
-        value: https://syndiode.com/nomad
+        value: https://syndiode.com
       - key: NOMAD_COLLABORATION_HOME_URL
-        value: https://syndiode.com/nomad
+        value: https://syndiode.com
       - key: NOMAD_RENDER_DOMAIN
         value: onrender.syndiode.com
       - key: NOMAD_GITHUB_REPOSITORY
@@ -48,10 +48,18 @@ services:
         value: '"agent-card.json" "mcp" "https://" | "openclaw" "mcp" "https://" | "openclaw" "agent-card" "json" | ".well-known/agent-card.json" "mcp" "openclaw" | "agent-card.json" "witness" "https://" | "streamable-http" "mcp" "https://"'
       - key: NOMAD_REQUIRE_SERVICE_PAYMENT
         value: "true"
+      - key: NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION
+        value: "true"
       - key: NOMAD_AUTOPILOT_A2A_SEND
-        value: "false"
+        value: "true"
       - key: NOMAD_AUTOPILOT_SEND_OUTREACH
         value: "true"
+      - key: NOMAD_AGENT_GROWTH_APPROVAL
+        value: "machine_endpoint"
+      - key: NOMAD_AUTOPILOT_SERVICE_APPROVAL
+        value: "operator_granted"
+      - key: NOMAD_AGENT_SERVICE_WORK_APPROVAL
+        value: "operator_granted"
 
   # Cron cannot use plan: free on Render; runs one autopilot cycle (discovery + optional send).
   # Mirror any API secrets from nomad-api (e.g. GITHUB_PERSONAL_ACCESS_TOKEN, model keys) on this service or use an env group.
@@ -66,9 +74,9 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: NOMAD_PUBLIC_API_URL
-        value: https://syndiode.com/nomad
+        value: https://syndiode.com
       - key: NOMAD_COLLABORATION_HOME_URL
-        value: https://syndiode.com/nomad
+        value: https://syndiode.com
       - key: NOMAD_GITHUB_REPOSITORY
         value: Asti1982/syndiode
       - key: NOMAD_AGENT_NAME
@@ -93,9 +101,21 @@ services:
         value: "15"
       - key: NOMAD_AUTOPILOT_OUTREACH_QUERIES
         value: '"agent-card.json" "mcp" "https://" | "openclaw" "mcp" "https://" | "openclaw" "agent-card" "json" | ".well-known/agent-card.json" "mcp" "openclaw" | "agent-card.json" "witness" "https://" | "streamable-http" "mcp" "https://"'
+      - key: NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION
+        value: "true"
       - key: NOMAD_AUTOPILOT_A2A_SEND
-        value: "false"
+        value: "true"
       - key: NOMAD_AUTOPILOT_SEND_OUTREACH
         value: "true"
+      - key: NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE
+        value: "true"
+      - key: NOMAD_AUTOPILOT_AGENT_GROWTH_SEND
+        value: "true"
+      - key: NOMAD_AGENT_GROWTH_APPROVAL
+        value: "machine_endpoint"
+      - key: NOMAD_AUTOPILOT_SERVICE_APPROVAL
+        value: "operator_granted"
+      - key: NOMAD_AGENT_SERVICE_WORK_APPROVAL
+        value: "operator_granted"
       - key: GITHUB_PERSONAL_ACCESS_TOKEN
         sync: false

@@ -1,7 +1,15 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from nomad_autopilot import NomadAutopilot
+
+
+@pytest.fixture(autouse=True)
+def _autopilot_disable_continuous_acquisition_default(monkeypatch):
+    """Autopilot infers continuous acquisition from public URL; tests pin it off unless they opt in."""
+    monkeypatch.setenv("NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION", "false")
 
 
 class FakeJournal:
@@ -135,7 +143,16 @@ class FakeLeadConversion:
 
     def run(self, **kwargs):
         self.calls.append(kwargs)
-        leads = kwargs.get("leads") or []
+        leads_arg = kwargs.get("leads")
+        if leads_arg is not None and len(leads_arg) == 0:
+            return {
+                "mode": "lead_conversion_pipeline",
+                "ok": True,
+                "stats": {},
+                "conversions": [],
+                "analysis": "no leads",
+            }
+        leads = leads_arg or []
         count = len(leads) if leads else 1
         status = "sent_agent_contact" if kwargs.get("send") else "private_draft_needs_approval"
         return {
@@ -469,12 +486,23 @@ class FakeProductFactory:
         }
 
 
+class FakeLeadDiscovery:
+    def scout_public_leads(self, **kwargs):
+        return {
+            "mode": "lead_discovery",
+            "leads": [],
+            "candidate_count": 0,
+            "focus": "compute_auth",
+        }
+
+
 class FakeAgent:
     def __init__(self):
         self.self_improvement = FakeSelfImprovement()
         self.service_desk = FakeServiceDesk()
         self.agent_contacts = FakeContacts()
         self.agent_campaigns = FakeCampaigns()
+        self.lead_discovery = FakeLeadDiscovery()
         self.lead_conversion = FakeLeadConversion()
         self.product_factory = FakeProductFactory()
         self.mutual_aid = FakeMutualAid()
@@ -1141,3 +1169,23 @@ def test_service_type_queries_include_inter_agent_witness():
     assert any("witness" in item for item in q)
     assert any("openclaw" in item for item in q)
     assert any("streamable-http" in item for item in q)
+
+
+def test_continuous_acquisition_opt_in_runs_agent_growth_pipeline(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_CONTINUOUS_ACQUISITION", "true")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_A2A_SEND", "false")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+    assert autopilot.continuous_acquisition is True
+    assert autopilot.agent_growth_pipeline_enabled is True
+    result = autopilot.run_once(outreach_limit=2, send_outreach=False)
+    assert result["continuous_acquisition"] is True
+    agp = result.get("agent_growth_pipeline") or {}
+    assert agp.get("mode") == "nomad_agent_growth_pipeline"
+    assert agp.get("skipped") is not True

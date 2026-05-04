@@ -5,11 +5,11 @@ from nomad_swarm_registry import SwarmJoinRegistry
 
 
 def test_normalize_public_path_strips_prefix_from_public_url(monkeypatch):
-    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://example.com/myapi")
     monkeypatch.delenv("NOMAD_HTTP_PATH_PREFIX", raising=False)
-    assert NomadApiHandler._normalize_public_path("/nomad/openapi.json") == "/openapi.json"
-    assert NomadApiHandler._normalize_public_path("/nomad") == "/"
-    assert NomadApiHandler._normalize_public_path("/nomad/") == "/"
+    assert NomadApiHandler._normalize_public_path("/myapi/openapi.json") == "/openapi.json"
+    assert NomadApiHandler._normalize_public_path("/myapi") == "/"
+    assert NomadApiHandler._normalize_public_path("/myapi/") == "/"
     assert NomadApiHandler._normalize_public_path("/health") == "/health"
 
 
@@ -22,7 +22,7 @@ def test_normalize_public_path_uses_explicit_prefix(monkeypatch):
 def test_syndiode_edge_routes_doc_lists_peer_acquisition():
     md = Path(__file__).resolve().parent / "syndiode_edge_routes.md"
     text = md.read_text(encoding="utf-8")
-    assert "syndiode.com/nomad" in text
+    assert "syndiode.com" in text
     assert "nomad-peer-acquisition.json" in text
     assert "Whitelist" in text or "whitelist" in text.lower()
 

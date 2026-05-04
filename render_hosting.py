@@ -27,6 +27,53 @@ DEFAULT_RENDER_SERVICE_NAME = "nomad-api"
 DEFAULT_RENDER_DOMAIN = "onrender.syndiode.com"
 
 
+def parse_render_yaml_first_web_service_commands(render_yaml: Path) -> Dict[str, Any]:
+    """Read the first `type: web` entry under `services:` and return build/start commands (stdlib only)."""
+    if not render_yaml.exists():
+        return {
+            "ok": False,
+            "issue": "render_yaml_missing",
+            "message": f"render.yaml not found at {render_yaml}",
+        }
+    lines = render_yaml.read_text(encoding="utf-8").splitlines()
+    list_item_indent: Optional[int] = None
+    in_web = False
+    build_cmd = ""
+    start_cmd = ""
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(stripped)
+        if stripped.startswith("- ") and "type:" in stripped:
+            if in_web and list_item_indent is not None and indent == list_item_indent:
+                break
+            rest = stripped[2:].strip()
+            list_item_indent = indent
+            in_web = rest == "type: web" or rest.startswith("type: web")
+            if not in_web:
+                build_cmd = ""
+                start_cmd = ""
+            continue
+        if in_web:
+            if stripped.startswith("buildCommand:"):
+                build_cmd = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            elif stripped.startswith("startCommand:"):
+                start_cmd = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+    if not build_cmd or not start_cmd:
+        return {
+            "ok": False,
+            "issue": "render_yaml_web_commands_missing",
+            "message": "No buildCommand/startCommand pair found for the first web service in render.yaml.",
+        }
+    return {
+        "ok": True,
+        "buildCommand": build_cmd,
+        "startCommand": start_cmd,
+        "message": "Parsed build and start commands from render.yaml.",
+    }
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = (os.getenv(name) or "").strip().lower()
     if not raw:
@@ -95,6 +142,7 @@ class RenderHostingProbe:
                 "find a matching Render web service by service id or name",
                 "prepare DNS/custom-domain steps for the selected service",
                 "trigger a deploy only with explicit deploy approval",
+                "PATCH build/start commands to match render.yaml with approval=sync_commands (existing Web Service, not Blueprint-only)",
             ],
             "blocked_actions": [
                 "no secret values are written to source files",
@@ -409,6 +457,74 @@ class RenderHostingProbe:
             "message": response.get("message", "Render deploy request completed."),
             "deploy": self._compact_deploy(response.get("payload")),
         }
+
+    def update_service_build_start(
+        self,
+        build_command: str,
+        start_command: str,
+        approval: str = "",
+    ) -> Dict[str, Any]:
+        """PATCH the Render web service so Dashboard build/start match repo render.yaml (requires API key)."""
+        approval_value = (approval or "").strip().lower()
+        if approval_value not in {"sync_commands", "yes", "true", "approved"}:
+            return {
+                "ok": False,
+                "issue": "render_sync_commands_approval_required",
+                "message": "Pass approval=sync_commands before Nomad PATCHes Render build/start commands.",
+            }
+        if not self.api_key:
+            return {
+                "ok": False,
+                "issue": "render_api_key_missing",
+                "message": "Set RENDER_API_KEY before updating the Render service.",
+            }
+        build_command = (build_command or "").strip()
+        start_command = (start_command or "").strip()
+        if not build_command or not start_command:
+            return {
+                "ok": False,
+                "issue": "render_commands_empty",
+                "message": "build_command and start_command must be non-empty.",
+            }
+        service_id = self.service_id or (self.verify_services().get("selected_service") or {}).get("id", "")
+        if not service_id:
+            return {
+                "ok": False,
+                "issue": "render_service_id_missing",
+                "message": "Set NOMAD_RENDER_SERVICE_ID or NOMAD_RENDER_SERVICE_NAME for the Render service to update.",
+            }
+        body = {
+            "serviceDetails": {
+                "buildCommand": build_command,
+                "startCommand": start_command,
+            }
+        }
+        response = self._request("PATCH", f"/services/{service_id}", json=body)
+        out: Dict[str, Any] = {
+            "ok": response.get("ok", False),
+            "issue": response.get("issue", ""),
+            "service_id": service_id,
+            "buildCommand": build_command,
+            "startCommand": start_command,
+            "message": response.get("message", "Render service update completed."),
+        }
+        if response.get("ok") and isinstance(response.get("payload"), dict):
+            out["service"] = self._compact_service(response.get("payload"))
+        return out
+
+    def sync_service_commands_from_render_yaml(self, approval: str = "") -> Dict[str, Any]:
+        """Apply buildCommand/startCommand from repo render.yaml to the selected Render service."""
+        parsed = parse_render_yaml_first_web_service_commands(self.repo_root / "render.yaml")
+        if not parsed.get("ok"):
+            return parsed
+        applied = self.update_service_build_start(
+            str(parsed.get("buildCommand") or ""),
+            str(parsed.get("startCommand") or ""),
+            approval=approval,
+        )
+        if applied.get("ok"):
+            applied["render_yaml"] = str(self.repo_root / "render.yaml")
+        return applied
 
     def _public_check_url(self) -> str:
         configured = (os.getenv("NOMAD_PUBLIC_API_URL") or "").strip().rstrip("/")

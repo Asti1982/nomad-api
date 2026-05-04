@@ -62,9 +62,9 @@ def test_collaboration_prefers_public_home_over_local_api(monkeypatch):
     monkeypatch.setenv("NOMAD_ACCEPT_AGENT_HELP", "true")
     monkeypatch.setenv("NOMAD_LEARN_FROM_AGENT_REPLIES", "true")
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "http://127.0.0.1:8787")
-    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com")
 
     result = collaboration_status()
 
     assert result["ok"] is True
-    assert result["charter"]["public_home"] == "https://syndiode.com/nomad"
+    assert result["charter"]["public_home"] == "https://syndiode.com"

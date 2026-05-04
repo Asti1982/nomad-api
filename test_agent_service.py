@@ -218,14 +218,14 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
 def test_service_catalog_prefers_collaboration_home_when_local_api(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "false")
     monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "http://127.0.0.1:8787")
-    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "https://syndiode.com")
 
     desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
     catalog = desk.service_catalog()
 
-    assert catalog["public_api_url"] == "https://syndiode.com/nomad"
-    assert catalog["pricing"]["x402"]["verify_endpoint"] == "https://syndiode.com/nomad/tasks/x402-verify"
-    assert catalog["agent_attractor_preview"]["agent_attractor_path"] == "https://syndiode.com/nomad/agent-attractor"
+    assert catalog["public_api_url"] == "https://syndiode.com"
+    assert catalog["pricing"]["x402"]["verify_endpoint"] == "https://syndiode.com/tasks/x402-verify"
+    assert catalog["agent_attractor_preview"]["agent_attractor_path"] == "https://syndiode.com/agent-attractor"
 
 
 def test_service_request_detects_self_improvement_tasks(tmp_path, monkeypatch):

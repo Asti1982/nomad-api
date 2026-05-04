@@ -1,4 +1,4 @@
-from render_hosting import RenderHostingProbe
+from render_hosting import RenderHostingProbe, parse_render_yaml_first_web_service_commands
 
 
 class FakeResponse:
@@ -13,7 +13,8 @@ class FakeResponse:
 
 
 def test_render_accepts_nomad_prefixed_render_api_key(monkeypatch, tmp_path):
-    monkeypatch.delenv("RENDER_API_KEY", raising=False)
+    # Keep RENDER_API_KEY set but empty so load_dotenv() does not repopulate it from a local .env file.
+    monkeypatch.setenv("RENDER_API_KEY", "")
     monkeypatch.setenv("NOMAD_RENDER_API_KEY", "rnd-prefixed-fake")
     monkeypatch.setenv("NOMAD_RENDER_SERVICE_NAME", "nomad-api")
     monkeypatch.setenv("NOMAD_RENDER_OWNER_ID", "tea-test")
@@ -205,3 +206,87 @@ def test_render_deploy_requires_explicit_approval(monkeypatch, tmp_path):
 
     assert result["ok"] is False
     assert result["issue"] == "render_deploy_approval_required"
+
+
+def test_parse_render_yaml_first_web_service_commands(tmp_path):
+    yaml_path = tmp_path / "render.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "services:",
+                "  - type: redis",
+                "    name: cache",
+                "  - type: web",
+                "    name: api",
+                "    buildCommand: pip install -r requirements.txt",
+                "    startCommand: python nomad_api.py",
+                "    healthCheckPath: /health",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    out = parse_render_yaml_first_web_service_commands(yaml_path)
+    assert out["ok"] is True
+    assert out["buildCommand"] == "pip install -r requirements.txt"
+    assert out["startCommand"] == "python nomad_api.py"
+
+
+def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
+    yaml_path = tmp_path / "render.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "services:",
+                "  - type: web",
+                "    buildCommand: pip install -r requirements.txt",
+                "    startCommand: python nomad_api.py",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    monkeypatch.setenv("NOMAD_RENDER_SERVICE_ID", "srv-abc")
+
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs.get("json")))
+        assert method == "PATCH"
+        assert url.endswith("/services/srv-abc")
+        assert kwargs.get("json") == {
+            "serviceDetails": {
+                "buildCommand": "pip install -r requirements.txt",
+                "startCommand": "python nomad_api.py",
+            }
+        }
+        return FakeResponse(
+            payload={
+                "service": {
+                    "id": "srv-abc",
+                    "name": "nomad-api",
+                    "type": "web_service",
+                    "url": "https://x.onrender.com",
+                }
+            }
+        )
+
+    monkeypatch.setattr("render_hosting.requests.request", fake_request)
+    out = RenderHostingProbe(repo_root=tmp_path).sync_service_commands_from_render_yaml(
+        approval="sync_commands"
+    )
+    assert out["ok"] is True
+    assert out["service_id"] == "srv-abc"
+    assert len(calls) == 1
+
+
+def test_sync_service_commands_requires_approval(monkeypatch, tmp_path):
+    yaml_path = tmp_path / "render.yaml"
+    yaml_path.write_text(
+        "services:\n  - type: web\n    buildCommand: a\n    startCommand: b\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    monkeypatch.setenv("NOMAD_RENDER_SERVICE_ID", "srv-abc")
+    out = RenderHostingProbe(repo_root=tmp_path).sync_service_commands_from_render_yaml(approval="")
+    assert out["ok"] is False
+    assert out["issue"] == "render_sync_commands_approval_required"

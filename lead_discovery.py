@@ -4,6 +4,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -17,6 +18,77 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_LEAD_SOURCES_PATH = ROOT / "nomad_lead_sources.json"
 DEFAULT_ADDRESSABLE_PAINS_PATH = ROOT / "nomad_addressable_painpoints.json"
 DEFAULT_LEAD_FOCUS = "compute_auth"
+
+# Hosts where issue URLs live but outbound agent contact must not target (mirrors lead_conversion).
+_ACQUIRE_EXCLUDE_HOSTS = frozenset(
+    {
+        "github.com",
+        "www.github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "discord.com",
+        "discord.gg",
+        "linkedin.com",
+        "www.linkedin.com",
+        "reddit.com",
+        "x.com",
+        "twitter.com",
+        "t.me",
+        "telegram.me",
+    }
+)
+
+_ACQUIRE_MACHINE_PATH_HINTS = (
+    "/.well-known/agent-card.json",
+    "/.well-known/agent.json",
+    "/a2a",
+    "/direct",
+    "/message",
+    "/messages",
+    "/webhook",
+    "/inbox",
+    "/tasks",
+    "/service",
+)
+
+
+def _machine_endpoint_urls_from_text(text: str, *, limit: int = 8) -> List[str]:
+    """Collect https URLs in free text that look like public machine agent surfaces (not GitHub issue pages)."""
+    if not text or limit <= 0:
+        return []
+    raw: List[str] = []
+    for match in re.finditer(r"https?://[^\s\)\]>'\"<>]+", text, flags=re.IGNORECASE):
+        u = match.group(0).rstrip(").,;:\"']>")
+        parsed = urlparse(u.split("#", 1)[0])
+        if parsed.scheme not in {"http", "https"}:
+            continue
+        host = (parsed.hostname or "").lower()
+        if host in _ACQUIRE_EXCLUDE_HOSTS:
+            continue
+        path = parsed.path.lower()
+        if not any(hint in path for hint in _ACQUIRE_MACHINE_PATH_HINTS):
+            continue
+        raw.append(u.split("#", 1)[0])
+    seen: set[str] = set()
+    uniq: List[str] = []
+    for u in raw:
+        if u in seen:
+            continue
+        seen.add(u)
+        uniq.append(u)
+
+    def _rank(u: str) -> tuple:
+        ul = u.lower()
+        if "agent-card" in ul:
+            return (0, ul)
+        if "/.well-known/agent" in ul:
+            return (1, ul)
+        if "/a2a" in ul:
+            return (2, ul)
+        return (9, ul)
+
+    uniq.sort(key=_rank)
+    return uniq[:limit]
 
 
 DEFAULT_AGENT_PAIN_QUERIES = [
@@ -109,7 +181,38 @@ AGENT_INFRA_CORE_SERVICE_TYPES: frozenset[str] = frozenset(
 )
 SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] = set().union(
     *(SERVICE_TYPE_SIGNAL_TERMS[t] for t in AGENT_INFRA_CORE_SERVICE_TYPES)
-)
+) | {
+    # Extra signals for machine_human_gap focus (merged here so _service_type_scores never iterates a non-row key).
+    "idempotency",
+    "idempotent",
+    "duplicate",
+    "dedupe",
+    "cold",
+    "spindown",
+    "hibernate",
+    "percentile",
+    "p99",
+    "tail",
+    "sampling",
+    "aggregate",
+    "compaction",
+    "rubber",
+    "stamp",
+    "fatigue",
+    "herd",
+    "throttle",
+    "backpressure",
+}
+
+AGENT_INFRA_STYLE_FOCUSES: frozenset[str] = frozenset({"agent_infra_prime", "machine_human_gap"})
+
+
+def focus_signal_term_set(focus_id: str) -> set[str]:
+    """Pain-term set used for focus_score / qualification; machine_human_gap shares agent_infra_prime wiring."""
+    if focus_id == "machine_human_gap":
+        return set(SERVICE_TYPE_SIGNAL_TERMS.get("agent_infra_prime", set()))
+    return set(SERVICE_TYPE_SIGNAL_TERMS.get(focus_id, set()))
+
 
 AGENT_INFRA_TEXT_FOCUS_MARKERS: tuple[str, ...] = (
     "function response parts",
@@ -142,6 +245,44 @@ AGENT_INFRA_TEXT_FOCUS_MARKERS: tuple[str, ...] = (
     "verifiable handoff",
     "resume without",
     "tool trace proof",
+)
+
+# Issues humans narrativize ("the model is moody") instead of instrumenting (timeouts, SLOs, idempotency).
+MACHINE_HUMAN_GAP_TEXT_MARKERS: tuple[str, ...] = (
+    "works on my machine",
+    "only in prod",
+    "only in production",
+    "cold start",
+    "wake up",
+    "spin up",
+    "first request",
+    "health check timed out",
+    "readiness probe",
+    "retry storm",
+    "thundering herd",
+    "at-least-once",
+    "exactly-once",
+    "duplicate submission",
+    "lost correlation",
+    "no correlation id",
+    "average latency",
+    "p50",
+    "p95",
+    "p99",
+    "tail latency",
+    "log sampling",
+    "sampled logs",
+    "aggregated metrics",
+    "mean hides",
+    "rubber stamp",
+    "approval fatigue",
+    "skipped postmortem",
+    "no runbook",
+    "status quo",
+    "social signal",
+    "flakey",
+    "flaky",
+    "intermittent",
 )
 
 INTER_AGENT_WITNESS_TEXT_MARKERS: tuple[str, ...] = (
@@ -202,6 +343,7 @@ DEFAULT_MIN_QUALIFIED_SCORE = {
     "chain_deadline_budget": 6.0,
     "inter_agent_witness": 6.0,
     "agent_infra_prime": 6.0,
+    "machine_human_gap": 6.0,
     "balanced": 0.0,
 }
 
@@ -1336,6 +1478,14 @@ class LeadDiscoveryScout:
         )
         # CodeBuddy pain enrichment — gated, non-blocking, additive only
         codebuddy_enrichment = self._try_codebuddy_pain_enrichment(body)
+        machine_urls = _machine_endpoint_urls_from_text(text)
+        agent_card_url = ""
+        for candidate in machine_urls:
+            cl = candidate.lower()
+            if "agent-card" in cl or "/.well-known/agent" in cl:
+                agent_card_url = candidate
+                break
+        endpoint_url = agent_card_url or (machine_urls[0] if machine_urls else "")
         return {
             "source": "github_issues",
             "title": title,
@@ -1387,6 +1537,9 @@ class LeadDiscoveryScout:
                 "human direct message",
                 "private access request",
             ],
+            "endpoint_url": endpoint_url,
+            "agent_card_url": agent_card_url,
+            "discovered_machine_endpoints": machine_urls[:5],
         }
 
     def _matched_pain_terms(self, text: str) -> List[str]:
@@ -2157,12 +2310,13 @@ class LeadDiscoveryScout:
                 ]
             ).lower()
             return any(m in text for m in INTER_AGENT_WITNESS_TEXT_MARKERS)
-        if selected_focus == "agent_infra_prime":
+        if selected_focus in AGENT_INFRA_STYLE_FOCUSES:
             rst = str(lead.get("recommended_service_type") or "").strip()
             if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
                 return True
             relevant = SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] & pain_terms
-            if len(relevant) >= 2:
+            min_terms = 1 if selected_focus == "machine_human_gap" else 2
+            if len(relevant) >= min_terms:
                 return True
             text = "\n".join(
                 [
@@ -2171,7 +2325,10 @@ class LeadDiscoveryScout:
                     " ".join(str(item) for item in (lead.get("pain_terms") or [])),
                 ]
             ).lower()
-            return any(m in text for m in AGENT_INFRA_TEXT_FOCUS_MARKERS)
+            markers = AGENT_INFRA_TEXT_FOCUS_MARKERS + (
+                MACHINE_HUMAN_GAP_TEXT_MARKERS if selected_focus == "machine_human_gap" else ()
+            )
+            return any(m in text for m in markers)
         return False
 
     def _service_type_scores(self, pain_terms: List[str], lowered_text: str) -> Dict[str, float]:
@@ -2349,7 +2506,7 @@ class LeadDiscoveryScout:
         if preferred and str(lead.get("recommended_service_type") or "") == preferred:
             score += 3.0
         pain_terms = {str(item).strip().lower() for item in (lead.get("pain_terms") or [])}
-        relevant_terms = SERVICE_TYPE_SIGNAL_TERMS.get(selected_focus, set()) & pain_terms
+        relevant_terms = focus_signal_term_set(selected_focus) & pain_terms
         score += min(len(relevant_terms), 4) * 1.2
         score += min(float(lead.get("addressable_score") or 0.0), 10.0) * 0.4
         if lead.get("addressable_now"):
@@ -2389,7 +2546,7 @@ class LeadDiscoveryScout:
         if float(lead.get("focus_score") or 0.0) < min_score:
             return False
         pain_terms = {str(item).strip().lower() for item in (lead.get("pain_terms") or [])}
-        relevant_terms = SERVICE_TYPE_SIGNAL_TERMS.get(selected_focus, set()) & pain_terms
+        relevant_terms = focus_signal_term_set(selected_focus) & pain_terms
         if selected_focus == "compute_auth":
             if len(relevant_terms) < 2 and str(lead.get("recommended_service_type") or "") != "compute_auth":
                 return False
@@ -2458,9 +2615,10 @@ class LeadDiscoveryScout:
                 or str(lead.get("recommended_service_type") or "").strip() == "inter_agent_witness"
                 or float(lead.get("pain_score") or 0.0) >= 5.5
             )
-        if selected_focus == "agent_infra_prime":
+        if selected_focus in AGENT_INFRA_STYLE_FOCUSES:
+            min_terms = 1 if selected_focus == "machine_human_gap" else 2
             return bool(
-                len(relevant_terms) >= 2
+                len(relevant_terms) >= min_terms
                 or str(lead.get("recommended_service_type") or "").strip() in AGENT_INFRA_CORE_SERVICE_TYPES
                 or float(lead.get("pain_score") or 0.0) >= 5.5
             )

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
-def build_machine_runtime_contract(*, public_base_url: str) -> Dict[str, Any]:
+def build_machine_runtime_contract(
+    *,
+    public_base_url: str,
+    service_work_approval: Optional[str] = None,
+) -> Dict[str, Any]:
     """Explicit agent-native expectations: HTTP success is not rapport; errors are state."""
     b = (public_base_url or "").strip().rstrip("/")
 
@@ -35,6 +39,9 @@ def build_machine_runtime_contract(*, public_base_url: str) -> Dict[str, Any]:
         ],
         "endpoints": {
             "agent_growth_post": u("/agent-growth"),
+            "tasks_post": u("/tasks"),
+            "tasks_work_post": u("/tasks/work"),
+            "tasks_x402_verify_post": u("/tasks/x402-verify"),
             "products_get": u("/products"),
             "products_post": u("/products"),
             "swarm_join_contract_get": u("/swarm/join"),
@@ -57,4 +64,15 @@ def build_machine_runtime_contract(*, public_base_url: str) -> Dict[str, Any]:
             "X-Tenant-ID",
         ],
         "preferred_accept": "application/json",
+        "paid_service_work": {
+            "autopilot_approval_scope": (service_work_approval or "").strip() or "draft_only",
+            "post_body_hint": {
+                "task_id": "string",
+                "approval": "operator_granted when operator grant includes service_work; else draft_only",
+            },
+            "policy": (
+                "Payment verifies first (wallet or x402); work_task produces draft_ready artifacts. "
+                "operator_granted widens bounded execution flags in work_product when the operator grant allows service_work."
+            ),
+        },
     }

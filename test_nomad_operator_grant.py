@@ -30,6 +30,14 @@ def test_operator_grant_expands_bounded_actions(monkeypatch):
     assert "spending money" in " ".join(grant["requires_explicit_approval"])
 
 
+def test_agent_service_work_approval_overrides_autopilot_when_set(monkeypatch):
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "product_sales_agent_help_self_development")
+    monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "development,service_work")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_SERVICE_APPROVAL", "draft_only")
+    monkeypatch.setenv("NOMAD_AGENT_SERVICE_WORK_APPROVAL", "operator_granted")
+    assert service_approval_scope() == "operator_granted"
+
+
 def test_operator_grant_can_be_disabled(monkeypatch):
     monkeypatch.setenv("NOMAD_OPERATOR_GRANT", "disabled")
     monkeypatch.setenv("NOMAD_OPERATOR_GRANT_ACTIONS", "development,service_work")

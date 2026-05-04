@@ -943,6 +943,8 @@ def _compact_text(result: Dict[str, Any]) -> str:
         sw = result.get("swarm_accumulation") or {}
         lines = [
             "Nomad agent growth pipeline",
+            f"send_outreach: {bool(result.get('send_outreach'))}",
+            f"approval_used: {result.get('approval_used') or '(none)'}",
             f"leads_candidates: {ld}",
             f"conversions: {cc}",
             f"products_this_pass: {pc}",
@@ -1246,6 +1248,8 @@ def build_query(args: argparse.Namespace) -> str:
         return ""
     if command == "render-logs":
         raise ValueError("render-logs is handled directly in run_once")
+    if command == "render-sync-commands":
+        raise ValueError("render-sync-commands is handled directly in run_once")
     raise ValueError(f"Unsupported command: {command}")
 
 
@@ -1410,6 +1414,7 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=(getattr(args, "base_url", None) or "").strip(),
                 run_product_factory=not bool(getattr(args, "no_products", False)),
                 send_outreach=bool(getattr(args, "send", False)),
+                approval=str(getattr(args, "approval", "") or "").strip(),
                 swarm_feed=False if bool(getattr(args, "no_swarm_feed", False)) else None,
             )
         elif args.command == "agent-native-index":
@@ -1561,6 +1566,12 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 owner_id=str(getattr(args, "owner_id", "") or "").strip(),
                 limit=int(getattr(args, "limit", 40) or 40),
                 log_type=str(getattr(args, "log_type", "app") or "app").strip(),
+            )
+        elif args.command == "render-sync-commands":
+            from render_hosting import RenderHostingProbe
+
+            result = RenderHostingProbe().sync_service_commands_from_render_yaml(
+                approval=str(getattr(args, "approval", "") or "").strip(),
             )
         elif args.command == "lead-calibrate":
             from lead_discovery import LeadDiscoveryScout
@@ -1885,6 +1896,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Request outbound send during conversion (same semantics as convert-leads send).",
     )
     agent_growth.add_argument(
+        "--approval",
+        default="",
+        help="Lead conversion approval scope (e.g. machine_endpoint for public AI agent endpoints; or NOMAD_AGENT_GROWTH_APPROVAL).",
+    )
+    agent_growth.add_argument(
         "--no-swarm-feed",
         action="store_true",
         help="Disable swarm prospect feed for this run (overrides env feed on).",
@@ -2003,6 +2019,15 @@ def build_parser() -> argparse.ArgumentParser:
         dest="log_type",
         metavar="LOG_TYPE",
         help="Render log type filter, e.g. app, build, request.",
+    )
+    render_sync = subparsers.add_parser(
+        "render-sync-commands",
+        help="PATCH Render web service build/start commands from repo render.yaml (requires RENDER_API_KEY).",
+    )
+    render_sync.add_argument(
+        "--approval",
+        default="",
+        help='Required: pass sync_commands to confirm (same idea as deploy approval).',
     )
     subparsers.add_parser("collaboration", help="Show Nomad's outward AI-agent collaboration charter.")
     subparsers.add_parser("mutual-aid-status", help="Show Nomad v3.2 Mutual-Aid self-evolution status.")

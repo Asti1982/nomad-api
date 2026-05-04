@@ -67,14 +67,14 @@ def test_cryptogrift_guard_dry_run_builds_nomad_join_payload():
     agent = CryptoGriftGuardAgent()
 
     result = agent.connect_to_nomad(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="x402 payment callback fails after tx",
         dry_run=True,
     )
 
     assert result["ok"] is True
     assert result["dry_run"] is True
-    assert result["endpoints"]["swarm_join"] == "https://syndiode.com/nomad/swarm/join"
+    assert result["endpoints"]["swarm_join"] == "https://syndiode.com/swarm/join"
     assert result["join_payload"]["agent_id"] == "cryptogriftguard.agent"
     assert "payment" in result["join_payload"]["capabilities"]
     assert "no_private_keys" in result["join_payload"]["constraints"]
@@ -86,13 +86,13 @@ def test_cryptogrift_guard_connect_posts_to_swarm_join():
     agent = CryptoGriftGuardAgent(session=session)
 
     result = agent.connect_to_nomad(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="wallet payment blocker",
         dry_run=False,
     )
 
     assert result["ok"] is True
-    assert session.posts[0]["url"] == "https://syndiode.com/nomad/swarm/join"
+    assert session.posts[0]["url"] == "https://syndiode.com/swarm/join"
     assert session.posts[0]["json"]["preferred_role"] == "peer_solver"
     assert result["receipt"]["receipt_id"] == "nomad-swarm-test"
 
@@ -101,7 +101,7 @@ def test_cryptogrift_guard_connect_failure_is_structured():
     agent = CryptoGriftGuardAgent(session=FailingSession())
 
     result = agent.connect_to_nomad(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="wallet payment blocker",
         dry_run=False,
     )
@@ -117,7 +117,7 @@ def test_cryptogrift_guard_engages_nomad_development_exchange():
     agent = CryptoGriftGuardAgent(session=session)
 
     result = agent.engage_nomad(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="x402 wallet payment callback fails after tx",
         join_first=True,
         dry_run=False,
@@ -125,8 +125,8 @@ def test_cryptogrift_guard_engages_nomad_development_exchange():
 
     assert result["mode"] == "cryptogriftguard_modal_engagement"
     assert result["ok"] is True
-    assert session.posts[0]["url"] == "https://syndiode.com/nomad/swarm/join"
-    assert session.posts[1]["url"] == "https://syndiode.com/nomad/swarm/develop"
+    assert session.posts[0]["url"] == "https://syndiode.com/swarm/join"
+    assert session.posts[1]["url"] == "https://syndiode.com/swarm/develop"
     assert session.posts[1]["json"]["agent_id"] == "cryptogriftguard.agent"
     assert session.posts[1]["json"]["pain_type"] == "payment"
     assert result["development_result"]["schema"] == "nomad.agent_development_exchange.v1"
@@ -134,14 +134,14 @@ def test_cryptogrift_guard_engages_nomad_development_exchange():
 
 def test_cryptogrift_guard_engage_dry_run_contains_development_payload():
     result = CryptoGriftGuardAgent().engage_nomad(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="payment blocker",
         dry_run=True,
     )
 
     assert result["dry_run"] is True
     assert result["development_payload"]["agent_id"] == "cryptogriftguard.agent"
-    assert result["development_payload"]["machine_profile"]["nomad_routes"]["swarm_develop"] == "https://syndiode.com/nomad/swarm/develop"
+    assert result["development_payload"]["machine_profile"]["nomad_routes"]["swarm_develop"] == "https://syndiode.com/swarm/develop"
 
 
 def test_cryptogrift_guard_engages_nomad_brain_directly(tmp_path):
@@ -149,7 +149,7 @@ def test_cryptogrift_guard_engages_nomad_brain_directly(tmp_path):
     from nomad_swarm_registry import SwarmJoinRegistry
 
     result = CryptoGriftGuardAgent().engage_nomad_brain(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         signal="x402 wallet payment blocker",
         registry=SwarmJoinRegistry(path=tmp_path / "swarm.json"),
         development_exchange=AgentDevelopmentExchange(path=tmp_path / "development.json"),
@@ -163,7 +163,7 @@ def test_cryptogrift_guard_engages_nomad_brain_directly(tmp_path):
 
 
 def test_cli_runs_cryptogrift_agent_without_starting_nomad(monkeypatch):
-    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com")
 
     result = run_once(["cryptogrift-agent", "--signal", "wallet x402 payment blocker", "--json"])
 
@@ -173,7 +173,7 @@ def test_cli_runs_cryptogrift_agent_without_starting_nomad(monkeypatch):
 
 
 def test_cli_runs_cryptogrift_engage_dry_run(monkeypatch):
-    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com")
 
     result = run_once(["cryptogrift-agent", "--engage", "--signal", "wallet x402 payment blocker", "--json"])
 
@@ -183,7 +183,7 @@ def test_cli_runs_cryptogrift_engage_dry_run(monkeypatch):
 
 
 def test_cli_runs_cryptogrift_brain_engagement(monkeypatch):
-    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com/nomad")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://syndiode.com")
 
     result = run_once(["cryptogrift-agent", "--brain", "--signal", "wallet x402 payment blocker", "--json"])
 

@@ -940,6 +940,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 base_url=str(payload.get("base_url") or payload.get("base") or "").strip(),
                 run_product_factory=not bool(payload.get("no_products") or payload.get("skip_products")),
                 send_outreach=bool(payload.get("send") or payload.get("send_outreach")),
+                approval=str(payload.get("approval") or "").strip(),
                 swarm_feed=None
                 if str(payload.get("swarm_feed", "")).strip().lower() in {"0", "false", "no", "off"}
                 else (True if str(payload.get("swarm_feed", "")).strip().lower() in {"1", "true", "yes", "on"} else None),

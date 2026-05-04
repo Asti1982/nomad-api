@@ -248,7 +248,7 @@ def test_operator_autonomy_step_skips_growth_and_chains_leads_cycle(monkeypatch,
         lead_query="agent auth",
         record_metrics=True,
         metrics_path=metrics,
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
     assert out["mode"] == "nomad_operator_autonomy_step"
     assert out["ok"] is True

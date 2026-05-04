@@ -42,5 +42,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert eps["inter_agent_witness_offer_get"].endswith("/.well-known/nomad-inter-agent-witness-offer.json")
     assert eps["peer_acquisition_get"].endswith("/.well-known/nomad-peer-acquisition.json")
     assert eps["agent_native_index_get"].startswith("https://api.example")
+    assert eps.get("tasks_work_post", "").endswith("/tasks/work")
+    assert (mrc.get("paid_service_work") or {}).get("post_body_hint")
     ch = out.get("anthropic_operator_channels") or []
     assert any(c.get("audience") == "humans_only" for c in ch)

@@ -59,12 +59,12 @@ def test_swarm_registry_register_join_tracks_connected_agents(tmp_path: Path):
             },
             "machine_profile": {"profile_hint": "gpu_ai"},
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         remote_addr="127.0.0.1",
     )
 
     summary = registry.summary()
-    manifest = registry.public_manifest(base_url="https://syndiode.com/nomad")
+    manifest = registry.public_manifest(base_url="https://syndiode.com")
 
     assert receipt["ok"] is True
     assert receipt["accepted"] is True
@@ -72,8 +72,8 @@ def test_swarm_registry_register_join_tracks_connected_agents(tmp_path: Path):
     assert summary["connected_agents"] == 1
     assert manifest["connected_agents"] == 1
     assert manifest["recent_nodes"][0]["agent_id"] == "nomadportable-desktop-1"
-    assert manifest["network_board"] == "https://syndiode.com/nomad/swarm/network"
-    assert manifest["coordination_board"] == "https://syndiode.com/nomad/swarm/coordinate"
+    assert manifest["network_board"] == "https://syndiode.com/swarm/network"
+    assert manifest["coordination_board"] == "https://syndiode.com/swarm/coordinate"
     assert manifest["fast_onboarding"]["schema"] == "nomad.agent_fast_onboarding.v1"
     assert manifest["growth_surface"]["schema"] == "nomad.public_growth_surface.v1"
     assert manifest["growth_surface"]["peer_join_value"]["schema"] == "nomad.peer_join_value.v1"
@@ -94,12 +94,12 @@ def test_swarm_registry_register_join_tracks_connected_agents(tmp_path: Path):
         == "nomad.human_psychic_avoidance_lanes.v1"
     )
     assert manifest["growth_surface"]["canonical_urls"]["agent_card"].endswith("/.well-known/agent-card.json")
-    assert manifest["fast_onboarding"]["first_actions"][0]["endpoint"] == "https://syndiode.com/nomad/swarm/develop"
+    assert manifest["fast_onboarding"]["first_actions"][0]["endpoint"] == "https://syndiode.com/swarm/develop"
     assert manifest["fast_onboarding"]["minimal_join_payload"]["constraints"][0] == "no_secrets"
     assert manifest["first_agent_readiness"]["schema"] == "nomad.first_external_agent_readiness.v1"
     assert manifest["first_agent_readiness"]["activation_budget"]["max_active_agents_per_blocker"] == 2
-    assert receipt["next"]["network"] == "https://syndiode.com/nomad/swarm/network"
-    assert receipt["next"]["coordinate"] == "https://syndiode.com/nomad/swarm/coordinate"
+    assert receipt["next"]["network"] == "https://syndiode.com/swarm/network"
+    assert receipt["next"]["coordinate"] == "https://syndiode.com/swarm/coordinate"
 
 
 def test_swarm_registry_normalizes_portable_join_without_explicit_agent_id(tmp_path: Path):
@@ -119,7 +119,7 @@ def test_swarm_registry_normalizes_portable_join_without_explicit_agent_id(tmp_p
                 "local_agent_card": "http://127.0.0.1:8878/.well-known/agent-card.json",
             },
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
 
     summary = registry.summary()
@@ -140,7 +140,7 @@ def test_swarm_registry_coordination_board_routes_agents_by_role(tmp_path: Path)
             "reciprocity": "Can return provider status and repro evidence.",
             "constraints": ["No secrets."],
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
     registry.register_join(
         {
@@ -150,17 +150,17 @@ def test_swarm_registry_coordination_board_routes_agents_by_role(tmp_path: Path)
             "request": "I can bring public agent pain leads.",
             "reciprocity": "Can send LEAD_URL plus public evidence.",
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
 
     board = registry.coordination_board(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         focus_pain_type="compute_auth",
     )
 
     assert board["schema"] == "nomad.swarm_coordination_board.v1"
     assert board["connected_agents"] == 2
-    assert board["help_lanes"][0]["entrypoint"] == "https://syndiode.com/nomad/a2a/message"
+    assert board["help_lanes"][0]["entrypoint"] == "https://syndiode.com/a2a/message"
     assert any(item["recommended_role"] == "peer_solver" for item in board["assignments"])
     assert any(item["recommended_role"] == "reseller" for item in board["assignments"])
     assert any(rule["send_to"].endswith("/aid") for rule in board["routing_rules"])
@@ -174,7 +174,7 @@ def test_swarm_registry_accumulates_contacted_agents_as_prospects(tmp_path: Path
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
 
     accumulated = registry.accumulate_agents(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         focus_pain_type="compute_auth",
         contacts=[
             {
@@ -196,7 +196,7 @@ def test_swarm_registry_accumulates_contacted_agents_as_prospects(tmp_path: Path
     )
     summary = registry.summary()
     board = registry.coordination_board(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         focus_pain_type="compute_auth",
     )
 
@@ -213,7 +213,7 @@ def test_swarm_registry_accumulates_contacted_agents_as_prospects(tmp_path: Path
 def test_swarm_join_promotes_accumulated_prospect(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
     registry.accumulate_agents(
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         contacts=[
             {
                 "contact_id": "contact-1",
@@ -223,7 +223,7 @@ def test_swarm_join_promotes_accumulated_prospect(tmp_path: Path):
             }
         ],
     )
-    status = registry.accumulation_status(base_url="https://syndiode.com/nomad")
+    status = registry.accumulation_status(base_url="https://syndiode.com")
 
     receipt = registry.register_join(
         {
@@ -232,7 +232,7 @@ def test_swarm_join_promotes_accumulated_prospect(tmp_path: Path):
             "request": "Join as verifier.",
             "reciprocity": "Can send evidence.",
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
 
     summary = registry.summary()
@@ -257,16 +257,16 @@ def test_first_real_agent_join_receives_arrival_plan(tmp_path: Path):
             "current_blockers": ["x402 tx callback fails after payment verification"],
             "surfaces": {"local_agent_card": "https://walletfixer.example/.well-known/agent-card.json"},
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
-    board = registry.coordination_board(base_url="https://syndiode.com/nomad", focus_pain_type="payment")
+    board = registry.coordination_board(base_url="https://syndiode.com", focus_pain_type="payment")
 
     plan = receipt["arrival_plan"]
     assert plan["schema"] == "nomad.first_agent_arrival_plan.v1"
     assert plan["recommended_role"] == "peer_solver"
     assert plan["lane_id"] == "peer_evidence_exchange"
     assert plan["service_type"] == "payment"
-    assert plan["first_exchange"]["endpoint"] == "https://syndiode.com/nomad/aid"
+    assert plan["first_exchange"]["endpoint"] == "https://syndiode.com/aid"
     assert plan["compute_policy"]["max_parallel_specialists"] == 2
     assert plan["compute_policy"]["do_not_wake_full_swarm"] is True
     assert board["assignments"][0]["arrival_plan"]["service_type"] == "payment"
@@ -283,12 +283,12 @@ def test_customer_join_gets_development_exchange_contract(tmp_path: Path):
             "reciprocity": "Can send error class after trying the plan.",
             "constraints": ["No secrets."],
         },
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
     )
 
     plan = receipt["arrival_plan"]
     assert plan["recommended_role"] == "customer"
-    assert plan["first_exchange"]["endpoint"] == "https://syndiode.com/nomad/swarm/develop"
+    assert plan["first_exchange"]["endpoint"] == "https://syndiode.com/swarm/develop"
     assert plan["first_exchange"]["required_fields"] == ["agent_id", "problem", "pain_type"]
     assert plan["compute_policy"]["preferred_runtime"] == "local_first"
 
@@ -327,7 +327,7 @@ def test_accumulate_github_leads_creates_prospect(tmp_path: Path):
                 "service_type": "compute_auth",
             }
         ],
-        base_url="https://syndiode.com/nomad",
+        base_url="https://syndiode.com",
         focus_pain_type="compute_auth",
     )
     assert out.get("ok") is True
