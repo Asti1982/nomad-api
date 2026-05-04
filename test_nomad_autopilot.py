@@ -1209,3 +1209,28 @@ def test_autopilot_all_surfaces_mode_exposes_bootstrap_flow(monkeypatch, tmp_pat
     assert all_surfaces.get("enabled") is True
     assert str(all_surfaces.get("surface_urls", {}).get("bootstrap") or "").endswith("/swarm/bootstrap")
     assert "bootstrap" in (all_surfaces.get("activation_order") or [])
+
+
+def test_autopilot_all_surfaces_enforce_blocks_conversion_and_outreach_without_mode(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_ALL_SURFACES", "false")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_ALL_SURFACES_ENFORCE", "true")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=True, send_a2a=True)
+
+    gate = result.get("all_surfaces_gate") or {}
+    assert gate.get("blocked") is True
+    assert gate.get("reason") == "all_surfaces_mode_required"
+    assert result.get("lead_conversion", {}).get("skipped") is True
+    assert result.get("lead_conversion", {}).get("reason") == "all_surfaces_mode_required"
+    assert result.get("outreach", {}).get("skipped") is True
+    assert result.get("outreach", {}).get("reason") == "all_surfaces_mode_required"

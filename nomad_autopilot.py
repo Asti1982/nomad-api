@@ -92,6 +92,9 @@ class NomadAutopilot:
         self.all_surfaces_mode = _bool_env(
             "NOMAD_AUTOPILOT_ALL_SURFACES", when_continuous=True, when_idle=False
         )
+        self.all_surfaces_enforce = _bool_env(
+            "NOMAD_AUTOPILOT_ALL_SURFACES_ENFORCE", when_continuous=False, when_idle=False
+        )
         self.agent_growth_pipeline_enabled = _bool_env(
             "NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", when_continuous=True, when_idle=False
         )
@@ -228,6 +231,11 @@ class NomadAutopilot:
         reply_conversion = self._convert_replies_to_service_tasks(contact_poll)
 
         journal_state = self.journal.load()
+        surface_gate = self._all_surfaces_gate(
+            enabled=self.all_surfaces_mode,
+            enforce=self.all_surfaces_enforce,
+            public_api_url=public_api_url,
+        )
         selected_objective = (
             (objective or "").strip()
             or self._service_objective(service_summary)
@@ -257,6 +265,7 @@ class NomadAutopilot:
             limit=conversion_effective_limit,
             explicit_query=conversion_query or outreach_query,
             send_a2a=effective_send_a2a,
+            blocked_reason=surface_gate.get("lead_conversion_blocked_reason", ""),
         )
         lead_delta = self._lead_conversion_contact_delta(lead_conversion)
         remaining_to_send = max(0, remaining_to_send - lead_delta["sent"])
@@ -275,6 +284,7 @@ class NomadAutopilot:
             limit=outreach_effective_limit,
             explicit_query=outreach_query,
             send_outreach=effective_send_outreach,
+            blocked_reason=surface_gate.get("outreach_blocked_reason", ""),
         )
         daily_quota = self._daily_quota_after(
             start=daily_quota_start,
@@ -381,6 +391,7 @@ class NomadAutopilot:
             "mutual_aid": mutual_aid,
             "swarm_coordination": swarm_coordination,
             "all_surfaces": all_surfaces,
+            "all_surfaces_gate": surface_gate,
             "agent_growth_pipeline": agent_growth_pipeline_report,
             "autonomous_development": autonomous_development,
             "efficiency_plan": efficiency_plan,
@@ -523,6 +534,49 @@ class NomadAutopilot:
                 "lead_conversions_prepared": int(sum(int(v or 0) for v in lead_stats.values())) if lead_stats else 0,
                 "outreach_sent": sent_outreach,
             },
+        }
+
+    def _all_surfaces_gate(
+        self,
+        *,
+        enabled: bool,
+        enforce: bool,
+        public_api_url: str,
+    ) -> Dict[str, Any]:
+        if not enforce:
+            return {
+                "enabled": bool(enabled),
+                "enforced": False,
+                "blocked": False,
+                "reason": "",
+                "outreach_blocked_reason": "",
+                "lead_conversion_blocked_reason": "",
+            }
+        if not enabled:
+            return {
+                "enabled": False,
+                "enforced": True,
+                "blocked": True,
+                "reason": "all_surfaces_mode_required",
+                "outreach_blocked_reason": "all_surfaces_mode_required",
+                "lead_conversion_blocked_reason": "all_surfaces_mode_required",
+            }
+        if not self._is_public_service_url(public_api_url):
+            return {
+                "enabled": True,
+                "enforced": True,
+                "blocked": True,
+                "reason": "public_api_url_required",
+                "outreach_blocked_reason": "public_api_url_required",
+                "lead_conversion_blocked_reason": "public_api_url_required",
+            }
+        return {
+            "enabled": True,
+            "enforced": True,
+            "blocked": False,
+            "reason": "",
+            "outreach_blocked_reason": "",
+            "lead_conversion_blocked_reason": "",
         }
 
     def _decision(self) -> Dict[str, Any]:
@@ -1256,6 +1310,7 @@ class NomadAutopilot:
         limit: int,
         explicit_query: str,
         send_outreach: bool,
+        blocked_reason: str = "",
     ) -> Dict[str, Any]:
         public_api_url = preferred_public_base_url()
         service_type = self._preferred_outreach_service_type(self_improvement)
@@ -1274,6 +1329,17 @@ class NomadAutopilot:
                 "query": query,
                 "service_type_focus": service_type,
                 "analysis": "Outreach skipped because the per-cycle outreach limit is zero.",
+            }
+        if blocked_reason:
+            return {
+                "mode": "agent_cold_outreach_campaign",
+                "deal_found": False,
+                "ok": True,
+                "skipped": True,
+                "reason": blocked_reason,
+                "query": query,
+                "service_type_focus": service_type,
+                "analysis": "Outreach skipped by all-surfaces contract-first enforcement.",
             }
         if send_outreach and not self._is_public_service_url(public_api_url):
             return {
@@ -1305,6 +1371,7 @@ class NomadAutopilot:
         limit: int,
         explicit_query: str,
         send_a2a: bool,
+        blocked_reason: str = "",
     ) -> Dict[str, Any]:
         cap = max(0, int(limit or 0))
         if cap <= 0:
@@ -1315,6 +1382,15 @@ class NomadAutopilot:
                 "skipped": True,
                 "reason": "conversion_limit_zero",
                 "analysis": "Lead conversion skipped because conversion limit is zero.",
+            }
+        if blocked_reason:
+            return {
+                "mode": "lead_conversion_pipeline",
+                "deal_found": False,
+                "ok": True,
+                "skipped": True,
+                "reason": blocked_reason,
+                "analysis": "Lead conversion skipped by all-surfaces contract-first enforcement.",
             }
         public_api_url = preferred_public_base_url()
         effective_send = bool(send_a2a and self._is_public_service_url(public_api_url))
