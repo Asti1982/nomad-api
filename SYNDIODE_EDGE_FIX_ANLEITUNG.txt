@@ -131,6 +131,10 @@ Deploy manuell anstoßen (nur wenn du willst): Render Dashboard → Service →
 "Manual Deploy" ODER über Nomad/Render-API mit expliziter Freigabe (siehe
 render_hosting.py trigger_deploy — braucht u.a. service id).
 
+Build Command (wichtig): **pip install -r requirements.txt** — nicht nur
+``python --version``. Sonst fehlt ``python-dotenv`` und der Start bricht ab
+(app.py kann auf Render einmalig nachinstallieren, ist aber langsamer).
+
 Start Command (wichtig): In den Service-Settings **python app.py** setzen.
 Falls Render stattdessen **python main.py** ohne Argumente ausführt: Im Repo
 startet **main.py** dann automatisch die HTTP-API im Vordergrund (RENDER=true).
