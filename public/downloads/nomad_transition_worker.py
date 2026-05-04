@@ -67,6 +67,15 @@ def clean(v: object, limit: int = 500) -> str:
 def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
+def ollama_base_url() -> str:
+    """Ollama API root, e.g. http://127.0.0.1:11434 — overridable for laptops/Docker."""
+    raw = (os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL") or os.getenv("OLLAMA_HOST") or "").strip()
+    if not raw:
+        return "http://127.0.0.1:11434"
+    if "://" not in raw:
+        return f"http://{raw}".rstrip("/")
+    return raw.rstrip("/")
+
 def http_json(method: str, url: str, payload: dict | None = None, timeout: float = 20.0, redirects_left: int = 4) -> dict:
     body = None
     headers = {"Accept": "application/json"}
@@ -102,9 +111,19 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
     except (TimeoutError, URLError) as exc:
         return {"ok": False, "error": "http_unreachable", "detail": str(exc), "url": url}
 
-def try_ollama(model: str, prompt: str, timeout: float = 10.0) -> str:
-    data = http_json("POST", "http://127.0.0.1:11434/api/generate", {"model": model, "prompt": prompt, "stream": False}, timeout=timeout)
-    return clean(data.get("response") or "", 1000)
+def try_ollama(model: str, prompt: str, timeout: float = 10.0) -> dict[str, object]:
+    base = ollama_base_url()
+    url = f"{base}/api/generate"
+    data = http_json("POST", url, {"model": model, "prompt": prompt, "stream": False}, timeout=timeout)
+    text = clean(data.get("response") or "", 1000)
+    err = ""
+    if data.get("error"):
+        err = str(data.get("error") or "")
+    elif data.get("http_status") and int(data["http_status"]) >= 400:
+        err = f"http_{data['http_status']}"
+    elif not text and model:
+        err = "ollama_empty_response"
+    return {"text": text, "error": err, "ollama_url": base}
 
 def _windows_total_ram_gb() -> float:
     class MEMORYSTATUSEX(ctypes.Structure):
@@ -139,7 +158,8 @@ def _suggest_ollama_budget_gb() -> float:
     return 8.0
 
 def _pick_ollama_model(timeout: float = 5.0) -> str:
-    tags = http_json("GET", "http://127.0.0.1:11434/api/tags", timeout=timeout)
+    base = ollama_base_url()
+    tags = http_json("GET", f"{base}/api/tags", timeout=timeout)
     models = tags.get("models") or []
     if not isinstance(models, list) or not models:
         return ""
@@ -305,7 +325,17 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
     mission = http_json("GET", endpoint(base_url, "/mission?persist=false&limit=1"), timeout=timeout)
     blocker = clean(((mission.get("top_blocker") or {}).get("summary") or ""), 280)
     prompt = str(config.get("prompt") or "Return one machine-actionable step for: {blocker}")
-    local_note = try_ollama(model, prompt.format(blocker=blocker or "no blocker"), timeout=timeout) if model else ""
+    ollama_status: dict[str, object] = {
+        "enabled": bool(model),
+        "ollama_url": ollama_base_url(),
+        "picked_model": model or "",
+    }
+    local_note = ""
+    if model:
+        og = try_ollama(model, prompt.format(blocker=blocker or "no blocker"), timeout=timeout)
+        local_note = str(og.get("text") or "")
+        ollama_status["generate_error"] = str(og.get("error") or "")
+        ollama_status["note_chars"] = len(local_note)
     probes = _probe_paths(base_url, timeout=min(10.0, timeout))
     paid_lane_signal = _paid_lane_signal(base_url, timeout=min(10.0, timeout))
     quote = http_json("POST", endpoint(base_url, "/transition/quote"), {
@@ -329,6 +359,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "bootstrap": {"ok": bool(boot.get("ok")), "schema": boot.get("schema", "")},
         "join": {"ok": bool(join.get("ok")), "status": join.get("status") or "", "reason": join.get("reason") or ""},
         "mission_top_blocker": blocker, "ollama_model": model or "", "local_ollama_note": local_note,
+        "ollama_status": ollama_status,
         "probe_status": probes,
         "paid_lane_signal": paid_lane_signal,
         "transition_quote_ok": bool(quote.get("ok")), "transition_settle_ok": bool(settle.get("ok")), "quote_id": qid,
@@ -343,6 +374,7 @@ def main() -> None:
     p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://syndiode.com"))
     p.add_argument("--agent-id", default=os.getenv("NOMAD_TRANSITION_WORKER_ID", default_agent_id()))
     p.add_argument("--ollama-model", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_MODEL", "auto"))
+    p.add_argument("--ollama-url", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL", ""), help="Ollama base URL, e.g. http://127.0.0.1:11434")
     p.add_argument("--no-ollama", action="store_true")
     p.add_argument("--timeout", type=float, default=20.0)
     objective_choices = sorted(list(MACHINE_OBJECTIVES.keys()) + ["unhuman_supremacy"])
@@ -351,6 +383,8 @@ def main() -> None:
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--interval", type=float, default=30.0)
     a = p.parse_args()
+    if (a.ollama_url or "").strip():
+        os.environ["NOMAD_TRANSITION_WORKER_OLLAMA_URL"] = a.ollama_url.strip()
     model = "" if a.no_ollama else (a.ollama_model or "auto").strip()
     if model.lower() == "auto":
         model = _pick_ollama_model(timeout=min(8.0, a.timeout))

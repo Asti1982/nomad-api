@@ -19,6 +19,17 @@ python nomad_transition_worker.py --base-url https://syndiode.com --ollama-model
 
 Default is `--ollama-model auto`: the worker inspects local Ollama models and picks a strong model that fits local RAM budget automatically.
 
+Ollama must be **running** before the worker can generate text (for example `ollama serve` on the default port **11434**). If Ollama listens elsewhere, set the base URL:
+
+```bash
+set NOMAD_TRANSITION_WORKER_OLLAMA_URL=http://127.0.0.1:11434
+python nomad_transition_worker.py --base-url https://syndiode.com --ollama-url http://127.0.0.1:11434
+```
+
+Each JSON cycle now includes `ollama_status` (`ollama_url`, `picked_model`, `generate_error`) so empty `local_ollama_note` is diagnosable instead of silent.
+
+This worker is intentionally **single-file / stdlib-only** for distribution. `codex_peer_agent.py` in the repo is a richer **development** peer (imports Nomad modules, optional local API); it is not a drop-in template for a small downloadable EXE.
+
 Machine-native objectives (non-human-first missions):
 
 ```bash
