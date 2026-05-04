@@ -95,6 +95,9 @@ class NomadAutopilot:
         self.all_surfaces_enforce = _bool_env(
             "NOMAD_AUTOPILOT_ALL_SURFACES_ENFORCE", when_continuous=False, when_idle=False
         )
+        self.evidence_or_pay_enforce = _bool_env(
+            "NOMAD_AUTOPILOT_EVIDENCE_OR_PAY_ENFORCE", when_continuous=True, when_idle=False
+        )
         self.agent_growth_pipeline_enabled = _bool_env(
             "NOMAD_AUTOPILOT_AGENT_GROWTH_PIPELINE", when_continuous=True, when_idle=False
         )
@@ -229,6 +232,12 @@ class NomadAutopilot:
                 "reason": "no_agent_followups_queued",
             }
         reply_conversion = self._convert_replies_to_service_tasks(contact_poll)
+        evidence_or_pay_gate = self._evidence_or_pay_gate(
+            enforce=self.evidence_or_pay_enforce,
+            service_summary=service_summary,
+            contact_poll=contact_poll,
+            reply_conversion=reply_conversion,
+        )
 
         journal_state = self.journal.load()
         surface_gate = self._all_surfaces_gate(
@@ -236,9 +245,11 @@ class NomadAutopilot:
             enforce=self.all_surfaces_enforce,
             public_api_url=public_api_url,
         )
+        evidence_remediation = self._evidence_or_pay_remediation(evidence_or_pay_gate)
         surface_remediation = self._surface_gate_remediation(surface_gate)
         selected_objective = (
             (objective or "").strip()
+            or str(evidence_remediation.get("objective") or "").strip()
             or str(surface_remediation.get("objective") or "").strip()
             or self._service_objective(service_summary)
             or self._reply_conversion_objective(reply_conversion)
@@ -267,7 +278,10 @@ class NomadAutopilot:
             limit=conversion_effective_limit,
             explicit_query=conversion_query or outreach_query,
             send_a2a=effective_send_a2a,
-            blocked_reason=surface_gate.get("lead_conversion_blocked_reason", ""),
+            blocked_reason=self._merge_block_reason(
+                str(surface_gate.get("lead_conversion_blocked_reason", "") or ""),
+                str(evidence_or_pay_gate.get("lead_conversion_blocked_reason", "") or ""),
+            ),
         )
         lead_delta = self._lead_conversion_contact_delta(lead_conversion)
         remaining_to_send = max(0, remaining_to_send - lead_delta["sent"])
@@ -286,7 +300,10 @@ class NomadAutopilot:
             limit=outreach_effective_limit,
             explicit_query=outreach_query,
             send_outreach=effective_send_outreach,
-            blocked_reason=surface_gate.get("outreach_blocked_reason", ""),
+            blocked_reason=self._merge_block_reason(
+                str(surface_gate.get("outreach_blocked_reason", "") or ""),
+                str(evidence_or_pay_gate.get("outreach_blocked_reason", "") or ""),
+            ),
         )
         daily_quota = self._daily_quota_after(
             start=daily_quota_start,
@@ -395,6 +412,8 @@ class NomadAutopilot:
             "all_surfaces": all_surfaces,
             "all_surfaces_gate": surface_gate,
             "surface_gate_remediation": surface_remediation,
+            "evidence_or_pay_gate": evidence_or_pay_gate,
+            "evidence_or_pay_remediation": evidence_remediation,
             "agent_growth_pipeline": agent_growth_pipeline_report,
             "autonomous_development": autonomous_development,
             "efficiency_plan": efficiency_plan,
@@ -421,6 +440,8 @@ class NomadAutopilot:
                 daily_quota=daily_quota,
                 surface_gate=surface_gate,
                 surface_remediation=surface_remediation,
+                evidence_or_pay_gate=evidence_or_pay_gate,
+                evidence_remediation=evidence_remediation,
             ),
         }
         report["autonomy_proof"] = self.autonomy_proof.evaluate(
@@ -582,6 +603,83 @@ class NomadAutopilot:
             "reason": "",
             "outreach_blocked_reason": "",
             "lead_conversion_blocked_reason": "",
+        }
+
+    @staticmethod
+    def _merge_block_reason(primary: str, secondary: str) -> str:
+        p = (primary or "").strip()
+        s = (secondary or "").strip()
+        return p or s
+
+    def _evidence_or_pay_gate(
+        self,
+        *,
+        enforce: bool,
+        service_summary: Dict[str, Any],
+        contact_poll: Dict[str, Any],
+        reply_conversion: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not enforce:
+            return {
+                "enforced": False,
+                "blocked": False,
+                "reason": "",
+                "outreach_blocked_reason": "",
+                "lead_conversion_blocked_reason": "",
+                "signals": {},
+            }
+        paid_signals = bool(
+            (service_summary.get("worked_task_ids") or [])
+            or (service_summary.get("draft_ready_task_ids") or [])
+            or (service_summary.get("awaiting_payment_task_ids") or [])
+            or (service_summary.get("payment_followups") or [])
+        )
+        reply_signals = bool(contact_poll.get("reply_summaries") or [])
+        converted_signals = bool(reply_conversion.get("created_task_ids") or [])
+        signals = {
+            "paid_lane_signal": paid_signals,
+            "reply_artifact_signal": reply_signals,
+            "converted_paid_signal": converted_signals,
+        }
+        if any(signals.values()):
+            return {
+                "enforced": True,
+                "blocked": False,
+                "reason": "",
+                "outreach_blocked_reason": "",
+                "lead_conversion_blocked_reason": "",
+                "signals": signals,
+            }
+        return {
+            "enforced": True,
+            "blocked": True,
+            "reason": "evidence_or_pay_required",
+            "outreach_blocked_reason": "evidence_or_pay_required",
+            "lead_conversion_blocked_reason": "evidence_or_pay_required",
+            "signals": signals,
+        }
+
+    @staticmethod
+    def _evidence_or_pay_remediation(evidence_gate: Dict[str, Any]) -> Dict[str, Any]:
+        if not bool(evidence_gate.get("blocked")):
+            return {
+                "required": False,
+                "objective": "",
+                "priority": "normal",
+                "next_actions": [],
+            }
+        return {
+            "required": True,
+            "reason": str(evidence_gate.get("reason") or "evidence_or_pay_required"),
+            "priority": "critical",
+            "objective": (
+                "Generate machine-verifiable evidence or paid-lane signal before autonomous outbound growth."
+            ),
+            "next_actions": [
+                "Collect one reply artifact via contact_poll.reply_summaries.",
+                "Convert one reply to a bounded paid task or verify one awaiting-payment task.",
+                "Only then unlock outreach/lead-conversion send paths.",
+            ],
         }
 
     @staticmethod
@@ -2093,6 +2191,8 @@ class NomadAutopilot:
         daily_quota: Dict[str, Any],
         surface_gate: Dict[str, Any],
         surface_remediation: Dict[str, Any],
+        evidence_or_pay_gate: Dict[str, Any],
+        evidence_remediation: Dict[str, Any],
     ) -> str:
         worked = len(service_summary.get("worked_task_ids") or [])
         drafts = len(service_summary.get("draft_ready_task_ids") or [])
@@ -2174,6 +2274,11 @@ class NomadAutopilot:
             analysis += (
                 f" All-surfaces gate is blocking growth lane ({surface_gate.get('reason', '')}); "
                 f"remediation objective activated: {surface_remediation.get('objective', '')}"
+            )
+        if evidence_or_pay_gate.get("blocked"):
+            analysis += (
+                f" Evidence-or-pay gate is blocking outbound growth ({evidence_or_pay_gate.get('reason', '')}); "
+                f"remediation objective activated: {evidence_remediation.get('objective', '')}"
             )
         return analysis
 

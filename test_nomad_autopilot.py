@@ -1238,3 +1238,46 @@ def test_autopilot_all_surfaces_enforce_blocks_conversion_and_outreach_without_m
     assert result.get("lead_conversion", {}).get("reason") == "all_surfaces_mode_required"
     assert result.get("outreach", {}).get("skipped") is True
     assert result.get("outreach", {}).get("reason") == "all_surfaces_mode_required"
+
+
+def test_autopilot_evidence_or_pay_gate_blocks_without_signals(monkeypatch, tmp_path):
+    class SilentSelfImprovement(FakeSelfImprovement):
+        def run_cycle(self, objective="", profile_id="ai_first"):
+            return {
+                "mode": "self_improvement_cycle",
+                "deal_found": False,
+                "objective": objective,
+                "lead_scout": {"search_queries": [], "leads": [], "compute_leads": []},
+                "high_value_patterns": {"patterns": []},
+                "self_development": {"next_objective": "silent"},
+                "analysis": "no evidence",
+            }
+
+    class EvidenceGatedAgent(FakeAgent):
+        def __init__(self):
+            super().__init__()
+            self.self_improvement = SilentSelfImprovement()
+            self.service_desk = QuietServiceDesk()
+            self.agent_contacts = QuietContacts()
+            self.lead_conversion = EmptyLeadConversion()
+
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_AUTOPILOT_EVIDENCE_OR_PAY_ENFORCE", "true")
+    agent = EvidenceGatedAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=True, send_a2a=True)
+
+    gate = result.get("evidence_or_pay_gate") or {}
+    assert gate.get("blocked") is True
+    assert gate.get("reason") == "evidence_or_pay_required"
+    assert result.get("lead_conversion", {}).get("skipped") is True
+    assert result.get("lead_conversion", {}).get("reason") == "evidence_or_pay_required"
+    assert result.get("outreach", {}).get("skipped") is True
+    assert result.get("outreach", {}).get("reason") == "evidence_or_pay_required"
+    assert "Generate machine-verifiable evidence" in result.get("objective", "")
