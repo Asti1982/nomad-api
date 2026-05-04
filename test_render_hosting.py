@@ -24,6 +24,8 @@ def test_render_accepts_nomad_prefixed_render_api_key(monkeypatch, tmp_path):
             return FakeResponse(
                 payload=[{"owner": {"id": "tea-test", "name": "Test Workspace", "type": "team"}}]
             )
+        if "/deploys" in url:
+            return FakeResponse(payload=[])
         return FakeResponse(
             payload=[
                 {
@@ -47,6 +49,8 @@ def test_render_accepts_nomad_prefixed_render_api_key(monkeypatch, tmp_path):
     result = RenderHostingProbe(repo_root=tmp_path).snapshot(verify=True)
     assert result["configured"] is True
     assert result["verification"]["selected_service"]["id"] == "srv-test"
+    assert (result.get("recent_deploys") or {}).get("ok") is True
+    assert (result.get("recent_deploys") or {}).get("deploys") == []
 
 
 def test_render_probe_defaults_to_locked_public_api_lane(monkeypatch, tmp_path):
@@ -86,6 +90,20 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
                     }
                 ]
             )
+        if "/deploys" in url:
+            return FakeResponse(
+                payload=[
+                    {
+                        "deploy": {
+                            "id": "dep-1",
+                            "status": "live",
+                            "createdAt": "2026-05-03T12:00:00Z",
+                            "updatedAt": "2026-05-03T12:01:00Z",
+                            "commit": {"id": "abc123"},
+                        }
+                    }
+                ]
+            )
         assert url.endswith("/services")
         return FakeResponse(
             payload=[
@@ -117,6 +135,10 @@ def test_render_probe_verifies_services_and_selects_nomad_api(monkeypatch, tmp_p
     assert result["github_repository"] == "Asti1982/syndiode"
     assert result["desired_branch"] == "syndiode"
     assert result["service_url"] == "https://nomad-api.onrender.com"
+    deploys = result.get("recent_deploys") or {}
+    assert deploys.get("ok") is True
+    assert deploys.get("deploys")[0]["id"] == "dep-1"
+    assert deploys.get("deploys")[0]["commit_id"] == "abc123"
 
 
 def test_render_probe_public_checks_work_without_api_key(monkeypatch, tmp_path):
@@ -138,6 +160,13 @@ def test_render_probe_public_checks_work_without_api_key(monkeypatch, tmp_path):
     assert result["public_checks"]["swarm_ready"] is True
     assert result["public_checks"]["accumulation_ready"] is True
     assert calls[0] == "https://nomad-api.onrender.com/health"
+
+
+def test_list_recent_deploys_requires_service_id(monkeypatch, tmp_path):
+    monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    out = RenderHostingProbe(repo_root=tmp_path).list_recent_deploys(service_id="", limit=3)
+    assert out["ok"] is False
+    assert out["issue"] == "render_service_id_missing"
 
 
 def test_render_deploy_requires_explicit_approval(monkeypatch, tmp_path):

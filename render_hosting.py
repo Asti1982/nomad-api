@@ -88,6 +88,7 @@ class RenderHostingProbe:
                 "api": "https://render.com/docs/api",
                 "custom_domains": "https://render.com/docs/custom-domains",
                 "blueprints": "https://render.com/docs/blueprint-spec",
+                "mcp_server": "https://render.com/docs/mcp-server",
             },
             "safe_actions": [
                 "verify API key by listing services",
@@ -113,6 +114,10 @@ class RenderHostingProbe:
                 status["next_action"] = self._next_action(status)
             elif (status.get("public_checks") or {}).get("ok"):
                 status["next_action"] = "Render public API is live; set RENDER_API_KEY only if Nomad should trigger deploys or manage domains."
+        if verify and status.get("api_key_configured"):
+            sid = (status.get("service_id") or self.service_id or "").strip()
+            if sid:
+                status["recent_deploys"] = self.list_recent_deploys(service_id=sid, limit=10)
         return status
 
     def verify_public_surface(self) -> Dict[str, Any]:
@@ -209,6 +214,75 @@ class RenderHostingProbe:
                 if selected
                 else "Render API key is valid; set NOMAD_RENDER_SERVICE_ID or create/link the nomad-api service."
             ),
+        }
+
+    def list_recent_deploys(self, service_id: str = "", limit: int = 10) -> Dict[str, Any]:
+        """List recent deploys for a service via the Render REST API (same key as MCP; no MCP protocol in-process)."""
+        sid = (service_id or self.service_id or "").strip()
+        if not self.api_key:
+            return {
+                "ok": False,
+                "issue": "render_api_key_missing",
+                "deploys": [],
+                "message": "Set RENDER_API_KEY before listing deploys.",
+            }
+        if not sid:
+            return {
+                "ok": False,
+                "issue": "render_service_id_missing",
+                "deploys": [],
+                "message": "Set NOMAD_RENDER_SERVICE_ID or resolve a service from name first.",
+            }
+        lim = max(1, min(100, int(limit)))
+        response = self._request("GET", f"/services/{sid}/deploys", params={"limit": lim})
+        if not response.get("ok"):
+            return {
+                "ok": False,
+                "issue": response.get("issue", "render_api_error"),
+                "deploys": [],
+                "message": response.get("message", "Render deploy list failed."),
+                "status_code": response.get("status_code"),
+            }
+        rows = self._normalize_deploy_list(response.get("payload"))
+        return {
+            "ok": True,
+            "service_id": sid,
+            "deploys": [self._compact_deploy_row(row) for row in rows[:lim]],
+            "message": "Recent deploys from Render API.",
+            "debug_hint": (
+                "For log lines and natural-language triage in Cursor, add Render's hosted MCP "
+                "(https://render.com/docs/mcp-server) to ~/.cursor/mcp.json with the same API key scope."
+            ),
+        }
+
+    @staticmethod
+    def _normalize_deploy_list(payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            out: List[Dict[str, Any]] = []
+            for item in payload:
+                if isinstance(item, dict) and isinstance(item.get("deploy"), dict):
+                    out.append(item["deploy"])
+                elif isinstance(item, dict):
+                    out.append(item)
+            return out
+        if isinstance(payload, dict):
+            for key in ("deploys", "items", "results"):
+                inner = payload.get(key)
+                if isinstance(inner, list):
+                    return RenderHostingProbe._normalize_deploy_list(inner)
+        return []
+
+    @staticmethod
+    def _compact_deploy_row(deploy: Dict[str, Any]) -> Dict[str, Any]:
+        commit = deploy.get("commit") if isinstance(deploy.get("commit"), dict) else {}
+        commit_id = commit.get("id", "") if commit else str(deploy.get("commitId", "") or "")
+        return {
+            "id": deploy.get("id", ""),
+            "status": deploy.get("status", ""),
+            "commit_id": commit_id,
+            "created_at": deploy.get("createdAt", ""),
+            "updated_at": deploy.get("updatedAt", ""),
+            "finished_at": deploy.get("finishedAt", ""),
         }
 
     def trigger_deploy(self, approval: str = "", clear_cache: bool = False) -> Dict[str, Any]:
