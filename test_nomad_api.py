@@ -161,6 +161,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/peer-acquisition" in doc["paths"]
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/develop" in doc["paths"]
+    assert "/swarm/bootstrap" in doc["paths"]
     assert doc["servers"][0]["url"] == "https://nomad.example"
 
 

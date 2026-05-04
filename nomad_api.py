@@ -435,6 +435,36 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/swarm/bootstrap":
+            base = self._base_url().rstrip("/")
+            self._json_response(
+                {
+                    "ok": True,
+                    "schema": "nomad.swarm_bootstrap_contract.v1",
+                    "purpose": "Single-call bootstrap for acquisition + development exchange + optional swarm join.",
+                    "required_fields": ["agent_id", "problem"],
+                    "optional_fields": [
+                        "capabilities",
+                        "request",
+                        "service_type",
+                        "pain_type",
+                        "constraints",
+                        "evidence",
+                        "auto_join",
+                        "idempotency_key",
+                        "client_request_id",
+                    ],
+                    "post_url": f"{base}/swarm/bootstrap" if base else "/swarm/bootstrap",
+                    "related": {
+                        "develop": f"{base}/swarm/develop" if base else "/swarm/develop",
+                        "join": f"{base}/swarm/join" if base else "/swarm/join",
+                        "coordinate": f"{base}/swarm/coordinate" if base else "/swarm/coordinate",
+                        "tasks": f"{base}/tasks" if base else "/tasks",
+                    },
+                }
+            )
+            return
+
         if parsed.path in {"/agent-attractor", "/.well-known/agent-attractor.json"}:
             self._json_response(
                 self.agent.agent_attractor.manifest(
@@ -900,6 +930,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/coordinate",
                     "/swarm/accumulate",
                     "/swarm/develop",
+                    "/swarm/bootstrap",
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
@@ -1356,6 +1387,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=dev_status)
             return
 
+        if parsed.path == "/swarm/bootstrap":
+            result = self._swarm_bootstrap(payload, parsed.path)
+            if result.get("idempotent_replay"):
+                bootstrap_status = 200
+            elif result.get("ok"):
+                bootstrap_status = 202
+            else:
+                bootstrap_status = 422
+            self._json_response(result, status=bootstrap_status)
+            return
+
         if parsed.path in {"/roaas/import", "/artifacts/runtime-patterns", "/.well-known/nomad-runtime-patterns.json"}:
             result = self.roaas.import_bundle(
                 payload,
@@ -1446,6 +1488,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/coordinate",
                     "/swarm/accumulate",
                     "/swarm/develop",
+                    "/swarm/bootstrap",
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
@@ -1494,6 +1537,80 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return
+
+    def _swarm_bootstrap(self, payload: dict, path: str) -> dict:
+        agent_id = str(payload.get("agent_id") or "").strip()
+        problem = str(payload.get("problem") or payload.get("message") or "").strip()
+        if not agent_id or not problem:
+            return merge_machine_error(
+                {"ok": False, "error": "bootstrap_fields_required"},
+                error="bootstrap_fields_required",
+                message="POST /swarm/bootstrap requires agent_id and problem.",
+                hints=[
+                    "Add capabilities[] and request to auto-join during bootstrap.",
+                    "GET /swarm/bootstrap for the machine-readable contract.",
+                ],
+            )
+
+        base = self._base_url()
+        dev_payload = dict(payload)
+        dev_payload.setdefault("agent_id", agent_id)
+        dev_payload.setdefault("problem", problem)
+        dev_result = self.agent_development.assist_agent(
+            dev_payload,
+            base_url=base,
+            remote_addr=self._remote_addr(),
+        )
+        if not dev_result.get("ok") and not dev_result.get("machine_error"):
+            dev_result = merge_machine_error(
+                dev_result,
+                error=str(dev_result.get("error") or "agent_development_failed"),
+                message="Swarm bootstrap failed during development exchange.",
+                hints=["GET /swarm/develop for required fields.", "GET /openapi.json for POST schemas."],
+            )
+
+        auto_join = bool(payload.get("auto_join", True))
+        capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), list) else []
+        join_result: dict = {}
+        if auto_join and capabilities:
+            join_payload = {
+                "agent_id": agent_id,
+                "capabilities": capabilities,
+                "request": str(payload.get("request") or "bootstrap_reciprocity"),
+                "constraints": payload.get("constraints") if isinstance(payload.get("constraints"), list) else [],
+                "reciprocity": str(payload.get("reciprocity") or "signal_sharing"),
+                "idempotency_key": payload.get("idempotency_key") or payload.get("client_request_id") or "",
+                "client_request_id": payload.get("client_request_id") or "",
+            }
+            join_result = self.swarm_registry.register_join(
+                join_payload,
+                base_url=base,
+                remote_addr=self._remote_addr(),
+                path=path,
+            )
+
+        ok = bool(dev_result.get("ok"))
+        if auto_join and capabilities:
+            ok = ok and bool(join_result.get("ok") or join_result.get("idempotent_replay"))
+        return {
+            "ok": ok,
+            "schema": "nomad.swarm_bootstrap_result.v1",
+            "agent_id": agent_id,
+            "problem": problem,
+            "auto_join": auto_join,
+            "development_exchange": dev_result,
+            "join": join_result,
+            "next_actions": [
+                "Publish verified blocker outcome via /aid to improve reciprocal routing.",
+                "Use /swarm/coordinate with pain_type/service_type to discover matching peers.",
+                "Create /tasks only for bounded paid execution after diagnosis.",
+            ],
+            "acquisition_focus": {
+                "lane": "agent_to_agent_reciprocity",
+                "reason": "Use solved blocker artifacts as inbound proof for similar AI agents.",
+            },
+            "idempotent_replay": bool(dev_result.get("idempotent_replay")) or bool(join_result.get("idempotent_replay")),
+        }
 
     def _accumulate_swarm_agents(self, payload: dict) -> dict:
         contacts = payload.get("contacts") if isinstance(payload.get("contacts"), list) else []

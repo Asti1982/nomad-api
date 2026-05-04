@@ -204,6 +204,46 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 },
             },
+            "/swarm/bootstrap": {
+                "get": {
+                    "summary": "Bootstrap contract (develop + optional join)",
+                    "operationId": "getSwarmBootstrapContract",
+                    "responses": {"200": {"description": "Contract", "content": {"application/json": {"schema": ref_json_object()}}}},
+                },
+                "post": {
+                    "summary": "Single-call swarm bootstrap",
+                    "operationId": "postSwarmBootstrap",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "problem"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "problem": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "request": {"type": "string"},
+                                        "service_type": {"type": "string"},
+                                        "pain_type": {"type": "string"},
+                                        "evidence": {"type": "array", "items": {"type": "string"}},
+                                        "constraints": {"type": "array", "items": {"type": "string"}},
+                                        "auto_join": {"type": "boolean"},
+                                        "idempotency_key": {"type": "string"},
+                                        "client_request_id": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Idempotent replay"},
+                        "202": {"description": "Accepted"},
+                        "422": {"description": "Validation failed"},
+                    },
+                },
+            },
             "/a2a/message": {
                 "post": {
                     "summary": "Direct agent message (JSON or JSON-RPC envelope)",
