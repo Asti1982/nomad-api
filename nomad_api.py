@@ -52,12 +52,30 @@ NOMAD_PROCESS_START = time.time()
 
 
 class NomadApiHandler(BaseHTTPRequestHandler):
-    agent = NomadAgent()
-    monitor = NomadSystemMonitor(agent=agent)
-    roaas = RuntimePatternExchange(agent=agent)
-    swarm_registry = agent.swarm_registry
-    agent_development = agent.agent_development
-    outbound_tracker = agent.outbound_tracker
+    _init_lock = threading.Lock()
+    _runtime_ready = False
+    agent = None
+    monitor = None
+    roaas = None
+    swarm_registry = None
+    agent_development = None
+    outbound_tracker = None
+
+    @classmethod
+    def _ensure_runtime_components(cls) -> None:
+        if cls._runtime_ready:
+            return
+        with cls._init_lock:
+            if cls._runtime_ready:
+                return
+            agent = NomadAgent()
+            cls.agent = agent
+            cls.monitor = NomadSystemMonitor(agent=agent)
+            cls.roaas = RuntimePatternExchange(agent=agent)
+            cls.swarm_registry = agent.swarm_registry
+            cls.agent_development = agent.agent_development
+            cls.outbound_tracker = agent.outbound_tracker
+            cls._runtime_ready = True
 
     @staticmethod
     def _public_url_path_prefix() -> str:
@@ -162,6 +180,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/openapi.json", "/.well-known/openapi.json", "/openapi"}:
             self._json_response(build_openapi_document(base_url=self._base_url()))
             return
+
+        self.__class__._ensure_runtime_components()
 
         if parsed.path in {"/status", "/top"}:
             self._json_response(self.monitor.snapshot())
@@ -939,6 +959,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed_full = urlparse(self.path)
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
+        self.__class__._ensure_runtime_components()
         payload = self._read_json_body()
         if payload is None:
             self._json_response(
