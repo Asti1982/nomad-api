@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 import threading
 import time
@@ -132,6 +133,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/", "/index.html", "/nomad.html"}:
             self._html_file_response(PUBLIC_DIR / "nomad.html")
+            return
+
+        if parsed.path.startswith("/downloads/"):
+            rel = parsed.path[len("/downloads/") :].strip("/")
+            if not rel or ".." in rel or "\\" in rel:
+                self._json_response(
+                    machine_error_response(
+                        error="invalid_download_path",
+                        message="Download path is invalid.",
+                        hints=["Use GET /downloads/<filename> for published helper assets."],
+                    ),
+                    status=400,
+                )
+                return
+            self._public_download_file_response(PUBLIC_DIR / "downloads" / rel)
             return
 
         if parsed.path == "/health":
@@ -900,6 +916,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "available_paths": [
                     "/",
                     "/nomad.html",
+                    "/downloads/nomad_helper_agent.py",
+                    "/downloads/run_nomad_helper_agent.bat",
+                    "/downloads/README_NOMAD_HELPER_AGENT.md",
                     "/health",
                     "/openapi.json",
                     "/.well-known/openapi.json",
@@ -1476,6 +1495,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "available_paths": [
                     "/",
                     "/nomad.html",
+                    "/downloads/nomad_helper_agent.py",
+                    "/downloads/run_nomad_helper_agent.bat",
+                    "/downloads/README_NOMAD_HELPER_AGENT.md",
                     "/openapi.json",
                     "/.well-known/openapi.json",
                     "/tasks",
@@ -1789,6 +1811,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self._send_common_headers()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _public_download_file_response(self, path: Path, status: int = 200) -> None:
+        if not path.exists() or not path.is_file():
+            self._json_response(
+                machine_error_response(
+                    error="download_not_found",
+                    message=f"Missing download asset: {path.name}",
+                    hints=["GET /downloads/nomad_helper_agent.py for the helper agent launcher."],
+                ),
+                status=404,
+            )
+            return
+        body = path.read_bytes()
+        ctype, _ = mimetypes.guess_type(str(path))
+        self.send_response(status)
+        self.send_header("Content-Type", ctype or "application/octet-stream")
+        self._send_common_headers()
+        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

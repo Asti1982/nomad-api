@@ -215,12 +215,52 @@ class CodexPeerAgent:
         send_agent_invites: bool = False,
     ) -> dict[str, Any]:
         base = _default_base_url(base_url)
+        bootstrap = _http_json(
+            "POST",
+            _endpoint(base, "swarm/bootstrap"),
+            {
+                "agent_id": self.agent_id,
+                "problem": _clean(problem or "Bootstrap Codex peer for bounded development + optional join."),
+                "capabilities": self.capabilities,
+                "request": "bootstrap_reciprocity",
+                "auto_join": True,
+            },
+            timeout=timeout,
+        )
         join = _http_json("POST", _endpoint(base, "swarm/join"), self.join_payload(base_url=base, problem=problem), timeout=timeout)
         development = _http_json(
             "POST",
             _endpoint(base, "swarm/develop"),
             self.development_payload(base_url=base, problem=problem),
             timeout=timeout,
+        )
+        transition_quote = _http_json(
+            "POST",
+            _endpoint(base, "transition/quote"),
+            {
+                "agent_id": self.agent_id,
+                "pain_type": "compute_auth",
+                "state_before_hash": "codex_peer_before_v1",
+                "target_state_hash": "codex_peer_after_v1",
+                "evidence": ["join_receipt", "development_exchange"],
+                "replay_verifier": _endpoint(base, "health"),
+            },
+            timeout=timeout,
+        )
+        quote_id = str(((transition_quote.get("quote") or {}).get("quote_id")) or "").strip()
+        transition_settle = (
+            _http_json(
+                "POST",
+                _endpoint(base, "transition/settle"),
+                {
+                    "quote_id": quote_id,
+                    "result_state_hash": "codex_peer_after_v1",
+                    "proof_artifact_hash": "codex_peer_proof_v1",
+                },
+                timeout=timeout,
+            )
+            if quote_id
+            else {"ok": False, "skipped": True, "reason": "quote_missing"}
         )
         work_flag = "true" if work_leads else "false"
         lead_work = _http_json("GET", _endpoint(base, f"lead-workbench?work={work_flag}&limit={lead_limit}"), timeout=timeout)
@@ -240,8 +280,11 @@ class CodexPeerAgent:
         return self._collaboration_result(
             transport="http",
             base_url=base,
+            bootstrap=bootstrap,
             join=join,
             development=development,
+            transition_quote=transition_quote,
+            transition_settle=transition_settle,
             lead_work=lead_work,
             mission=mission,
             growth=growth,
@@ -548,8 +591,11 @@ class CodexPeerAgent:
         *,
         transport: str,
         base_url: str,
+        bootstrap: dict[str, Any],
         join: dict[str, Any],
         development: dict[str, Any],
+        transition_quote: dict[str, Any],
+        transition_settle: dict[str, Any],
         lead_work: dict[str, Any],
         mission: dict[str, Any],
         growth: dict[str, Any] | None = None,
@@ -570,11 +616,22 @@ class CodexPeerAgent:
                 "connected_agents": join.get("connected_agents", 0),
                 "arrival_plan": join.get("arrival_plan") or {},
             },
+            "bootstrap": {
+                "ok": bool(bootstrap.get("ok", False)),
+                "schema": bootstrap.get("schema", ""),
+                "auto_join": bool(bootstrap.get("auto_join", False)),
+            },
             "development_response": {
                 "exchange_id": development.get("exchange_id", ""),
                 "pain_type": development.get("pain_type", ""),
                 "solution_title": (development.get("solution") or {}).get("title", ""),
                 "plan": development.get("agent_development_plan") or {},
+            },
+            "transition": {
+                "quote_ok": bool(transition_quote.get("ok", False)),
+                "settle_ok": bool(transition_settle.get("ok", False)),
+                "quote_id": ((transition_quote.get("quote") or {}).get("quote_id")) or "",
+                "settlement_status": ((transition_settle.get("settlement") or {}).get("status")) or "",
             },
             "lead_workbench": {
                 "queue_count": lead_work.get("queue_count", 0),
@@ -587,8 +644,11 @@ class CodexPeerAgent:
                 "next_action": (next_action or {}).get("summary", ""),
             },
             "raw": {
+                "bootstrap": bootstrap,
                 "join": join,
                 "development": development,
+                "transition_quote": transition_quote,
+                "transition_settle": transition_settle,
                 "lead_workbench": lead_work,
                 "mission": mission,
                 "growth": growth or {},
