@@ -35,9 +35,14 @@ from nomad_peer_acquisition import build_peer_acquisition_well_known
 from workflow import NomadAgent
 
 
-HOST = os.getenv("NOMAD_API_HOST", "127.0.0.1")
+RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
+# Render web services must bind publicly to 0.0.0.0, even if a local .env leaked a loopback host.
+if RENDER_RUNTIME:
+    HOST = "0.0.0.0"
+else:
+    HOST = os.getenv("NOMAD_API_HOST", "127.0.0.1")
 # On Render, PORT is authoritative; load_dotenv() may inject NOMAD_API_PORT from a local .env — do not let it override Render.
-if (os.environ.get("RENDER") or "").strip().lower() == "true" and (os.environ.get("PORT") or "").strip():
+if RENDER_RUNTIME and (os.environ.get("PORT") or "").strip():
     PORT = int(os.environ["PORT"])
 else:
     PORT = int(os.getenv("NOMAD_API_PORT") or os.getenv("PORT") or "8787")
