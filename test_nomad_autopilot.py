@@ -1281,3 +1281,22 @@ def test_autopilot_evidence_or_pay_gate_blocks_without_signals(monkeypatch, tmp_
     assert result.get("outreach", {}).get("skipped") is True
     assert result.get("outreach", {}).get("reason") == "evidence_or_pay_required"
     assert "Generate machine-verifiable evidence" in result.get("objective", "")
+
+
+def test_autopilot_proof_weighted_routing_prioritizes_evidence_dense_lane(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    agent = FakeAgent()
+    autopilot = NomadAutopilot(
+        agent=agent,
+        journal=FakeJournal(),
+        path=tmp_path / "autopilot.json",
+        sleep_fn=lambda _: None,
+    )
+
+    result = autopilot.run_once(outreach_limit=2, send_outreach=True, send_a2a=True)
+
+    routing = result.get("proof_weighted_routing") or {}
+    assert routing.get("schema") == "nomad.proof_weighted_routing.v1"
+    assert routing.get("service_type_focus") == "compute_auth"
+    assert float(routing.get("confidence_score") or 0) > 0
+    assert result.get("efficiency_plan", {}).get("proof_weighted_routing", {}).get("service_type_focus") == "compute_auth"

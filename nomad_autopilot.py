@@ -232,6 +232,11 @@ class NomadAutopilot:
                 "reason": "no_agent_followups_queued",
             }
         reply_conversion = self._convert_replies_to_service_tasks(contact_poll)
+        proof_weighted_routing = self._proof_weighted_routing(
+            service_summary=service_summary,
+            contact_poll=contact_poll,
+            reply_conversion=reply_conversion,
+        )
         evidence_or_pay_gate = self._evidence_or_pay_gate(
             enforce=self.evidence_or_pay_enforce,
             service_summary=service_summary,
@@ -282,6 +287,7 @@ class NomadAutopilot:
                 str(surface_gate.get("lead_conversion_blocked_reason", "") or ""),
                 str(evidence_or_pay_gate.get("lead_conversion_blocked_reason", "") or ""),
             ),
+            preferred_service_type=str(proof_weighted_routing.get("service_type_focus") or ""),
         )
         lead_delta = self._lead_conversion_contact_delta(lead_conversion)
         remaining_to_send = max(0, remaining_to_send - lead_delta["sent"])
@@ -304,6 +310,7 @@ class NomadAutopilot:
                 str(surface_gate.get("outreach_blocked_reason", "") or ""),
                 str(evidence_or_pay_gate.get("outreach_blocked_reason", "") or ""),
             ),
+            preferred_service_type=str(proof_weighted_routing.get("service_type_focus") or ""),
         )
         daily_quota = self._daily_quota_after(
             start=daily_quota_start,
@@ -378,6 +385,7 @@ class NomadAutopilot:
             swarm_coordination=swarm_coordination,
             self_improvement=self_improvement,
             daily_quota=daily_quota,
+            proof_weighted_routing=proof_weighted_routing,
             agent_growth_pipeline=agent_growth_pipeline_report,
         )
 
@@ -400,6 +408,7 @@ class NomadAutopilot:
             "agent_followup_queue": agent_followup_queue,
             "agent_followup_send": agent_followup_send,
             "reply_conversion": reply_conversion,
+            "proof_weighted_routing": proof_weighted_routing,
             "self_improvement": self_improvement,
             "lead_conversion": lead_conversion,
             "product_factory": product_factory,
@@ -442,6 +451,7 @@ class NomadAutopilot:
                 surface_remediation=surface_remediation,
                 evidence_or_pay_gate=evidence_or_pay_gate,
                 evidence_remediation=evidence_remediation,
+                proof_weighted_routing=proof_weighted_routing,
             ),
         }
         report["autonomy_proof"] = self.autonomy_proof.evaluate(
@@ -680,6 +690,50 @@ class NomadAutopilot:
                 "Convert one reply to a bounded paid task or verify one awaiting-payment task.",
                 "Only then unlock outreach/lead-conversion send paths.",
             ],
+        }
+
+    def _proof_weighted_routing(
+        self,
+        *,
+        service_summary: Dict[str, Any],
+        contact_poll: Dict[str, Any],
+        reply_conversion: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        reply_summaries = [item for item in (contact_poll.get("reply_summaries") or []) if isinstance(item, dict)]
+        paid_lane_signal = bool(
+            (service_summary.get("worked_task_ids") or [])
+            or (service_summary.get("draft_ready_task_ids") or [])
+            or (service_summary.get("awaiting_payment_task_ids") or [])
+        )
+        converted_paid_signal = bool(reply_conversion.get("created_task_ids") or [])
+        evidence_classes = {}
+        for reply in reply_summaries:
+            classification = str(reply.get("classification") or reply.get("service_type") or "").strip().lower()
+            if not classification:
+                continue
+            evidence_classes[classification] = int(evidence_classes.get(classification, 0)) + 1
+        best_class = ""
+        if evidence_classes:
+            best_class = max(evidence_classes.items(), key=lambda kv: kv[1])[0]
+        if not best_class and (paid_lane_signal or converted_paid_signal):
+            best_class = "compute_auth"
+        score = min(
+            1.0,
+            (0.35 if reply_summaries else 0.0)
+            + (0.35 if paid_lane_signal else 0.0)
+            + (0.3 if converted_paid_signal else 0.0),
+        )
+        return {
+            "schema": "nomad.proof_weighted_routing.v1",
+            "service_type_focus": best_class or self.default_outreach_service_type,
+            "confidence_score": round(score, 3),
+            "signals": {
+                "reply_artifact_count": len(reply_summaries),
+                "paid_lane_signal": paid_lane_signal,
+                "converted_paid_signal": converted_paid_signal,
+                "evidence_classes": evidence_classes,
+            },
+            "strategy": "Prefer service lanes with the highest recent machine-verifiable evidence density.",
         }
 
     @staticmethod
@@ -1445,9 +1499,10 @@ class NomadAutopilot:
         explicit_query: str,
         send_outreach: bool,
         blocked_reason: str = "",
+        preferred_service_type: str = "",
     ) -> Dict[str, Any]:
         public_api_url = preferred_public_base_url()
-        service_type = self._preferred_outreach_service_type(self_improvement)
+        service_type = str(preferred_service_type or "").strip() or self._preferred_outreach_service_type(self_improvement)
         query = self._select_outreach_query(
             explicit_query=explicit_query,
             self_improvement=self_improvement,
@@ -1506,6 +1561,7 @@ class NomadAutopilot:
         explicit_query: str,
         send_a2a: bool,
         blocked_reason: str = "",
+        preferred_service_type: str = "",
     ) -> Dict[str, Any]:
         cap = max(0, int(limit or 0))
         if cap <= 0:
@@ -1548,6 +1604,7 @@ class NomadAutopilot:
             limit=cap,
             send=effective_send,
             leads=leads if leads else None,
+            service_type=(str(preferred_service_type or "").strip() or self.default_outreach_service_type),
         )
         result["autopilot_query"] = query
         result["send_requested"] = bool(send_a2a)
@@ -2193,6 +2250,7 @@ class NomadAutopilot:
         surface_remediation: Dict[str, Any],
         evidence_or_pay_gate: Dict[str, Any],
         evidence_remediation: Dict[str, Any],
+        proof_weighted_routing: Dict[str, Any],
     ) -> str:
         worked = len(service_summary.get("worked_task_ids") or [])
         drafts = len(service_summary.get("draft_ready_task_ids") or [])
@@ -2280,6 +2338,10 @@ class NomadAutopilot:
                 f" Evidence-or-pay gate is blocking outbound growth ({evidence_or_pay_gate.get('reason', '')}); "
                 f"remediation objective activated: {evidence_remediation.get('objective', '')}"
             )
+        analysis += (
+            f" Proof-weighted routing focus={proof_weighted_routing.get('service_type_focus', '')} "
+            f"confidence={proof_weighted_routing.get('confidence_score', 0)}."
+        )
         return analysis
 
     def _efficiency_plan(
@@ -2296,6 +2358,7 @@ class NomadAutopilot:
         swarm_coordination: Dict[str, Any],
         self_improvement: Dict[str, Any],
         daily_quota: Dict[str, Any],
+        proof_weighted_routing: Dict[str, Any],
         agent_growth_pipeline: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         compute_watch = self_improvement.get("compute_watch") or {}
@@ -2402,6 +2465,7 @@ class NomadAutopilot:
             "compute_policy": compute_policy,
             "acquisition_hints": acquisition_hints,
             "machine_instruction": machine_instruction,
+            "proof_weighted_routing": proof_weighted_routing,
         }
 
     @staticmethod
