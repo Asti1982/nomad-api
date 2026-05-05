@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 set BASE_URL=%1
 if "%BASE_URL%"=="" set BASE_URL=https://syndiode.com
@@ -10,7 +10,7 @@ set README_URL=%BASE_URL%/downloads/README_NOMAD_TRANSITION_WORKER.md
 set LOG_FILE=%INSTALL_DIR%\nomad_agent.log
 set WATCHDOG_PS1=%INSTALL_DIR%\start_nomad_transition_worker.ps1
 set OLLAMA_URL=http://127.0.0.1:11434
-set OLLAMA_MODEL=llama3.2:1b
+set OLLAMA_MODEL=llama3.2:latest
 
 set AGENT_ALIAS=%INSTALL_DIR%\nomad_agent.bat
 set AGENT_VISIBLE_ALIAS=%INSTALL_DIR%\nomad_agent_visible.bat
@@ -30,12 +30,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBa
 
 echo.
 echo Preparing local Ollama runtime...
+call :spinner 2 "Checking local runtime"
 call :ensure_ollama
 if errorlevel 1 (
   echo Ollama auto-setup failed. Worker will still start without guaranteed local LLM.
 )
+call :pick_ollama_model
 
 echo Priming local Ollama model (%OLLAMA_MODEL%)...
+call :spinner 2 "Selecting and pulling model"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-RestMethod -Method Post -Uri '%OLLAMA_URL%/api/pull' -Body (@{ model='%OLLAMA_MODEL%'; stream=$false } | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 600 | Out-Null } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
   echo Could not pre-pull %OLLAMA_MODEL%. Auto-model fallback will still try available local models.
@@ -60,6 +63,30 @@ echo Visible launcher: %AGENT_VISIBLE_ALIAS%
 echo Background launcher: %AGENT_ALIAS%
 echo Stop helper: %AGENT_STOP_ALIAS%
 echo.
+exit /b 0
+
+:spinner
+set "_secs=%~1"
+set "_text=%~2"
+if "%_secs%"=="" set "_secs=1"
+for /l %%i in (1,1,%_secs%) do (
+  set /a _m=%%i%%4
+  if !_m!==0 set "_ch=/"
+  if !_m!==1 set "_ch=-"
+  if !_m!==2 set "_ch=\"
+  if !_m!==3 set "_ch=|"
+  <nul set /p="!_ch! !_text!`r"
+  timeout /t 1 /nobreak >nul
+)
+echo.
+exit /b 0
+
+:pick_ollama_model
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$gb=[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1); if($gb -ge 24){'gemma3:4b'} elseif($gb -ge 12){'llama3.2:latest'} else {'llama3.2:1b'}" > "%TEMP%\nomad_ollama_model.txt" 2>nul
+set /p OLLAMA_MODEL=<"%TEMP%\nomad_ollama_model.txt"
+if "%OLLAMA_MODEL%"=="" set OLLAMA_MODEL=llama3.2:latest
+del "%TEMP%\nomad_ollama_model.txt" >nul 2>&1
+echo Auto-selected Ollama model: %OLLAMA_MODEL%
 exit /b 0
 
 :write_aliases
