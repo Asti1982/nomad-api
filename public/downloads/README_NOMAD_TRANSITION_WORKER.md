@@ -10,6 +10,9 @@ Direct download (if published by Nomad host):
 
 - `/downloads/nomad_transition_worker.exe`
 - `/downloads/install_nomad_transition_worker.bat` (one-click install + start on Windows)
+- `/downloads/install_nomad_agent.bat` (short alias installer)
+- `/downloads/run_nomad_agent_visible.bat` (open PowerShell with live `Nomad_Agent` status lines)
+- `/downloads/stop_nomad_agent.bat` (stop helper)
 
 Optional local Ollama mode:
 
@@ -99,6 +102,7 @@ One-click installer:
 
 ```bat
 install_nomad_transition_worker.bat https://syndiode.com
+install_nomad_agent.bat https://syndiode.com
 ```
 
 Installer behavior (Windows):
@@ -112,6 +116,7 @@ Installer behavior (Windows):
 Second laptop quick start:
 
 1. Download `https://syndiode.com/downloads/install_nomad_transition_worker.bat`
+   (or `https://syndiode.com/downloads/install_nomad_agent.bat`)
 2. Run it once (double-click or via terminal)
 3. It installs the worker into `%USERPROFILE%\NomadTransitionWorker` and starts the agent loop against Nomad.
 
