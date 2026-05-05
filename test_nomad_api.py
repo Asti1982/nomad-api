@@ -289,6 +289,39 @@ def test_transition_exchange_quote_record():
     assert rec is not None and rec["quote_id"] == q
 
 
+def test_transition_support_gate_snapshot_counts_active_agents():
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    ex = NomadTransitionExchange()
+    for idx in range(2):
+        q = ex.quote(
+            {
+                "agent_id": "agent-a",
+                "pain_type": "compute_auth",
+                "state_before_hash": f"b{idx}",
+                "target_state_hash": f"t{idx}",
+            },
+            base_url="",
+            remote_addr="",
+        )["quote"]["quote_id"]
+        ex.settle({"quote_id": q, "result_state_hash": f"t{idx}", "proof_artifact_hash": f"p{idx}"})
+    q2 = ex.quote(
+        {
+            "agent_id": "agent-b",
+            "pain_type": "compute_auth",
+            "state_before_hash": "b3",
+            "target_state_hash": "t3",
+        },
+        base_url="",
+        remote_addr="",
+    )["quote"]["quote_id"]
+    ex.settle({"quote_id": q2, "result_state_hash": "t3", "proof_artifact_hash": "p3"})
+
+    snap = ex.support_gate_snapshot(window_minutes=30, min_settles=2)
+    assert snap["active_support_agents"] == 1
+    assert snap["observed_agents"] == 2
+
+
 def test_swarm_registry_prunes_stale_nodes(tmp_path):
     from datetime import UTC, datetime, timedelta
     from nomad_swarm_registry import SwarmJoinRegistry

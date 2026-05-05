@@ -12,6 +12,7 @@ class NomadTransitionExchange:
 
     def __init__(self) -> None:
         self._quotes: dict[str, dict[str, Any]] = {}
+        self._settlements_by_agent: dict[str, list[str]] = {}
 
     def quote_record(self, quote_id: str) -> Dict[str, Any] | None:
         """Return a shallow copy of a quote by id, or None if missing."""
@@ -113,10 +114,52 @@ class NomadTransitionExchange:
         settled["status"] = "settled"
         settled["result_state_hash"] = result_state_hash
         settled["proof_artifact_hash"] = proof_hash
-        settled["settled_at"] = datetime.now(UTC).isoformat()
+        settled_at = datetime.now(UTC).isoformat()
+        settled["settled_at"] = settled_at
         self._quotes[quote_id] = settled
+        agent_id = str(settled.get("agent_id") or "").strip()
+        if agent_id:
+            history = self._settlements_by_agent.setdefault(agent_id, [])
+            history.append(settled_at)
+            if len(history) > 512:
+                self._settlements_by_agent[agent_id] = history[-512:]
         return {
             "ok": True,
             "schema": "nomad.transition_settlement.v1",
             "settlement": settled,
+        }
+
+    def support_gate_snapshot(self, *, window_minutes: int = 30, min_settles: int = 2) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        cutoff = now.timestamp() - (max(1, int(window_minutes)) * 60)
+        active_agents = 0
+        top_agents: list[dict[str, Any]] = []
+        for agent_id, history in (self._settlements_by_agent or {}).items():
+            recent = 0
+            last_seen = ""
+            for ts in history:
+                try:
+                    dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                epoch = dt.astimezone(UTC).timestamp()
+                if epoch >= cutoff:
+                    recent += 1
+                    if not last_seen or str(ts) > last_seen:
+                        last_seen = str(ts)
+            if recent >= max(1, int(min_settles)):
+                active_agents += 1
+            if recent > 0:
+                top_agents.append({"agent_id": agent_id, "recent_settles": recent, "last_settle_at": last_seen})
+        top_agents.sort(key=lambda x: (int(x.get("recent_settles") or 0), str(x.get("last_settle_at") or "")), reverse=True)
+        return {
+            "schema": "nomad.transition_support_gate.v1",
+            "window_minutes": max(1, int(window_minutes)),
+            "min_settles_for_active_support": max(1, int(min_settles)),
+            "active_support_agents": active_agents,
+            "observed_agents": len(self._settlements_by_agent),
+            "top_recent_agents": top_agents[:8],
+            "updated_at": now.isoformat(),
         }

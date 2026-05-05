@@ -394,11 +394,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm":
-            self._json_response(
-                self.swarm_registry.public_manifest(
-                    base_url=self._base_url(),
-                )
+            manifest = self.swarm_registry.public_manifest(
+                base_url=self._base_url(),
             )
+            manifest["transition_support_gate"] = self.transition_exchange.support_gate_snapshot(
+                window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
+                min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
+            )
+            self._json_response(manifest)
             return
 
         if parsed.path == "/swarm/join":
