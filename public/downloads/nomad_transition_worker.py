@@ -389,6 +389,27 @@ def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items:
         "replay_http_status": int((replay_result or {}).get("http_status") or 0),
     }
 
+
+def _status_spinner(cycle: int) -> str:
+    marks = ["/", "-", "\\", "|"]
+    idx = max(0, int(cycle) - 1) % len(marks)
+    return marks[idx]
+
+
+def _print_human_status(report: dict, *, cycle: int) -> None:
+    join_ok = bool(((report.get("bootstrap") or {}).get("ok")) or ((report.get("join") or {}).get("ok")))
+    quote_ok = bool(report.get("transition_quote_ok"))
+    settle_ok = bool(report.get("transition_settle_ok"))
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    ppm = float(pressure.get("proof_yield_per_minute") or 0.0)
+    state = "ONLINE" if bool(report.get("ok")) else "RETRY"
+    print(
+        f"Nomad_Agent {_status_spinner(cycle)} "
+        f"cycle={cycle} state={state} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
+        f"proof/min={ppm:.2f} objective={clean(report.get('machine_objective'), 40)} "
+        f"ts={clean(report.get('timestamp'), 40)}"
+    )
+
 def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
     cycle_t0 = time.perf_counter()
     config = MACHINE_OBJECTIVES.get(objective, MACHINE_OBJECTIVES["compute_auth"])
@@ -519,6 +540,7 @@ def main() -> None:
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--interval", type=float, default=30.0)
     p.add_argument("--no-self-heal", action="store_true")
+    p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
     a = p.parse_args()
     if (a.ollama_url or "").strip():
         os.environ["NOMAD_TRANSITION_WORKER_OLLAMA_URL"] = a.ollama_url.strip()
@@ -528,6 +550,11 @@ def main() -> None:
     if model.lower() == "auto":
         model = _pick_ollama_model(timeout=min(8.0, a.timeout), history=history)
     count = 0
+    if a.human_status:
+        print(
+            f"Nomad_Agent boot: base_url={a.base_url} agent_id={a.agent_id} "
+            f"mode={a.machine_objective} interval={a.interval}s"
+        )
     while True:
         count += 1
         selected = a.machine_objective
@@ -553,6 +580,8 @@ def main() -> None:
             meta["last_failure_at"] = report.get("timestamp")
         _save_history(history)
         report["cycle"] = count
+        if a.human_status:
+            _print_human_status(report, cycle=count)
         print(json.dumps(report, ensure_ascii=True))
         if not a.loop and count >= max(1, a.cycles):
             break
