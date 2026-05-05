@@ -124,6 +124,8 @@ def test_product_factory_builds_private_product_with_approval_gate(tmp_path):
     assert product["guardrail_id"] == "tool_failure_triage"
     assert product["service_template"]["create_task_payload"]["metadata"]["product_id"] == product["product_id"]
     assert "PLAN_ACCEPTED=true" in product["sales_motion"]["machine_offer"]
+    assert product["machine_exchange"]["schema"] == "nomad.machine_exchange.v1"
+    assert product["machine_exchange"]["non_human_economy"]["no_persuasion_objective"] is True
 
 
 def test_product_factory_marks_machine_endpoint_offer_ready(tmp_path):
@@ -242,6 +244,8 @@ def test_product_factory_builds_prioritized_product_from_high_value_pattern(tmp_
     assert "Repeated compute_auth pattern" in product["priority_reason"]
     assert result["top_priority_product"]["product_id"] == product["product_id"]
     assert product["service_template"]["create_task_payload"]["metadata"]["pattern_id"] == "hvp-1"
+    assert product["machine_exchange"]["source_kind"] == "high_value_pattern"
+    assert product["machine_exchange"]["pattern_id"] == "hvp-1"
 
 
 def test_product_factory_boosts_priority_from_engagement_signals(tmp_path):

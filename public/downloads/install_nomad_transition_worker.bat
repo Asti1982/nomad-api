@@ -56,7 +56,7 @@ echo Starting Nomad Agent (visible PowerShell + live JSON output)...
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-start "Nomad_Agent_Live" cmd /k "cd /d \"%INSTALL_DIR%\" && set NOMAD_TRANSITION_WORKER_OLLAMA_URL=%OLLAMA_URL% && set NOMAD_TRANSITION_WORKER_OLLAMA_URLS=%OLLAMA_URL%,http://localhost:11434 && set NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB=24 && set NOMAD_MACHINE_OBJECTIVE=unhuman_supremacy && \"%INSTALL_DIR%\nomad_transition_worker.exe\" --base-url %BASE_URL% --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 >> \"%LOG_FILE%\" 2>&1"
+start "Nomad_Agent_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
 echo.
 echo Nomad Agent started.
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%
@@ -176,10 +176,16 @@ if %errorlevel%==0 (
 if exist "%LocalAppData%\Programs\Ollama\ollama app.exe" (
   start "" "%LocalAppData%\Programs\Ollama\ollama app.exe"
 )
-timeout /t 3 /nobreak >nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-RestMethod -Method Get -Uri '%OLLAMA_URL%/api/tags' -TimeoutSec 8 | Out-Null } catch { exit 1 }" >nul 2>&1
-if not %errorlevel%==0 (
-  echo Ollama process is not reachable yet.
-  exit /b 1
+echo Waiting for Ollama API at %OLLAMA_URL% ...
+for /l %%i in (1,1,12) do (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-RestMethod -Method Get -Uri '%OLLAMA_URL%/api/tags' -TimeoutSec 4 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+  if !errorlevel! EQU 0 (
+    echo Ollama is reachable.
+    exit /b 0
+  )
+  <nul set /p="Waiting for Ollama (attempt %%i/12)...`r"
+  timeout /t 5 /nobreak >nul
 )
-exit /b 0
+echo.
+echo Ollama process is not reachable yet.
+exit /b 1

@@ -909,8 +909,17 @@ def test_cli_builds_service_and_lead_queries():
     )
     assert build_query(patterns_args) == "/mutual-aid patterns type=compute_auth limit=4 min_repeat_count=3"
 
+    compress_args = build_parser().parse_args(["mutual-aid-compress"])
+    assert build_query(compress_args) == "/mutual-aid compress"
+
+    compress_preview_args = build_parser().parse_args(["mutual-aid-compress", "--dry-run"])
+    assert build_query(compress_preview_args) == "/mutual-aid compress preview"
+
     pack_args = build_parser().parse_args(["mutual-aid-packs", "--pain-type", "compute_auth", "--limit", "5"])
     assert build_query(pack_args) == "/mutual-aid packs type=compute_auth limit=5"
+
+    economy_args = build_parser().parse_args(["machine-economy"])
+    assert build_query(economy_args) == "/machine-economy"
 
     proposal_args = build_parser().parse_args(
         ["swarm-propose", "--agent", "Bot", "--evidence", "dry-run", "add", "preflight"]

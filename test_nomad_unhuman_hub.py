@@ -12,5 +12,6 @@ def test_unhuman_hub_snapshot_schema():
     profile = out.get("unhuman_profile") or {}
     assert "risk_score" in profile
     assert profile.get("risk_tier") in {"stable", "guarded", "critical"}
+    assert (out.get("machine_economy") or {}).get("schema") == "nomad.machine_economy.v1"
     assert isinstance(out.get("doctrine"), list)
     assert isinstance(out.get("runbook"), list)

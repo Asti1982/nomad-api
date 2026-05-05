@@ -120,6 +120,30 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(result["analysis"])
         return "\n".join(lines)
 
+    if mode == "nomad_machine_economy":
+        viability = result.get("machine_viability") or {}
+        flows = result.get("resource_flows") or {}
+        tasks = flows.get("service_tasks") or {}
+        products = flows.get("products") or {}
+        patterns = flows.get("patterns") or {}
+        modules = flows.get("modules") or {}
+        lines = [
+            "Nomad machine economy",
+            f"Tier: {viability.get('tier', 'unknown')} score={viability.get('carrying_score', 0)}",
+            f"Tasks: total={tasks.get('total', 0)} awaiting_payment={tasks.get('awaiting_payment', 0)} unpaid_delivered={tasks.get('unpaid_delivered', 0)}",
+            f"Products: total={products.get('total', 0)} machine_sellable={products.get('machine_sellable', 0)} exchange_ready={products.get('machine_exchange_ready', 0)}",
+            f"Patterns: groups={patterns.get('pattern_groups', 0)} high_value={patterns.get('high_value_patterns', 0)} top_count={patterns.get('top_pattern_count', 0)}",
+            f"Modules: total={modules.get('module_count', 0)} overmint_pressure={modules.get('overmint_pressure', 0)}",
+        ]
+        actions = result.get("next_actions") or []
+        if actions:
+            lines.append("Next actions:")
+            for item in actions[:4]:
+                lines.append(f"- {item.get('action', '')}: {item.get('reason', '')}")
+        if result.get("analysis"):
+            lines.append(result["analysis"])
+        return "\n".join(lines)
+
     if mode == "nomad_autopilot":
         service = result.get("service") or {}
         outreach = result.get("outreach") or {}
@@ -521,6 +545,19 @@ def _compact_text(result: Dict[str, Any]) -> str:
                 "Nomad High-Value Patterns",
                 f"Patterns: {result.get('pattern_count', 0)}",
                 f"Minimum repeats: {result.get('min_repeat_count', 0)}",
+                result.get("analysis", ""),
+            ]
+        )
+
+    if mode == "nomad_mutual_aid_module_compression":
+        return "\n".join(
+            [
+                "Nomad Mutual-Aid Module Compression",
+                f"Dry run: {result.get('dry_run', False)}",
+                f"Legacy groups: {result.get('legacy_group_count', 0)}",
+                f"Legacy modules: {result.get('legacy_module_count', 0)}",
+                f"Canonical created: {result.get('canonical_created_count', 0)}",
+                f"Active modules after: {result.get('active_module_count_after', 0)}",
                 result.get("analysis", ""),
             ]
         )
@@ -983,6 +1020,8 @@ def build_query(args: argparse.Namespace) -> str:
         limit = f" limit={args.limit}" if args.limit else ""
         preview = " preview" if args.preview else ""
         return f"/mission{limit}{preview}".strip()
+    if command == "machine-economy":
+        return "/machine-economy"
     if command == "best":
         return f"/best{profile_suffix}"
     if command == "self":
@@ -1028,6 +1067,9 @@ def build_query(args: argparse.Namespace) -> str:
             f"/mutual-aid patterns{pain_type} limit={args.limit} "
             f"min_repeat_count={args.min_repeat_count}"
         ).strip()
+    if command == "mutual-aid-compress":
+        preview = " preview" if args.dry_run else ""
+        return f"/mutual-aid compress{preview}".strip()
     if command == "mutual-aid-packs":
         pain_type = f" type={args.pain_type}" if args.pain_type else ""
         return f"/mutual-aid packs{pain_type} limit={args.limit}".strip()
@@ -1396,6 +1438,10 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             result = operator_iteration_report(tail_lines=int(getattr(args, "tail", 400) or 400))
         elif args.command == "agent-reputation":
             result = NomadAgent().service_desk.reputation_snapshot()
+        elif args.command == "machine-economy":
+            from nomad_machine_economy import machine_economy_snapshot
+
+            result = machine_economy_snapshot()
         elif args.command == "unhuman-hub":
             from nomad_unhuman_hub import unhuman_hub_snapshot
 
@@ -1687,6 +1733,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "agent-reputation",
         help="Contract-first reliability snapshot (boundary compliance and payment progression).",
+    )
+    subparsers.add_parser(
+        "machine-economy",
+        help="Settlement-backed carrying capacity: money as machine resource flow, not human sales.",
     )
     unhuman_hub = subparsers.add_parser(
         "unhuman-hub",
@@ -2054,6 +2104,16 @@ def build_parser() -> argparse.ArgumentParser:
     patterns.add_argument("--pain-type", default="")
     patterns.add_argument("--limit", type=int, default=10)
     patterns.add_argument("--min-repeat-count", type=int, default=2)
+
+    compress = subparsers.add_parser(
+        "mutual-aid-compress",
+        help="Compress legacy score-stamped Mutual-Aid modules into canonical active capabilities.",
+    )
+    compress.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the compression without updating state or writing canonical module files.",
+    )
 
     packs = subparsers.add_parser("mutual-aid-packs", help="List paid packs distilled from repeated Mutual-Aid patterns.")
     packs.add_argument("--pain-type", default="")

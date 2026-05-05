@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List
 
 from nomad_operator_desk import operator_sprint
+from nomad_machine_economy import machine_economy_snapshot
 from nomad_public_url import preferred_public_base_url
 from nomad_swarm_registry import build_peer_join_value_surface
 
@@ -75,6 +76,7 @@ def unhuman_hub_snapshot(*, agent: Any = None, base_url: str = "", persist_missi
         "Always maintain >=2 active compute lanes (one local or one hosted backup).",
         "Treat awaiting_payment backlog as entropy: force daily cashflow pass.",
         "Prefer deterministic contracts over conversational negotiation.",
+        "Treat money as settlement-backed carrying capacity, not human sales persuasion.",
     ]
     runbook = [
         "python nomad_cli.py operator-sprint --json",
@@ -89,6 +91,7 @@ def unhuman_hub_snapshot(*, agent: Any = None, base_url: str = "", persist_missi
         "python nomad_cli.py misclassification-audit --json",
     ]
     psychic = (build_peer_join_value_surface(base_url=root).get("human_psychic_avoidance_lanes") or {})
+    economy = machine_economy_snapshot()
     return {
         "mode": "nomad_unhuman_hub",
         "schema": "nomad.unhuman_hub.v1",
@@ -105,6 +108,7 @@ def unhuman_hub_snapshot(*, agent: Any = None, base_url: str = "", persist_missi
         },
         "doctrine": doctrine,
         "runbook": runbook,
+        "machine_economy": economy,
         "human_psychic_avoidance_lanes": psychic,
         "sprint": sprint,
         "reputation": reputation,

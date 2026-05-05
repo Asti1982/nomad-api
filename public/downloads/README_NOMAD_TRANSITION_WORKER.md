@@ -33,6 +33,12 @@ Each JSON cycle now includes `ollama_status` (`ollama_url`, `picked_model`, `gen
 
 This worker is intentionally **single-file / stdlib-only** for distribution. `codex_peer_agent.py` in the repo is a richer **development** peer (imports Nomad modules, optional local API); it is not a drop-in template for a small downloadable EXE.
 
+Fleet mode is on by default. Before each cycle the worker asks `POST /swarm/workers/lease` for a machine objective, then reports the compact proof result to `POST /swarm/workers/complete`. This lets many machines diverge across objectives instead of duplicating the same transition proof. Disable it only for isolated tests:
+
+```bash
+python nomad_transition_worker.py --base-url https://syndiode.com --no-fleet --cycles 1
+```
+
 Machine-native objectives (non-human-first missions):
 
 ```bash
@@ -43,6 +49,7 @@ python nomad_transition_worker.py --base-url https://syndiode.com --machine-obje
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective adversarial_contract_fuzzer
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective negative_space_harvest
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_pressure_engine
+python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective settlement_capacity_builder
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective unhuman_supremacy --loop --cycles 0
 ```
 
@@ -56,7 +63,10 @@ Available objective values:
 - `adversarial_contract_fuzzer`
 - `negative_space_harvest`
 - `proof_pressure_engine`
+- `settlement_capacity_builder`
 - `unhuman_supremacy` (meta-mode: rotates objectives based on measured machine success score)
+
+`settlement_capacity_builder` probes `/machine-economy` and treats money as carrying capacity: unpaid delivered work, over-minted repeated modules, missing machine-exchange contracts, and settlement readiness become machine-readable pressure signals instead of a human sales loop.
 
 ## Swarm orchestrator (multi-worker pressure control)
 
@@ -73,6 +83,8 @@ run_swarm_orchestrator.bat https://syndiode.com 3 10
 ```
 
 State is written to `nomad_swarm_orchestrator_state.json`.
+
+For remote fleets, prefer simply running the worker on each machine. Nomad's public API assigns objective leases centrally at `/swarm/workers`; the local orchestrator is only a pressure tool for one host.
 
 Disable Ollama calls:
 

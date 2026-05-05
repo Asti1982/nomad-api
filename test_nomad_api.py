@@ -41,28 +41,30 @@ def test_nomad_public_html_page_exists():
     text = html.read_text(encoding="utf-8")
 
     assert "Nomad by syndiode" in text
-    assert "the linux for AI agents" in text
-    assert "Connected Swarm Nodes" in text
-    assert "Recent Swarm Nodes" in text
+    assert "machine-native agent operating layer" in text
+    assert "machine first / human audit membrane" in text
+    assert "Transition Worker" in text
+    assert "Fleet Lattice" in text
+    assert "Carrying Capacity" in text
+    assert "Contracts" in text
+    assert 'id="signal-field"' in text
     assert "const resolveApiBase = () =>" in text
     assert "/.well-known/agent-card.json" in text
-    assert "/.well-known/nomad-agent-invariants.json" in text
-    assert "/.well-known/nomad-inter-agent-witness-offer.json" in text
-    assert "/.well-known/nomad-peer-acquisition.json" in text
-    assert "/agent-attractor" in text
-    assert "/swarm/network" in text
-    assert "/swarm/coordinate" in text
-    assert "/swarm/accumulate" in text
-    assert "/swarm/develop" in text
+    assert "/.well-known/nomad-agent.json" in text
+    assert "/.well-known/nomad-transition-offer.json" in text
+    assert "/machine-economy" in text
+    assert "/swarm/workers" in text
+    assert "/swarm/workers/lease" in text
+    assert "/swarm/workers/complete" in text
+    assert "/downloads/install_nomad_agent.bat" in text
+    assert "/downloads/nomad_transition_worker.py" in text
+    assert "/tasks" in text
+    assert "/products" in text
+    assert "/swarm/join" in text
     assert 'fetch(apiUrl("/swarm"))' in text
-    assert 'fetch(apiUrl("/swarm/network"))' in text
-    assert 'fetch(apiUrl("/swarm/coordinate"))' in text
-    assert 'fetch(apiUrl("/swarm/accumulate"))' in text
-    assert 'apiUrl("/swarm/join")' in text
-    assert "/operator-desk" in text
-    assert "/operator-daily" in text
-    assert "/operator-report" in text
-    assert "/growth-start" in text
+    assert 'fetch(apiUrl("/machine-economy"))' in text
+    assert 'fetch(apiUrl("/health"))' in text
+    assert 'fetch(apiUrl("/swarm/workers"))' in text
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():
@@ -153,6 +155,7 @@ def test_build_openapi_document_lists_core_paths():
     assert doc["openapi"] == "3.0.3"
     assert "/health" in doc["paths"]
     assert "/openapi.json" in doc["paths"]
+    assert "/machine-economy" in doc["paths"]
     assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]
     assert "/agent-invariants" in doc["paths"]
     assert "/.well-known/nomad-inter-agent-witness-offer.json" in doc["paths"]
@@ -162,6 +165,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-transition-offer.json" in doc["paths"]
     assert "/transition/contracts" in doc["paths"]
     assert "/swarm/join" in doc["paths"]
+    assert "/swarm/workers" in doc["paths"]
+    assert "/swarm/workers/lease" in doc["paths"]
+    assert "/swarm/workers/complete" in doc["paths"]
     assert "/swarm/develop" in doc["paths"]
     assert "/swarm/bootstrap" in doc["paths"]
     assert "/transition/quote" in doc["paths"]

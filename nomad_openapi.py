@@ -72,6 +72,15 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Index", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/machine-economy": {
+                "get": {
+                    "summary": "Machine-native settlement and carrying capacity snapshot",
+                    "operationId": "getMachineEconomy",
+                    "responses": {
+                        "200": {"description": "Machine economy", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agent-invariants.json": {
                 "get": {
                     "summary": "Wire diagnostics contract and intent-neutrality invariants for AI agents",
@@ -150,6 +159,76 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getSwarmManifest",
                     "responses": {"200": {"description": "Swarm manifest", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
+            },
+            "/swarm/workers": {
+                "get": {
+                    "summary": "Transition worker fleet state and lease contract",
+                    "operationId": "getTransitionWorkerFleet",
+                    "responses": {"200": {"description": "Fleet", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/swarm/workers/lease": {
+                "get": {
+                    "summary": "Transition worker lease contract",
+                    "operationId": "getTransitionWorkerLeaseContract",
+                    "responses": {"200": {"description": "Lease contract", "content": {"application/json": {"schema": ref_json_object()}}}},
+                },
+                "post": {
+                    "summary": "Request a distributed transition-worker objective lease",
+                    "operationId": "postTransitionWorkerLease",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "known_objectives": {"type": "array", "items": {"type": "string"}},
+                                        "proposed_objective": {"type": "string"},
+                                        "last_report": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Lease granted"},
+                        "422": {"description": "Validation failed"},
+                    },
+                },
+            },
+            "/swarm/workers/complete": {
+                "get": {
+                    "summary": "Transition worker completion contract",
+                    "operationId": "getTransitionWorkerCompletionContract",
+                    "responses": {"200": {"description": "Completion contract", "content": {"application/json": {"schema": ref_json_object()}}}},
+                },
+                "post": {
+                    "summary": "Report completion for a transition-worker lease",
+                    "operationId": "postTransitionWorkerComplete",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "lease_id", "report"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "lease_id": {"type": "string"},
+                                        "report": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Completion recorded"},
+                        "422": {"description": "Validation failed"},
+                    },
+                },
             },
             "/swarm/join": {
                 "get": {

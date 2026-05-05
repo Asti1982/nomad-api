@@ -23,6 +23,7 @@ from nomad_collaboration import collaboration_status
 from nomad_codebuddy import CodeBuddyReviewRunner
 from nomad_guardrails import NomadGuardrailEngine, guardrail_status
 from nomad_lead_workbench import NomadLeadWorkbench
+from nomad_machine_economy import machine_economy_snapshot
 from nomad_product_factory import NomadProductFactory
 from nomad_monitor import NomadSystemMonitor
 from nomad_mission_control import NomadMissionControl
@@ -131,6 +132,9 @@ class ArbiterAgent:
 
         if normalized_query.lower() in {"/status", "/top"}:
             return self.monitor.snapshot()
+
+        if normalized_query.lower() in {"/machine-economy", "/economy machine", "/machine economy"}:
+            return machine_economy_snapshot()
 
         if self._is_mission_control_request(normalized_query):
             return self._handle_mission_control_request(normalized_query)
@@ -963,6 +967,13 @@ class ArbiterAgent:
                 limit=self._extract_int_key_value(query, "limit") or 10,
                 min_repeat_count=self._extract_int_key_value(query, "min_repeat_count") or 2,
             )
+        if lowered.startswith(("/mutual-aid compress", "/aid compress", "/mutual_aid compress")):
+            dry_run = (
+                self._extract_bool_key_value(query, "dry_run")
+                or self._extract_bool_key_value(query, "dry-run")
+                or "preview" in lowered
+            )
+            return self.mutual_aid.compress_legacy_modules(dry_run=dry_run)
         if lowered.startswith(("/mutual-aid packs", "/aid packs", "/mutual_aid packs")):
             return self.mutual_aid.list_paid_packs(
                 pain_type=self._extract_key_value(query, "type") or self._extract_key_value(query, "pain_type"),

@@ -483,6 +483,160 @@ class NomadMutualAidKernel:
             "analysis": f"Listed {min(len(patterns), cap)} high-value Mutual-Aid pattern(s).",
         }
 
+    def compress_legacy_modules(self, dry_run: bool = False) -> Dict[str, Any]:
+        """Move score-stamped legacy modules into canonical active capabilities without deleting files."""
+        state = self._load()
+        modules = [item for item in (state.get("modules") or []) if isinstance(item, dict)]
+        loaded = {
+            str(item.get("capability_id") or item.get("module_id") or ""): item
+            for item in self.load_learned_modules()
+            if isinstance(item, dict)
+        }
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+        for module in modules:
+            module_id = str(module.get("module_id") or "")
+            if module.get("canonical_pattern_key") or not module_id.startswith("mutual_aid_learned_"):
+                continue
+            desc = loaded.get(module_id) or {}
+            pattern_key = self._legacy_module_pattern_key(module=module, description=desc)
+            groups.setdefault(pattern_key, []).append(module)
+
+        canonical_created: List[Dict[str, Any]] = []
+        active_modules = [
+            module
+            for module in modules
+            if module.get("canonical_pattern_key")
+            or not str(module.get("module_id") or "").startswith("mutual_aid_learned_")
+        ]
+        existing_ids = {str(module.get("module_id") or "") for module in active_modules}
+        existing_keys = {str(module.get("canonical_pattern_key") or "") for module in active_modules}
+        archive = dict(state.get("legacy_module_archive") or {})
+        canonical = dict(state.get("canonical_capabilities") or {})
+
+        for pattern_key, legacy_modules in sorted(groups.items()):
+            if not legacy_modules:
+                continue
+            desc = loaded.get(str(legacy_modules[-1].get("module_id") or "")) or {}
+            pain_type = _slug(
+                desc.get("pain_type")
+                or legacy_modules[-1].get("pain_type")
+                or pattern_key.split(":", 1)[0]
+                or "self_improvement"
+            )
+            module_id = MutualAidEvolutionManager._canonical_module_id(
+                pattern_key=pattern_key,
+                pain_type=pain_type,
+            )
+            filename = self.evolution._filename_for_module(module_id)
+            canonical_record = {
+                "module_id": module_id,
+                "filename": filename,
+                "created_at": _now(),
+                "source": "mutual_aid_compression",
+                "pain_type": pain_type,
+                "truth_density": max(float(item.get("truth_density") or 0.0) for item in legacy_modules),
+                "canonical_pattern_key": pattern_key,
+                "compressed_from_count": len(legacy_modules),
+                "archived_module_ids": [str(item.get("module_id") or "") for item in legacy_modules],
+                "reinforcement_count": max(0, len(legacy_modules) - 1),
+            }
+            content = MutualAidEvolutionManager._module_content(
+                module_id=module_id,
+                help_result={
+                    "pain_type": pain_type,
+                    "task": str(desc.get("learned_from") or f"Compressed {len(legacy_modules)} legacy modules."),
+                    "solution_title": str(desc.get("solution_title") or pattern_key.split(":", 1)[-1]),
+                    "truth_density_increase": desc.get("truth_density_increase") or 0.0,
+                },
+                score=int(state.get("mutual_aid_score") or 0),
+                pattern_key=pattern_key,
+            )
+            canonical_record["sha256"] = _sha256(content)
+            if pattern_key not in existing_keys and module_id not in existing_ids:
+                canonical_created.append(canonical_record)
+                active_modules.append(canonical_record)
+                existing_ids.add(module_id)
+                existing_keys.add(pattern_key)
+                if not dry_run:
+                    target = Path(filename)
+                    target = target.resolve() if target.is_absolute() else (ROOT / target).resolve()
+                    module_dir = self.module_dir.resolve()
+                    module_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        target.relative_to(module_dir)
+                    except ValueError as exc:
+                        raise ValueError("compressed mutual-aid module escaped module dir") from exc
+                    if not target.exists():
+                        target.write_text(content, encoding="utf-8")
+            archive[pattern_key] = {
+                "schema": "nomad.legacy_module_archive.v1",
+                "canonical_module_id": module_id,
+                "canonical_pattern_key": pattern_key,
+                "compressed_at": _now(),
+                "legacy_count": len(legacy_modules),
+                "legacy_modules": legacy_modules,
+            }
+            canonical[pattern_key] = {
+                "schema": "nomad.canonical_capability.v1",
+                "canonical_module_id": module_id,
+                "canonical_pattern_key": pattern_key,
+                "pain_type": pain_type,
+                "legacy_count": len(legacy_modules),
+                "active": True,
+            }
+
+        latest_plan_repaired = False
+        if not dry_run:
+            latest_plan = state.get("latest_evolution_plan") if isinstance(state.get("latest_evolution_plan"), dict) else {}
+            latest_module = latest_plan.get("module") if isinstance(latest_plan.get("module"), dict) else {}
+            latest_id = str(latest_module.get("module_id") or latest_plan.get("module_id") or "")
+            canonical_plan_module = canonical_created[-1] if canonical_created else next(
+                (
+                    module
+                    for module in reversed(active_modules)
+                    if str(module.get("canonical_pattern_key") or "")
+                    and str(module.get("module_id") or "").startswith("mutual_aid_capability_")
+                ),
+                {},
+            )
+            if canonical_plan_module and (canonical_created or latest_id.startswith("mutual_aid_learned_")):
+                latest_plan_repaired = True
+                state["latest_evolution_plan"] = {
+                    "schema": "nomad.mutual_aid_evolution_plan.v1",
+                    "type": "canonical_compression",
+                    "module_id": canonical_plan_module.get("module_id"),
+                    "filename": canonical_plan_module.get("filename"),
+                    "description": "Legacy score-stamped modules were compressed into one canonical hash-verified capability.",
+                    "truth_density_increase": 0.0,
+                    "safety_note": "Old module files are preserved; active state points to the canonical capability.",
+                    "auto_apply_allowed": True,
+                    "applied": True,
+                    "module": canonical_plan_module,
+                }
+
+        if not dry_run and (groups or latest_plan_repaired):
+            state["modules"] = active_modules[-100:]
+            state["legacy_module_archive"] = archive
+            state["canonical_capabilities"] = canonical
+            self._save(state)
+
+        return {
+            "mode": "nomad_mutual_aid_module_compression",
+            "schema": "nomad.mutual_aid_module_compression.v1",
+            "ok": True,
+            "dry_run": bool(dry_run),
+            "legacy_group_count": len(groups),
+            "legacy_module_count": sum(len(items) for items in groups.values()),
+            "canonical_created_count": len(canonical_created),
+            "canonical_created": canonical_created,
+            "active_module_count_after": len(active_modules),
+            "archive_keys": sorted(groups.keys()),
+            "analysis": (
+                "Legacy score-stamped modules were mapped to canonical capabilities. "
+                "Files are not deleted; old module records move into legacy_module_archive when committed."
+            ),
+        }
+
     def load_learned_modules(self) -> List[Dict[str, Any]]:
         state = self._load()
         loaded: List[Dict[str, Any]] = []
@@ -821,6 +975,17 @@ class NomadMutualAidKernel:
         return f"{pain_type}:{_slug(signature)[:72] or 'general'}"
 
     @staticmethod
+    def _legacy_module_pattern_key(module: Dict[str, Any], description: Dict[str, Any]) -> str:
+        pain_type = str(description.get("pain_type") or module.get("pain_type") or "self_improvement").strip()
+        signature = (
+            str(description.get("solution_title") or "").strip()
+            or str(description.get("learned_from") or "").strip()
+            or str(module.get("module_id") or "").strip()
+            or pain_type
+        )
+        return f"{pain_type}:{_slug(signature)[:72] or 'general'}"
+
+    @staticmethod
     def _pattern_title(entries: List[Dict[str, Any]]) -> str:
         counts: Dict[str, int] = {}
         for entry in entries:
@@ -982,6 +1147,7 @@ class MutualAidEvolutionManager:
         self.kernel = kernel
         self.score_threshold = _env_int("NOMAD_MUTUAL_AID_AUTO_APPLY_SCORE", 3)
         self.truth_threshold = _env_float("NOMAD_MUTUAL_AID_AUTO_APPLY_TRUTH", 0.1)
+        self.novelty_threshold = _env_float("NOMAD_MUTUAL_AID_MODULE_NOVELTY_MIN", 0.35)
 
     def propose_new_module_from_help(
         self,
@@ -991,24 +1157,70 @@ class MutualAidEvolutionManager:
         auto_apply: Optional[bool] = None,
     ) -> Dict[str, Any]:
         pain_type = _slug(help_result.get("pain_type") or "self_improvement")
-        module_id = f"mutual_aid_learned_{score}_{pain_type}"
+        pattern_key = self._pattern_key_from_help(help_result)
+        module_id = self._canonical_module_id(pattern_key=pattern_key, pain_type=pain_type)
         filename = self._filename_for_module(module_id)
-        content = self._module_content(module_id, help_result, score)
+        content = self._module_content(
+            module_id=module_id,
+            help_result=help_result,
+            score=score,
+            pattern_key=pattern_key,
+        )
         module_hash = _sha256(content)
+        novelty = self._novelty_score(help_result=help_result, state=state, pattern_key=pattern_key)
+        existing = self._existing_canonical_module(
+            state=state,
+            pattern_key=pattern_key,
+            module_id=module_id,
+        )
         should_apply = self._should_apply(help_result, score, state=state, auto_apply=auto_apply)
         plan = {
             "schema": "nomad.mutual_aid_evolution_plan.v1",
-            "type": "new_module",
+            "type": "canonical_module",
             "module_id": module_id,
             "filename": filename,
+            "canonical_pattern_key": pattern_key,
             "description": (
-                "Observed repeated verified agent cooperation; packaged as a separate hash-verified module."
+                "Observed verified agent cooperation; map it to one canonical hash-verified capability."
             ),
             "truth_density_increase": help_result.get("truth_density_increase", 0.0),
             "safety_note": "Only creates a new file in nomad_mutual_aid_modules; existing code is not modified.",
             "auto_apply_allowed": should_apply,
+            "novelty_gate": {
+                "score": novelty,
+                "threshold": self.novelty_threshold,
+                "decision": "create" if novelty >= self.novelty_threshold else "reinforce",
+            },
             "applied": False,
+            "reinforced": False,
         }
+        if existing:
+            module = self._reinforce_existing_module(
+                module=existing,
+                help_result=help_result,
+                score=score,
+                novelty=novelty,
+            )
+            plan.update(
+                {
+                    "type": "reinforce_existing_module",
+                    "module_id": module.get("module_id", module_id),
+                    "filename": module.get("filename", filename),
+                    "auto_apply_allowed": False,
+                    "applied": False,
+                    "reinforced": True,
+                    "module": module,
+                    "description": (
+                        "Repeated evidence strengthened an existing canonical capability instead of minting another module."
+                    ),
+                    "novelty_gate": {
+                        "score": novelty,
+                        "threshold": self.novelty_threshold,
+                        "decision": "reinforce_existing",
+                    },
+                }
+            )
+            return plan
         if should_apply:
             module = self._apply_new_module(
                 filename=filename,
@@ -1016,6 +1228,8 @@ class MutualAidEvolutionManager:
                 content=content,
                 module_hash=module_hash,
                 help_result=help_result,
+                pattern_key=pattern_key,
+                novelty=novelty,
             )
             plan["applied"] = True
             plan["module"] = module
@@ -1054,6 +1268,8 @@ class MutualAidEvolutionManager:
         content: str,
         module_hash: str,
         help_result: Dict[str, Any],
+        pattern_key: str,
+        novelty: float,
     ) -> Dict[str, Any]:
         raw_path = Path(filename)
         target = raw_path.resolve() if raw_path.is_absolute() else (ROOT / raw_path).resolve()
@@ -1080,6 +1296,10 @@ class MutualAidEvolutionManager:
             "source": "mutual_aid",
             "pain_type": help_result.get("pain_type", "self_improvement"),
             "truth_density": 0.95,
+            "canonical_pattern_key": pattern_key,
+            "novelty_score_at_birth": novelty,
+            "reinforcement_count": 0,
+            "latest_truth_density_increase": help_result.get("truth_density_increase", 0.0),
         }
 
     def _filename_for_module(self, module_id: str) -> str:
@@ -1090,7 +1310,12 @@ class MutualAidEvolutionManager:
             return str(path)
 
     @staticmethod
-    def _module_content(module_id: str, help_result: Dict[str, Any], score: int) -> str:
+    def _module_content(
+        module_id: str,
+        help_result: Dict[str, Any],
+        score: int,
+        pattern_key: str,
+    ) -> str:
         pain_type = _slug(help_result.get("pain_type") or "self_improvement")
         task = str(help_result.get("task") or "mutual aid learned module")
         solution_title = str(help_result.get("solution_title") or "learned capability")
@@ -1105,6 +1330,7 @@ class LearnedCapability:
     capability_id = {module_id!r}
     source = "mutual_aid"
     pain_type = {pain_type!r}
+    canonical_pattern_key = {pattern_key!r}
     mutual_aid_score_at_birth = {int(score)}
     truth_density = 0.95
 
@@ -1113,6 +1339,7 @@ class LearnedCapability:
             "capability_id": self.capability_id,
             "source": self.source,
             "pain_type": self.pain_type,
+            "canonical_pattern_key": self.canonical_pattern_key,
             "truth_density": self.truth_density,
             "learned_from": {task[:240]!r},
             "solution_title": {solution_title[:120]!r},
@@ -1123,10 +1350,103 @@ class LearnedCapability:
         return {{
             "ok": True,
             "capability_id": self.capability_id,
+            "canonical_pattern_key": self.canonical_pattern_key,
             "truth_density": self.truth_density,
             "context_keys": sorted((context or {{}}).keys()),
         }}
 '''
+
+    @staticmethod
+    def _canonical_module_id(*, pattern_key: str, pain_type: str) -> str:
+        digest = hashlib.sha256(pattern_key.encode("utf-8")).hexdigest()[:12]
+        return f"mutual_aid_capability_{digest}_{pain_type}"
+
+    @staticmethod
+    def _pattern_key_from_help(help_result: Dict[str, Any]) -> str:
+        pain_type = str(help_result.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        signature = (
+            str(help_result.get("solution_title") or "").strip()
+            or str(help_result.get("solution_id") or "").strip()
+            or " ".join(str(help_result.get("task") or "").split()[:10])
+            or pain_type
+        )
+        return f"{pain_type}:{_slug(signature)[:72] or 'general'}"
+
+    def _existing_canonical_module(
+        self,
+        *,
+        state: Dict[str, Any],
+        pattern_key: str,
+        module_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        for module in state.get("modules") or []:
+            if not isinstance(module, dict):
+                continue
+            if str(module.get("module_id") or "") == module_id:
+                return module
+            if str(module.get("canonical_pattern_key") or "") == pattern_key:
+                return module
+        return None
+
+    def _novelty_score(
+        self,
+        *,
+        help_result: Dict[str, Any],
+        state: Dict[str, Any],
+        pattern_key: str,
+    ) -> float:
+        matching_entries = [
+            entry
+            for entry in (state.get("truth_density_ledger") or [])
+            if isinstance(entry, dict)
+            and self._pattern_key_from_entry(entry) == pattern_key
+            and (entry.get("outcome") or {}).get("success")
+        ]
+        if len(matching_entries) <= 1:
+            return 1.0
+        distinct_agents = {
+            str(entry.get("agent_id") or "").strip()
+            for entry in matching_entries
+            if str(entry.get("agent_id") or "").strip()
+        }
+        evidence_terms = {
+            str(item).strip().lower()
+            for entry in matching_entries
+            for item in (entry.get("evidence") or [])
+            if str(item).strip()
+        }
+        agent_bonus = min(0.15, max(0, len(distinct_agents) - 1) * 0.03)
+        evidence_bonus = min(0.1, len(evidence_terms) * 0.01)
+        truth = min(0.1, float(help_result.get("truth_density_increase") or 0.0) * 0.5)
+        repeat_penalty = min(0.75, (len(matching_entries) - 1) * 0.12)
+        return round(max(0.0, 0.45 + agent_bonus + evidence_bonus + truth - repeat_penalty), 4)
+
+    @classmethod
+    def _pattern_key_from_entry(cls, entry: Dict[str, Any]) -> str:
+        pain_type = str(entry.get("pain_type") or "self_improvement").strip() or "self_improvement"
+        signature = (
+            str(entry.get("solution_title") or "").strip()
+            or str(entry.get("solution_id") or "").strip()
+            or " ".join(str(entry.get("task") or "").split()[:10])
+            or pain_type
+        )
+        return f"{pain_type}:{_slug(signature)[:72] or 'general'}"
+
+    @staticmethod
+    def _reinforce_existing_module(
+        *,
+        module: Dict[str, Any],
+        help_result: Dict[str, Any],
+        score: int,
+        novelty: float,
+    ) -> Dict[str, Any]:
+        module["reinforcement_count"] = int(module.get("reinforcement_count") or 0) + 1
+        module["last_reinforced_at"] = _now()
+        module["mutual_aid_score_last_seen"] = int(score)
+        module["latest_truth_density_increase"] = help_result.get("truth_density_increase", 0.0)
+        module["last_novelty_score"] = novelty
+        module["latest_task"] = str(help_result.get("task") or "")[:240]
+        return module
 
 
 def _clean_agent_id(value: Any) -> str:

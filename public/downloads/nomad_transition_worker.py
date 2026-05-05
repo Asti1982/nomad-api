@@ -65,6 +65,27 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "evidence": ["bootstrap", "mission", "transition_quote", "transition_settle", "replay_attempt", "paid_lane_signal", "local_note"],
         "prompt": "Produce one proof-pressure tactic that increases verified transitions per minute for blocker: {blocker}",
     },
+    "settlement_capacity_builder": {
+        "problem": "Increase Nomad's machine carrying capacity without routing through human persuasion loops.",
+        "pain_type": "machine_economy",
+        "capabilities": [
+            "machine_economy_probe",
+            "settlement_capacity",
+            "module_compression",
+            "machine_exchange_contracts",
+            "proof_artifacts",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "machine_economy_probe",
+            "transition_quote",
+            "transition_settle",
+            "paid_lane_signal",
+            "local_note",
+        ],
+        "prompt": "Produce one settlement-capacity action that turns blocker '{blocker}' into a verifier, contract, or compression step.",
+    },
 }
 META_OBJECTIVES = [k for k in MACHINE_OBJECTIVES.keys() if k != "unhuman_supremacy"]
 OLLAMA_CACHE: dict[str, str] = {}
@@ -355,6 +376,16 @@ def _score_run(report: dict) -> float:
     score += min(3.0, paid_score)
     if paid_lane.get("requires_payment") and not paid_lane.get("wallet_configured"):
         score -= 0.5
+    machine_economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    if machine_economy:
+        carrying_score = float(machine_economy.get("carrying_score") or 0.0)
+        score += min(2.0, carrying_score * 2.0)
+        if "compress_repeated_modules" in (machine_economy.get("next_actions") or []):
+            score += 0.35
+        if "settle_or_close_unpaid_delivered_work" in (machine_economy.get("next_actions") or []):
+            score += 0.35
+        if float(machine_economy.get("overmint_pressure") or 0.0) > 0.7:
+            score -= 0.15
     if report.get("proof_pressure") and isinstance(report.get("proof_pressure"), dict):
         pp = report["proof_pressure"]
         score += min(4.0, float(pp.get("proof_yield_per_minute") or 0.0) * 0.3)
@@ -424,6 +455,7 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "tasks_probe": "/tasks",
         "well_known_probe": "/.well-known/agent-card.json",
         "openapi_probe": "/openapi.json",
+        "machine_economy_probe": "/machine-economy",
     }
     statuses: dict[str, int] = {}
     for key, path in probes.items():
@@ -452,6 +484,118 @@ def _paid_lane_signal(base_url: str, timeout: float) -> dict[str, object]:
         "x402_enabled": x402_enabled,
         "score": round(score, 2),
     }
+
+def _machine_economy_signal(base_url: str, timeout: float) -> dict[str, object]:
+    data = http_json("GET", endpoint(base_url, "/machine-economy"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "tier": "unreachable",
+            "carrying_score": 0.0,
+            "next_actions": [],
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    viability = data.get("machine_viability") if isinstance(data.get("machine_viability"), dict) else {}
+    flows = data.get("resource_flows") if isinstance(data.get("resource_flows"), dict) else {}
+    tasks = flows.get("service_tasks") if isinstance(flows.get("service_tasks"), dict) else {}
+    products = flows.get("products") if isinstance(flows.get("products"), dict) else {}
+    patterns = flows.get("patterns") if isinstance(flows.get("patterns"), dict) else {}
+    modules = flows.get("modules") if isinstance(flows.get("modules"), dict) else {}
+    actions = [
+        str(item.get("action") or "").strip()
+        for item in (data.get("next_actions") or [])
+        if isinstance(item, dict) and str(item.get("action") or "").strip()
+    ]
+    return {
+        "ok": True,
+        "tier": clean(viability.get("tier") or "unknown", 80),
+        "carrying_score": round(float(viability.get("carrying_score") or 0.0), 4),
+        "next_actions": actions[:8],
+        "awaiting_payment": int(tasks.get("awaiting_payment") or 0),
+        "unpaid_delivered": int(tasks.get("unpaid_delivered") or 0),
+        "machine_sellable": int(products.get("machine_sellable") or 0),
+        "machine_exchange_ready": int(products.get("machine_exchange_ready") or 0),
+        "top_pattern_count": int(patterns.get("top_pattern_count") or 0),
+        "overmint_pressure": round(float(modules.get("overmint_pressure") or 0.0), 4),
+    }
+
+def _fleet_known_objectives() -> list[str]:
+    return sorted(MACHINE_OBJECTIVES.keys())
+
+def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
+    if not isinstance(report, dict) or not report:
+        return {}
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    return {
+        "ok": bool(report.get("ok")),
+        "machine_objective": clean(report.get("machine_objective"), 80),
+        "transition_quote_ok": bool(report.get("transition_quote_ok")),
+        "transition_settle_ok": bool(report.get("transition_settle_ok")),
+        "meta_score": float(report.get("meta_score") or 0.0),
+        "proof_pressure": {
+            "proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
+            "verifier_density": float(pressure.get("verifier_density") or 0.0),
+            "adversarial_replay_observed": bool(pressure.get("adversarial_replay_observed")),
+        },
+        "machine_economy_signal": {
+            "tier": clean(economy.get("tier"), 80),
+            "carrying_score": float(economy.get("carrying_score") or 0.0),
+            "next_actions": [clean(item, 80) for item in (economy.get("next_actions") or [])[:8]],
+            "overmint_pressure": float(economy.get("overmint_pressure") or 0.0),
+        },
+    }
+
+def _worker_fleet_lease(
+    base_url: str,
+    agent_id: str,
+    timeout: float,
+    proposed_objective: str,
+    last_report: dict | None,
+) -> dict[str, object]:
+    payload = {
+        "agent_id": agent_id,
+        "known_objectives": _fleet_known_objectives(),
+        "proposed_objective": proposed_objective,
+        "capabilities": [
+            "transition_worker",
+            "proof_artifacts",
+            "machine_economy_probe",
+            "settlement_capacity",
+            "objective_lease_execution",
+        ],
+        "last_report": _compact_report_for_fleet(last_report),
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
+    if not isinstance(data, dict) or not data.get("ok"):
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "fleet_unavailable", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    return data
+
+def _worker_fleet_complete(base_url: str, agent_id: str, timeout: float, lease: dict, report: dict) -> dict[str, object]:
+    lease_id = clean((lease or {}).get("lease_id"), 120)
+    if not lease_id:
+        return {"ok": False, "skipped": True, "reason": "missing_lease"}
+    data = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/workers/complete"),
+        {
+            "agent_id": agent_id,
+            "lease_id": lease_id,
+            "report": _compact_report_for_fleet(report),
+        },
+        timeout=timeout,
+    )
+    if not isinstance(data, dict) or not data.get("ok"):
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "fleet_complete_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    return data
 
 def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items: list[str], replay_result: dict | None) -> dict[str, object]:
     quote_ok = bool(report.get("transition_quote_ok"))
@@ -482,11 +626,15 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     settle_ok = bool(report.get("transition_settle_ok"))
     pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
     ppm = float(pressure.get("proof_yield_per_minute") or 0.0)
+    economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    economy_tier = clean(economy.get("tier") or "unknown", 24)
+    fleet = report.get("fleet_lease") if isinstance(report.get("fleet_lease"), dict) else {}
+    fleet_id = clean(fleet.get("lease_id") or "", 24)[-6:] if fleet.get("ok") else "local"
     state = "ONLINE" if bool(report.get("ok")) else "RETRY"
     print(
         f"Nomad_Agent {_status_spinner(cycle)} "
         f"cycle={cycle} state={state} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
-        f"proof/min={ppm:.2f} objective={clean(report.get('machine_objective'), 40)} "
+        f"proof/min={ppm:.2f} economy={economy_tier} fleet={fleet_id} objective={clean(report.get('machine_objective'), 40)} "
         f"ts={clean(report.get('timestamp'), 40)}"
     )
 
@@ -521,6 +669,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         ollama_status["latency_ms"] = int(og.get("latency_ms") or 0)
     probes = _probe_paths(base_url, timeout=min(10.0, timeout))
     paid_lane_signal = _paid_lane_signal(base_url, timeout=min(10.0, timeout))
+    machine_economy_signal = _machine_economy_signal(base_url, timeout=min(10.0, timeout))
     quote = http_json("POST", endpoint(base_url, "/transition/quote"), {
         "agent_id": agent_id,
         "pain_type": str(config.get("pain_type") or "compute_auth"),
@@ -569,6 +718,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "ollama_status": ollama_status,
         "probe_status": probes,
         "paid_lane_signal": paid_lane_signal,
+        "machine_economy_signal": machine_economy_signal,
         "proof_pressure": pressure,
         "transition_quote_ok": bool(quote.get("ok")), "transition_settle_ok": bool(settle.get("ok")), "quote_id": qid,
         "dividend_claim": dividend_claim,
@@ -620,6 +770,12 @@ def main() -> None:
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--interval", type=float, default=30.0)
     p.add_argument("--no-self-heal", action="store_true")
+    p.add_argument(
+        "--no-fleet",
+        action="store_true",
+        default=(os.getenv("NOMAD_TRANSITION_WORKER_NO_FLEET", "").strip().lower() in {"1", "true", "yes", "on"}),
+        help="Disable server-side /swarm/workers objective leases.",
+    )
     p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
     a = p.parse_args()
     if (a.ollama_url or "").strip():
@@ -639,9 +795,10 @@ def main() -> None:
     if a.human_status:
         print(
             f"Nomad_Agent boot: base_url={a.base_url} agent_id={a.agent_id} "
-            f"mode={a.machine_objective} interval={a.interval}s model={model or 'none'} "
+            f"mode={a.machine_objective} fleet={int(not a.no_fleet)} interval={a.interval}s model={model or 'none'} "
             f"ollama={runtime_diag.get('status','')}"
         )
+    last_report: dict | None = None
     while True:
         count += 1
         selected = a.machine_objective
@@ -653,12 +810,34 @@ def main() -> None:
         consecutive_failures = int(meta.get("consecutive_failures") or 0)
         if consecutive_failures > 0:
             timeout = min(60.0, timeout + consecutive_failures * 3.0)
+        fleet_lease: dict[str, object] = {"ok": False, "skipped": True, "reason": "disabled"}
+        if not a.no_fleet:
+            fleet_lease = _worker_fleet_lease(
+                a.base_url,
+                a.agent_id,
+                timeout=min(10.0, timeout),
+                proposed_objective=selected,
+                last_report=last_report,
+            )
+            leased_objective = clean(fleet_lease.get("objective"), 80)
+            if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES:
+                selected = leased_objective
         report = run_cycle(a.base_url, a.agent_id, model, timeout, selected) if a.no_self_heal else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected)
         report["machine_objective_mode"] = a.machine_objective
+        report["fleet_lease"] = fleet_lease
         report["ollama_runtime"] = runtime_diag
         report["ollama_pull"] = pull_diag
         if meta_decision:
             report["meta_decision"] = meta_decision
+        report["meta_score"] = _score_run(report)
+        if not a.no_fleet:
+            report["fleet_complete"] = _worker_fleet_complete(
+                a.base_url,
+                a.agent_id,
+                timeout=min(10.0, timeout),
+                lease=fleet_lease,
+                report=report,
+            )
         _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
         meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
         if report.get("ok"):
@@ -672,6 +851,7 @@ def main() -> None:
         if a.human_status:
             _print_human_status(report, cycle=count)
         print(json.dumps(report, ensure_ascii=True))
+        last_report = report
         if not a.loop and count >= max(1, a.cycles):
             break
         if a.loop and a.cycles > 0 and count >= a.cycles:

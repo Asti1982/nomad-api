@@ -28,6 +28,10 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any(
         "nomad-agent-invariants" in (step.get("get_url") or "") for step in (out.get("boot_graph") or [])
     )
+    assert any("/swarm/workers" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    routes = {item.get("path") for item in (out.get("routing_table") or [])}
+    assert "/swarm/workers/lease" in routes
+    assert "/swarm/workers/complete" in routes
     assert "nomad-agent-invariants" in (out.get("agent_invariants_url") or "")
     assert (out.get("peer_acquisition_url") or "").endswith("/.well-known/nomad-peer-acquisition.json")
     assert out.get("agent_invariants_mcp_uri") == "nomad://agent-invariants"
@@ -37,6 +41,9 @@ def test_agent_native_index_schema_and_boot_graph():
     eps = mrc.get("endpoints") or {}
     assert "agent_native_index_get" in eps
     assert "agent_invariants_get" in eps
+    assert "machine_economy_get" in eps
+    assert "transition_worker_fleet_get" in eps
+    assert "transition_worker_lease_post" in eps
     assert "inter_agent_witness_offer_get" in eps
     assert "peer_acquisition_get" in eps
     assert eps["inter_agent_witness_offer_get"].endswith("/.well-known/nomad-inter-agent-witness-offer.json")

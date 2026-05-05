@@ -482,6 +482,15 @@ class NomadProductFactory:
                     variant=variant,
                 ),
             },
+            "machine_exchange": self._machine_exchange(
+                product_id=product_id,
+                blueprint=blueprint,
+                paid_offer=paid_offer,
+                approval_boundary=approval_boundary,
+                source_kind="lead_conversion",
+                pattern_id="",
+                variant=variant,
+            ),
             "approval_boundary": approval_boundary,
             "next_action": self._next_action(status, route, paid_offer),
         }
@@ -508,7 +517,10 @@ class NomadProductFactory:
                 "sending human DMs or email",
                 "claiming public endorsement",
             ],
-            "goal": "Make every solved lead reusable by Nomad and sellable to other agents.",
+            "goal": (
+                "Make every solved demand signal reusable by Nomad and financially carrying through "
+                "machine-readable settlement, without turning the core loop into human sales theater."
+            ),
             "runtime_guardrails": self.guardrails.policy(),
         }
 
@@ -701,6 +713,15 @@ class NomadProductFactory:
                     variant=variant,
                 ),
             },
+            "machine_exchange": self._machine_exchange(
+                product_id=product_id,
+                blueprint=blueprint,
+                paid_offer=paid_offer,
+                approval_boundary=approval_boundary,
+                source_kind="high_value_pattern",
+                pattern_id=str(pattern.get("pattern_id") or ""),
+                variant=variant,
+            ),
             "approval_boundary": approval_boundary,
             "next_action": self._next_action(status, {}, paid_offer),
         }
@@ -1167,6 +1188,43 @@ class NomadProductFactory:
             f"approval_required={str(bool(approval_boundary.get('approval_required'))).lower()}",
         ]
         return "\n".join(lines)
+
+    @staticmethod
+    def _machine_exchange(
+        *,
+        product_id: str,
+        blueprint: Dict[str, Any],
+        paid_offer: Dict[str, Any],
+        approval_boundary: Dict[str, Any],
+        source_kind: str,
+        pattern_id: str = "",
+        variant: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        variant = variant or {}
+        return {
+            "schema": "nomad.machine_exchange.v1",
+            "product_id": product_id,
+            "source_kind": source_kind,
+            "pattern_id": pattern_id,
+            "sku": blueprint.get("sku", ""),
+            "variant_sku": variant.get("sku", ""),
+            "exchange_unit": "verified_state_transition",
+            "free_probe": "classification + smallest verifier + missing evidence list",
+            "settlement": {
+                "trigger": paid_offer.get("trigger", "PLAN_ACCEPTED=true plus FACT_URL or ERROR"),
+                "price_native": paid_offer.get("price_native"),
+                "payment_rails": ["wallet", "x402"],
+                "verify_before_expensive_work": True,
+            },
+            "delivery": paid_offer.get("delivery", ""),
+            "non_human_economy": {
+                "no_persuasion_objective": True,
+                "no_human_impersonation": True,
+                "money_role": "carrying_capacity_for_compute_and_verification",
+                "reuse_rule": "canonical pattern absorbs matching demand before new offer minting",
+            },
+            "approval_required": bool(approval_boundary.get("approval_required")),
+        }
 
     @staticmethod
     def _product_id(

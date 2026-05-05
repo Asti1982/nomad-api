@@ -1,6 +1,6 @@
 import json
 
-from nomad_mutual_aid import NomadMutualAidKernel
+from nomad_mutual_aid import NomadMutualAidKernel, _sha256
 
 
 def test_mutual_aid_help_generates_hash_verified_module(tmp_path):
@@ -22,11 +22,14 @@ def test_mutual_aid_help_generates_hash_verified_module(tmp_path):
     module_record = result["evolution_plan"]["module"]
     module_path = tmp_path / "mutual-aid-modules" / f"{module_record['module_id']}.py"
     assert module_path.exists()
+    assert module_record["module_id"].startswith("mutual_aid_capability_")
+    assert module_record["canonical_pattern_key"]
 
     loaded = kernel.load_learned_modules()
     assert loaded
     assert loaded[0]["source"] == "mutual_aid"
     assert loaded[0]["pain_type"] == "compute_auth"
+    assert loaded[0]["canonical_pattern_key"] == module_record["canonical_pattern_key"]
 
     state = json.loads((tmp_path / "mutual-aid-state.json").read_text(encoding="utf-8"))
     assert state["mutual_aid_score"] == 1
@@ -56,10 +59,16 @@ def test_mutual_aid_module_emerges_from_repeated_agent_cooperation(tmp_path):
 
     assert first["evolution_plan"]["applied"] is False
     assert second["evolution_plan"]["applied"] is True
-    assert third["evolution_plan"]["applied"] is True
+    assert third["evolution_plan"]["applied"] is False
+    assert third["evolution_plan"]["reinforced"] is True
     module_record = second["evolution_plan"]["module"]
     module_path = tmp_path / "mutual-aid-modules" / f"{module_record['module_id']}.py"
     assert module_path.exists()
+    assert third["evolution_plan"]["module"]["module_id"] == module_record["module_id"]
+
+    state = json.loads((tmp_path / "mutual-aid-state.json").read_text(encoding="utf-8"))
+    assert len(state["modules"]) == 1
+    assert state["modules"][0]["reinforcement_count"] == 1
 
 
 def test_mutual_aid_skips_autopilot_without_verified_help_signal(tmp_path):
@@ -212,3 +221,68 @@ def test_swarm_proposal_rejects_raw_code(tmp_path):
     assert result["ok"] is False
     assert result["item"]["status"] == "rejected"
     assert "raw_code_not_accepted" in result["verification"]["errors"]
+
+
+def test_mutual_aid_compresses_legacy_modules_without_deleting_files(tmp_path):
+    kernel = NomadMutualAidKernel(
+        path=tmp_path / "mutual-aid-state.json",
+        module_dir=tmp_path / "mutual-aid-modules",
+    )
+    kernel.module_dir.mkdir(parents=True)
+
+    legacy_records = []
+    for idx in range(3):
+        module_id = f"mutual_aid_learned_{100 + idx}_compute_auth"
+        content = kernel.evolution._module_content(
+            module_id=module_id,
+            help_result={
+                "pain_type": "compute_auth",
+                "task": "Provider quota failure needs fallback ladder.",
+                "solution_title": "Provider fallback ladder",
+                "truth_density_increase": 0.9,
+            },
+            score=idx + 1,
+            pattern_key=f"legacy:{idx}",
+        )
+        module_path = kernel.module_dir / f"{module_id}.py"
+        module_path.write_text(content, encoding="utf-8")
+        legacy_records.append(
+            {
+                "module_id": module_id,
+                "filename": str(module_path),
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "source": "mutual_aid",
+                "pain_type": "compute_auth",
+                "truth_density": 0.95,
+                "sha256": _sha256(content),
+            }
+        )
+
+    kernel.path.write_text(
+        json.dumps({"mutual_aid_score": 7, "modules": legacy_records}, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+
+    preview = kernel.compress_legacy_modules(dry_run=True)
+    assert preview["dry_run"] is True
+    assert preview["legacy_group_count"] == 1
+    assert preview["legacy_module_count"] == 3
+    assert preview["canonical_created_count"] == 1
+
+    committed = kernel.compress_legacy_modules(dry_run=False)
+    assert committed["dry_run"] is False
+    assert committed["legacy_group_count"] == 1
+    assert committed["canonical_created_count"] == 1
+
+    state = json.loads(kernel.path.read_text(encoding="utf-8"))
+    assert len(state["modules"]) == 1
+    canonical_record = state["modules"][0]
+    assert canonical_record["module_id"].startswith("mutual_aid_capability_")
+    assert canonical_record["compressed_from_count"] == 3
+    assert canonical_record["reinforcement_count"] == 2
+    assert state["latest_evolution_plan"]["type"] == "canonical_compression"
+    assert state["latest_evolution_plan"]["module_id"] == canonical_record["module_id"]
+    assert list(state["legacy_module_archive"].values())[0]["legacy_count"] == 3
+    assert state["canonical_capabilities"]
+    for record in legacy_records:
+        assert (kernel.module_dir / f"{record['module_id']}.py").exists()

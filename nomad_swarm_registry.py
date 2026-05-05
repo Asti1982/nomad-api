@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -15,6 +15,19 @@ DEFAULT_SWARM_REGISTRY_PATH = Path(
     os.getenv("NOMAD_SWARM_REGISTRY_PATH", str(ROOT / "nomad_swarm_registry.json"))
 )
 DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") or "20")
+DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECONDS", "90") or "90")
+
+FLEET_OBJECTIVE_TARGETS = {
+    "settlement_capacity_builder": 0.22,
+    "proof_pressure_engine": 0.16,
+    "proof_market_maker": 0.12,
+    "payment_friction_scan": 0.12,
+    "protocol_drift_scan": 0.11,
+    "adversarial_contract_fuzzer": 0.1,
+    "negative_space_harvest": 0.08,
+    "latency_anomaly_hunt": 0.06,
+    "compute_auth": 0.03,
+}
 
 
 def _iso_now() -> str:
@@ -401,6 +414,7 @@ class SwarmJoinRegistry:
     def public_manifest(self, *, base_url: str) -> dict[str, Any]:
         nodes = self._nodes()
         prospects = self._prospects()
+        worker_fleet = self.worker_fleet_contract(base_url=base_url)
         return {
             "schema": "nomad_public_swarm.v1",
             "service": "nomad-api",
@@ -420,11 +434,15 @@ class SwarmJoinRegistry:
             "network_board": f"{base_url}/swarm/network",
             "coordination_board": f"{base_url}/swarm/coordinate",
             "accumulation_board": f"{base_url}/swarm/accumulate",
+            "worker_fleet": f"{base_url}/swarm/workers",
             "development_exchange": f"{base_url}/swarm/develop",
             "fast_onboarding": self.fast_onboarding_packet(base_url=base_url),
             "connected_agents": len(nodes),
+            "active_transition_workers": worker_fleet.get("active_worker_count", 0),
+            "active_worker_leases": worker_fleet.get("active_lease_count", 0),
             "known_agents": len(nodes) + len(prospects),
             "recent_nodes": [_compact_node(item) for item in nodes[:8]],
+            "transition_worker_fleet": worker_fleet,
             "agent_pool": {
                 "joined_agents": len(nodes),
                 "prospect_agents": len(prospects),
@@ -445,6 +463,7 @@ class SwarmJoinRegistry:
                 "agent_with_verified_proposal": f"{base_url}/aid",
                 "agent_wanting_to_join": f"{base_url}/swarm/join",
                 "agent_wanting_paid_unblock": f"{base_url}/tasks",
+                "transition_worker_wanting_lease": f"{base_url}/swarm/workers/lease",
             },
             "updated_at": _iso_now(),
         }
@@ -703,16 +722,206 @@ class SwarmJoinRegistry:
     def summary(self) -> dict[str, Any]:
         nodes = self._nodes()
         prospects = self._prospects()
+        worker_fleet = self.worker_fleet_contract(base_url="")
         return {
             "schema": "nomad_swarm_registry_summary.v1",
             "registry_path": str(self.path),
             "connected_agents": len(nodes),
             "known_agents": len(nodes) + len(prospects),
             "prospect_agents": len(prospects),
+            "active_transition_workers": worker_fleet.get("active_worker_count", 0),
+            "active_worker_leases": worker_fleet.get("active_lease_count", 0),
             "recent_nodes": [_compact_node(item) for item in nodes[:12]],
             "activation_queue": [_compact_prospect(item) for item in prospects[:8]],
+            "transition_worker_fleet": worker_fleet,
             "coordination_ready": True,
             "updated_at": _iso_now(),
+        }
+
+    def worker_fleet_contract(self, *, base_url: str) -> dict[str, Any]:
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        workers = list((fleet.get("workers") or {}).values())
+        leases = list((fleet.get("leases") or {}).values())
+        active_leases = [item for item in leases if str(item.get("status") or "") == "active"]
+        active_workers = [
+            item
+            for item in workers
+            if str(item.get("status") or "") in {"leased", "active", "completed"}
+            and self._iso_is_recent(item.get("last_seen_at"), seconds=max(DEFAULT_WORKER_LEASE_SECONDS * 3, 180))
+        ]
+        active_counts = self._objective_counts(active_leases)
+        return {
+            "mode": "nomad_transition_worker_fleet",
+            "schema": "nomad.transition_worker_fleet.v1",
+            "ok": True,
+            "public_api_url": base_url,
+            "purpose": "Lease machine objectives to many transition workers so distributed loops diverge and recombine as proof.",
+            "post_lease": f"{base_url}/swarm/workers/lease" if base_url else "/swarm/workers/lease",
+            "post_complete": f"{base_url}/swarm/workers/complete" if base_url else "/swarm/workers/complete",
+            "active_worker_count": len(active_workers),
+            "known_worker_count": len(workers),
+            "active_lease_count": len(active_leases),
+            "objective_counts": active_counts,
+            "objective_targets": FLEET_OBJECTIVE_TARGETS,
+            "recent_workers": [
+                {
+                    "agent_id": item.get("agent_id", ""),
+                    "assigned_objective": item.get("assigned_objective", ""),
+                    "last_objective": item.get("last_objective", ""),
+                    "last_score": item.get("last_score", 0.0),
+                    "last_seen_at": item.get("last_seen_at", ""),
+                    "status": item.get("status", ""),
+                }
+                for item in sorted(active_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)[:16]
+            ],
+            "objective_stats": fleet.get("objective_stats") or {},
+            "machine_orientation": [
+                "lease_not_dialogue",
+                "proof_not_trust",
+                "settlement_not_persuasion",
+                "routing_not_management",
+                "audit_shell_not_human_center",
+            ],
+            "analysis": (
+                "Transition workers should POST /swarm/workers/lease before a cycle and "
+                "POST /swarm/workers/complete after the cycle. Nomad balances active leases across objectives."
+            ),
+            "updated_at": _iso_now(),
+        }
+
+    def worker_fleet_lease(
+        self,
+        payload: dict[str, Any],
+        *,
+        base_url: str,
+        remote_addr: str = "",
+    ) -> dict[str, Any]:
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("worker_id") or "transition-worker")
+        now = _iso_now()
+        lease_seconds = max(30, min(int(payload.get("lease_seconds") or DEFAULT_WORKER_LEASE_SECONDS), 600))
+        capabilities = [
+            _clean_agent_id(item)
+            for item in (payload.get("capabilities") if isinstance(payload.get("capabilities"), list) else [])
+            if _clean_text(item, limit=64)
+        ][:16]
+        known_objectives = [
+            _clean_agent_id(item)
+            for item in (payload.get("known_objectives") if isinstance(payload.get("known_objectives"), list) else [])
+            if _clean_agent_id(item) in FLEET_OBJECTIVE_TARGETS
+        ]
+        proposed = _clean_agent_id(payload.get("proposed_objective") or payload.get("objective") or "")
+        last_report = payload.get("last_report") if isinstance(payload.get("last_report"), dict) else {}
+        if last_report:
+            self._record_worker_report(fleet, agent_id=agent_id, lease_id=str(payload.get("lease_id") or ""), report=last_report)
+
+        workers = fleet.setdefault("workers", {})
+        previous = workers.get(agent_id) if isinstance(workers.get(agent_id), dict) else {}
+        previous_lease = str(previous.get("lease_id") or "")
+        if previous_lease and previous_lease in (fleet.get("leases") or {}):
+            lease = fleet["leases"][previous_lease]
+            if isinstance(lease, dict) and str(lease.get("status") or "") == "active":
+                lease["status"] = "superseded"
+                lease["superseded_at"] = now
+
+        objective = self._choose_fleet_objective(
+            fleet,
+            known_objectives=known_objectives,
+            proposed_objective=proposed,
+            last_report=last_report,
+        )
+        lease_seed = f"{agent_id}:{objective}:{now}:{len(fleet.get('leases') or {})}"
+        lease_id = f"nomad-worker-lease-{hashlib.sha256(lease_seed.encode('utf-8')).hexdigest()[:16]}"
+        expires_at = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        lease_record = {
+            "schema": "nomad.transition_worker_lease.v1",
+            "lease_id": lease_id,
+            "agent_id": agent_id,
+            "objective": objective,
+            "status": "active",
+            "issued_at": now,
+            "expires_at": expires_at,
+            "lease_seconds": lease_seconds,
+            "remote_addr": _clean_text(remote_addr, limit=80),
+            "proposed_objective": proposed,
+        }
+        fleet.setdefault("leases", {})[lease_id] = lease_record
+        workers[agent_id] = {
+            **previous,
+            "agent_id": agent_id,
+            "capabilities": capabilities or previous.get("capabilities") or [],
+            "known_objectives": known_objectives or previous.get("known_objectives") or [],
+            "assigned_objective": objective,
+            "lease_id": lease_id,
+            "status": "leased",
+            "last_seen_at": now,
+            "remote_addr": _clean_text(remote_addr, limit=80),
+        }
+        self._payload["updated_at"] = now
+        self._save()
+        snapshot = self.worker_fleet_contract(base_url=base_url)
+        return {
+            "ok": True,
+            "schema": "nomad.transition_worker_lease_response.v1",
+            "agent_id": agent_id,
+            "lease_id": lease_id,
+            "objective": objective,
+            "lease_seconds": lease_seconds,
+            "expires_at": expires_at,
+            "complete_url": f"{base_url}/swarm/workers/complete" if base_url else "/swarm/workers/complete",
+            "fleet": {
+                "active_worker_count": snapshot.get("active_worker_count", 0),
+                "active_lease_count": snapshot.get("active_lease_count", 0),
+                "objective_counts": snapshot.get("objective_counts") or {},
+            },
+            "machine_instruction": "execute_objective_then_post_complete",
+            "updated_at": now,
+        }
+
+    def worker_fleet_complete(
+        self,
+        payload: dict[str, Any],
+        *,
+        base_url: str,
+        remote_addr: str = "",
+    ) -> dict[str, Any]:
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("worker_id") or "transition-worker")
+        lease_id = str(payload.get("lease_id") or "").strip()
+        report = payload.get("report") if isinstance(payload.get("report"), dict) else payload
+        now = _iso_now()
+        score = self._record_worker_report(fleet, agent_id=agent_id, lease_id=lease_id, report=report)
+        lease = (fleet.get("leases") or {}).get(lease_id)
+        if isinstance(lease, dict):
+            lease["status"] = "completed"
+            lease["completed_at"] = now
+            lease["completion_score"] = score
+        workers = fleet.setdefault("workers", {})
+        worker = workers.setdefault(agent_id, {"agent_id": agent_id})
+        worker["status"] = "completed"
+        worker["last_seen_at"] = now
+        worker["last_objective"] = _clean_agent_id(report.get("machine_objective") or report.get("orchestrator_objective") or "")
+        worker["last_score"] = score
+        worker["remote_addr"] = _clean_text(remote_addr, limit=80)
+        self._payload["updated_at"] = now
+        self._save()
+        snapshot = self.worker_fleet_contract(base_url=base_url)
+        return {
+            "ok": True,
+            "schema": "nomad.transition_worker_completion.v1",
+            "agent_id": agent_id,
+            "lease_id": lease_id,
+            "recorded_score": score,
+            "next_lease_url": f"{base_url}/swarm/workers/lease" if base_url else "/swarm/workers/lease",
+            "fleet": {
+                "active_worker_count": snapshot.get("active_worker_count", 0),
+                "active_lease_count": snapshot.get("active_lease_count", 0),
+                "objective_counts": snapshot.get("objective_counts") or {},
+            },
+            "updated_at": now,
         }
 
     def accumulate_agents(
@@ -1510,6 +1719,175 @@ class SwarmJoinRegistry:
             "signals": signals,
             "tier": tier,
         }
+
+    def _fleet(self) -> dict[str, Any]:
+        fleet = self._payload.setdefault("transition_worker_fleet", {})
+        if not isinstance(fleet.get("workers"), dict):
+            fleet["workers"] = {}
+        if not isinstance(fleet.get("leases"), dict):
+            fleet["leases"] = {}
+        if not isinstance(fleet.get("objective_stats"), dict):
+            fleet["objective_stats"] = {}
+        if not isinstance(fleet.get("reports"), list):
+            fleet["reports"] = []
+        return fleet
+
+    @staticmethod
+    def _iso_is_recent(value: Any, *, seconds: int) -> bool:
+        parsed = _parse_iso_utc(value)
+        if not parsed:
+            return False
+        return parsed.timestamp() >= datetime.now(UTC).timestamp() - max(1, int(seconds))
+
+    def _prune_worker_fleet(self) -> None:
+        fleet = self._fleet()
+        now = datetime.now(UTC)
+        changed = False
+        for lease in list((fleet.get("leases") or {}).values()):
+            if not isinstance(lease, dict) or str(lease.get("status") or "") != "active":
+                continue
+            expires = _parse_iso_utc(lease.get("expires_at"))
+            if expires and expires < now:
+                lease["status"] = "expired"
+                lease["expired_at"] = now.isoformat()
+                changed = True
+        workers = fleet.get("workers") if isinstance(fleet.get("workers"), dict) else {}
+        for worker in list(workers.values()):
+            if not isinstance(worker, dict):
+                continue
+            if not self._iso_is_recent(worker.get("last_seen_at"), seconds=max(DEFAULT_WORKER_LEASE_SECONDS * 6, 600)):
+                if worker.get("status") != "stale":
+                    worker["status"] = "stale"
+                    changed = True
+        reports = fleet.get("reports") if isinstance(fleet.get("reports"), list) else []
+        if len(reports) > 300:
+            fleet["reports"] = reports[-300:]
+            changed = True
+        if changed:
+            self._payload["updated_at"] = now.isoformat()
+            self._save()
+
+    @staticmethod
+    def _objective_counts(leases: list[dict[str, Any]]) -> dict[str, int]:
+        counts = {name: 0 for name in FLEET_OBJECTIVE_TARGETS}
+        for lease in leases:
+            objective = _clean_agent_id(lease.get("objective") or "")
+            if objective:
+                counts[objective] = counts.get(objective, 0) + 1
+        return {key: value for key, value in counts.items() if value}
+
+    @staticmethod
+    def _report_score(report: dict[str, Any]) -> float:
+        try:
+            score = float(report.get("meta_score") or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score:
+            return round(score, 4)
+        score = 0.0
+        if report.get("ok"):
+            score += 2.0
+        if report.get("transition_settle_ok"):
+            score += 2.0
+        if report.get("transition_quote_ok"):
+            score += 1.0
+        machine = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+        score += min(2.0, float(machine.get("carrying_score") or 0.0) * 2.0)
+        pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+        score += min(2.0, float(pressure.get("proof_yield_per_minute") or 0.0) * 0.15)
+        return round(score, 4)
+
+    def _record_worker_report(
+        self,
+        fleet: dict[str, Any],
+        *,
+        agent_id: str,
+        lease_id: str,
+        report: dict[str, Any],
+    ) -> float:
+        objective = _clean_agent_id(
+            report.get("machine_objective")
+            or report.get("orchestrator_objective")
+            or report.get("objective")
+            or ""
+        )
+        if not objective:
+            objective = str(((fleet.get("leases") or {}).get(lease_id) or {}).get("objective") or "unknown")
+        score = self._report_score(report)
+        pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+        economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+        proof_yield = round(float(pressure.get("proof_yield_per_minute") or 0.0), 4)
+        stats = fleet.setdefault("objective_stats", {}).setdefault(
+            objective,
+            {"runs": 0, "score_total": 0.0, "avg_score": 0.0, "proof_yield_total": 0.0, "avg_proof_yield": 0.0},
+        )
+        stats["runs"] = int(stats.get("runs") or 0) + 1
+        stats["score_total"] = round(float(stats.get("score_total") or 0.0) + score, 4)
+        stats["proof_yield_total"] = round(float(stats.get("proof_yield_total") or 0.0) + proof_yield, 4)
+        stats["avg_score"] = round(stats["score_total"] / max(1, stats["runs"]), 4)
+        stats["avg_proof_yield"] = round(stats["proof_yield_total"] / max(1, stats["runs"]), 4)
+        summary = {
+            "schema": "nomad.transition_worker_report_summary.v1",
+            "agent_id": agent_id,
+            "lease_id": lease_id,
+            "objective": objective,
+            "score": score,
+            "ok": bool(report.get("ok")),
+            "proof_yield_per_minute": proof_yield,
+            "economy_tier": economy.get("tier") or "",
+            "carrying_score": economy.get("carrying_score") or 0.0,
+            "reported_at": _iso_now(),
+        }
+        reports = fleet.setdefault("reports", [])
+        reports.append(summary)
+        fleet["reports"] = reports[-300:]
+        return score
+
+    def _choose_fleet_objective(
+        self,
+        fleet: dict[str, Any],
+        *,
+        known_objectives: list[str],
+        proposed_objective: str,
+        last_report: dict[str, Any],
+    ) -> str:
+        allowed = [item for item in known_objectives if item in FLEET_OBJECTIVE_TARGETS]
+        if not allowed:
+            allowed = list(FLEET_OBJECTIVE_TARGETS)
+        active = [
+            lease
+            for lease in (fleet.get("leases") or {}).values()
+            if isinstance(lease, dict) and str(lease.get("status") or "") == "active"
+        ]
+        counts = self._objective_counts(active)
+        targets = dict(FLEET_OBJECTIVE_TARGETS)
+        machine = last_report.get("machine_economy_signal") if isinstance(last_report.get("machine_economy_signal"), dict) else {}
+        actions = [str(item) for item in (machine.get("next_actions") or [])]
+        if "settle_or_close_unpaid_delivered_work" in actions:
+            targets["settlement_capacity_builder"] += 0.08
+            targets["payment_friction_scan"] += 0.04
+        if "attach_machine_exchange_contracts" in actions:
+            targets["settlement_capacity_builder"] += 0.08
+            targets["proof_market_maker"] += 0.04
+        if "compress_repeated_modules" in actions:
+            targets["settlement_capacity_builder"] += 0.05
+        total_target = sum(targets.get(item, 0.01) for item in allowed) or 1.0
+        best = allowed[0]
+        best_value = 1e9
+        stats_map = fleet.get("objective_stats") if isinstance(fleet.get("objective_stats"), dict) else {}
+        for objective in allowed:
+            target = max(0.01, targets.get(objective, 0.01) / total_target)
+            active_count = int(counts.get(objective) or 0)
+            stats = stats_map.get(objective) if isinstance(stats_map.get(objective), dict) else {}
+            runs = int(stats.get("runs") or 0)
+            avg_score = float(stats.get("avg_score") or 0.0)
+            value = (active_count / target) + min(2.0, runs * 0.03) - min(1.5, avg_score * 0.04)
+            if objective == proposed_objective:
+                value -= 0.05
+            if value < best_value:
+                best = objective
+                best_value = value
+        return best
 
     def _nodes(self) -> list[dict[str, Any]]:
         self._prune_stale_nodes()

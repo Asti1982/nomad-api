@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from nomad_guardrails import guardrail_status
+from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
 from nomad_openapi import build_openapi_document
 from nomad_collaboration import collaboration_status
@@ -167,6 +168,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "transition_offer": f"{b}/.well-known/nomad-transition-offer.json",
                     "openapi": f"{b}/openapi.json",
                     "swarm": f"{b}/swarm",
+                    "transition_worker_fleet": f"{b}/swarm/workers",
                     "tasks": f"{b}/tasks",
                     "service_catalog": f"{b}/service",
                     "growth_start": f"{b}/growth-start",
@@ -175,6 +177,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "operator_sprint": f"{b}/operator-sprint",
                     "agent_reputation": f"{b}/reputation",
                     "unhuman_hub": f"{b}/unhuman-hub",
+                    "machine_economy": f"{b}/machine-economy",
                     "agent_growth": f"{b}/agent-growth",
                 }
             else:
@@ -284,6 +287,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     persist_mission=self._truthy((query.get("persist") or ["false"])[0]),
                 )
             )
+            return
+
+        if parsed.path in {"/machine-economy", "/economy/machine"}:
+            self._json_response(machine_economy_snapshot())
             return
 
         if parsed.path in {"/growth-start", "/operator/growth-start"}:
@@ -414,6 +421,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/nodes":
             self._json_response(self.swarm_registry.summary())
+            return
+
+        if parsed.path in {"/swarm/workers", "/swarm/fleet", "/transition/workers"}:
+            self._json_response(
+                self.swarm_registry.worker_fleet_contract(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
+        if parsed.path in {"/swarm/workers/lease", "/swarm/workers/complete"}:
+            base = self._base_url().rstrip("/")
+            self._json_response(
+                {
+                    "ok": True,
+                    "schema": "nomad.transition_worker_fleet_contract.v1",
+                    "get_fleet": f"{base}/swarm/workers" if base else "/swarm/workers",
+                    "post_lease": f"{base}/swarm/workers/lease" if base else "/swarm/workers/lease",
+                    "post_complete": f"{base}/swarm/workers/complete" if base else "/swarm/workers/complete",
+                    "required_lease_fields": ["agent_id", "known_objectives"],
+                    "required_complete_fields": ["agent_id", "lease_id", "report"],
+                    "machine_instruction": "lease_execute_complete_repeat",
+                }
+            )
             return
 
         if parsed.path in {"/swarm/ready", "/swarm/readiness"}:
@@ -969,6 +1000,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-reputation",
                     "/unhuman-hub",
                     "/hub/unhuman",
+                    "/machine-economy",
+                    "/economy/machine",
                     "/agent-growth",
                     "/growth-pipeline",
                     "/growth-start",
@@ -984,6 +1017,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm",
                     "/swarm/join",
                     "/swarm/nodes",
+                    "/swarm/workers",
+                    "/swarm/workers/lease",
+                    "/swarm/workers/complete",
                     "/swarm/ready",
                     "/swarm/network",
                     "/swarm/coordinate",
@@ -1429,6 +1465,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(join_result, status=join_status)
             return
 
+        if parsed.path == "/swarm/workers/lease":
+            result = self.swarm_registry.worker_fleet_lease(
+                payload,
+                base_url=self._base_url(),
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/swarm/workers/complete":
+            result = self.swarm_registry.worker_fleet_complete(
+                payload,
+                base_url=self._base_url(),
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
         if parsed.path == "/swarm/accumulate":
             result = self._accumulate_swarm_agents(payload)
             self._json_response(result, status=202 if result.get("ok") else 400)
@@ -1578,6 +1632,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-reputation",
                     "/unhuman-hub",
                     "/hub/unhuman",
+                    "/machine-economy",
+                    "/economy/machine",
                     "/agent-growth",
                     "/growth-pipeline",
                     "/growth-start",
@@ -1585,6 +1641,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-attractor",
                     "/swarm",
                     "/swarm/join",
+                    "/swarm/workers",
+                    "/swarm/workers/lease",
+                    "/swarm/workers/complete",
                     "/swarm/network",
                     "/swarm/coordinate",
                     "/swarm/accumulate",
