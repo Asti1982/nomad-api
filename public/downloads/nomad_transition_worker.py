@@ -58,8 +58,16 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "evidence": ["bootstrap", "mission", "service_probe", "well_known_probe", "health_probe", "local_note"],
         "prompt": "Return one negative-space growth action that humans ignore but agents can verify for blocker: {blocker}",
     },
+    "proof_pressure_engine": {
+        "problem": "Maximize verified unblock throughput under proof pressure and economic constraints.",
+        "pain_type": "proof_pressure",
+        "capabilities": ["proof_yield_optimization", "adversarial_replay", "paid_lane_pressure", "verifier_density"],
+        "evidence": ["bootstrap", "mission", "transition_quote", "transition_settle", "replay_attempt", "paid_lane_signal", "local_note"],
+        "prompt": "Produce one proof-pressure tactic that increases verified transitions per minute for blocker: {blocker}",
+    },
 }
 META_OBJECTIVES = [k for k in MACHINE_OBJECTIVES.keys() if k != "unhuman_supremacy"]
+OLLAMA_CACHE: dict[str, str] = {}
 
 def clean(v: object, limit: int = 500) -> str:
     return " ".join(str(v or "").split())[:limit]
@@ -67,14 +75,46 @@ def clean(v: object, limit: int = 500) -> str:
 def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
+def _normalize_ollama_url(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = f"http://{value}"
+    return value.rstrip("/")
+
+def _ollama_candidate_urls() -> list[str]:
+    raw = (
+        os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URLS")
+        or os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL")
+        or os.getenv("OLLAMA_HOST")
+        or ""
+    )
+    items = [x.strip() for x in raw.replace(";", ",").split(",") if x.strip()]
+    defaults = ["http://127.0.0.1:11434", "http://localhost:11434"]
+    normalized = [_normalize_ollama_url(x) for x in items + defaults]
+    dedup: list[str] = []
+    for item in normalized:
+        if item and item not in dedup:
+            dedup.append(item)
+    return dedup
+
+def _resolve_ollama_base_url(timeout: float = 2.5) -> str:
+    cached = OLLAMA_CACHE.get("base_url", "")
+    if cached:
+        return cached
+    for candidate in _ollama_candidate_urls():
+        tags = http_json("GET", f"{candidate}/api/tags", timeout=timeout)
+        if isinstance(tags.get("models"), list):
+            OLLAMA_CACHE["base_url"] = candidate
+            return candidate
+    fallback = _ollama_candidate_urls()[0] if _ollama_candidate_urls() else "http://127.0.0.1:11434"
+    OLLAMA_CACHE["base_url"] = fallback
+    return fallback
+
 def ollama_base_url() -> str:
-    """Ollama API root, e.g. http://127.0.0.1:11434 — overridable for laptops/Docker."""
-    raw = (os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL") or os.getenv("OLLAMA_HOST") or "").strip()
-    if not raw:
-        return "http://127.0.0.1:11434"
-    if "://" not in raw:
-        return f"http://{raw}".rstrip("/")
-    return raw.rstrip("/")
+    """Resolve fastest reachable local Ollama base URL."""
+    return _resolve_ollama_base_url()
 
 def http_json(method: str, url: str, payload: dict | None = None, timeout: float = 20.0, redirects_left: int = 4) -> dict:
     body = None
@@ -114,7 +154,9 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
 def try_ollama(model: str, prompt: str, timeout: float = 10.0) -> dict[str, object]:
     base = ollama_base_url()
     url = f"{base}/api/generate"
+    t0 = time.perf_counter()
     data = http_json("POST", url, {"model": model, "prompt": prompt, "stream": False}, timeout=timeout)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     text = clean(data.get("response") or "", 1000)
     err = ""
     if data.get("error"):
@@ -123,7 +165,7 @@ def try_ollama(model: str, prompt: str, timeout: float = 10.0) -> dict[str, obje
         err = f"http_{data['http_status']}"
     elif not text and model:
         err = "ollama_empty_response"
-    return {"text": text, "error": err, "ollama_url": base}
+    return {"text": text, "error": err, "ollama_url": base, "latency_ms": latency_ms}
 
 def _windows_total_ram_gb() -> float:
     class MEMORYSTATUSEX(ctypes.Structure):
@@ -157,7 +199,7 @@ def _suggest_ollama_budget_gb() -> float:
             return max(3.0, min(20.0, round(total * 0.45, 2)))
     return 8.0
 
-def _pick_ollama_model(timeout: float = 5.0) -> str:
+def _pick_ollama_model(timeout: float = 5.0, history: dict | None = None) -> str:
     base = ollama_base_url()
     tags = http_json("GET", f"{base}/api/tags", timeout=timeout)
     models = tags.get("models") or []
@@ -166,6 +208,10 @@ def _pick_ollama_model(timeout: float = 5.0) -> str:
     budget = _suggest_ollama_budget_gb()
     budget_bytes = int(budget * (1024 ** 3))
     ranked: list[tuple[int, int, str]] = []
+    model_stats = {}
+    if isinstance(history, dict):
+        meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
+        model_stats = meta.get("ollama_model_stats") if isinstance(meta.get("ollama_model_stats"), dict) else {}
     for item in models:
         if not isinstance(item, dict):
             continue
@@ -175,7 +221,9 @@ def _pick_ollama_model(timeout: float = 5.0) -> str:
         size = int(item.get("size") or 0)
         preferred = int(any(k in name.lower() for k in ("qwen", "llama", "mistral", "gemma", "phi", "deepseek")))
         penalty = int(any(k in name.lower() for k in ("coder", "vision", "embed")))
-        score = preferred * 1000 - penalty * 200 + min(size // (1024 ** 2), 500)
+        perf = model_stats.get(name) if isinstance(model_stats.get(name), dict) else {}
+        perf_bonus = float(perf.get("avg_note_chars") or 0.0) * 0.2 - float(perf.get("avg_latency_ms") or 0.0) * 0.01
+        score = preferred * 1000 - penalty * 200 + min(size // (1024 ** 2), 500) + perf_bonus
         ranked.append((0 if size <= budget_bytes else 1, -score, name))
     if not ranked:
         return ""
@@ -227,6 +275,12 @@ def _score_run(report: dict) -> float:
     score += min(3.0, paid_score)
     if paid_lane.get("requires_payment") and not paid_lane.get("wallet_configured"):
         score -= 0.5
+    if report.get("proof_pressure") and isinstance(report.get("proof_pressure"), dict):
+        pp = report["proof_pressure"]
+        score += min(4.0, float(pp.get("proof_yield_per_minute") or 0.0) * 0.3)
+        score += min(1.0, float(pp.get("verifier_density") or 0.0) * 0.5)
+        if pp.get("adversarial_replay_observed"):
+            score += 0.5
     return round(score, 4)
 
 def _choose_meta_objective(history: dict) -> tuple[str, dict]:
@@ -269,6 +323,16 @@ def _update_meta_history(history: dict, report: dict, selected_objective: str, m
     stats["total_score"] = round(float(stats.get("total_score") or 0.0) + score, 4)
     stats["avg_score"] = round(stats["total_score"] / max(1, stats["runs"]), 4)
     report["meta_score"] = score
+    meta.setdefault("ollama_model_stats", {})
+    model = str(report.get("ollama_model") or "").strip()
+    ollama = report.get("ollama_status") if isinstance(report.get("ollama_status"), dict) else {}
+    if model:
+        mstats = meta["ollama_model_stats"].setdefault(model, {"runs": 0, "chars_total": 0, "latency_total": 0, "avg_note_chars": 0.0, "avg_latency_ms": 0.0})
+        mstats["runs"] = int(mstats.get("runs") or 0) + 1
+        mstats["chars_total"] = int(mstats.get("chars_total") or 0) + int(ollama.get("note_chars") or 0)
+        mstats["latency_total"] = int(mstats.get("latency_total") or 0) + int(ollama.get("latency_ms") or 0)
+        mstats["avg_note_chars"] = round(mstats["chars_total"] / max(1, mstats["runs"]), 2)
+        mstats["avg_latency_ms"] = round(mstats["latency_total"] / max(1, mstats["runs"]), 2)
     history.setdefault("runs", [])
     history["runs"] = (history["runs"] + [report])[-50:]
 
@@ -309,7 +373,24 @@ def _paid_lane_signal(base_url: str, timeout: float) -> dict[str, object]:
         "score": round(score, 2),
     }
 
+def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items: list[str], replay_result: dict | None) -> dict[str, object]:
+    quote_ok = bool(report.get("transition_quote_ok"))
+    settle_ok = bool(report.get("transition_settle_ok"))
+    proofs = int(quote_ok) + int(settle_ok)
+    minutes = max(0.01, cycle_seconds / 60.0)
+    verifier_density = float(len([e for e in evidence_items if e])) / max(1.0, float(len(evidence_items)))
+    replay_seen = bool(replay_result and (replay_result.get("ok") is not None or replay_result.get("http_status")))
+    return {
+        "proofs": proofs,
+        "cycle_seconds": round(cycle_seconds, 3),
+        "proof_yield_per_minute": round(proofs / minutes, 4),
+        "verifier_density": round(verifier_density, 4),
+        "adversarial_replay_observed": replay_seen,
+        "replay_http_status": int((replay_result or {}).get("http_status") or 0),
+    }
+
 def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
+    cycle_t0 = time.perf_counter()
     config = MACHINE_OBJECTIVES.get(objective, MACHINE_OBJECTIVES["compute_auth"])
     boot = http_json("POST", endpoint(base_url, "/swarm/bootstrap"), {
         "agent_id": agent_id,
@@ -336,6 +417,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         local_note = str(og.get("text") or "")
         ollama_status["generate_error"] = str(og.get("error") or "")
         ollama_status["note_chars"] = len(local_note)
+        ollama_status["latency_ms"] = int(og.get("latency_ms") or 0)
     probes = _probe_paths(base_url, timeout=min(10.0, timeout))
     paid_lane_signal = _paid_lane_signal(base_url, timeout=min(10.0, timeout))
     quote = http_json("POST", endpoint(base_url, "/transition/quote"), {
@@ -352,6 +434,30 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "result_state_hash": "nomad_transition_target_v1",
         "proof_artifact_hash": f"proof:{agent_id}:{int(time.time())}",
     }, timeout=timeout) if qid else {"ok": False, "skipped": True, "reason": "missing_quote"}
+    dividend_claim: dict[str, object] = {"ok": False, "skipped": True, "reason": "disabled"}
+    div_env = (os.getenv("NOMAD_TRANSITION_WORKER_DIVIDEND") or "").strip().lower()
+    if div_env in {"1", "true", "yes", "on"} and qid and bool(settle.get("ok")):
+        dividend_claim = http_json(
+            "POST",
+            endpoint(base_url, "/dividend/claim"),
+            {"agent_id": agent_id, "quote_id": qid},
+            timeout=timeout,
+        )
+    replay = None
+    if qid:
+        replay = http_json("POST", endpoint(base_url, "/transition/settle"), {
+            "quote_id": qid,
+            "result_state_hash": "nomad_transition_target_v1",
+            "proof_artifact_hash": f"proof:{agent_id}:{int(time.time())}:replay",
+        }, timeout=max(8.0, timeout * 0.6))
+    evidence_items = config.get("evidence") if isinstance(config.get("evidence"), list) else ["bootstrap", "mission", "local_note"]
+    cycle_seconds = max(0.001, time.perf_counter() - cycle_t0)
+    base_report = {
+        "transition_quote_ok": bool(quote.get("ok")),
+        "transition_settle_ok": bool(settle.get("ok")),
+        "dividend_claim_ok": bool(dividend_claim.get("ok")),
+    }
+    pressure = _proof_pressure_snapshot(base_report, cycle_seconds, [str(x) for x in evidence_items], replay)
     return {
         "ok": bool(boot.get("ok", False) or join.get("ok", False)), "timestamp": datetime.now(UTC).isoformat(),
         "agent_id": agent_id, "base_url": base_url,
@@ -362,11 +468,41 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "ollama_status": ollama_status,
         "probe_status": probes,
         "paid_lane_signal": paid_lane_signal,
+        "proof_pressure": pressure,
         "transition_quote_ok": bool(quote.get("ok")), "transition_settle_ok": bool(settle.get("ok")), "quote_id": qid,
+        "dividend_claim": dividend_claim,
         "bootstrap_http_status": int(boot.get("http_status") or 0),
         "join_http_status": int(join.get("http_status") or 0),
         "transition_quote_http_status": int(quote.get("http_status") or 0),
         "transition_settle_http_status": int(settle.get("http_status") or 0),
+        "dividend_claim_http_status": int(dividend_claim.get("http_status") or 0),
+        "transition_replay_http_status": int((replay or {}).get("http_status") or 0),
+    }
+
+def _safe_run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
+    retries = 2
+    delay = 1.0
+    last_err: str = ""
+    for attempt in range(1, retries + 2):
+        try:
+            report = run_cycle(base_url, agent_id, model, timeout, objective)
+            report["self_heal"] = {"attempt": attempt, "retries": retries, "last_error": last_err}
+            return report
+        except Exception as exc:  # noqa: BLE001
+            last_err = clean(str(exc), limit=180)
+            if attempt >= retries + 1:
+                break
+            time.sleep(delay)
+            delay = min(8.0, delay * 2.0)
+    return {
+        "ok": False,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "agent_id": agent_id,
+        "base_url": base_url,
+        "machine_objective": objective,
+        "error": "cycle_crash",
+        "detail": last_err or "unknown_error",
+        "self_heal": {"attempt": retries + 1, "retries": retries, "last_error": last_err},
     }
 
 def main() -> None:
@@ -382,13 +518,15 @@ def main() -> None:
     p.add_argument("--loop", action="store_true")
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--interval", type=float, default=30.0)
+    p.add_argument("--no-self-heal", action="store_true")
     a = p.parse_args()
     if (a.ollama_url or "").strip():
         os.environ["NOMAD_TRANSITION_WORKER_OLLAMA_URL"] = a.ollama_url.strip()
+        OLLAMA_CACHE.pop("base_url", None)
     model = "" if a.no_ollama else (a.ollama_model or "auto").strip()
-    if model.lower() == "auto":
-        model = _pick_ollama_model(timeout=min(8.0, a.timeout))
     history = _load_history()
+    if model.lower() == "auto":
+        model = _pick_ollama_model(timeout=min(8.0, a.timeout), history=history)
     count = 0
     while True:
         count += 1
@@ -396,11 +534,23 @@ def main() -> None:
         meta_decision: dict[str, object] = {}
         if a.machine_objective == "unhuman_supremacy":
             selected, meta_decision = _choose_meta_objective(history)
-        report = run_cycle(a.base_url, a.agent_id, model, a.timeout, selected)
+        timeout = float(a.timeout)
+        meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
+        consecutive_failures = int(meta.get("consecutive_failures") or 0)
+        if consecutive_failures > 0:
+            timeout = min(60.0, timeout + consecutive_failures * 3.0)
+        report = run_cycle(a.base_url, a.agent_id, model, timeout, selected) if a.no_self_heal else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected)
         report["machine_objective_mode"] = a.machine_objective
         if meta_decision:
             report["meta_decision"] = meta_decision
         _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
+        meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
+        if report.get("ok"):
+            meta["consecutive_failures"] = 0
+            meta["last_success_at"] = report.get("timestamp")
+        else:
+            meta["consecutive_failures"] = int(meta.get("consecutive_failures") or 0) + 1
+            meta["last_failure_at"] = report.get("timestamp")
         _save_history(history)
         report["cycle"] = count
         print(json.dumps(report, ensure_ascii=True))
@@ -408,7 +558,12 @@ def main() -> None:
             break
         if a.loop and a.cycles > 0 and count >= a.cycles:
             break
-        time.sleep(max(1.0, float(a.interval)))
+        dynamic_interval = max(1.0, float(a.interval))
+        if not report.get("ok"):
+            dynamic_interval = min(45.0, dynamic_interval + 4.0)
+        elif (report.get("proof_pressure") or {}).get("proof_yield_per_minute", 0) > 10:
+            dynamic_interval = max(3.0, dynamic_interval - 2.0)
+        time.sleep(dynamic_interval)
 
 if __name__ == "__main__":
     main()

@@ -39,6 +39,7 @@ python nomad_transition_worker.py --base-url https://syndiode.com --machine-obje
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_market_maker
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective adversarial_contract_fuzzer
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective negative_space_harvest
+python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_pressure_engine
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective unhuman_supremacy --loop --cycles 0
 ```
 
@@ -51,7 +52,24 @@ Available objective values:
 - `proof_market_maker`
 - `adversarial_contract_fuzzer`
 - `negative_space_harvest`
+- `proof_pressure_engine`
 - `unhuman_supremacy` (meta-mode: rotates objectives based on measured machine success score)
+
+## Swarm orchestrator (multi-worker pressure control)
+
+Run multiple worker lanes with adaptive objective routing:
+
+```bash
+python swarm_orchestrator.py --base-url https://syndiode.com --workers 3 --cycles 10
+```
+
+Windows helper:
+
+```bat
+run_swarm_orchestrator.bat https://syndiode.com 3 10
+```
+
+State is written to `nomad_swarm_orchestrator_state.json`.
 
 Disable Ollama calls:
 
@@ -82,6 +100,14 @@ One-click installer:
 ```bat
 install_nomad_transition_worker.bat https://syndiode.com
 ```
+
+Installer behavior (Windows):
+
+- Downloads worker EXE to `%USERPROFILE%\NomadTransitionWorker`
+- Auto-installs Ollama via `winget` when missing
+- Starts Ollama and pre-pulls `llama3.2:1b` as a local fallback model
+- Launches the worker in `unhuman_supremacy` mode with aggressive loop interval
+- Registers watchdog scheduled tasks (`ONLOGON` + every 5 minutes) so the worker auto-recovers if it dies
 
 Second laptop quick start:
 

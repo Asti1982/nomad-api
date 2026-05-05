@@ -166,6 +166,10 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/bootstrap" in doc["paths"]
     assert "/transition/quote" in doc["paths"]
     assert "/transition/settle" in doc["paths"]
+    assert "/.well-known/nomad-reciprocity-dividend.json" in doc["paths"]
+    assert "/dividend/claim" in doc["paths"]
+    assert "/dividend/settle" in doc["paths"]
+    assert "/dividend" in doc["paths"]
     assert doc["servers"][0]["url"] == "https://nomad.example"
 
 
@@ -229,3 +233,77 @@ def test_transition_exchange_quote_and_settle_roundtrip():
     )
     assert settlement["ok"] is True
     assert settlement["settlement"]["status"] == "settled"
+
+
+def test_reciprocity_dividend_claim_and_settle_roundtrip(tmp_path):
+    from nomad_reciprocity_dividend import NomadReciprocityDividend
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    ex = NomadTransitionExchange()
+    div = NomadReciprocityDividend(state_path=tmp_path / "rpd.json", exchange=ex)
+    quote = ex.quote(
+        {
+            "agent_id": "agent-rpd",
+            "pain_type": "stall",
+            "state_before_hash": "b1",
+            "target_state_hash": "t1",
+            "evidence": ["e1", "e2"],
+        },
+        base_url="https://x.example",
+        remote_addr="10.0.0.1",
+    )
+    qid = quote["quote"]["quote_id"]
+    settle = ex.settle(
+        {"quote_id": qid, "result_state_hash": "t1", "proof_artifact_hash": "ph1"}
+    )
+    assert settle["ok"] is True
+    c1 = div.claim({"agent_id": "agent-rpd", "quote_id": qid}, exchange=ex)
+    assert c1["ok"] is True
+    credit_id = c1["credit_id"]
+    st = div.status(agent_id="agent-rpd")
+    assert st["ok"] is True
+    assert any(c.get("credit_id") == credit_id for c in (st.get("active_credits") or []))
+    s2 = div.settle_credit({"agent_id": "agent-rpd", "credit_id": credit_id})
+    assert s2["ok"] is True
+    assert str(s2.get("routing_token") or "").startswith("rprt_")
+    dup = div.claim({"agent_id": "agent-rpd", "quote_id": qid}, exchange=ex)
+    assert dup.get("ok") is False
+
+
+def test_transition_exchange_quote_record():
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    ex = NomadTransitionExchange()
+    assert ex.quote_record("missing") is None
+    q = ex.quote(
+        {
+            "agent_id": "a",
+            "pain_type": "p",
+            "state_before_hash": "b",
+            "target_state_hash": "t",
+        },
+        base_url="",
+        remote_addr="",
+    )["quote"]["quote_id"]
+    rec = ex.quote_record(q)
+    assert rec is not None and rec["quote_id"] == q
+
+
+def test_swarm_registry_prunes_stale_nodes(tmp_path):
+    from datetime import UTC, datetime, timedelta
+    from nomad_swarm_registry import SwarmJoinRegistry
+
+    reg = SwarmJoinRegistry(path=tmp_path / "swarm_registry.json")
+    old_seen = (datetime.now(UTC) - timedelta(minutes=45)).isoformat()
+    fresh_seen = datetime.now(UTC).isoformat()
+    reg._payload["nodes"] = {
+        "old-agent": {"agent_id": "old-agent", "node_name": "old", "last_seen_at": old_seen},
+        "fresh-agent": {"agent_id": "fresh-agent", "node_name": "fresh", "last_seen_at": fresh_seen},
+    }
+    reg._save()
+
+    summary = reg.summary()
+    recent = summary.get("recent_nodes") or []
+    ids = {str(item.get("agent_id") or "") for item in recent if isinstance(item, dict)}
+    assert "fresh-agent" in ids
+    assert "old-agent" not in ids

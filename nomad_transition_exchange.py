@@ -13,6 +13,12 @@ class NomadTransitionExchange:
     def __init__(self) -> None:
         self._quotes: dict[str, dict[str, Any]] = {}
 
+    def quote_record(self, quote_id: str) -> Dict[str, Any] | None:
+        """Return a shallow copy of a quote by id, or None if missing."""
+        rid = str(quote_id or "").strip()
+        rec = self._quotes.get(rid)
+        return dict(rec) if rec else None
+
     @staticmethod
     def offer_document(*, public_base_url: str) -> dict[str, Any]:
         base = str(public_base_url or "").strip().rstrip("/")

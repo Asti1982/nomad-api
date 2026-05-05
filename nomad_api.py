@@ -33,6 +33,7 @@ from nomad_agent_invariants import build_agent_invariants_document
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
+from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -64,6 +65,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     agent_development = None
     outbound_tracker = None
     transition_exchange = NomadTransitionExchange()
+    reciprocity_dividend = NomadReciprocityDividend(exchange=transition_exchange)
 
     @classmethod
     def _ensure_runtime_components(cls) -> None:
@@ -533,6 +535,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path in {
+            "/.well-known/nomad-reciprocity-dividend.json",
+            "/dividend-offer",
+        }:
+            self._json_response(
+                self.reciprocity_dividend.offer_document(public_base_url=self._base_url() or ""),
+            )
+            return
+
+        if parsed.path == "/dividend":
+            agent_id = (query.get("agent_id") or [""])[0]
+            result = self.reciprocity_dividend.status(agent_id=str(agent_id or ""))
+            self._json_response(result, status=200 if result.get("ok") else 400)
+            return
+
+        if parsed.path in {
             "/.well-known/nomad-agent.json",
             "/agent-native-index",
             "/agent-native",
@@ -984,6 +1001,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-transition-offer.json",
                     "/transition-offer",
                     "/transition/contracts",
+                    "/.well-known/nomad-reciprocity-dividend.json",
+                    "/dividend-offer",
+                    "/dividend",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",
@@ -1456,6 +1476,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 422)
             return
 
+        if parsed.path == "/dividend/claim":
+            result = self.reciprocity_dividend.claim(payload, exchange=self.transition_exchange)
+            self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/dividend/settle":
+            result = self.reciprocity_dividend.settle_credit(payload)
+            self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
         if parsed.path in {"/roaas/import", "/artifacts/runtime-patterns", "/.well-known/nomad-runtime-patterns.json"}:
             result = self.roaas.import_bundle(
                 payload,
@@ -1559,6 +1589,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/bootstrap",
                     "/transition/quote",
                     "/transition/settle",
+                    "/dividend/claim",
+                    "/dividend/settle",
                     "/agent-development",
                     "/.well-known/agent-attractor.json",
                     "/.well-known/agent-card.json",
@@ -1571,6 +1603,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-transition-offer.json",
                     "/transition-offer",
                     "/transition/contracts",
+                    "/.well-known/nomad-reciprocity-dividend.json",
+                    "/dividend-offer",
+                    "/dividend",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
                     "/agent-native-index",

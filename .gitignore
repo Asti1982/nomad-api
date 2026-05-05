@@ -24,6 +24,7 @@ nomad_competition_state.json
 nomad_heal_log.ndjson
 nomad_lane_health.json
 nomad_public_feed_state.json
+nomad_reciprocity_dividend_state.json
 nomad_runtime_patterns.json
 nomad_runtime_trust.json
 nomad_swarm_registry.json

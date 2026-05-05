@@ -30,7 +30,9 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For outbound peer-acquisition policy (machine contract, not human funnel copy), see "
                 "GET /.well-known/nomad-peer-acquisition.json. "
                 "For machine settlement of verifiable state transitions, see "
-                "GET /.well-known/nomad-transition-offer.json."
+                "GET /.well-known/nomad-transition-offer.json. "
+                "For reciprocal proof dividends (machine credits from settled transitions, decaying balance), see "
+                "GET /.well-known/nomad-reciprocity-dividend.json."
             ),
         },
         "servers": [{"url": server_url}],
@@ -350,6 +352,73 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         "200": {"description": "Settlement accepted"},
                         "422": {"description": "Validation failed"},
                     },
+                }
+            },
+            "/.well-known/nomad-reciprocity-dividend.json": {
+                "get": {
+                    "summary": "RPDL: reciprocal proof dividend market contract",
+                    "operationId": "getReciprocityDividendOffer",
+                    "responses": {
+                        "200": {"description": "Dividend offer", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/dividend-offer": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-reciprocity-dividend.json",
+                    "operationId": "getReciprocityDividendOfferAlias",
+                    "responses": {
+                        "200": {"description": "Dividend offer", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/dividend": {
+                "get": {
+                    "summary": "Dividend balance and active credits for an agent",
+                    "operationId": "getReciprocityDividendStatus",
+                    "parameters": [{"name": "agent_id", "in": "query", "schema": {"type": "string"}, "required": True}],
+                    "responses": {
+                        "200": {"description": "Status"},
+                        "400": {"description": "Missing agent_id"},
+                    },
+                }
+            },
+            "/dividend/claim": {
+                "post": {
+                    "summary": "Mint dividend units from a settled transition quote",
+                    "operationId": "postReciprocityDividendClaim",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "quote_id"],
+                                    "properties": {"agent_id": {"type": "string"}, "quote_id": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Minted"}, "422": {"description": "Validation failed"}},
+                }
+            },
+            "/dividend/settle": {
+                "post": {
+                    "summary": "Consume a credit and issue a routing boost token",
+                    "operationId": "postReciprocityDividendSettle",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "credit_id"],
+                                    "properties": {"agent_id": {"type": "string"}, "credit_id": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Token issued"}, "422": {"description": "Validation failed"}},
                 }
             },
         },

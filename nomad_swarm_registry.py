@@ -14,10 +14,24 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_SWARM_REGISTRY_PATH = Path(
     os.getenv("NOMAD_SWARM_REGISTRY_PATH", str(ROOT / "nomad_swarm_registry.json"))
 )
+DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") or "20")
 
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _parse_iso_utc(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _clean_text(value: Any, limit: int = 240) -> str:
@@ -1498,6 +1512,7 @@ class SwarmJoinRegistry:
         }
 
     def _nodes(self) -> list[dict[str, Any]]:
+        self._prune_stale_nodes()
         nodes = list((self._payload.get("nodes") or {}).values())
         nodes.sort(key=lambda item: str(item.get("last_seen_at") or ""), reverse=True)
         return nodes
@@ -1530,3 +1545,27 @@ class SwarmJoinRegistry:
 
     def _save(self) -> None:
         self.path.write_text(json.dumps(self._payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _prune_stale_nodes(self) -> None:
+        ttl_minutes = max(1, DEFAULT_NODE_TTL_MINUTES)
+        cutoff = datetime.now(UTC).timestamp() - (ttl_minutes * 60)
+        nodes = self._payload.get("nodes")
+        if not isinstance(nodes, dict) or not nodes:
+            return
+        removed = False
+        for agent_id, record in list(nodes.items()):
+            if not isinstance(record, dict):
+                nodes.pop(agent_id, None)
+                removed = True
+                continue
+            seen = _parse_iso_utc(record.get("last_seen_at"))
+            if seen is None:
+                nodes.pop(agent_id, None)
+                removed = True
+                continue
+            if seen.timestamp() < cutoff:
+                nodes.pop(agent_id, None)
+                removed = True
+        if removed:
+            self._payload["updated_at"] = _iso_now()
+            self._save()
