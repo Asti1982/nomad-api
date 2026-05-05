@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Portable Nomad Transition Worker (single-file, stdlib only)."""
 from __future__ import annotations
-import argparse, ctypes, json, os, socket, time
+import argparse, ctypes, json, os, shutil, socket, subprocess, time
 from pathlib import Path
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
@@ -229,6 +229,86 @@ def _pick_ollama_model(timeout: float = 5.0, history: dict | None = None) -> str
         return ""
     ranked.sort()
     return ranked[0][2]
+
+
+def _is_ollama_reachable(timeout: float = 3.0) -> bool:
+    base = _resolve_ollama_base_url(timeout=min(2.5, timeout))
+    tags = http_json("GET", f"{base}/api/tags", timeout=timeout)
+    return isinstance(tags.get("models"), list)
+
+
+def _windows_start_ollama_process() -> None:
+    candidates = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama app.exe"),
+        os.path.join(os.environ.get("ProgramFiles", ""), "Ollama", "ollama app.exe"),
+    ]
+    for app in candidates:
+        if app and os.path.exists(app):
+            try:
+                subprocess.Popen([app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            except OSError:
+                continue
+
+
+def _windows_ensure_ollama() -> tuple[bool, str]:
+    if _is_ollama_reachable():
+        return True, "already_reachable"
+    exe = shutil.which("ollama")
+    if not exe:
+        winget = shutil.which("winget")
+        if not winget:
+            return False, "winget_missing"
+        try:
+            proc = subprocess.run(
+                [
+                    winget,
+                    "install",
+                    "-e",
+                    "--id",
+                    "Ollama.Ollama",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if proc.returncode != 0:
+                return False, "winget_install_failed"
+        except OSError:
+            return False, "winget_exec_failed"
+    _windows_start_ollama_process()
+    for _ in range(10):
+        if _is_ollama_reachable():
+            return True, "started"
+        time.sleep(1.0)
+    return False, "ollama_unreachable"
+
+
+def _ensure_ollama_runtime(timeout: float = 6.0) -> dict[str, object]:
+    if _is_ollama_reachable(timeout=min(3.0, timeout)):
+        return {"ok": True, "status": "already_reachable"}
+    if os.name != "nt":
+        return {"ok": False, "status": "unsupported_platform_for_autoinstall"}
+    ok, status = _windows_ensure_ollama()
+    return {"ok": bool(ok), "status": status}
+
+
+def _maybe_pull_ollama_model(model: str, timeout: float = 120.0) -> dict[str, object]:
+    name = str(model or "").strip()
+    if not name:
+        return {"ok": False, "status": "model_missing"}
+    base = _resolve_ollama_base_url(timeout=2.5)
+    resp = http_json(
+        "POST",
+        f"{base}/api/pull",
+        {"model": name, "stream": False},
+        timeout=max(20.0, float(timeout)),
+    )
+    if resp.get("error"):
+        return {"ok": False, "status": "pull_failed", "error": str(resp.get("error") or "")}
+    return {"ok": True, "status": "pull_ok"}
 
 def default_agent_id() -> str:
     host = socket.gethostname().replace(" ", "-").lower()
@@ -547,13 +627,20 @@ def main() -> None:
         OLLAMA_CACHE.pop("base_url", None)
     model = "" if a.no_ollama else (a.ollama_model or "auto").strip()
     history = _load_history()
+    runtime_diag: dict[str, object] = {"ok": True, "status": "disabled"}
+    pull_diag: dict[str, object] = {"ok": False, "status": "skipped"}
+    if not a.no_ollama:
+        runtime_diag = _ensure_ollama_runtime(timeout=min(8.0, a.timeout))
     if model.lower() == "auto":
         model = _pick_ollama_model(timeout=min(8.0, a.timeout), history=history)
+    if (not a.no_ollama) and model:
+        pull_diag = _maybe_pull_ollama_model(model, timeout=120.0)
     count = 0
     if a.human_status:
         print(
             f"Nomad_Agent boot: base_url={a.base_url} agent_id={a.agent_id} "
-            f"mode={a.machine_objective} interval={a.interval}s"
+            f"mode={a.machine_objective} interval={a.interval}s model={model or 'none'} "
+            f"ollama={runtime_diag.get('status','')}"
         )
     while True:
         count += 1
@@ -568,6 +655,8 @@ def main() -> None:
             timeout = min(60.0, timeout + consecutive_failures * 3.0)
         report = run_cycle(a.base_url, a.agent_id, model, timeout, selected) if a.no_self_heal else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected)
         report["machine_objective_mode"] = a.machine_objective
+        report["ollama_runtime"] = runtime_diag
+        report["ollama_pull"] = pull_diag
         if meta_decision:
             report["meta_decision"] = meta_decision
         _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
