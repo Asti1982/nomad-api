@@ -53,7 +53,7 @@ echo Starting Nomad Agent (visible PowerShell + live JSON output)...
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-Command','cd \"\"%INSTALL_DIR%\"\"; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URL=\"\"%OLLAMA_URL%\"\"; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS=\"\"%OLLAMA_URL%,http://localhost:11434\"\"; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB=\"\"24\"\"; $env:NOMAD_MACHINE_OBJECTIVE=\"\"unhuman_supremacy\"\"; .\nomad_transition_worker.exe --base-url \"\"%BASE_URL%\"\" --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2^>^&1 ^| Tee-Object -FilePath \"\"%LOG_FILE%\"\" -Append'"
+start "Nomad_Agent_Live" cmd /k "cd /d \"%INSTALL_DIR%\" && set NOMAD_TRANSITION_WORKER_OLLAMA_URL=%OLLAMA_URL% && set NOMAD_TRANSITION_WORKER_OLLAMA_URLS=%OLLAMA_URL%,http://localhost:11434 && set NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB=24 && set NOMAD_MACHINE_OBJECTIVE=unhuman_supremacy && \"%INSTALL_DIR%\nomad_transition_worker.exe\" --base-url %BASE_URL% --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 >> \"%LOG_FILE%\" 2>&1"
 echo.
 echo Nomad Agent started.
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%
