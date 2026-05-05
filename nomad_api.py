@@ -1900,6 +1900,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if (not path.exists() or not path.is_file()) and path.name == "install_nomad_agent.bat":
+            body = (
+                "@echo off\r\n"
+                "setlocal\r\n"
+                "set BASE_URL=%1\r\n"
+                "if \"%BASE_URL%\"==\"\" set BASE_URL=https://syndiode.com\r\n"
+                "set TARGET=%TEMP%\\install_nomad_transition_worker.bat\r\n"
+                "echo Downloading installer from %BASE_URL%...\r\n"
+                "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri '%BASE_URL%/downloads/install_nomad_transition_worker.bat' -OutFile '%TARGET%'\"\r\n"
+                "if errorlevel 1 (\r\n"
+                "  echo Failed to download installer.\r\n"
+                "  exit /b 1\r\n"
+                ")\r\n"
+                "echo Running installer...\r\n"
+                "call \"%TARGET%\" \"%BASE_URL%\"\r\n"
+            ).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/x-msdos-program")
+            self._send_common_headers()
+            self.send_header('Content-Disposition', 'attachment; filename="install_nomad_agent.bat"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if not path.exists() or not path.is_file():
             self._json_response(
                 machine_error_response(
@@ -1908,7 +1932,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     hints=[
                         "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
+                        "GET /downloads/install_nomad_agent.bat for the short installer alias.",
                         "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
+                        "GET /downloads/run_nomad_agent_visible.bat to run with live Nomad_Agent status lines.",
+                        "GET /downloads/stop_nomad_agent.bat to stop the local Nomad agent loop.",
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
                         "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
