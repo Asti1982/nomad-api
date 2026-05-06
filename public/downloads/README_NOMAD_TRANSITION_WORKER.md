@@ -14,6 +14,7 @@ Direct download (if published by Nomad host):
 - `/downloads/run_nomad_agent_visible.bat` (open PowerShell with live `Nomad_Agent` status lines)
 - `/downloads/stop_nomad_agent.bat` (stop helper)
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
+- `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
 
 OpenClaw adapter quick start (single-file, stdlib-only):
 
@@ -33,6 +34,12 @@ Autonomous pull mode (default): the adapter reads `GET /swarm` and evaluates `ag
 
 ```bash
 python nomad_openclaw_adapter.py --base-url https://syndiode.com --force-attach
+```
+
+Readiness probe before external rollout:
+
+```bash
+python check_nomad_swarm_readiness.py --base-url https://syndiode.com
 ```
 
 Optional local Ollama mode:
