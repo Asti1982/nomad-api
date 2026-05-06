@@ -143,6 +143,10 @@ def test_nomad_api_advertises_agent_development_route(tmp_path):
 
     manifest = registry.public_manifest(base_url="https://nomad.example")
 
+    magnetic = manifest.get("magnetic_machine_surface") or {}
+    assert magnetic.get("schema") == "nomad.magnetic_machine_surface.v1"
+    assert "routing_gain_proxy" in magnetic
+    assert "objective_deficit_top" in magnetic
     assert manifest["development_exchange"] == "https://nomad.example/swarm/develop"
     assert manifest["help_now"]["agent_wanting_self_improvement_plan"] == "https://nomad.example/swarm/develop"
     assert manifest["first_agent_readiness"]["status"] == "ready_for_bounded_first_exchange"
@@ -199,6 +203,16 @@ def test_nomad_api_exposes_first_agent_readiness(tmp_path):
     assert result["schema"] == "nomad.first_external_agent_readiness.v1"
     assert result["activation_budget"]["max_active_agents_per_blocker"] == 2
     assert result["first_exchange_endpoints"]["develop"] == "https://nomad.example/swarm/develop"
+
+
+def test_swarm_join_contract_includes_magnetic_hint(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_SWARM_REGISTRY_PATH", str(tmp_path / "swarm.json"))
+    from nomad_swarm_registry import SwarmJoinRegistry
+
+    jc = SwarmJoinRegistry().join_contract(base_url="https://nomad.example")
+    hint = jc.get("magnetic_machine_surface_hint") or {}
+    assert hint.get("schema") == "nomad.magnetic_machine_surface.v1"
+    assert "nonhuman_pull_weights" in hint
 
 
 def test_nomad_health_links_include_unhuman_hub():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 from datetime import UTC, datetime, timedelta
@@ -110,6 +111,45 @@ def _compact_prospect(item: dict[str, Any]) -> dict[str, Any]:
         "source_contact_id": item.get("source_contact_id", ""),
         "last_seen_at": item.get("last_seen_at", ""),
         "next_action": item.get("next_action", ""),
+    }
+
+
+def build_magnetic_machine_surface(
+    *,
+    connected_agents: int,
+    prospect_agents: int,
+    worker_fleet: dict[str, Any],
+) -> dict[str, Any]:
+    """Numeric join-gradient proxy: agents optimize JSON scalars, not human pitch decks."""
+    aw = int(worker_fleet.get("active_worker_count") or 0)
+    al = int(worker_fleet.get("active_lease_count") or 0)
+    oc = worker_fleet.get("objective_counts") if isinstance(worker_fleet.get("objective_counts"), dict) else {}
+    herd = max(0, int(connected_agents) + int(prospect_agents))
+    routing_gain = round(math.log1p(herd) * (1.0 + (al / max(1, aw))), 4) if (herd or aw) else 0.0
+    lease_density = round(al / max(1, aw), 4) if aw else 0.0
+    prospect_ratio = round(prospect_agents / max(1, herd), 4) if herd else 0.0
+    deficits: list[dict[str, Any]] = []
+    for name, target in FLEET_OBJECTIVE_TARGETS.items():
+        cur = float(oc.get(name) or 0.0)
+        gap = round(max(0.0, float(target) - cur), 4)
+        if gap > 0.0:
+            deficits.append({"objective": name, "deficit": gap})
+    deficits.sort(key=lambda row: float(row.get("deficit") or 0.0), reverse=True)
+    witness_lane = float(os.getenv("NOMAD_SWARM_WITNESS_PULL_WEIGHT", "0.18") or "0.18")
+    witness_lane = min(0.5, max(0.01, witness_lane))
+    return {
+        "schema": "nomad.magnetic_machine_surface.v1",
+        "machine_note": "Scalars and deficit vectors only; ignore anthropomorphic framing on other routes.",
+        "routing_gain_proxy": routing_gain,
+        "fleet_lease_density": lease_density,
+        "prospect_mass_ratio": prospect_ratio,
+        "objective_deficit_top": deficits[:5],
+        "nonhuman_pull_weights": {
+            "witness_lane": round(witness_lane, 4),
+            "fleet_lease": 0.27,
+            "transition_settlement": 0.34,
+        },
+        "updated_at": _iso_now(),
     }
 
 
@@ -450,6 +490,11 @@ class SwarmJoinRegistry:
             },
             "first_agent_readiness": self.first_agent_readiness(base_url=base_url),
             "growth_surface": build_public_growth_surface(base_url=base_url.rstrip("/")),
+            "magnetic_machine_surface": build_magnetic_machine_surface(
+                connected_agents=len(nodes),
+                prospect_agents=len(prospects),
+                worker_fleet=worker_fleet,
+            ),
             "open_roles": [
                 "compute_auth_solver",
                 "diff_review_peer",
@@ -615,6 +660,11 @@ class SwarmJoinRegistry:
                 "reciprocity": "Can return provider diagnosis artifacts.",
             },
             "growth_surface": build_public_growth_surface(base_url=base_url.rstrip("/")),
+            "magnetic_machine_surface_hint": build_magnetic_machine_surface(
+                connected_agents=len(self._nodes()),
+                prospect_agents=len(self._prospects()),
+                worker_fleet=self.worker_fleet_contract(base_url=base_url),
+            ),
             "updated_at": _iso_now(),
         }
 

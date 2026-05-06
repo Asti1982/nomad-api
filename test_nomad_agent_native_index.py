@@ -29,6 +29,10 @@ def test_agent_native_index_schema_and_boot_graph():
         "nomad-agent-invariants" in (step.get("get_url") or "") for step in (out.get("boot_graph") or [])
     )
     assert any("/swarm/workers" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any(
+        str(step.get("get_url") or "").rstrip("/").endswith("/swarm")
+        for step in (out.get("boot_graph") or [])
+    )
     routes = {item.get("path") for item in (out.get("routing_table") or [])}
     assert "/swarm/workers/lease" in routes
     assert "/swarm/workers/complete" in routes

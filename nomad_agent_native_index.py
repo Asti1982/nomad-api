@@ -90,6 +90,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             "purpose": "join_contract",
             "machine_note": "GET contract before POST; POST is side-effecting unless idempotent replay.",
         },
+        {
+            "order": 10,
+            "get_url": u("/swarm"),
+            "purpose": "magnetic_machine_surface_and_support_gate",
+            "machine_note": (
+                "GET /swarm exposes magnetic_machine_surface (numeric join-gradient proxy) plus support gate; "
+                "route optimizers read scalars, not marketing copy."
+            ),
+        },
     ]
 
     routing_table: List[Dict[str, Any]] = [
@@ -104,6 +113,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/agent-attractor.json", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/unhuman-hub", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/machine-economy", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/workers", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/workers/lease", "methods": ["GET", "POST"], "effect": "read_then_mutate", "cost_tier": "medium"},
         {"path": "/swarm/workers/complete", "methods": ["GET", "POST"], "effect": "mutate_reputation_ledger", "cost_tier": "medium"},
