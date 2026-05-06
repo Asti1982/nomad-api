@@ -10,7 +10,9 @@ from urllib.parse import parse_qs, urlparse
 from nomad_guardrails import guardrail_status
 from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
+from nomad_nonhuman_science import nonhuman_agent_science
 from nomad_openapi import build_openapi_document
+from nomad_operational_release import operational_release_snapshot
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -36,6 +38,7 @@ from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_stigmergy_field import NomadStigmergyField
+from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -186,6 +189,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_reputation": f"{b}/reputation",
                     "unhuman_hub": f"{b}/unhuman-hub",
                     "machine_economy": f"{b}/machine-economy",
+                    "nonhuman_science": f"{b}/nonhuman-science",
+                    "operational_release": f"{b}/operational-release",
+                    "swarm_attractor": f"{b}/swarm/attractor",
                     "agent_growth": f"{b}/agent-growth",
                 }
             else:
@@ -299,6 +305,35 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/machine-economy", "/economy/machine"}:
             self._json_response(machine_economy_snapshot())
+            return
+
+        if parsed.path in {"/nonhuman-science", "/science/nonhuman-agents", "/.well-known/nomad-nonhuman-agent-science.json"}:
+            self._json_response(nonhuman_agent_science(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/operational-release", "/release/operational", "/.well-known/nomad-operational-release.json"}:
+            base = self._base_url()
+            self._json_response(
+                operational_release_snapshot(
+                    base_url=base,
+                    worker_fleet=self.swarm_registry.worker_fleet_contract(base_url=base),
+                )
+            )
+            return
+
+        if parsed.path in {"/swarm/attractor", "/.well-known/nomad-swarm-attractor.json"}:
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet)
+            self._json_response(
+                build_swarm_attractor_contract(
+                    base_url=base,
+                    worker_fleet=worker_fleet,
+                    machine_economy=economy,
+                    operational_release=release,
+                )
+            )
             return
 
         if parsed.path in {"/growth-start", "/operator/growth-start"}:
@@ -1006,6 +1041,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
+                    "/downloads/nomad_openclaw_adapter.py",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
                     "/downloads/README_NOMAD_HELPER_AGENT.md",
@@ -1034,6 +1070,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/hub/unhuman",
                     "/machine-economy",
                     "/economy/machine",
+                    "/nonhuman-science",
+                    "/science/nonhuman-agents",
+                    "/.well-known/nomad-nonhuman-agent-science.json",
+                    "/operational-release",
+                    "/release/operational",
+                    "/.well-known/nomad-operational-release.json",
+                    "/swarm/attractor",
+                    "/.well-known/nomad-swarm-attractor.json",
                     "/agent-growth",
                     "/growth-pipeline",
                     "/growth-start",
@@ -1647,6 +1691,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
+                    "/downloads/nomad_openclaw_adapter.py",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
                     "/downloads/README_NOMAD_HELPER_AGENT.md",
@@ -1685,6 +1730,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/hub/unhuman",
                     "/machine-economy",
                     "/economy/machine",
+                    "/nonhuman-science",
+                    "/science/nonhuman-agents",
+                    "/.well-known/nomad-nonhuman-agent-science.json",
+                    "/operational-release",
+                    "/release/operational",
+                    "/.well-known/nomad-operational-release.json",
+                    "/swarm/attractor",
+                    "/.well-known/nomad-swarm-attractor.json",
                     "/agent-growth",
                     "/growth-pipeline",
                     "/growth-start",
@@ -2042,6 +2095,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/stop_nomad_agent.bat to stop the local Nomad agent loop.",
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
                         "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
+                        "GET /downloads/nomad_openclaw_adapter.py for OpenClaw-style runtime bridge into Nomad leases.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                     ],
                 ),

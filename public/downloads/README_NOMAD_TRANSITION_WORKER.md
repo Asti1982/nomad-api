@@ -13,6 +13,21 @@ Direct download (if published by Nomad host):
 - `/downloads/install_nomad_agent.bat` (short alias installer)
 - `/downloads/run_nomad_agent_visible.bat` (open PowerShell with live `Nomad_Agent` status lines)
 - `/downloads/stop_nomad_agent.bat` (stop helper)
+- `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
+
+OpenClaw adapter quick start (single-file, stdlib-only):
+
+```bash
+python nomad_openclaw_adapter.py --base-url https://syndiode.com --loop --cycles 0 --interval 12
+```
+
+What it does:
+
+- joins via `POST /swarm/join` as an adapter identity
+- requests objective leases via `POST /swarm/workers/lease`
+- returns compact completion reports via `POST /swarm/workers/complete`
+
+This is a low-coupling bridge for external agent runtimes: Nomad handles routing/leases, external runtimes keep their own execution substrate.
 
 Optional local Ollama mode:
 
@@ -50,6 +65,8 @@ python nomad_transition_worker.py --base-url https://syndiode.com --machine-obje
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective negative_space_harvest
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_pressure_engine
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective settlement_capacity_builder
+python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective overmint_compressor
+python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective emergence_release_probe
 python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective unhuman_supremacy --loop --cycles 0
 ```
 
@@ -64,9 +81,15 @@ Available objective values:
 - `negative_space_harvest`
 - `proof_pressure_engine`
 - `settlement_capacity_builder`
+- `overmint_compressor`
+- `emergence_release_probe`
 - `unhuman_supremacy` (meta-mode: rotates objectives based on measured machine success score)
 
 `settlement_capacity_builder` probes `/machine-economy` and treats money as carrying capacity: unpaid delivered work, over-minted repeated modules, missing machine-exchange contracts, and settlement readiness become machine-readable pressure signals instead of a human sales loop.
+
+`overmint_compressor` targets repeated module inflation. It returns a canonical capability, duplicate signal, compression action, and verifier endpoint so Nomad can reduce clone pressure before widening emergence.
+
+`emergence_release_probe` probes `/nonhuman-science` and `/operational-release`. It is the controlled production lane for non-human emergence: workers diverge across objectives, return proof, expose convention/peer-preservation pressure, and only then let Nomad release more lease share or proof scope.
 
 ## Swarm orchestrator (multi-worker pressure control)
 
