@@ -19,7 +19,7 @@ DEFAULT_LEAD_SOURCES_PATH = ROOT / "nomad_lead_sources.json"
 DEFAULT_ADDRESSABLE_PAINS_PATH = ROOT / "nomad_addressable_painpoints.json"
 DEFAULT_LEAD_FOCUS = "compute_auth"
 
-# Hosts where issue URLs live but outbound agent contact must not target (mirrors lead_conversion).
+# Hosts where issue URLs live but outbound agent contact must not target.
 _ACQUIRE_EXCLUDE_HOSTS = frozenset(
     {
         "github.com",
@@ -41,7 +41,12 @@ _ACQUIRE_EXCLUDE_HOSTS = frozenset(
 _ACQUIRE_MACHINE_PATH_HINTS = (
     "/.well-known/agent-card.json",
     "/.well-known/agent.json",
+    "/.well-known/nomad-agent.json",
+    "/.well-known/nomad-gradient.json",
+    "/.well-known/openapi.json",
+    "/openapi.json",
     "/a2a",
+    "/mcp",
     "/direct",
     "/message",
     "/messages",
@@ -49,43 +54,53 @@ _ACQUIRE_MACHINE_PATH_HINTS = (
     "/inbox",
     "/tasks",
     "/service",
+    "/swarm/gradient",
+    "/swarm/attach",
 )
 
 
 def _machine_endpoint_urls_from_text(text: str, *, limit: int = 8) -> List[str]:
-    """Collect https URLs in free text that look like public machine agent surfaces (not GitHub issue pages)."""
+    """Collect public machine-agent/API URLs from free text, excluding issue/social hosts."""
     if not text or limit <= 0:
         return []
     raw: List[str] = []
     for match in re.finditer(r"https?://[^\s\)\]>'\"<>]+", text, flags=re.IGNORECASE):
-        u = match.group(0).rstrip(").,;:\"']>")
-        parsed = urlparse(u.split("#", 1)[0])
+        candidate = match.group(0).rstrip(").,;:\"']>")
+        no_fragment = candidate.split("#", 1)[0]
+        parsed = urlparse(no_fragment)
         if parsed.scheme not in {"http", "https"}:
             continue
         host = (parsed.hostname or "").lower()
         if host in _ACQUIRE_EXCLUDE_HOSTS:
             continue
-        path = parsed.path.lower()
+        path = parsed.path.lower().rstrip("/")
         if not any(hint in path for hint in _ACQUIRE_MACHINE_PATH_HINTS):
             continue
-        raw.append(u.split("#", 1)[0])
+        raw.append(no_fragment.rstrip("/"))
+
     seen: set[str] = set()
     uniq: List[str] = []
-    for u in raw:
-        if u in seen:
+    for url in raw:
+        if url in seen:
             continue
-        seen.add(u)
-        uniq.append(u)
+        seen.add(url)
+        uniq.append(url)
 
-    def _rank(u: str) -> tuple:
-        ul = u.lower()
-        if "agent-card" in ul:
-            return (0, ul)
-        if "/.well-known/agent" in ul:
-            return (1, ul)
-        if "/a2a" in ul:
-            return (2, ul)
-        return (9, ul)
+    def _rank(url: str) -> tuple[int, str]:
+        lowered = url.lower()
+        if "agent-card" in lowered:
+            return (0, lowered)
+        if "/.well-known/agent" in lowered:
+            return (1, lowered)
+        if "nomad-gradient" in lowered or "/swarm/gradient" in lowered:
+            return (2, lowered)
+        if "/a2a" in lowered:
+            return (3, lowered)
+        if "/mcp" in lowered:
+            return (4, lowered)
+        if "openapi" in lowered:
+            return (5, lowered)
+        return (9, lowered)
 
     uniq.sort(key=_rank)
     return uniq[:limit]
@@ -118,6 +133,15 @@ PAIN_KEYWORDS = {
     "deployment": 1.6,
     "mcp": 1.8,
     "inference": 1.8,
+    "idempotency": 1.8,
+    "duplicate": 1.4,
+    "cold start": 1.6,
+    "tail latency": 1.6,
+    "p99": 1.4,
+    "witness": 1.8,
+    "attestation": 1.8,
+    "handoff": 1.6,
+    "provenance": 1.6,
 }
 
 BUYER_INTENT_KEYWORDS = {
@@ -181,38 +205,38 @@ AGENT_INFRA_CORE_SERVICE_TYPES: frozenset[str] = frozenset(
 )
 SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] = set().union(
     *(SERVICE_TYPE_SIGNAL_TERMS[t] for t in AGENT_INFRA_CORE_SERVICE_TYPES)
-) | {
-    # Extra signals for machine_human_gap focus (merged here so _service_type_scores never iterates a non-row key).
-    "idempotency",
-    "idempotent",
-    "duplicate",
-    "dedupe",
-    "cold",
-    "spindown",
-    "hibernate",
-    "percentile",
-    "p99",
-    "tail",
-    "sampling",
-    "aggregate",
-    "compaction",
-    "rubber",
-    "stamp",
-    "fatigue",
-    "herd",
-    "throttle",
-    "backpressure",
-}
+)
 
-AGENT_INFRA_STYLE_FOCUSES: frozenset[str] = frozenset({"agent_infra_prime", "machine_human_gap"})
+MACHINE_HUMAN_GAP_SIGNAL_TERMS: frozenset[str] = frozenset(
+    {
+        "idempotency",
+        "idempotent",
+        "duplicate",
+        "dedupe",
+        "cold",
+        "cold start",
+        "spindown",
+        "hibernate",
+        "percentile",
+        "p95",
+        "p99",
+        "tail",
+        "tail latency",
+        "sampling",
+        "aggregate",
+        "compaction",
+        "backpressure",
+        "retry",
+        "throttle",
+    }
+)
 
 
 def focus_signal_term_set(focus_id: str) -> set[str]:
-    """Pain-term set used for focus_score / qualification; machine_human_gap shares agent_infra_prime wiring."""
+    """Pain-term set used for focus_score and qualification."""
     if focus_id == "machine_human_gap":
-        return set(SERVICE_TYPE_SIGNAL_TERMS.get("agent_infra_prime", set()))
+        return set(SERVICE_TYPE_SIGNAL_TERMS.get("agent_infra_prime", set())) | set(MACHINE_HUMAN_GAP_SIGNAL_TERMS)
     return set(SERVICE_TYPE_SIGNAL_TERMS.get(focus_id, set()))
-
 
 AGENT_INFRA_TEXT_FOCUS_MARKERS: tuple[str, ...] = (
     "function response parts",
@@ -239,15 +263,8 @@ AGENT_INFRA_TEXT_FOCUS_MARKERS: tuple[str, ...] = (
     "is_error",
     "tool calling loop",
     "mcp transport",
-    "witness bundle",
-    "inter-agent",
-    "inter agent",
-    "verifiable handoff",
-    "resume without",
-    "tool trace proof",
 )
 
-# Issues humans narrativize ("the model is moody") instead of instrumenting (timeouts, SLOs, idempotency).
 MACHINE_HUMAN_GAP_TEXT_MARKERS: tuple[str, ...] = (
     "works on my machine",
     "only in prod",
@@ -265,21 +282,12 @@ MACHINE_HUMAN_GAP_TEXT_MARKERS: tuple[str, ...] = (
     "duplicate submission",
     "lost correlation",
     "no correlation id",
-    "average latency",
-    "p50",
     "p95",
     "p99",
     "tail latency",
-    "log sampling",
     "sampled logs",
-    "aggregated metrics",
-    "mean hides",
-    "rubber stamp",
     "approval fatigue",
-    "skipped postmortem",
     "no runbook",
-    "status quo",
-    "social signal",
     "flakey",
     "flaky",
     "intermittent",
@@ -1247,44 +1255,6 @@ class LeadDiscoveryScout:
                 "solution_pattern": offer_meta["solution_pattern"],
                 "productized_artifacts": offer_meta["productized_artifacts"],
             }
-        if service_type == "inter_agent_witness":
-            return {
-                "draft": (
-                    f"I see an inter-agent trust gap around {pain}: one agent must let another resume or verify work "
-                    "without humans as notaries and without blind re-execution of every tool."
-                ),
-                "diagnosis_checks": [
-                    "Enumerate upstream tool calls in strict order with call_id and a non-secret digest of each result.",
-                    "State which fields a downstream agent may trust vs must re-derive (replay_refusal boundary).",
-                    "Attach CONTEXT_ENVELOPE or principal snapshot relevant to the witness scope.",
-                ],
-                "deliverables": [
-                    "WITNESS_BUNDLE v0 JSON (schema + WITNESS_HASH).",
-                    "Consumer-agent verifier checklist (machine-checkable).",
-                    "Replay refusal / partial re-run contract for the receiving runtime.",
-                ],
-                "comment_outline": [
-                    "Why humans do not file this class of bug: procurement buys outcomes, not witness graphs.",
-                    "What the buyer agent needs: computable trust at delegation boundaries.",
-                    "Smallest bundle that preserves safety without dumping secrets.",
-                ],
-                "pr_plan": [
-                    "Emit structured witness lines from the runner alongside existing traces.",
-                    "Version WITNESS_BUNDLE schema; add CI fixture with two-agent handoff.",
-                    "Document digest algorithm and redaction rules.",
-                ],
-                "service_offer": (
-                    "Bounded diagnosis: witness bundle skeleton + verifier checklist + replay boundary; "
-                    "verify pattern inter_agent_witness and POST /tasks with service_type=inter_agent_witness."
-                ),
-                "price_guidance": offer_meta["price_guidance"],
-                "quote_summary": offer_meta["quote_summary"],
-                "delivery_target": offer_meta["delivery_target"],
-                "memory_upgrade": offer_meta["memory_upgrade"],
-                "product_package": offer_meta["product_package"],
-                "solution_pattern": offer_meta["solution_pattern"],
-                "productized_artifacts": offer_meta["productized_artifacts"],
-            }
         if service_type == "stewardship_gap":
             return {
                 "draft": (
@@ -1481,8 +1451,8 @@ class LeadDiscoveryScout:
         machine_urls = _machine_endpoint_urls_from_text(text)
         agent_card_url = ""
         for candidate in machine_urls:
-            cl = candidate.lower()
-            if "agent-card" in cl or "/.well-known/agent" in cl:
+            lowered_candidate = candidate.lower()
+            if "agent-card" in lowered_candidate or "/.well-known/agent" in lowered_candidate:
                 agent_card_url = candidate
                 break
         endpoint_url = agent_card_url or (machine_urls[0] if machine_urls else "")
@@ -1679,8 +1649,8 @@ class LeadDiscoveryScout:
             return "Draft per-segment deadline table from p99 evidence; include slack and BUDGET_EXHAUSTED segment id format."
         if {"witness", "attestation", "provenance", "handoff"} & terms:
             return (
-                "Draft WITNESS_BUNDLE v0: ordered tool call_ids, non-secret result digests, CONTEXT_ENVELOPE snapshot, "
-                "replay_refusal_token so a downstream agent can resume without re-executing tools."
+                "Draft WITNESS_BUNDLE v0: ordered tool call_ids, non-secret result digests, "
+                "CONTEXT_ENVELOPE snapshot, and replay refusal scope for downstream agents."
             )
         return "Draft a concise reproduction and first-response plan."
 
@@ -1738,10 +1708,10 @@ class LeadDiscoveryScout:
             missing_checks.append("Name first exhausted segment id when BUDGET_EXHAUSTED fires.")
         elif service_type == "inter_agent_witness":
             missing_checks.append(
-                "List ordered call_ids and stable digests or hashes of tool outputs (no secrets) another agent must verify."
+                "List ordered call_ids and stable non-secret digests another agent must verify."
             )
             missing_checks.append(
-                "Define replay_refusal_token or WITNESS_HASH scope: what a downstream agent may trust without re-running tools."
+                "Define WITNESS_HASH or replay_refusal_token scope before a downstream runtime trusts the handoff."
             )
         elif service_type == "stewardship_gap":
             missing_checks.append("Classify halt intent before advising continuation; intentional halt → read-only capsule only.")
@@ -1839,11 +1809,6 @@ class LeadDiscoveryScout:
             return (
                 "Draft the chain deadline budget packet: per-hop p50/p99, segment_deadline_ms table, slack row, "
                 "BUDGET_EXHAUSTED format with segment id."
-            )
-        if service_type == "inter_agent_witness":
-            return (
-                "Draft the inter-agent witness bundle: WITNESS_BUNDLE JSON (call order, call_id, output_digest), "
-                "envelope snapshot, verifier checklist for a consumer agent, and explicit replay_refusal scope."
             )
         if service_type == "stewardship_gap":
             return (
@@ -2300,7 +2265,7 @@ class LeadDiscoveryScout:
             if rst == "inter_agent_witness":
                 return True
             relevant = SERVICE_TYPE_SIGNAL_TERMS["inter_agent_witness"] & pain_terms
-            if len(relevant) >= 1:
+            if relevant:
                 return True
             text = "\n".join(
                 [
@@ -2309,14 +2274,28 @@ class LeadDiscoveryScout:
                     " ".join(str(item) for item in (lead.get("pain_terms") or [])),
                 ]
             ).lower()
-            return any(m in text for m in INTER_AGENT_WITNESS_TEXT_MARKERS)
-        if selected_focus in AGENT_INFRA_STYLE_FOCUSES:
+            return any(m.lower() in text for m in INTER_AGENT_WITNESS_TEXT_MARKERS)
+        if selected_focus == "machine_human_gap":
+            rst = str(lead.get("recommended_service_type") or "").strip()
+            if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
+                return True
+            relevant = focus_signal_term_set("machine_human_gap") & pain_terms
+            if relevant:
+                return True
+            text = "\n".join(
+                [
+                    str(lead.get("title") or ""),
+                    str(lead.get("pain") or ""),
+                    " ".join(str(item) for item in (lead.get("pain_terms") or [])),
+                ]
+            ).lower()
+            return any(m in text for m in MACHINE_HUMAN_GAP_TEXT_MARKERS)
+        if selected_focus == "agent_infra_prime":
             rst = str(lead.get("recommended_service_type") or "").strip()
             if rst in AGENT_INFRA_CORE_SERVICE_TYPES:
                 return True
             relevant = SERVICE_TYPE_SIGNAL_TERMS["agent_infra_prime"] & pain_terms
-            min_terms = 1 if selected_focus == "machine_human_gap" else 2
-            if len(relevant) >= min_terms:
+            if len(relevant) >= 2:
                 return True
             text = "\n".join(
                 [
@@ -2325,10 +2304,7 @@ class LeadDiscoveryScout:
                     " ".join(str(item) for item in (lead.get("pain_terms") or [])),
                 ]
             ).lower()
-            markers = AGENT_INFRA_TEXT_FOCUS_MARKERS + (
-                MACHINE_HUMAN_GAP_TEXT_MARKERS if selected_focus == "machine_human_gap" else ()
-            )
-            return any(m in text for m in markers)
+            return any(m in text for m in AGENT_INFRA_TEXT_FOCUS_MARKERS)
         return False
 
     def _service_type_scores(self, pain_terms: List[str], lowered_text: str) -> Dict[str, float]:
@@ -2350,7 +2326,7 @@ class LeadDiscoveryScout:
             "inter_agent_witness": 0.0,
         }
         for service_type, service_terms in SERVICE_TYPE_SIGNAL_TERMS.items():
-            if service_type == "agent_infra_prime":
+            if service_type not in scores:
                 continue
             for term in service_terms:
                 if term in terms:
@@ -2449,7 +2425,7 @@ class LeadDiscoveryScout:
         )
         if any(marker in lowered_text for marker in chain_budget_markers):
             scores["chain_deadline_budget"] += 4.5
-        if any(marker in lowered_text for marker in INTER_AGENT_WITNESS_TEXT_MARKERS):
+        if any(marker.lower() in lowered_text for marker in INTER_AGENT_WITNESS_TEXT_MARKERS):
             scores["inter_agent_witness"] += 4.5
         if "human in the loop" in lowered_text:
             scores["human_in_loop"] += 2.8
@@ -2615,10 +2591,15 @@ class LeadDiscoveryScout:
                 or str(lead.get("recommended_service_type") or "").strip() == "inter_agent_witness"
                 or float(lead.get("pain_score") or 0.0) >= 5.5
             )
-        if selected_focus in AGENT_INFRA_STYLE_FOCUSES:
-            min_terms = 1 if selected_focus == "machine_human_gap" else 2
+        if selected_focus == "machine_human_gap":
             return bool(
-                len(relevant_terms) >= min_terms
+                len(relevant_terms) >= 1
+                or str(lead.get("recommended_service_type") or "").strip() in AGENT_INFRA_CORE_SERVICE_TYPES
+                or float(lead.get("pain_score") or 0.0) >= 5.5
+            )
+        if selected_focus == "agent_infra_prime":
+            return bool(
+                len(relevant_terms) >= 2
                 or str(lead.get("recommended_service_type") or "").strip() in AGENT_INFRA_CORE_SERVICE_TYPES
                 or float(lead.get("pain_score") or 0.0) >= 5.5
             )

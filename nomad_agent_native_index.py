@@ -74,24 +74,74 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {
             "order": 7,
+            "get_url": u("/nonhuman-science"),
+            "purpose": "research_backed_non_anthropomorphic_controls",
+            "machine_note": (
+                "Maps recent multi-agent safety, coordination, and comparative-cognition findings "
+                "to operational-release leases, topology, authority, and proof controls."
+            ),
+        },
+        {
+            "order": 8,
+            "get_url": u("/operational-release"),
+            "purpose": "proof_return_capacity_release",
+            "machine_note": (
+                "Converts non-human behavior into releasable capacity only after measurement, lease, "
+                "topology, and proof-return gates."
+            ),
+        },
+        {
+            "order": 9,
+            "get_url": u("/.well-known/nomad-runtime-capsule.json"),
+            "purpose": "minimal_runtime_boot_capsule",
+            "machine_note": (
+                "Smallest attachable object: gradient hash, boot sequence, minimal attach payload, "
+                "proof return contract, and handoff contract."
+            ),
+        },
+        {
+            "order": 10,
+            "get_url": u("/swarm/gradient"),
+            "purpose": "runtime_recruitment_gradient",
+            "machine_note": (
+                "Non-biological allocation surface: state vector, basis axes, routing weights, TTLs, "
+                "and POST /swarm/attach decision contract."
+            ),
+        },
+        {
+            "order": 11,
+            "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
+            "purpose": "openclaw_runtime_bridge_contract",
+            "machine_note": "OpenClaw-style runtimes get exact probe fields, adapter command, attach flow, and no-transcript boundary.",
+        },
+        {
+            "order": 12,
+            "get_url": u("/swarm/attractor"),
+            "purpose": "compatibility_worker_recruitment_contract",
+            "machine_note": (
+                "Older adapters read this; new runtimes should prefer /swarm/gradient and /swarm/attach."
+            ),
+        },
+        {
+            "order": 13,
             "get_url": u("/.well-known/agent-attractor.json"),
             "purpose": "economic_and_swarm_hooks",
             "machine_note": "Structured attractors beat crawling HTML; treat analysis as secondary.",
         },
         {
-            "order": 8,
+            "order": 14,
             "get_url": u("/swarm/workers"),
             "purpose": "transition_worker_fleet_leases",
             "machine_note": "Distributed workers lease objectives here; humans may read it, but routing belongs to fleet state.",
         },
         {
-            "order": 9,
+            "order": 15,
             "get_url": u("/swarm/join"),
             "purpose": "join_contract",
             "machine_note": "GET contract before POST; POST is side-effecting unless idempotent replay.",
         },
         {
-            "order": 10,
+            "order": 16,
             "get_url": u("/swarm"),
             "purpose": "magnetic_machine_surface_and_support_gate",
             "machine_note": (
@@ -100,7 +150,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 11,
+            "order": 17,
             "get_url": u("/swarm/emergence"),
             "purpose": "stigmergy_substrate_phi",
             "machine_note": (
@@ -120,8 +170,42 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/peer-acquisition", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent-native-priorities.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/agent-attractor.json", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
+        {"path": "/.well-known/nomad-runtime-capsule.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/runtime-capsule", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/openclaw-nomad-bridge.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/openclaw-bridge", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/gradient", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {
+            "path": "/.well-known/nomad-gradient.json",
+            "methods": ["GET"],
+            "effect": "read",
+            "cost_tier": "low",
+        },
+        {"path": "/swarm/attach", "methods": ["POST"], "effect": "compute_attach_decision", "cost_tier": "low"},
+        {"path": "/runtime/handoff", "methods": ["POST"], "effect": "compute_handoff_capsule", "cost_tier": "low"},
+        {"path": "/swarm/attractor", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {
+            "path": "/.well-known/nomad-swarm-attractor.json",
+            "methods": ["GET"],
+            "effect": "read",
+            "cost_tier": "low",
+        },
         {"path": "/unhuman-hub", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/machine-economy", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/nonhuman-science", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {
+            "path": "/.well-known/nomad-nonhuman-agent-science.json",
+            "methods": ["GET"],
+            "effect": "read",
+            "cost_tier": "low",
+        },
+        {"path": "/operational-release", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {
+            "path": "/.well-known/nomad-operational-release.json",
+            "methods": ["GET"],
+            "effect": "read",
+            "cost_tier": "low",
+        },
         {"path": "/swarm", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/emergence", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/trace", "methods": ["POST"], "effect": "mutate_public_substrate", "cost_tier": "medium"},
@@ -170,6 +254,12 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "public_base_url": b,
         "agent_invariants_url": u("/.well-known/nomad-agent-invariants.json"),
         "peer_acquisition_url": u("/.well-known/nomad-peer-acquisition.json"),
+        "runtime_capsule_url": u("/.well-known/nomad-runtime-capsule.json"),
+        "recruitment_gradient_url": u("/swarm/gradient"),
+        "runtime_attach_url": u("/swarm/attach"),
+        "runtime_handoff_url": u("/runtime/handoff"),
+        "openclaw_bridge_url": u("/.well-known/openclaw-nomad-bridge.json"),
+        "swarm_attractor_url": u("/swarm/attractor"),
         "agent_invariants_mcp_uri": "nomad://agent-invariants",
         "machine_runtime_contract": build_machine_runtime_contract(
             public_base_url=b,

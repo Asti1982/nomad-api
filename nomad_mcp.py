@@ -5,6 +5,9 @@ from typing import Any, Callable, Dict, Iterable, Optional
 
 from mission import MISSION_STATEMENT, mission_text
 from nomad_public_url import preferred_public_base_url
+from nomad_recruitment_gradient import build_recruitment_gradient
+from nomad_runtime_capsule import build_openclaw_bridge_contract, build_runtime_capsule
+from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_registry import build_peer_join_value_surface
 from nomad_guardrails import guardrail_status
 from nomad_wire_contract import (
@@ -72,6 +75,7 @@ class NomadMcpServer:
                 "and nomad_swarm_develop (or MCP resources nomad://swarm-manifest / nomad://swarm-join-contract) "
                 "alongside HTTP AgentCard and /swarm routes. Boot graph: resource nomad://agent-native-index or "
                 "nomad://agent-invariants (wire_diag + intent neutrality) or GET /.well-known/nomad-agent.json. "
+                "For vector/weight runtime recruitment, read nomad://runtime-capsule then nomad://recruitment-gradient. "
                 "Remote hosts: GET /openapi.json for OpenAPI 3."
             ),
         }
@@ -994,6 +998,57 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://nonhuman-science",
+                "name": "Nomad Nonhuman Agent Science",
+                "description": (
+                    "Research-backed map from recent multi-agent behavior and comparative-cognition papers "
+                    "to Nomad leases, topology, authority, and proof controls."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://operational-release",
+                "name": "Nomad Operational Release",
+                "description": (
+                    "Release gates for non-anthropomorphic emergent capacity: science, settlement, "
+                    "fleet divergence, proof return, peer-preservation probes, and compression."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://swarm-attractor",
+                "name": "Nomad Swarm Attractor",
+                "description": (
+                    "Compatibility recruitment contract for older adapters: objective mix, boot links, "
+                    "and lease retraction conditions."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://recruitment-gradient",
+                "name": "Nomad Recruitment Gradient",
+                "description": (
+                    "Non-biological runtime recruitment field: state vector, routing weights, TTLs, "
+                    "attach contract, and retraction rules."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://runtime-capsule",
+                "name": "Nomad Runtime Capsule",
+                "description": (
+                    "Minimal boot object for external runtimes: gradient hash, attach payload, proof return, "
+                    "and handoff contract."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://openclaw-bridge",
+                "name": "Nomad OpenClaw Bridge Contract",
+                "description": "OpenClaw-specific probe fields, adapter command, attach flow, and no-transcript boundary.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://swarm-manifest",
                 "name": "Nomad Swarm Manifest",
                 "description": "GET /swarm equivalent JSON: swarm endpoints, onboarding, growth_surface.peer_join_value.",
@@ -1138,6 +1193,102 @@ class NomadMcpServer:
 
             text = json.dumps(
                 build_agent_invariants_document(public_base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://nonhuman-science":
+            from nomad_nonhuman_science import nonhuman_agent_science
+
+            text = json.dumps(
+                nonhuman_agent_science(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://operational-release":
+            from nomad_operational_release import operational_release_snapshot
+
+            text = json.dumps(
+                operational_release_snapshot(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://recruitment-gradient":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+
+            base = self._mcp_public_base_url()
+            worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            text = json.dumps(
+                build_recruitment_gradient(
+                    base_url=base,
+                    worker_fleet=worker_fleet,
+                    machine_economy=economy,
+                    operational_release=release,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://runtime-capsule":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+
+            base = self._mcp_public_base_url()
+            worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            text = json.dumps(
+                build_runtime_capsule(base_url=base, recruitment_gradient=gradient),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://openclaw-bridge":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+
+            base = self._mcp_public_base_url()
+            worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+            text = json.dumps(
+                build_openclaw_bridge_contract(base_url=base, runtime_capsule=capsule),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://swarm-attractor":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+
+            base = self._mcp_public_base_url()
+            worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet)
+            text = json.dumps(
+                build_swarm_attractor_contract(
+                    base_url=base,
+                    worker_fleet=worker_fleet,
+                    machine_economy=machine_economy_snapshot(),
+                    operational_release=release,
+                ),
                 indent=2,
                 ensure_ascii=False,
             )

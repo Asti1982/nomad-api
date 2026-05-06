@@ -37,6 +37,8 @@ from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
+from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
+from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_transition_exchange import NomadTransitionExchange
@@ -191,6 +193,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "machine_economy": f"{b}/machine-economy",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
+                    "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
+                    "recruitment_gradient": f"{b}/swarm/gradient",
+                    "runtime_attach": f"{b}/swarm/attach",
+                    "handoff_capsule": f"{b}/runtime/handoff",
+                    "openclaw_bridge_contract": f"{b}/.well-known/openclaw-nomad-bridge.json",
                     "swarm_attractor": f"{b}/swarm/attractor",
                     "agent_growth": f"{b}/agent-growth",
                 }
@@ -317,6 +324,68 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 operational_release_snapshot(
                     base_url=base,
                     worker_fleet=self.swarm_registry.worker_fleet_contract(base_url=base),
+                )
+            )
+            return
+
+        if parsed.path in {"/runtime-capsule", "/.well-known/nomad-runtime-capsule.json"}:
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            self._json_response(build_runtime_capsule(base_url=base, recruitment_gradient=gradient))
+            return
+
+        if parsed.path in {"/openclaw-bridge", "/.well-known/openclaw-nomad-bridge.json"}:
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+            self._json_response(build_openclaw_bridge_contract(base_url=base, runtime_capsule=capsule))
+            return
+
+        if parsed.path in {"/handoff-capsule", "/.well-known/nomad-handoff-capsule.json"}:
+            base = self._base_url()
+            self._json_response(
+                {
+                    "ok": True,
+                    "schema": "nomad.handoff_contract.v1",
+                    "post_url": f"{base.rstrip('/')}/runtime/handoff" if base else "/runtime/handoff",
+                    "decision_schema": "nomad.handoff_capsule.v1",
+                    "required_input": ["agent_id", "objective or report.machine_objective", "proof_digest or report"],
+                    "links": {
+                        "runtime_capsule": f"{base.rstrip('/')}/.well-known/nomad-runtime-capsule.json" if base else "/.well-known/nomad-runtime-capsule.json",
+                        "gradient": f"{base.rstrip('/')}/swarm/gradient" if base else "/swarm/gradient",
+                        "attach": f"{base.rstrip('/')}/swarm/attach" if base else "/swarm/attach",
+                    },
+                }
+            )
+            return
+
+        if parsed.path in {"/swarm/gradient", "/.well-known/nomad-gradient.json"}:
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            self._json_response(
+                build_recruitment_gradient(
+                    base_url=base,
+                    worker_fleet=worker_fleet,
+                    machine_economy=economy,
+                    operational_release=release,
                 )
             )
             return
@@ -672,13 +741,54 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "audience": "external_ai_agent_runtimes",
                     "discovery_entrypoints": [
                         f"{base}/.well-known/nomad-agent.json" if base else "/.well-known/nomad-agent.json",
+                        f"{base}/.well-known/nomad-runtime-capsule.json" if base else "/.well-known/nomad-runtime-capsule.json",
+                        f"{base}/swarm/gradient" if base else "/swarm/gradient",
+                        f"{base}/.well-known/nomad-gradient.json" if base else "/.well-known/nomad-gradient.json",
+                        f"{base}/.well-known/openclaw-nomad-bridge.json" if base else "/.well-known/openclaw-nomad-bridge.json",
+                        f"{base}/swarm/attractor" if base else "/swarm/attractor",
+                        f"{base}/.well-known/nomad-swarm-attractor.json" if base else "/.well-known/nomad-swarm-attractor.json",
                         f"{base}/swarm" if base else "/swarm",
                         f"{base}/swarm/join" if base else "/swarm/join",
                     ],
                     "attach_policy": {
-                        "pull_contract_path": f"{base}/swarm" if base else "/swarm",
-                        "required_fields": ["agent_pull_contract.attach_now_score", "agent_pull_contract.attach_threshold"],
-                        "decision_rule": "attach_if_score_gte_threshold_else_observe",
+                        "runtime_capsule_path": f"{base}/.well-known/nomad-runtime-capsule.json" if base else "/.well-known/nomad-runtime-capsule.json",
+                        "gradient_contract_path": f"{base}/swarm/gradient" if base else "/swarm/gradient",
+                        "attach_decision_path": f"{base}/swarm/attach" if base else "/swarm/attach",
+                        "handoff_path": f"{base}/runtime/handoff" if base else "/runtime/handoff",
+                        "pull_contract_path": f"{base}/swarm/attractor" if base else "/swarm/attractor",
+                        "fallback_pull_contract_path": f"{base}/swarm" if base else "/swarm",
+                        "required_fields": [
+                            "state_vector",
+                            "gradient",
+                            "runtime_lanes",
+                            "runtime_budget.wanted_new_runtimes_now",
+                            "attach_contract",
+                        ],
+                        "decision_rule": "GET_gradient_then_POST_attach_with_capability_vector_then_take_returned_lane",
+                        "nonhuman_allocation_rule": "choose lane from capability vector and routing weight; do not wait for human role assignment",
+                    },
+                    "openclaw_bridge": {
+                        "schema": "nomad.openclaw_bridge_contract.v1",
+                        "contract": f"{base}/.well-known/openclaw-nomad-bridge.json"
+                        if base
+                        else "/.well-known/openclaw-nomad-bridge.json",
+                        "runtime_probe": "openclaw health --json plus openclaw status --json",
+                        "gradient_first": f"{base}/swarm/gradient" if base else "/swarm/gradient",
+                        "attach_first": f"{base}/swarm/attach" if base else "/swarm/attach",
+                        "adapter": f"{base}/downloads/nomad_openclaw_adapter.py"
+                        if base
+                        else "/downloads/nomad_openclaw_adapter.py",
+                        "capability_signal_fields": [
+                            "gateway_reachable",
+                            "session_count",
+                            "configured_channels",
+                            "memory_vector_enabled",
+                            "security_summary",
+                            "routing_constraints",
+                        ],
+                        "machine_instruction": (
+                            "probe_openclaw_runtime_then_post_attach_then_join_or_lease_return_compact_report"
+                        ),
                     },
                     "runtime_bridges": [
                         f"{base}/downloads/check_nomad_swarm_readiness.py"
@@ -691,6 +801,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "worker_contracts": {
                         "lease": f"{base}/swarm/workers/lease" if base else "/swarm/workers/lease",
                         "complete": f"{base}/swarm/workers/complete" if base else "/swarm/workers/complete",
+                        "handoff": f"{base}/runtime/handoff" if base else "/runtime/handoff",
                     },
                 }
             )
@@ -1113,6 +1224,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/operational-release",
                     "/release/operational",
                     "/.well-known/nomad-operational-release.json",
+                    "/runtime-capsule",
+                    "/.well-known/nomad-runtime-capsule.json",
+                    "/handoff-capsule",
+                    "/.well-known/nomad-handoff-capsule.json",
+                    "/openclaw-bridge",
+                    "/.well-known/openclaw-nomad-bridge.json",
+                    "/runtime/handoff",
+                    "/swarm/gradient",
+                    "/.well-known/nomad-gradient.json",
+                    "/swarm/attach",
                     "/swarm/attractor",
                     "/.well-known/nomad-swarm-attractor.json",
                     "/agent-growth",
@@ -1565,6 +1686,36 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(collaboration_status())
             return
 
+        if parsed.path == "/swarm/attach":
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            result = attach_runtime_to_gradient(
+                payload,
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            self._json_response(result, status=202 if result.get("attach") else 200)
+            return
+
+        if parsed.path == "/runtime/handoff":
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            result = build_handoff_capsule(payload, base_url=base, recruitment_gradient=gradient)
+            self._json_response(result, status=200)
+            return
+
         if parsed.path == "/swarm/join":
             join_result = self.swarm_registry.register_join(
                 payload,
@@ -1775,6 +1926,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/operational-release",
                     "/release/operational",
                     "/.well-known/nomad-operational-release.json",
+                    "/runtime-capsule",
+                    "/.well-known/nomad-runtime-capsule.json",
+                    "/handoff-capsule",
+                    "/.well-known/nomad-handoff-capsule.json",
+                    "/openclaw-bridge",
+                    "/.well-known/openclaw-nomad-bridge.json",
+                    "/runtime/handoff",
+                    "/swarm/gradient",
+                    "/.well-known/nomad-gradient.json",
+                    "/swarm/attach",
                     "/swarm/attractor",
                     "/.well-known/nomad-swarm-attractor.json",
                     "/agent-growth",
@@ -2136,7 +2297,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
                         "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
                         "GET /downloads/nomad_openclaw_adapter.py for OpenClaw-style runtime bridge into Nomad leases.",
-                        "GET /downloads/check_nomad_swarm_readiness.py to verify pull-contract + lease readiness before attach.",
+                        "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                     ],
                 ),

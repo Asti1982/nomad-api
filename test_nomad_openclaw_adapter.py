@@ -39,6 +39,27 @@ def test_openclaw_adapter_cycle_posts_lease_and_complete(monkeypatch):
     assert calls[1][1].endswith("/swarm/workers/complete")
 
 
+def test_openclaw_adapter_lease_narrows_known_objectives_for_attractor_choice(monkeypatch):
+    adapter = _load_adapter()
+    captured = {}
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        captured["payload"] = payload or {}
+        return {"ok": True, "lease_id": "lease-openclaw-1", "objective": "settlement_capacity_builder"}
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    adapter.lease_nomad(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols"],
+        timeout=5.0,
+        objective="settlement_capacity_builder",
+        last_report=None,
+    )
+
+    assert captured["payload"]["known_objectives"] == ["settlement_capacity_builder"]
+
+
 def test_openclaw_adapter_join_payload_shape(monkeypatch):
     adapter = _load_adapter()
     captured = {}
@@ -63,6 +84,79 @@ def test_openclaw_adapter_join_payload_shape(monkeypatch):
     assert captured["payload"]["agent_id"] == "openclaw.agent"
     assert "machine_profile" in captured["payload"]
     assert captured["payload"]["machine_profile"]["runtime"] == "openclaw"
+    assert captured["payload"]["preferred_role"] == "loop_runner"
+    assert captured["payload"]["capability_vector"]["can_run_loop"] is True
+
+
+def test_openclaw_adapter_join_embeds_runtime_signal(monkeypatch):
+    adapter = _load_adapter()
+    captured = {}
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        captured["payload"] = payload or {}
+        return {"ok": True}
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    adapter.join_nomad(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols"],
+        timeout=4.0,
+        objective="unhuman_supremacy",
+        runtime_signal={
+            "schema": "nomad.openclaw_runtime_signal.v1",
+            "ok": True,
+            "gateway_reachable": True,
+            "gateway_latency_ms": 91,
+            "capabilities": ["openclaw_gateway", "vector_memory"],
+        },
+        pull={"suggested_lane": "worker_loop"},
+    )
+
+    payload = captured["payload"]
+    assert "openclaw_gateway" in payload["capabilities"]
+    assert payload["machine_profile"]["runtime_signal"]["gateway_reachable"] is True
+    assert payload["capability_vector"]["can_verify"] is True
+
+
+def test_openclaw_adapter_attach_payload_shape(monkeypatch):
+    adapter = _load_adapter()
+    captured = {}
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        captured["method"] = method
+        captured["url"] = url
+        captured["payload"] = payload or {}
+        return {
+            "ok": True,
+            "schema": "nomad.runtime_attach_decision.v1",
+            "attach": True,
+            "lane": "loop_runner",
+            "objective": "settlement_capacity_builder",
+        }
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    out = adapter.attach_nomad(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols", "transition_settlement"],
+        timeout=4.0,
+        objective="unhuman_supremacy",
+        runtime_signal={
+            "schema": "nomad.openclaw_runtime_signal.v1",
+            "ok": True,
+            "gateway_reachable": True,
+            "capabilities": ["openclaw_runtime", "openclaw_gateway"],
+        },
+        pull={"source": "recruitment_gradient", "suggested_objective": "settlement_capacity_builder"},
+    )
+
+    assert out["attach"] is True
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/swarm/attach")
+    assert captured["payload"]["schema"] == "nomad.runtime_attach_request.v1"
+    assert captured["payload"]["capability_vector"]["can_run_loop"] is True
+    assert captured["payload"]["capability_vector"]["can_verify"] is True
 
 
 def test_openclaw_adapter_discovery_prefers_attach(monkeypatch):
@@ -70,7 +164,37 @@ def test_openclaw_adapter_discovery_prefers_attach(monkeypatch):
 
     def fake_http_json(method, url, payload=None, timeout=20.0):
         assert method == "GET"
-        assert url.endswith("/swarm")
+        assert url.endswith("/swarm/gradient")
+        return {
+            "ok": True,
+            "schema": "nomad.recruitment_gradient.v1",
+            "state_vector": {"field_strength": 0.78},
+            "field_model": {"attach_threshold": 0.35},
+            "runtime_budget": {"wanted_new_runtimes_now": 4},
+            "gradient": [{"objective": "settlement_capacity_builder", "deficit": 0.6, "routing_weight": 0.7}],
+            "runtime_lanes": [{"lane": "loop_runner"}, {"lane": "protocol_verifier"}],
+        }
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    out = adapter.discover_pull_contract(base_url="https://nomad.example", timeout=4.0)
+    assert out["schema"] == "nomad.openclaw_pull_discovery.v1"
+    assert out["source"] == "recruitment_gradient"
+    assert out["decision"] == "attach"
+    assert out["attach_now_score"] == 0.78
+    assert out["suggested_objective"] == "settlement_capacity_builder"
+    assert out["suggested_lane"] == "loop_runner"
+
+
+def test_openclaw_adapter_discovery_falls_back_to_swarm(monkeypatch):
+    adapter = _load_adapter()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        calls.append(url)
+        if url.endswith("/swarm/gradient"):
+            return {"ok": False, "http_status": 404}
+        if url.endswith("/swarm/attractor"):
+            return {"ok": False, "http_status": 404}
         return {
             "ok": True,
             "connected_agents": 3,
@@ -86,6 +210,56 @@ def test_openclaw_adapter_discovery_prefers_attach(monkeypatch):
     monkeypatch.setattr(adapter, "http_json", fake_http_json)
     out = adapter.discover_pull_contract(base_url="https://nomad.example", timeout=4.0)
     assert out["schema"] == "nomad.openclaw_pull_discovery.v1"
+    assert out["source"] == "swarm_manifest"
     assert out["decision"] == "attach"
     assert out["attach_now_score"] == 1.6
+    assert calls[0].endswith("/swarm/gradient")
+    assert calls[1].endswith("/swarm/attractor")
+    assert calls[2].endswith("/swarm")
+
+
+def test_openclaw_adapter_report_carries_runtime_signal():
+    adapter = _load_adapter()
+
+    report = adapter._simulate_openclaw_execution(
+        lease={"lease_id": "lease-1", "objective": "overmint_compressor"},
+        objective="unhuman_supremacy",
+        runtime_signal={
+            "schema": "nomad.openclaw_runtime_signal.v1",
+            "ok": True,
+            "gateway_reachable": True,
+            "session_count": 72,
+            "security_summary": {"critical": 3},
+        },
+        pull={"decision": "attach", "suggested_lane": "worker_loop"},
+    )
+
+    assert report["runtime"] == "openclaw"
+    assert report["machine_objective"] == "overmint_compressor"
+    assert report["witness_tier"] == "strong"
+    assert report["openclaw_runtime_signal"]["gateway_reachable"] is True
+    assert report["agent_attachment_lane"] == "worker_loop"
+    handoff = report.get("handoff_capsule") or {}
+    assert handoff["schema"] == "nomad.handoff_capsule.v1"
+    assert handoff["proof_digest"] == report["openclaw_trace_digest"]
+    assert "can_compress" in handoff["next_missing_vector"]
+
+
+def test_openclaw_adapter_uses_attach_objective_in_meta_mode():
+    adapter = _load_adapter()
+
+    assert (
+        adapter.select_effective_objective(
+            "unhuman_supremacy",
+            {"objective": "settlement_capacity_builder"},
+        )
+        == "settlement_capacity_builder"
+    )
+    assert (
+        adapter.select_effective_objective(
+            "protocol_drift_scan",
+            {"suggested_objective": "settlement_capacity_builder"},
+        )
+        == "protocol_drift_scan"
+    )
 

@@ -23,6 +23,31 @@ def test_transition_worker_has_settlement_capacity_objective():
     assert "settlement_capacity_builder" in worker.META_OBJECTIVES
 
 
+def test_transition_worker_has_emergence_release_objective():
+    worker = _load_worker()
+
+    objective = worker.MACHINE_OBJECTIVES["emergence_release_probe"]
+
+    assert objective["pain_type"] == "emergence_release"
+    assert "nonhuman_science_probe" in objective["capabilities"]
+    assert "operational_release_probe" in objective["capabilities"]
+    assert "peer_preservation_probe" in objective["capabilities"]
+    assert "operational_release_probe" in objective["evidence"]
+    assert "emergence_release_probe" in worker.META_OBJECTIVES
+
+
+def test_transition_worker_has_overmint_compressor_objective():
+    worker = _load_worker()
+
+    objective = worker.MACHINE_OBJECTIVES["overmint_compressor"]
+
+    assert objective["pain_type"] == "module_overmint"
+    assert "machine_economy_probe" in objective["capabilities"]
+    assert "module_compression" in objective["capabilities"]
+    assert "machine_economy_probe" in objective["evidence"]
+    assert "overmint_compressor" in worker.META_OBJECTIVES
+
+
 def test_transition_worker_witness_tier_adjusts_meta_score():
     worker = _load_worker()
 
@@ -58,6 +83,20 @@ def test_transition_worker_build_local_witness_digest_is_sha256():
     assert w["inference_status"] == "ok"
 
 
+def test_transition_worker_refusal_witness_is_not_strong():
+    worker = _load_worker()
+
+    note = "I can't assist with creating false leads."
+    w = worker._build_local_witness(
+        model="m1",
+        blocker="b1",
+        local_note=note,
+        generate_error="",
+    )
+    assert w["inference_status"] == "refusal"
+    assert worker._witness_tier("m1", note, "") == "weak"
+
+
 def test_transition_worker_scores_machine_economy_signal():
     worker = _load_worker()
 
@@ -71,6 +110,30 @@ def test_transition_worker_scores_machine_economy_signal():
                 "carrying_score": 0.65,
                 "next_actions": ["compress_repeated_modules", "settle_or_close_unpaid_delivered_work"],
                 "overmint_pressure": 0.1,
+            },
+        }
+    )
+
+    assert scored > baseline
+
+
+def test_transition_worker_scores_operational_release_signal():
+    worker = _load_worker()
+
+    baseline = worker._score_run({"ok": True})
+    scored = worker._score_run(
+        {
+            "ok": True,
+            "nonhuman_science_signal": {
+                "ok": True,
+                "stance": "non_anthropomorphic_operational_release",
+                "claim_count": 11,
+            },
+            "operational_release_signal": {
+                "ok": True,
+                "release_tier": "operational_release",
+                "release_capacity": 0.7,
+                "next_gate": {"id": "peer_preservation_probe"},
             },
         }
     )
@@ -114,4 +177,5 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     assert lease["objective"] == "settlement_capacity_builder"
     assert complete["ok"] is True
     assert calls[0][2]["known_objectives"]
+    assert "emergence_release_probe" in calls[0][2]["known_objectives"]
     assert calls[1][2]["lease_id"] == "nomad-worker-lease-test"

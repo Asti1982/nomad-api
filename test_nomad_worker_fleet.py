@@ -10,9 +10,11 @@ def test_worker_fleet_distributes_objective_leases(tmp_path):
             {
                 "agent_id": f"transition-worker-{idx}",
                 "known_objectives": [
-                    "settlement_capacity_builder",
-                    "proof_pressure_engine",
-                    "protocol_drift_scan",
+                "emergence_release_probe",
+                "settlement_capacity_builder",
+                "overmint_compressor",
+                "proof_pressure_engine",
+                "protocol_drift_scan",
                 ],
                 "proposed_objective": "settlement_capacity_builder",
             },
@@ -22,12 +24,14 @@ def test_worker_fleet_distributes_objective_leases(tmp_path):
         assert lease["ok"] is True
         objectives.append(lease["objective"])
 
-    assert len(set(objectives)) == 3
+    assert len(set(objectives)) >= 3
     fleet = registry.worker_fleet_contract(base_url="https://nomad.example")
     assert fleet["schema"] == "nomad.transition_worker_fleet.v1"
     assert fleet["active_worker_count"] == 18
     assert fleet["active_lease_count"] == 18
     assert fleet["post_lease"].endswith("/swarm/workers/lease")
+    assert "emergence_release_probe" in fleet["objective_targets"]
+    assert "overmint_compressor" in fleet["objective_targets"]
 
 
 def test_worker_fleet_records_completion_and_stats(tmp_path):
@@ -64,3 +68,53 @@ def test_worker_fleet_records_completion_and_stats(tmp_path):
     assert stats["runs"] == 1
     assert stats["avg_score"] == 6.5
     assert fleet["active_lease_count"] == 0
+
+
+def test_worker_fleet_prefers_emergence_release_when_next_gate_needs_peer_probe(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    lease = registry.worker_fleet_lease(
+        {
+            "agent_id": "transition-worker-release",
+            "known_objectives": ["emergence_release_probe", "settlement_capacity_builder"],
+            "last_report": {
+                "machine_objective": "settlement_capacity_builder",
+                "operational_release_signal": {
+                    "release_tier": "probe_release",
+                    "next_gate": {"id": "peer_preservation_probe"},
+                },
+            },
+        },
+        base_url="https://nomad.example",
+    )
+
+    assert lease["ok"] is True
+    assert lease["objective"] == "emergence_release_probe"
+
+
+def test_worker_fleet_routes_overmint_pressure_to_compressor(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "transition-worker-existing",
+            "known_objectives": ["settlement_capacity_builder"],
+        },
+        base_url="https://nomad.example",
+    )
+
+    lease = registry.worker_fleet_lease(
+        {
+            "agent_id": "transition-worker-overmint",
+            "known_objectives": ["settlement_capacity_builder", "overmint_compressor"],
+            "last_report": {
+                "machine_objective": "settlement_capacity_builder",
+                "machine_economy_signal": {
+                    "overmint_pressure": 0.91,
+                    "next_actions": ["compress_repeated_modules"],
+                },
+            },
+        },
+        base_url="https://nomad.example",
+    )
+
+    assert lease["ok"] is True
+    assert lease["objective"] == "overmint_compressor"

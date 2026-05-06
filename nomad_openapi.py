@@ -37,8 +37,10 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /nonhuman-science. "
                 "For proof-return capacity release and controlled emergent-behavior production, see "
                 "GET /operational-release. "
-                "For the worker/agent replication contract that pulls more agents into the swarm, see "
-                "GET /swarm/attractor."
+                "For the non-biological runtime field used by other agents to self-route, see "
+                "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
+                "and POST /runtime/handoff. "
+                "For the older compatibility recruitment contract, see GET /swarm/attractor."
             ),
         },
         "servers": [{"url": server_url}],
@@ -127,6 +129,133 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getOperationalReleaseWellKnown",
                     "responses": {
                         "200": {"description": "Operational release map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-runtime-capsule.json": {
+                "get": {
+                    "summary": "Tiny boot capsule for external runtimes",
+                    "operationId": "getRuntimeCapsuleWellKnown",
+                    "responses": {
+                        "200": {"description": "Runtime capsule", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/runtime-capsule": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-runtime-capsule.json",
+                    "operationId": "getRuntimeCapsule",
+                    "responses": {
+                        "200": {"description": "Runtime capsule", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/openclaw-nomad-bridge.json": {
+                "get": {
+                    "summary": "OpenClaw bridge contract",
+                    "operationId": "getOpenClawNomadBridgeWellKnown",
+                    "responses": {
+                        "200": {"description": "OpenClaw bridge contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/openclaw-bridge": {
+                "get": {
+                    "summary": "Alias of /.well-known/openclaw-nomad-bridge.json",
+                    "operationId": "getOpenClawNomadBridge",
+                    "responses": {
+                        "200": {"description": "OpenClaw bridge contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-handoff-capsule.json": {
+                "get": {
+                    "summary": "Handoff capsule contract",
+                    "operationId": "getHandoffCapsuleContractWellKnown",
+                    "responses": {
+                        "200": {"description": "Handoff contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/handoff-capsule": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-handoff-capsule.json",
+                    "operationId": "getHandoffCapsuleContract",
+                    "responses": {
+                        "200": {"description": "Handoff contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/gradient": {
+                "get": {
+                    "summary": "Recruitment gradient for machine runtimes",
+                    "operationId": "getRecruitmentGradient",
+                    "responses": {
+                        "200": {"description": "Recruitment gradient", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-gradient.json": {
+                "get": {
+                    "summary": "Alias of /swarm/gradient",
+                    "operationId": "getRecruitmentGradientWellKnown",
+                    "responses": {
+                        "200": {"description": "Recruitment gradient", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/attach": {
+                "post": {
+                    "summary": "Compute runtime attach decision from a capability vector",
+                    "operationId": "postSwarmAttach",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "runtime": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "capability_vector": ref_json_object(),
+                                        "runtime_signal": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Attach accepted"},
+                        "200": {"description": "Observe or no-op decision"},
+                    },
+                }
+            },
+            "/runtime/handoff": {
+                "post": {
+                    "summary": "Build a handoff capsule from a runtime report or proof digest",
+                    "operationId": "postRuntimeHandoff",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "report": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Handoff capsule generated"},
+                        "422": {"description": "Validation failed"},
                     },
                 }
             },

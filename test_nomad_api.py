@@ -57,6 +57,12 @@ def test_nomad_public_html_page_exists():
     assert "/nonhuman-science" in text
     assert "/.well-known/nomad-nonhuman-agent-science.json" in text
     assert "/operational-release" in text
+    assert "/.well-known/nomad-runtime-capsule.json" in text
+    assert "/.well-known/openclaw-nomad-bridge.json" in text
+    assert "/runtime/handoff" in text
+    assert "/swarm/gradient" in text
+    assert "/.well-known/nomad-gradient.json" in text
+    assert "/swarm/attach" in text
     assert "/swarm/attractor" in text
     assert "/.well-known/nomad-swarm-attractor.json" in text
     assert "/swarm/workers" in text
@@ -71,7 +77,7 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/machine-economy"))' in text
     assert 'fetch(apiUrl("/nonhuman-science"))' in text
     assert 'fetch(apiUrl("/operational-release"))' in text
-    assert 'fetch(apiUrl("/swarm/attractor"))' in text
+    assert 'fetch(apiUrl("/swarm/gradient"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
 
@@ -173,6 +179,15 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-nonhuman-agent-science.json" in doc["paths"]
     assert "/operational-release" in doc["paths"]
     assert "/.well-known/nomad-operational-release.json" in doc["paths"]
+    assert "/.well-known/nomad-runtime-capsule.json" in doc["paths"]
+    assert "/runtime-capsule" in doc["paths"]
+    assert "/.well-known/openclaw-nomad-bridge.json" in doc["paths"]
+    assert "/openclaw-bridge" in doc["paths"]
+    assert "/.well-known/nomad-handoff-capsule.json" in doc["paths"]
+    assert "/runtime/handoff" in doc["paths"]
+    assert "/swarm/gradient" in doc["paths"]
+    assert "/.well-known/nomad-gradient.json" in doc["paths"]
+    assert "/swarm/attach" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]
     assert "/.well-known/nomad-swarm-attractor.json" in doc["paths"]
     assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]

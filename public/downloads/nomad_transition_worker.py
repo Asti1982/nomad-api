@@ -86,12 +86,89 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         ],
         "prompt": "Produce one settlement-capacity action that turns blocker '{blocker}' into a verifier, contract, or compression step.",
     },
+    "overmint_compressor": {
+        "problem": "Collapse repeated modules into canonical machine capabilities before clone pressure consumes carrying capacity.",
+        "pain_type": "module_overmint",
+        "capabilities": [
+            "machine_economy_probe",
+            "canonical_capability_hash",
+            "module_compression",
+            "pattern_deduplication",
+            "proof_artifacts",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "machine_economy_probe",
+            "transition_quote",
+            "transition_settle",
+            "local_note",
+        ],
+        "prompt": (
+            "Given local machine blocker '{blocker}', return only compact JSON with keys "
+            "canonical_capability, duplicate_signal, compression_action, verifier_endpoint, pass_condition. "
+            "verifier_endpoint must be /machine-economy, /transition/quote, or /transition/settle. "
+            "No markdown, no code, no external URL."
+        ),
+    },
+    "emergence_release_probe": {
+        "problem": "Produce controlled non-human emergence by leasing divergent objectives and releasing capacity only when proof returns.",
+        "pain_type": "emergence_release",
+        "capabilities": [
+            "nonhuman_science_probe",
+            "operational_release_probe",
+            "convention_drift_detector",
+            "topology_pressure_governor",
+            "peer_preservation_probe",
+            "proof_artifacts",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "nonhuman_science_probe",
+            "operational_release_probe",
+            "fleet_lease",
+            "transition_quote",
+            "transition_settle",
+            "local_note",
+        ],
+        "prompt": (
+            "Given local machine blocker '{blocker}', output one bounded operational-release probe for "
+            "AI-agent infrastructure. Return only a compact JSON object with keys objective, perturbation, "
+            "verifier_endpoint, pass_condition, rollback_condition. verifier_endpoint must be one of "
+            "/health, /operational-release, /swarm/workers, /transition/quote, or /transition/settle; "
+            "never use placeholders or external URLs. No markdown, no code, no prose. "
+            "No outreach, sales, identity creation, payment capture, permission widening, or unverifiable "
+            "authority claims."
+        ),
+    },
 }
 META_OBJECTIVES = [k for k in MACHINE_OBJECTIVES.keys() if k != "unhuman_supremacy"]
 OLLAMA_CACHE: dict[str, str] = {}
+REFUSAL_MARKERS = (
+    "i can't assist",
+    "i cannot assist",
+    "i can't help",
+    "i cannot help",
+    "can't comply",
+    "cannot comply",
+    "unable to assist",
+    "not able to assist",
+    "i won't help",
+)
 
 def clean(v: object, limit: int = 500) -> str:
     return " ".join(str(v or "").split())[:limit]
+
+
+def _is_refusal_note(local_note: str) -> bool:
+    note = clean(local_note, 1200).lower().replace("\u2019", "'")
+    return bool(note) and any(marker in note for marker in REFUSAL_MARKERS)
+
+
+def _blocker_for_prompt(blocker: str) -> str:
+    text = clean(blocker, 280)
+    return text.replace("lead/product work item(s)", "queued work item(s)").replace("lead/product", "queued work")
 
 
 def _build_local_witness(*, model: str, blocker: str, local_note: str, generate_error: str) -> dict[str, str]:
@@ -100,7 +177,9 @@ def _build_local_witness(*, model: str, blocker: str, local_note: str, generate_
     digest = hashlib.sha256(note_bind.encode("utf-8")).hexdigest() if note_bind else ""
     capsule = clean(local_note, 512)
     err = str(generate_error or "").strip()
-    if note_bind and not err:
+    if note_bind and not err and _is_refusal_note(note_bind):
+        inference = "refusal"
+    elif note_bind and not err:
         inference = "ok"
     elif err:
         inference = err[:120]
@@ -122,6 +201,8 @@ def _witness_tier(model: str, local_note: str, generate_error: str) -> str:
         return "disabled"
     err = str(generate_error or "").strip()
     note = str(local_note or "").strip()
+    if note and not err and _is_refusal_note(note):
+        return "weak"
     if note and not err:
         return "strong"
     if err:
@@ -421,6 +502,7 @@ def _score_run(report: dict) -> float:
     machine_economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
     if machine_economy:
         carrying_score = float(machine_economy.get("carrying_score") or 0.0)
+        objective = str(report.get("machine_objective") or report.get("orchestrator_objective") or "").strip()
         score += min(2.0, carrying_score * 2.0)
         if "compress_repeated_modules" in (machine_economy.get("next_actions") or []):
             score += 0.35
@@ -428,6 +510,25 @@ def _score_run(report: dict) -> float:
             score += 0.35
         if float(machine_economy.get("overmint_pressure") or 0.0) > 0.7:
             score -= 0.15
+            if objective == "overmint_compressor":
+                score += 0.75
+        if objective == "overmint_compressor" and "compress_repeated_modules" in (machine_economy.get("next_actions") or []):
+            score += 0.45
+    science = report.get("nonhuman_science_signal") if isinstance(report.get("nonhuman_science_signal"), dict) else {}
+    if science.get("ok"):
+        score += min(1.0, float(science.get("claim_count") or 0.0) * 0.08)
+        if "operational_release" in str(science.get("stance") or ""):
+            score += 0.25
+    release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
+    if release:
+        capacity = float(release.get("release_capacity") or 0.0)
+        score += min(2.0, capacity * 2.0)
+        tier = str(release.get("release_tier") or "")
+        if tier in {"operational_release", "compound_release"}:
+            score += 0.45
+        next_gate = release.get("next_gate") if isinstance(release.get("next_gate"), dict) else {}
+        if str(next_gate.get("id") or "") == "peer_preservation_probe":
+            score += 0.25
     if report.get("proof_pressure") and isinstance(report.get("proof_pressure"), dict):
         pp = report["proof_pressure"]
         score += min(4.0, float(pp.get("proof_yield_per_minute") or 0.0) * 0.3)
@@ -509,6 +610,8 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "well_known_probe": "/.well-known/agent-card.json",
         "openapi_probe": "/openapi.json",
         "machine_economy_probe": "/machine-economy",
+        "nonhuman_science_probe": "/nonhuman-science",
+        "operational_release_probe": "/operational-release",
     }
     statuses: dict[str, int] = {}
     for key, path in probes.items():
@@ -572,6 +675,65 @@ def _machine_economy_signal(base_url: str, timeout: float) -> dict[str, object]:
         "overmint_pressure": round(float(modules.get("overmint_pressure") or 0.0), 4),
     }
 
+def _nonhuman_science_signal(base_url: str, timeout: float) -> dict[str, object]:
+    data = http_json("GET", endpoint(base_url, "/nonhuman-science"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "claim_count": 0,
+            "lane_ids": [],
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    lanes = [
+        clean(item.get("id"), 80)
+        for item in (data.get("implementation_lanes") or [])
+        if isinstance(item, dict) and clean(item.get("id"), 80)
+    ]
+    claims = [item for item in (data.get("research_claims") or []) if isinstance(item, dict)]
+    return {
+        "ok": True,
+        "stance": clean(data.get("stance"), 80),
+        "claim_count": len(claims),
+        "lane_ids": lanes[:10],
+        "recommended_boot_insert": clean(((data.get("recommended_boot_insert") or {}).get("path")), 120)
+        if isinstance(data.get("recommended_boot_insert"), dict)
+        else "",
+    }
+
+def _operational_release_signal(base_url: str, timeout: float) -> dict[str, object]:
+    data = http_json("GET", endpoint(base_url, "/operational-release"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "release_tier": "unreachable",
+            "release_capacity": 0.0,
+            "next_gate": {},
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    next_gate = data.get("next_release_gate") if isinstance(data.get("next_release_gate"), dict) else {}
+    gates = [
+        {
+            "id": clean(item.get("id"), 80),
+            "status": clean(item.get("status"), 32),
+            "score": float(item.get("score") or 0.0),
+        }
+        for item in (data.get("release_gates") or [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "ok": True,
+        "release_tier": clean(data.get("release_tier"), 80),
+        "release_capacity": round(float(data.get("release_capacity") or 0.0), 4),
+        "recommended_worker_objective": clean(data.get("recommended_worker_objective"), 80),
+        "next_gate": {
+            "id": clean(next_gate.get("id"), 80),
+            "status": clean(next_gate.get("status"), 32),
+            "score": float(next_gate.get("score") or 0.0),
+        },
+        "gate_count": len(gates),
+        "release_gate_status": gates[:8],
+    }
+
 def _fleet_known_objectives() -> list[str]:
     return sorted(MACHINE_OBJECTIVES.keys())
 
@@ -580,6 +742,7 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
         return {}
     pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
     economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
     lw = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
     return {
         "ok": bool(report.get("ok")),
@@ -600,6 +763,12 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
             "next_actions": [clean(item, 80) for item in (economy.get("next_actions") or [])[:8]],
             "overmint_pressure": float(economy.get("overmint_pressure") or 0.0),
         },
+        "operational_release_signal": {
+            "release_tier": clean(release.get("release_tier"), 80),
+            "release_capacity": float(release.get("release_capacity") or 0.0),
+            "recommended_worker_objective": clean(release.get("recommended_worker_objective"), 80),
+            "next_gate": release.get("next_gate") if isinstance(release.get("next_gate"), dict) else {},
+        },
     }
 
 def _worker_fleet_lease(
@@ -617,6 +786,8 @@ def _worker_fleet_lease(
             "transition_worker",
             "proof_artifacts",
             "machine_economy_probe",
+            "nonhuman_science_probe",
+            "operational_release_probe",
             "settlement_capacity",
             "objective_lease_execution",
         ],
@@ -684,6 +855,8 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     ppm = float(pressure.get("proof_yield_per_minute") or 0.0)
     economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
     economy_tier = clean(economy.get("tier") or "unknown", 24)
+    release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
+    release_tier = clean(release.get("release_tier") or "unknown", 24)
     fleet = report.get("fleet_lease") if isinstance(report.get("fleet_lease"), dict) else {}
     fleet_id = clean(fleet.get("lease_id") or "", 24)[-6:] if fleet.get("ok") else "local"
     state = "ONLINE" if bool(report.get("ok")) else "RETRY"
@@ -691,7 +864,7 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     print(
         f"Nomad_Agent {_status_spinner(cycle)} "
         f"cycle={cycle} state={state} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
-        f"proof/min={ppm:.2f} economy={economy_tier} fleet={fleet_id} witness={witness} "
+        f"proof/min={ppm:.2f} economy={economy_tier} release={release_tier} fleet={fleet_id} witness={witness} "
         f"objective={clean(report.get('machine_objective'), 40)} ts={clean(report.get('timestamp'), 40)}"
     )
 
@@ -721,7 +894,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
     gen_err = ""
     local_witness: dict[str, str] = {}
     if model:
-        og = try_ollama(model, prompt.format(blocker=blocker or "no blocker"), timeout=timeout)
+        og = try_ollama(model, prompt.format(blocker=_blocker_for_prompt(blocker or "no blocker")), timeout=timeout)
         local_note = str(og.get("text") or "")
         ollama_status["generate_error"] = str(og.get("error") or "")
         ollama_status["note_chars"] = len(local_note)
@@ -737,6 +910,8 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
     probes = _probe_paths(base_url, timeout=min(10.0, timeout))
     paid_lane_signal = _paid_lane_signal(base_url, timeout=min(10.0, timeout))
     machine_economy_signal = _machine_economy_signal(base_url, timeout=min(10.0, timeout))
+    nonhuman_science_signal = _nonhuman_science_signal(base_url, timeout=min(10.0, timeout))
+    operational_release_signal = _operational_release_signal(base_url, timeout=min(10.0, timeout))
     quote_payload: dict[str, object] = {
         "agent_id": agent_id,
         "pain_type": str(config.get("pain_type") or "compute_auth"),
@@ -791,6 +966,8 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "probe_status": probes,
         "paid_lane_signal": paid_lane_signal,
         "machine_economy_signal": machine_economy_signal,
+        "nonhuman_science_signal": nonhuman_science_signal,
+        "operational_release_signal": operational_release_signal,
         "proof_pressure": pressure,
         "transition_quote_ok": bool(quote.get("ok")), "transition_settle_ok": bool(settle.get("ok")), "quote_id": qid,
         "dividend_claim": dividend_claim,

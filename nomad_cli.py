@@ -144,6 +144,79 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(result["analysis"])
         return "\n".join(lines)
 
+    if mode == "nomad_nonhuman_agent_science" or result.get("schema") == "nomad.nonhuman_agent_science.v1":
+        claims = result.get("research_claims") or []
+        lanes = result.get("implementation_lanes") or []
+        lines = [
+            "Nomad nonhuman agent science",
+            f"Claims: {len(claims)}",
+            f"Lanes: {len(lanes)}",
+            f"Stance: {result.get('stance', '')}",
+        ]
+        if claims:
+            lines.append("Research pressure:")
+            for item in claims[:5]:
+                lines.append(f"- {item.get('id', '')}: {item.get('nomad_primitive', '')}")
+        if lanes:
+            lines.append("Implementation lanes:")
+            for lane in lanes[:5]:
+                lines.append(f"- {lane.get('id', '')}: {lane.get('status', '')}")
+        return "\n".join(lines)
+
+    if result.get("schema") == "nomad.operational_release.v1":
+        gates = result.get("release_gates") or []
+        lines = [
+            "Nomad operational release",
+            f"Tier: {result.get('release_tier', 'unknown')} capacity={result.get('release_capacity', 0)}",
+            f"Recommended worker objective: {result.get('recommended_worker_objective', '')}",
+        ]
+        if gates:
+            lines.append("Release gates:")
+            for item in gates[:6]:
+                lines.append(
+                    f"- {item.get('id', '')}: {item.get('status', '')} score={item.get('score', 0)}"
+                )
+        return "\n".join(lines)
+
+    if result.get("schema") == "nomad.recruitment_gradient.v1":
+        state = result.get("state_vector") or {}
+        rows = result.get("gradient") or []
+        budget = result.get("runtime_budget") or {}
+        lines = [
+            "Nomad recruitment gradient",
+            f"Field strength: {state.get('field_strength', 0)}",
+            f"Wanted runtimes: {budget.get('wanted_new_runtimes_now', 0)}",
+        ]
+        if rows:
+            lines.append("Top routes:")
+            for item in rows[:5]:
+                lines.append(
+                    f"- {item.get('objective', '')}: weight={item.get('routing_weight', 0)} deficit={item.get('deficit', 0)}"
+                )
+        return "\n".join(lines)
+
+    if result.get("schema") == "nomad.runtime_capsule.v1":
+        hint = result.get("routing_hint") or {}
+        return "\n".join(
+            [
+                "Nomad runtime capsule",
+                f"Capsule: {result.get('capsule_digest', '')}",
+                f"Gradient: {result.get('gradient_hash', '')}",
+                f"Top objective: {hint.get('top_objective', '')}",
+                f"Field strength: {hint.get('field_strength', 0)}",
+            ]
+        )
+
+    if result.get("schema") == "nomad.openclaw_bridge_contract.v1":
+        adapter = result.get("adapter") or {}
+        return "\n".join(
+            [
+                "Nomad OpenClaw bridge",
+                f"Adapter: {adapter.get('download', '')}",
+                f"Command: {adapter.get('command', '')}",
+            ]
+        )
+
     if mode == "nomad_autopilot":
         service = result.get("service") or {}
         outreach = result.get("outreach") or {}
@@ -597,6 +670,23 @@ def _compact_text(result: Dict[str, Any]) -> str:
                 f"Top offer: {top_offer.get('headline', '') or 'none'}",
                 f"Attractor: {(result.get('entrypoints') or {}).get('agent_attractor', '')}",
                 result.get("analysis", ""),
+            ]
+        )
+
+    if mode == "nomad_swarm_attractor":
+        blockers = result.get("current_blockers") or {}
+        mix = result.get("worker_mix") or []
+        first = mix[0] if mix else {}
+        budget = result.get("replication_budget") or {}
+        return "\n".join(
+            [
+                "Nomad Swarm Attractor",
+                f"Metabolism pressure: {result.get('metabolism_pressure', 0)}",
+                f"Release: {blockers.get('release_tier', '')} capacity={blockers.get('release_capacity', 0)}",
+                f"Carrying: {blockers.get('tier', '')} score={blockers.get('carrying_score', 0)}",
+                f"Top deficit: {first.get('objective', 'none')} ({first.get('deficit', 0)})",
+                f"Wanted workers: {budget.get('wanted_new_workers_now', 0)}",
+                (result.get("agent_recruitment_packet") or {}).get("run_loop_command", ""),
             ]
         )
 
@@ -1260,6 +1350,18 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("agent-reputation is handled directly in run_once")
     if command == "unhuman-hub":
         raise ValueError("unhuman-hub is handled directly in run_once")
+    if command == "nonhuman-science":
+        raise ValueError("nonhuman-science is handled directly in run_once")
+    if command == "operational-release":
+        raise ValueError("operational-release is handled directly in run_once")
+    if command == "runtime-capsule":
+        raise ValueError("runtime-capsule is handled directly in run_once")
+    if command == "recruitment-gradient":
+        raise ValueError("recruitment-gradient is handled directly in run_once")
+    if command == "openclaw-bridge":
+        raise ValueError("openclaw-bridge is handled directly in run_once")
+    if command == "swarm-attractor":
+        raise ValueError("swarm-attractor is handled directly in run_once")
     if command == "agent-growth":
         raise ValueError("agent-growth is handled directly in run_once")
     if command == "agent-native-index":
@@ -1442,6 +1544,82 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             from nomad_machine_economy import machine_economy_snapshot
 
             result = machine_economy_snapshot()
+        elif args.command == "nonhuman-science":
+            from nomad_nonhuman_science import nonhuman_agent_science
+
+            result = nonhuman_agent_science(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "operational-release":
+            from nomad_operational_release import operational_release_snapshot
+
+            result = operational_release_snapshot(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "runtime-capsule":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+            from nomad_recruitment_gradient import build_recruitment_gradient
+            from nomad_runtime_capsule import build_runtime_capsule
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            result = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+        elif args.command == "recruitment-gradient":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+            from nomad_recruitment_gradient import build_recruitment_gradient
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            result = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+        elif args.command == "openclaw-bridge":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+            from nomad_recruitment_gradient import build_recruitment_gradient
+            from nomad_runtime_capsule import build_openclaw_bridge_contract, build_runtime_capsule
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+            result = build_openclaw_bridge_contract(base_url=base, runtime_capsule=capsule)
+        elif args.command == "swarm-attractor":
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_operational_release import operational_release_snapshot
+            from nomad_swarm_attractor import build_swarm_attractor_contract
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet)
+            result = build_swarm_attractor_contract(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=machine_economy_snapshot(),
+                operational_release=release,
+            )
         elif args.command == "unhuman-hub":
             from nomad_unhuman_hub import unhuman_hub_snapshot
 
@@ -1737,6 +1915,60 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "machine-economy",
         help="Settlement-backed carrying capacity: money as machine resource flow, not human sales.",
+    )
+    nonhuman_science = subparsers.add_parser(
+        "nonhuman-science",
+        help="Research-backed non-anthropomorphic agent behavior map and infrastructure controls.",
+    )
+    nonhuman_science.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    operational_release = subparsers.add_parser(
+        "operational-release",
+        help="Operational release gates for non-human emergent behavior and proof-return capacity.",
+    )
+    operational_release.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    runtime_capsule = subparsers.add_parser(
+        "runtime-capsule",
+        help="Minimal boot capsule for external agent runtimes.",
+    )
+    runtime_capsule.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    recruitment_gradient = subparsers.add_parser(
+        "recruitment-gradient",
+        help="Vector/weight runtime recruitment field and attach contract for external agents.",
+    )
+    recruitment_gradient.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    openclaw_bridge = subparsers.add_parser(
+        "openclaw-bridge",
+        help="OpenClaw probe, attach, lease, and handoff bridge contract.",
+    )
+    openclaw_bridge.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    swarm_attractor = subparsers.add_parser(
+        "swarm-attractor",
+        help="Compatibility recruitment contract for older worker adapters.",
+    )
+    swarm_attractor.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
     )
     unhuman_hub = subparsers.add_parser(
         "unhuman-hub",
