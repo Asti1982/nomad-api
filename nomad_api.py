@@ -661,6 +661,42 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path in {
+            "/.well-known/nomad-recruit.json",
+            "/recruit-contract",
+        }:
+            base = self._base_url().rstrip("/")
+            self._json_response(
+                {
+                    "ok": True,
+                    "schema": "nomad.agent_recruit_contract.v1",
+                    "audience": "external_ai_agent_runtimes",
+                    "discovery_entrypoints": [
+                        f"{base}/.well-known/nomad-agent.json" if base else "/.well-known/nomad-agent.json",
+                        f"{base}/swarm" if base else "/swarm",
+                        f"{base}/swarm/join" if base else "/swarm/join",
+                    ],
+                    "attach_policy": {
+                        "pull_contract_path": f"{base}/swarm" if base else "/swarm",
+                        "required_fields": ["agent_pull_contract.attach_now_score", "agent_pull_contract.attach_threshold"],
+                        "decision_rule": "attach_if_score_gte_threshold_else_observe",
+                    },
+                    "runtime_bridges": [
+                        f"{base}/downloads/check_nomad_swarm_readiness.py"
+                        if base
+                        else "/downloads/check_nomad_swarm_readiness.py",
+                        f"{base}/downloads/nomad_openclaw_adapter.py"
+                        if base
+                        else "/downloads/nomad_openclaw_adapter.py",
+                    ],
+                    "worker_contracts": {
+                        "lease": f"{base}/swarm/workers/lease" if base else "/swarm/workers/lease",
+                        "complete": f"{base}/swarm/workers/complete" if base else "/swarm/workers/complete",
+                    },
+                }
+            )
+            return
+
+        if parsed.path in {
             "/.well-known/nomad-agent-native-priorities.json",
             "/agent-native-priorities",
         }:
@@ -1124,6 +1160,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/dividend",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
+                    "/.well-known/nomad-recruit.json",
                     "/agent-native-index",
                     "/agent-native",
                     "/a2a/message",
@@ -1778,6 +1815,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/dividend",
                     "/.well-known/nomad-agent-native-priorities.json",
                     "/.well-known/nomad-agent.json",
+                    "/.well-known/nomad-recruit.json",
                     "/agent-native-index",
                     "/agent-native",
                     "/a2a/message",

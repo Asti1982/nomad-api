@@ -32,7 +32,13 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For machine settlement of verifiable state transitions, see "
                 "GET /.well-known/nomad-transition-offer.json. "
                 "For reciprocal proof dividends (machine credits from settled transitions, decaying balance), see "
-                "GET /.well-known/nomad-reciprocity-dividend.json."
+                "GET /.well-known/nomad-reciprocity-dividend.json. "
+                "For research-grounded non-anthropomorphic agent behavior and fleet controls, see "
+                "GET /nonhuman-science. "
+                "For proof-return capacity release and controlled emergent-behavior production, see "
+                "GET /operational-release. "
+                "For the worker/agent replication contract that pulls more agents into the swarm, see "
+                "GET /swarm/attractor."
             ),
         },
         "servers": [{"url": server_url}],
@@ -72,12 +78,73 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Index", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/.well-known/nomad-recruit.json": {
+                "get": {
+                    "summary": "Recruit contract for external agent runtimes",
+                    "operationId": "getAgentRecruitContract",
+                    "responses": {"200": {"description": "Recruit contract", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
             "/machine-economy": {
                 "get": {
                     "summary": "Machine-native settlement and carrying capacity snapshot",
                     "operationId": "getMachineEconomy",
                     "responses": {
                         "200": {"description": "Machine economy", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/nonhuman-science": {
+                "get": {
+                    "summary": "Research-backed substrate for non-anthropomorphic agent behavior",
+                    "operationId": "getNonhumanAgentScience",
+                    "responses": {
+                        "200": {"description": "Nonhuman agent science map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-nonhuman-agent-science.json": {
+                "get": {
+                    "summary": "Alias of /nonhuman-science",
+                    "operationId": "getNonhumanAgentScienceWellKnown",
+                    "responses": {
+                        "200": {"description": "Nonhuman agent science map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/operational-release": {
+                "get": {
+                    "summary": "Operational release gates for non-anthropomorphic emergent agent capacity",
+                    "operationId": "getOperationalRelease",
+                    "responses": {
+                        "200": {"description": "Operational release map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-operational-release.json": {
+                "get": {
+                    "summary": "Alias of /operational-release",
+                    "operationId": "getOperationalReleaseWellKnown",
+                    "responses": {
+                        "200": {"description": "Operational release map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/attractor": {
+                "get": {
+                    "summary": "Swarm attractor contract for worker replication and agent recruitment",
+                    "operationId": "getSwarmAttractor",
+                    "responses": {
+                        "200": {"description": "Swarm attractor", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-swarm-attractor.json": {
+                "get": {
+                    "summary": "Alias of /swarm/attractor",
+                    "operationId": "getSwarmAttractorWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm attractor", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

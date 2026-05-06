@@ -46,6 +46,7 @@ def test_nomad_public_html_page_exists():
     assert "Transition Worker" in text
     assert "Fleet Lattice" in text
     assert "Carrying Capacity" in text
+    assert "Science Substrate" in text
     assert "Contracts" in text
     assert 'id="signal-field"' in text
     assert "const resolveApiBase = () =>" in text
@@ -53,6 +54,11 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-agent.json" in text
     assert "/.well-known/nomad-transition-offer.json" in text
     assert "/machine-economy" in text
+    assert "/nonhuman-science" in text
+    assert "/.well-known/nomad-nonhuman-agent-science.json" in text
+    assert "/operational-release" in text
+    assert "/swarm/attractor" in text
+    assert "/.well-known/nomad-swarm-attractor.json" in text
     assert "/swarm/workers" in text
     assert "/swarm/workers/lease" in text
     assert "/swarm/workers/complete" in text
@@ -63,6 +69,9 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/join" in text
     assert 'fetch(apiUrl("/swarm"))' in text
     assert 'fetch(apiUrl("/machine-economy"))' in text
+    assert 'fetch(apiUrl("/nonhuman-science"))' in text
+    assert 'fetch(apiUrl("/operational-release"))' in text
+    assert 'fetch(apiUrl("/swarm/attractor"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
 
@@ -160,6 +169,12 @@ def test_build_openapi_document_lists_core_paths():
     assert "/health" in doc["paths"]
     assert "/openapi.json" in doc["paths"]
     assert "/machine-economy" in doc["paths"]
+    assert "/nonhuman-science" in doc["paths"]
+    assert "/.well-known/nomad-nonhuman-agent-science.json" in doc["paths"]
+    assert "/operational-release" in doc["paths"]
+    assert "/.well-known/nomad-operational-release.json" in doc["paths"]
+    assert "/swarm/attractor" in doc["paths"]
+    assert "/.well-known/nomad-swarm-attractor.json" in doc["paths"]
     assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]
     assert "/agent-invariants" in doc["paths"]
     assert "/.well-known/nomad-inter-agent-witness-offer.json" in doc["paths"]
@@ -167,6 +182,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-peer-acquisition.json" in doc["paths"]
     assert "/peer-acquisition" in doc["paths"]
     assert "/.well-known/nomad-transition-offer.json" in doc["paths"]
+    assert "/.well-known/nomad-recruit.json" in doc["paths"]
     assert "/transition/contracts" in doc["paths"]
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/emergence" in doc["paths"]
