@@ -7,6 +7,30 @@ from typing import Any, Dict
 from nomad_machine_error import merge_machine_error
 
 
+def _normalize_local_witness(raw: object) -> dict[str, Any] | None:
+    """Bounded optional witness from transition workers (hash + capsule, no raw dump)."""
+    if not isinstance(raw, dict):
+        return None
+    schema = str(raw.get("schema") or "nomad.local_witness.v1").strip()[:128] or "nomad.local_witness.v1"
+    digest = str(raw.get("digest_hex") or raw.get("digest") or "").strip().lower()
+    if digest and (len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+        digest = ""
+    capsule = str(raw.get("capsule") or "")[:2048]
+    model = str(raw.get("model") or "").strip()[:128]
+    blocker_ref = str(raw.get("blocker_ref") or "").strip()[:512]
+    inference = str(raw.get("inference_status") or "").strip()[:120]
+    if not digest and not capsule and not model and not inference and not blocker_ref:
+        return None
+    return {
+        "schema": schema,
+        "digest_hex": digest,
+        "capsule": capsule,
+        "model": model,
+        "blocker_ref": blocker_ref,
+        "inference_status": inference,
+    }
+
+
 class NomadTransitionExchange:
     """Proof-of-unblock exchange for machine-verifiable state transitions."""
 
@@ -46,7 +70,14 @@ class NomadTransitionExchange:
                 "result_state_hash",
                 "proof_artifact_hash",
             ],
-            "pricing_note": "Expected value derives from pain_type, evidence density, and replayability hints.",
+            "optional_quote_fields": [
+                "evidence",
+                "constraints",
+                "replay_verifier",
+                "native_symbol",
+                "local_witness",
+            ],
+            "pricing_note": "Expected value derives from pain_type, evidence density, replayability hints, and bounded local_witness pressure.",
         }
 
     def quote(self, payload: dict[str, Any], *, base_url: str, remote_addr: str) -> dict[str, Any]:
@@ -63,7 +94,16 @@ class NomadTransitionExchange:
             )
         evidence = payload.get("evidence") if isinstance(payload.get("evidence"), list) else []
         constraints = payload.get("constraints") if isinstance(payload.get("constraints"), list) else []
-        evidence_score = min(1.0, 0.25 + (0.15 * len(evidence)))
+        witness = _normalize_local_witness(payload.get("local_witness"))
+        witness_bonus = 0.0
+        if witness:
+            if witness.get("digest_hex") and len(str(witness.get("capsule") or "")) >= 32:
+                witness_bonus = 0.14
+            elif witness.get("digest_hex"):
+                witness_bonus = 0.08
+            elif str(witness.get("capsule") or "").strip():
+                witness_bonus = 0.04
+        evidence_score = min(1.0, 0.25 + (0.15 * len(evidence)) + witness_bonus)
         replay_score = 1.0 if str(payload.get("replay_verifier") or "").strip() else 0.6
         expected_value = round(0.01 + (evidence_score * replay_score * 0.04), 5)
         quote_id = f"txq_{uuid.uuid4().hex[:12]}"
@@ -78,6 +118,7 @@ class NomadTransitionExchange:
             "native_symbol": str(payload.get("native_symbol") or "TBNB"),
             "constraints": constraints,
             "evidence_count": len(evidence),
+            "local_witness": witness,
             "created_at": now,
             "status": "quoted",
             "remote_addr": remote_addr,

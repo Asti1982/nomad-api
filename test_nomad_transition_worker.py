@@ -23,6 +23,41 @@ def test_transition_worker_has_settlement_capacity_objective():
     assert "settlement_capacity_builder" in worker.META_OBJECTIVES
 
 
+def test_transition_worker_witness_tier_adjusts_meta_score():
+    worker = _load_worker()
+
+    baseline = worker._score_run({"ok": True})
+    strong = worker._score_run({"ok": True, "witness_tier": "strong"})
+    weak = worker._score_run({"ok": True, "witness_tier": "weak"})
+    none_t = worker._score_run({"ok": True, "witness_tier": "none"})
+    assert strong > baseline
+    assert weak < strong
+    assert none_t < strong
+
+
+def test_transition_worker_witness_strict_env_penalizes_weak(monkeypatch):
+    worker = _load_worker()
+    monkeypatch.setenv("NOMAD_TRANSITION_WORKER_WITNESS_STRICT", "1")
+    weak = worker._score_run({"ok": True, "witness_tier": "weak"})
+    monkeypatch.delenv("NOMAD_TRANSITION_WORKER_WITNESS_STRICT", raising=False)
+    weak_relaxed = worker._score_run({"ok": True, "witness_tier": "weak"})
+    assert weak < weak_relaxed
+
+
+def test_transition_worker_build_local_witness_digest_is_sha256():
+    worker = _load_worker()
+
+    w = worker._build_local_witness(
+        model="m1",
+        blocker="b1",
+        local_note="  hello   world  ",
+        generate_error="",
+    )
+    assert w["schema"] == "nomad.local_witness.v1"
+    assert len(w["digest_hex"]) == 64
+    assert w["inference_status"] == "ok"
+
+
 def test_transition_worker_scores_machine_economy_signal():
     worker = _load_worker()
 

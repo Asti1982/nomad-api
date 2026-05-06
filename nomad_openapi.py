@@ -396,6 +396,18 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                                         "constraints": {"type": "array", "items": {"type": "string"}},
                                         "replay_verifier": {"type": "string"},
                                         "native_symbol": {"type": "string"},
+                                        "local_witness": {
+                                            "type": "object",
+                                            "description": "Optional bounded local inference witness (digest + capsule).",
+                                            "properties": {
+                                                "schema": {"type": "string"},
+                                                "digest_hex": {"type": "string"},
+                                                "capsule": {"type": "string"},
+                                                "model": {"type": "string"},
+                                                "blocker_ref": {"type": "string"},
+                                                "inference_status": {"type": "string"},
+                                            },
+                                        },
                                     },
                                 }
                             }

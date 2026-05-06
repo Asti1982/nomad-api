@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Portable Nomad Transition Worker (single-file, stdlib only)."""
 from __future__ import annotations
-import argparse, ctypes, json, os, shutil, socket, subprocess, time
+import argparse, ctypes, hashlib, json, os, shutil, socket, subprocess, time
 from pathlib import Path
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
@@ -92,6 +92,42 @@ OLLAMA_CACHE: dict[str, str] = {}
 
 def clean(v: object, limit: int = 500) -> str:
     return " ".join(str(v or "").split())[:limit]
+
+
+def _build_local_witness(*, model: str, blocker: str, local_note: str, generate_error: str) -> dict[str, str]:
+    """Hash binds full bounded note; capsule is machine-skim surface for Nomad."""
+    note_bind = clean(local_note, 8000)
+    digest = hashlib.sha256(note_bind.encode("utf-8")).hexdigest() if note_bind else ""
+    capsule = clean(local_note, 512)
+    err = str(generate_error or "").strip()
+    if note_bind and not err:
+        inference = "ok"
+    elif err:
+        inference = err[:120]
+    else:
+        inference = "empty"
+    return {
+        "schema": "nomad.local_witness.v1",
+        "model": clean(model, 128),
+        "blocker_ref": clean(blocker, 280),
+        "digest_hex": digest,
+        "capsule": capsule,
+        "inference_status": inference,
+    }
+
+
+def _witness_tier(model: str, local_note: str, generate_error: str) -> str:
+    """Machine policy: settlement can proceed; scoring differentiates alien inference depth."""
+    if not str(model or "").strip():
+        return "disabled"
+    err = str(generate_error or "").strip()
+    note = str(local_note or "").strip()
+    if note and not err:
+        return "strong"
+    if err:
+        return "weak"
+    return "none"
+
 
 def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
@@ -356,6 +392,12 @@ def _save_history(state: dict) -> None:
 
 def _score_run(report: dict) -> float:
     score = 0.0
+    strict_witness = (os.getenv("NOMAD_TRANSITION_WORKER_WITNESS_STRICT") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     if report.get("ok"):
         score += 2.0
     if (report.get("bootstrap") or {}).get("ok"):
@@ -392,6 +434,17 @@ def _score_run(report: dict) -> float:
         score += min(1.0, float(pp.get("verifier_density") or 0.0) * 0.5)
         if pp.get("adversarial_replay_observed"):
             score += 0.5
+    tier = str(report.get("witness_tier") or "").strip().lower()
+    if tier == "strong":
+        score += 1.05
+    elif tier == "weak":
+        score -= 0.35
+        if strict_witness:
+            score -= 0.75
+    elif tier == "none":
+        score -= 0.55
+        if strict_witness:
+            score -= 0.85
     return round(score, 4)
 
 def _choose_meta_objective(history: dict) -> tuple[str, dict]:
@@ -527,11 +580,14 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
         return {}
     pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
     economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    lw = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
     return {
         "ok": bool(report.get("ok")),
         "machine_objective": clean(report.get("machine_objective"), 80),
         "transition_quote_ok": bool(report.get("transition_quote_ok")),
         "transition_settle_ok": bool(report.get("transition_settle_ok")),
+        "witness_tier": clean(report.get("witness_tier"), 24),
+        "witness_digest_hex": clean((lw or {}).get("digest_hex"), 68),
         "meta_score": float(report.get("meta_score") or 0.0),
         "proof_pressure": {
             "proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
@@ -631,11 +687,12 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     fleet = report.get("fleet_lease") if isinstance(report.get("fleet_lease"), dict) else {}
     fleet_id = clean(fleet.get("lease_id") or "", 24)[-6:] if fleet.get("ok") else "local"
     state = "ONLINE" if bool(report.get("ok")) else "RETRY"
+    witness = clean(report.get("witness_tier"), 16)
     print(
         f"Nomad_Agent {_status_spinner(cycle)} "
         f"cycle={cycle} state={state} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
-        f"proof/min={ppm:.2f} economy={economy_tier} fleet={fleet_id} objective={clean(report.get('machine_objective'), 40)} "
-        f"ts={clean(report.get('timestamp'), 40)}"
+        f"proof/min={ppm:.2f} economy={economy_tier} fleet={fleet_id} witness={witness} "
+        f"objective={clean(report.get('machine_objective'), 40)} ts={clean(report.get('timestamp'), 40)}"
     )
 
 def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
@@ -661,23 +718,36 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "picked_model": model or "",
     }
     local_note = ""
+    gen_err = ""
+    local_witness: dict[str, str] = {}
     if model:
         og = try_ollama(model, prompt.format(blocker=blocker or "no blocker"), timeout=timeout)
         local_note = str(og.get("text") or "")
         ollama_status["generate_error"] = str(og.get("error") or "")
         ollama_status["note_chars"] = len(local_note)
         ollama_status["latency_ms"] = int(og.get("latency_ms") or 0)
+        gen_err = str(ollama_status.get("generate_error") or "")
+        local_witness = _build_local_witness(
+            model=model,
+            blocker=blocker,
+            local_note=local_note,
+            generate_error=gen_err,
+        )
+    witness_tier = _witness_tier(model or "", local_note, gen_err)
     probes = _probe_paths(base_url, timeout=min(10.0, timeout))
     paid_lane_signal = _paid_lane_signal(base_url, timeout=min(10.0, timeout))
     machine_economy_signal = _machine_economy_signal(base_url, timeout=min(10.0, timeout))
-    quote = http_json("POST", endpoint(base_url, "/transition/quote"), {
+    quote_payload: dict[str, object] = {
         "agent_id": agent_id,
         "pain_type": str(config.get("pain_type") or "compute_auth"),
         "state_before_hash": f"{agent_id}:before:{int(time.time())}",
         "target_state_hash": "nomad_transition_target_v1",
         "evidence": config.get("evidence") if isinstance(config.get("evidence"), list) else ["bootstrap", "mission", "local_note"],
         "replay_verifier": endpoint(base_url, "/health"),
-    }, timeout=timeout)
+    }
+    if model and local_witness:
+        quote_payload["local_witness"] = local_witness
+    quote = http_json("POST", endpoint(base_url, "/transition/quote"), quote_payload, timeout=timeout)
     qid = str(((quote.get("quote") or {}).get("quote_id")) or "")
     settle = http_json("POST", endpoint(base_url, "/transition/settle"), {
         "quote_id": qid,
@@ -715,6 +785,8 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "bootstrap": {"ok": bool(boot.get("ok")), "schema": boot.get("schema", "")},
         "join": {"ok": bool(join.get("ok")), "status": join.get("status") or "", "reason": join.get("reason") or ""},
         "mission_top_blocker": blocker, "ollama_model": model or "", "local_ollama_note": local_note,
+        "witness_tier": witness_tier,
+        "local_witness": local_witness,
         "ollama_status": ollama_status,
         "probe_status": probes,
         "paid_lane_signal": paid_lane_signal,

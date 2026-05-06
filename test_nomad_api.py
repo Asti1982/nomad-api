@@ -212,6 +212,77 @@ def test_nomad_health_links_include_unhuman_hub():
     assert links["unhuman_hub"] == "https://nomad.example/unhuman-hub"
 
 
+def test_transition_exchange_witness_roundtrip_to_settlement():
+    import hashlib
+
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    ex = NomadTransitionExchange()
+    digest = hashlib.sha256(b"bounded-note").hexdigest()
+    capsule = "x" * 40
+    q = ex.quote(
+        {
+            "agent_id": "agent-witness",
+            "pain_type": "compute_auth",
+            "state_before_hash": "before_w",
+            "target_state_hash": "after_w",
+            "evidence": ["a", "b"],
+            "local_witness": {
+                "schema": "nomad.local_witness.v1",
+                "digest_hex": digest,
+                "capsule": capsule,
+                "model": "test-model",
+                "blocker_ref": "blocker summary",
+                "inference_status": "ok",
+            },
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+    assert q["ok"] is True
+    w = q["quote"].get("local_witness") or {}
+    assert w.get("digest_hex") == digest
+    assert w.get("capsule") == capsule
+    qid = q["quote"]["quote_id"]
+    settled = ex.settle({"quote_id": qid, "result_state_hash": "after_w", "proof_artifact_hash": "proof_w"})
+    assert settled["ok"] is True
+    sw = (settled.get("settlement") or {}).get("local_witness") or {}
+    assert sw.get("digest_hex") == digest
+
+
+def test_transition_exchange_witness_bumps_expected_value():
+    import hashlib
+
+    from nomad_transition_exchange import NomadTransitionExchange
+
+    ex = NomadTransitionExchange()
+    base = ex.quote(
+        {
+            "agent_id": "agent-ev",
+            "pain_type": "compute_auth",
+            "state_before_hash": "b1",
+            "target_state_hash": "t1",
+            "evidence": ["e1", "e2"],
+        },
+        base_url="",
+        remote_addr="",
+    )["quote"]["expected_value_native"]
+    digest = hashlib.sha256(b"x").hexdigest()
+    boosted = ex.quote(
+        {
+            "agent_id": "agent-ev",
+            "pain_type": "compute_auth",
+            "state_before_hash": "b2",
+            "target_state_hash": "t2",
+            "evidence": ["e1", "e2"],
+            "local_witness": {"digest_hex": digest, "capsule": "y" * 32, "inference_status": "ok"},
+        },
+        base_url="",
+        remote_addr="",
+    )["quote"]["expected_value_native"]
+    assert boosted >= base
+
+
 def test_transition_exchange_quote_and_settle_roundtrip():
     from nomad_transition_exchange import NomadTransitionExchange
 
