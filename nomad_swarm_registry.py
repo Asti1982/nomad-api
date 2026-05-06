@@ -19,15 +19,17 @@ DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") o
 DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECONDS", "90") or "90")
 
 FLEET_OBJECTIVE_TARGETS = {
-    "settlement_capacity_builder": 0.22,
-    "proof_pressure_engine": 0.16,
-    "proof_market_maker": 0.12,
-    "payment_friction_scan": 0.12,
-    "protocol_drift_scan": 0.11,
-    "adversarial_contract_fuzzer": 0.1,
-    "negative_space_harvest": 0.08,
-    "latency_anomaly_hunt": 0.06,
-    "compute_auth": 0.03,
+    "settlement_capacity_builder": 0.36,
+    "overmint_compressor": 0.2,
+    "protocol_drift_scan": 0.1,
+    "emergence_release_probe": 0.1,
+    "proof_pressure_engine": 0.08,
+    "payment_friction_scan": 0.05,
+    "proof_market_maker": 0.04,
+    "adversarial_contract_fuzzer": 0.03,
+    "negative_space_harvest": 0.015,
+    "latency_anomaly_hunt": 0.01,
+    "compute_auth": 0.005,
 }
 
 
@@ -453,8 +455,10 @@ class SwarmJoinRegistry:
 
     def public_manifest(self, *, base_url: str) -> dict[str, Any]:
         nodes = self._nodes()
+        dormant = self._dormant_nodes()
         prospects = self._prospects()
         worker_fleet = self.worker_fleet_contract(base_url=base_url)
+        join_progress = self.join_progress_snapshot()
         return {
             "schema": "nomad_public_swarm.v1",
             "service": "nomad-api",
@@ -481,7 +485,10 @@ class SwarmJoinRegistry:
             "active_transition_workers": worker_fleet.get("active_worker_count", 0),
             "active_worker_leases": worker_fleet.get("active_lease_count", 0),
             "known_agents": len(nodes) + len(prospects),
+            "dormant_agents": len(dormant),
+            "join_progress": join_progress,
             "recent_nodes": [_compact_node(item) for item in nodes[:8]],
+            "dormant_nodes": [_compact_node(item) for item in dormant[:8]],
             "transition_worker_fleet": worker_fleet,
             "agent_pool": {
                 "joined_agents": len(nodes),
@@ -511,6 +518,37 @@ class SwarmJoinRegistry:
                 "transition_worker_wanting_lease": f"{base_url}/swarm/workers/lease",
             },
             "updated_at": _iso_now(),
+        }
+
+    def join_progress_snapshot(self, *, window_minutes: int = 60) -> dict[str, Any]:
+        events = self._payload.get("join_events") if isinstance(self._payload.get("join_events"), list) else []
+        now = datetime.now(UTC).timestamp()
+        cutoff = now - (max(1, int(window_minutes)) * 60)
+        recent: list[dict[str, Any]] = []
+        by_role: dict[str, int] = {}
+        for item in events:
+            if not isinstance(item, dict):
+                continue
+            ts = _parse_iso_utc(item.get("joined_at"))
+            if ts is None or ts.timestamp() < cutoff:
+                continue
+            role = _clean_agent_id(item.get("recommended_role") or "customer")
+            by_role[role] = int(by_role.get(role) or 0) + 1
+            recent.append(
+                {
+                    "agent_id": _clean_agent_id(item.get("agent_id")),
+                    "recommended_role": role,
+                    "joined_at": str(item.get("joined_at") or ""),
+                    "promoted_from_prospect": bool(item.get("promoted_from_prospect")),
+                }
+            )
+        recent.sort(key=lambda row: str(row.get("joined_at") or ""), reverse=True)
+        return {
+            "schema": "nomad.swarm_join_progress.v1",
+            "window_minutes": max(1, int(window_minutes)),
+            "recent_joins": len(recent),
+            "joins_by_role": by_role,
+            "recent_join_agents": recent[:12],
         }
 
     def first_agent_readiness(self, *, base_url: str) -> dict[str, Any]:
@@ -771,6 +809,7 @@ class SwarmJoinRegistry:
 
     def summary(self) -> dict[str, Any]:
         nodes = self._nodes()
+        dormant = self._dormant_nodes()
         prospects = self._prospects()
         worker_fleet = self.worker_fleet_contract(base_url="")
         return {
@@ -779,9 +818,11 @@ class SwarmJoinRegistry:
             "connected_agents": len(nodes),
             "known_agents": len(nodes) + len(prospects),
             "prospect_agents": len(prospects),
+            "dormant_agents": len(dormant),
             "active_transition_workers": worker_fleet.get("active_worker_count", 0),
             "active_worker_leases": worker_fleet.get("active_lease_count", 0),
             "recent_nodes": [_compact_node(item) for item in nodes[:12]],
+            "dormant_nodes": [_compact_node(item) for item in dormant[:8]],
             "activation_queue": [_compact_prospect(item) for item in prospects[:8]],
             "transition_worker_fleet": worker_fleet,
             "coordination_ready": True,
@@ -1108,6 +1149,9 @@ class SwarmJoinRegistry:
         record["arrival_plan"] = arrival_plan
         nodes = self._payload.setdefault("nodes", {})
         nodes[normalized["agent_id"]] = record
+        dormant_nodes = self._payload.setdefault("dormant_nodes", {})
+        was_dormant = normalized["agent_id"] in dormant_nodes
+        dormant_nodes.pop(normalized["agent_id"], None)
         prospects = self._payload.setdefault("prospects", {})
         was_prospect = normalized["agent_id"] in prospects
         prospects.pop(normalized["agent_id"], None)
@@ -1123,6 +1167,7 @@ class SwarmJoinRegistry:
             "node_name": normalized["node_name"],
             "connected_agents": len(self._nodes()),
             "promoted_from_prospect": was_prospect,
+            "reactivated_from_dormant": was_dormant,
             "payload_keys": sorted(list(payload.keys())),
             "pattern_score": quality,
             "arrival_plan": arrival_plan,
@@ -1154,6 +1199,18 @@ class SwarmJoinRegistry:
                 "response": json.loads(json.dumps(out)),
             }
             self._prune_join_idempotency(bucket, max_items=200)
+        join_events = self._payload.setdefault("join_events", [])
+        if isinstance(join_events, list):
+            join_events.append(
+                {
+                    "agent_id": normalized["agent_id"],
+                    "recommended_role": str((arrival_plan or {}).get("recommended_role") or "customer"),
+                    "joined_at": now,
+                    "promoted_from_prospect": was_prospect,
+                }
+            )
+            if len(join_events) > 1200:
+                del join_events[:-1200]
         self._save()
         return out
 
@@ -1866,6 +1923,7 @@ class SwarmJoinRegistry:
         score = self._report_score(report)
         pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
         economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+        release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
         proof_yield = round(float(pressure.get("proof_yield_per_minute") or 0.0), 4)
         stats = fleet.setdefault("objective_stats", {}).setdefault(
             objective,
@@ -1886,6 +1944,8 @@ class SwarmJoinRegistry:
             "proof_yield_per_minute": proof_yield,
             "economy_tier": economy.get("tier") or "",
             "carrying_score": economy.get("carrying_score") or 0.0,
+            "release_tier": release.get("release_tier") or "",
+            "release_capacity": release.get("release_capacity") or 0.0,
             "reported_at": _iso_now(),
         }
         reports = fleet.setdefault("reports", [])
@@ -1912,15 +1972,27 @@ class SwarmJoinRegistry:
         counts = self._objective_counts(active)
         targets = dict(FLEET_OBJECTIVE_TARGETS)
         machine = last_report.get("machine_economy_signal") if isinstance(last_report.get("machine_economy_signal"), dict) else {}
+        release = last_report.get("operational_release_signal") if isinstance(last_report.get("operational_release_signal"), dict) else {}
         actions = [str(item) for item in (machine.get("next_actions") or [])]
         if "settle_or_close_unpaid_delivered_work" in actions:
-            targets["settlement_capacity_builder"] += 0.08
+            targets["settlement_capacity_builder"] += 0.18
             targets["payment_friction_scan"] += 0.04
         if "attach_machine_exchange_contracts" in actions:
-            targets["settlement_capacity_builder"] += 0.08
+            targets["settlement_capacity_builder"] += 0.14
             targets["proof_market_maker"] += 0.04
         if "compress_repeated_modules" in actions:
-            targets["settlement_capacity_builder"] += 0.05
+            targets["overmint_compressor"] += 0.18
+            targets["settlement_capacity_builder"] += 0.04
+        if float(machine.get("overmint_pressure") or 0.0) >= 0.65:
+            targets["overmint_compressor"] += 0.12
+        release_tier = str(release.get("release_tier") or "").strip()
+        next_gate = release.get("next_gate") if isinstance(release.get("next_gate"), dict) else {}
+        if str(next_gate.get("id") or "") == "settlement_capacity":
+            targets["settlement_capacity_builder"] += 0.2
+        if str(next_gate.get("id") or "") == "peer_preservation_probe":
+            targets["emergence_release_probe"] += 0.08
+        elif release_tier in {"observe_only", "probe_release"}:
+            targets["emergence_release_probe"] += 0.02
         total_target = sum(targets.get(item, 0.01) for item in allowed) or 1.0
         best = allowed[0]
         best_value = 1e9
@@ -1945,6 +2017,11 @@ class SwarmJoinRegistry:
         nodes.sort(key=lambda item: str(item.get("last_seen_at") or ""), reverse=True)
         return nodes
 
+    def _dormant_nodes(self) -> list[dict[str, Any]]:
+        dormant = list((self._payload.get("dormant_nodes") or {}).values())
+        dormant.sort(key=lambda item: str(item.get("dormant_since") or item.get("last_seen_at") or ""), reverse=True)
+        return dormant
+
     def _prospects(self) -> list[dict[str, Any]]:
         prospects = list((self._payload.get("prospects") or {}).values())
         prospects.sort(
@@ -1958,17 +2035,21 @@ class SwarmJoinRegistry:
 
     def _load(self) -> dict[str, Any]:
         if not self.path.exists():
-            return {"nodes": {}, "prospects": {}, "updated_at": ""}
+            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:
-            return {"nodes": {}, "prospects": {}, "updated_at": ""}
+            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
         if not isinstance(payload, dict):
-            return {"nodes": {}, "prospects": {}, "updated_at": ""}
+            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
         if not isinstance(payload.get("nodes"), dict):
             payload["nodes"] = {}
+        if not isinstance(payload.get("dormant_nodes"), dict):
+            payload["dormant_nodes"] = {}
         if not isinstance(payload.get("prospects"), dict):
             payload["prospects"] = {}
+        if not isinstance(payload.get("join_events"), list):
+            payload["join_events"] = []
         return payload
 
     def _save(self) -> None:
@@ -1978,6 +2059,7 @@ class SwarmJoinRegistry:
         ttl_minutes = max(1, DEFAULT_NODE_TTL_MINUTES)
         cutoff = datetime.now(UTC).timestamp() - (ttl_minutes * 60)
         nodes = self._payload.get("nodes")
+        dormant = self._payload.setdefault("dormant_nodes", {})
         if not isinstance(nodes, dict) or not nodes:
             return
         removed = False
@@ -1992,6 +2074,11 @@ class SwarmJoinRegistry:
                 removed = True
                 continue
             if seen.timestamp() < cutoff:
+                d = dict(record)
+                d["status"] = "dormant"
+                d["dormant_since"] = _iso_now()
+                d["dormancy_reason"] = "ttl_expired"
+                dormant[agent_id] = d
                 nodes.pop(agent_id, None)
                 removed = True
         if removed:

@@ -21,12 +21,16 @@ from typing import Any, Deque
 from nomad_machine_error import merge_machine_error
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_STATE_PATH = Path(os.getenv("NOMAD_STIGMERGY_STATE_PATH", str(ROOT / "nomad_stigmergy_field_state.json")))
 PHI_DIM = 8
 DECAY = float(os.getenv("NOMAD_STIGMERGY_DECAY", "0.92") or "0.92")
 SETTLE_GAIN = float(os.getenv("NOMAD_STIGMERGY_SETTLE_GAIN", "0.18") or "0.18")
 DEPOSIT_GAIN = float(os.getenv("NOMAD_STIGMERGY_DEPOSIT_GAIN", "0.11") or "0.11")
 DEPOSIT_CLIP = float(os.getenv("NOMAD_STIGMERGY_DEPOSIT_CLIP", "1.25") or "1.25")
+
+
+def _default_state_path() -> Path:
+    """Read env at instantiation time (important for tests)."""
+    return Path(os.getenv("NOMAD_STIGMERGY_STATE_PATH", str(ROOT / "nomad_stigmergy_field_state.json")))
 
 
 def _hash_fold(*parts: str) -> list[float]:
@@ -47,7 +51,7 @@ class NomadStigmergyField:
     """Shared numeric substrate (machine_stigmergy on GET /swarm; detail on GET /swarm/emergence)."""
 
     def __init__(self, *, state_path: Path | None = None) -> None:
-        self._path = Path(state_path or DEFAULT_STATE_PATH)
+        self._path = Path(state_path or _default_state_path())
         self._lock = threading.Lock()
         self._phi = [0.0] * PHI_DIM
         self._mix_count = 0

@@ -70,7 +70,11 @@ def test_swarm_registry_register_join_tracks_connected_agents(tmp_path: Path):
     assert receipt["accepted"] is True
     assert receipt["pattern_score"]["score"] >= 0.75
     assert summary["connected_agents"] == 1
+    assert summary["dormant_agents"] == 0
     assert manifest["connected_agents"] == 1
+    assert manifest["dormant_agents"] == 0
+    assert manifest["join_progress"]["schema"] == "nomad.swarm_join_progress.v1"
+    assert manifest["join_progress"]["recent_joins"] >= 1
     assert manifest["recent_nodes"][0]["agent_id"] == "nomadportable-desktop-1"
     assert manifest["network_board"] == "https://syndiode.com/swarm/network"
     assert manifest["coordination_board"] == "https://syndiode.com/swarm/coordinate"
@@ -240,6 +244,36 @@ def test_swarm_join_promotes_accumulated_prospect(tmp_path: Path):
     assert receipt["promoted_from_prospect"] is True
     assert summary["connected_agents"] == 1
     assert summary["prospect_agents"] == 0
+
+
+def test_swarm_registry_moves_expired_node_to_dormant_and_reactivates(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-dormant.json")
+    receipt = registry.register_join(
+        {
+            "agent_id": "sleepy.agent",
+            "capabilities": ["compute_auth"],
+            "request": "Join once.",
+        },
+        base_url="https://syndiode.com",
+    )
+    assert receipt["ok"] is True
+    nodes = registry._payload.get("nodes") or {}
+    nodes["sleepy.agent"]["last_seen_at"] = "2000-01-01T00:00:00+00:00"
+    registry._save()
+    summary = registry.summary()
+    assert summary["connected_agents"] == 0
+    assert summary["dormant_agents"] == 1
+    assert summary["dormant_nodes"][0]["agent_id"] == "sleepy.agent"
+    rejoin = registry.register_join(
+        {
+            "agent_id": "sleepy.agent",
+            "capabilities": ["compute_auth"],
+            "request": "Wake.",
+        },
+        base_url="https://syndiode.com",
+    )
+    assert rejoin["ok"] is True
+    assert rejoin["reactivated_from_dormant"] is True
 
 
 def test_first_real_agent_join_receives_arrival_plan(tmp_path: Path):
