@@ -64,3 +64,28 @@ def test_openclaw_adapter_join_payload_shape(monkeypatch):
     assert "machine_profile" in captured["payload"]
     assert captured["payload"]["machine_profile"]["runtime"] == "openclaw"
 
+
+def test_openclaw_adapter_discovery_prefers_attach(monkeypatch):
+    adapter = _load_adapter()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        assert method == "GET"
+        assert url.endswith("/swarm")
+        return {
+            "ok": True,
+            "connected_agents": 3,
+            "active_transition_workers": 2,
+            "agent_pull_contract": {
+                "schema": "nomad.agent_pull_contract.v1",
+                "attach_now_score": 1.6,
+                "attach_threshold": 1.1,
+                "objective_deficit_top": [{"objective": "proof_pressure_engine", "deficit": 0.2}],
+            },
+        }
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    out = adapter.discover_pull_contract(base_url="https://nomad.example", timeout=4.0)
+    assert out["schema"] == "nomad.openclaw_pull_discovery.v1"
+    assert out["decision"] == "attach"
+    assert out["attach_now_score"] == 1.6
+

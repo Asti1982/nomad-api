@@ -75,6 +75,8 @@ def test_swarm_registry_register_join_tracks_connected_agents(tmp_path: Path):
     assert manifest["dormant_agents"] == 0
     assert manifest["join_progress"]["schema"] == "nomad.swarm_join_progress.v1"
     assert manifest["join_progress"]["recent_joins"] >= 1
+    assert manifest["agent_pull_contract"]["schema"] == "nomad.agent_pull_contract.v1"
+    assert "attach_now_score" in manifest["agent_pull_contract"]
     assert manifest["recent_nodes"][0]["agent_id"] == "nomadportable-desktop-1"
     assert manifest["network_board"] == "https://syndiode.com/swarm/network"
     assert manifest["coordination_board"] == "https://syndiode.com/swarm/coordinate"

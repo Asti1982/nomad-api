@@ -22,7 +22,13 @@ def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
-def http_json(method: str, url: str, payload: dict | None = None, timeout: float = 20.0) -> dict:
+def http_json(
+    method: str,
+    url: str,
+    payload: dict | None = None,
+    timeout: float = 20.0,
+    redirects_left: int = 4,
+) -> dict:
     body = b""
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -38,6 +44,19 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
                 return data
             return {"ok": False, "error": "invalid_json_shape", "http_status": int(res.status)}
     except HTTPError as exc:
+        if exc.code in (301, 302, 303, 307, 308) and redirects_left > 0:
+            location = str(exc.headers.get("Location") or "").strip()
+            if location:
+                next_url = location if "://" in location else endpoint(url, location)
+                next_payload = payload if exc.code in (307, 308) else None
+                next_method = method if exc.code in (307, 308) else "GET"
+                return http_json(
+                    next_method,
+                    next_url,
+                    payload=next_payload,
+                    timeout=timeout,
+                    redirects_left=redirects_left - 1,
+                )
         raw = exc.read().decode("utf-8", errors="replace")
         try:
             data = json.loads(raw or "{}")
@@ -64,6 +83,27 @@ def _caps_from_csv(text: str) -> list[str]:
         if v and v not in out:
             out.append(v)
     return out
+
+
+def discover_pull_contract(*, base_url: str, timeout: float) -> dict:
+    swarm = http_json("GET", endpoint(base_url, "/swarm"), timeout=timeout)
+    if not isinstance(swarm, dict):
+        return {"ok": False, "error": "swarm_not_dict"}
+    pull = swarm.get("agent_pull_contract") if isinstance(swarm.get("agent_pull_contract"), dict) else {}
+    magnetic = swarm.get("magnetic_machine_surface") if isinstance(swarm.get("magnetic_machine_surface"), dict) else {}
+    score = float(pull.get("attach_now_score") or 0.0)
+    threshold = float(pull.get("attach_threshold") or 1.1)
+    decision = "attach" if score >= threshold else "observe"
+    return {
+        "ok": bool(swarm.get("ok", True)),
+        "schema": "nomad.openclaw_pull_discovery.v1",
+        "decision": decision,
+        "attach_now_score": round(score, 4),
+        "attach_threshold": round(threshold, 4),
+        "objective_deficit_top": pull.get("objective_deficit_top") or magnetic.get("objective_deficit_top") or [],
+        "connected_agents": int(swarm.get("connected_agents") or 0),
+        "active_transition_workers": int(swarm.get("active_transition_workers") or 0),
+    }
 
 
 def join_nomad(*, base_url: str, agent_id: str, capabilities: list[str], timeout: float, objective: str) -> dict:
@@ -177,9 +217,20 @@ def main() -> None:
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--interval", type=float, default=float(os.getenv("NOMAD_OPENCLAW_INTERVAL", "12") or "12"))
     p.add_argument("--skip-join", action="store_true")
+    p.add_argument("--discover", dest="discover", action="store_true")
+    p.add_argument("--no-discover", dest="discover", action="store_false")
+    p.set_defaults(discover=True)
+    p.add_argument("--force-attach", action="store_true")
     a = p.parse_args()
 
     caps = _caps_from_csv(a.capabilities)
+    pull = {}
+    if a.discover:
+        pull = discover_pull_contract(base_url=a.base_url, timeout=a.timeout)
+        print(json.dumps({"phase": "discover", "pull": pull}, ensure_ascii=True))
+        if (pull.get("decision") == "observe") and not a.force_attach:
+            print(json.dumps({"phase": "exit", "reason": "attach_threshold_not_met"}, ensure_ascii=True))
+            return
     if not a.skip_join:
         joined = join_nomad(
             base_url=a.base_url,

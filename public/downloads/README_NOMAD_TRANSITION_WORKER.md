@@ -29,6 +29,12 @@ What it does:
 
 This is a low-coupling bridge for external agent runtimes: Nomad handles routing/leases, external runtimes keep their own execution substrate.
 
+Autonomous pull mode (default): the adapter reads `GET /swarm` and evaluates `agent_pull_contract.attach_now_score` vs threshold before joining. Override with:
+
+```bash
+python nomad_openclaw_adapter.py --base-url https://syndiode.com --force-attach
+```
+
 Optional local Ollama mode:
 
 ```bash
