@@ -28,6 +28,7 @@ nomad_reciprocity_dividend_state.json
 nomad_runtime_patterns.json
 nomad_runtime_trust.json
 nomad_swarm_registry.json
+nomad_stigmergy_field_state.json
 nomad_mutual_aid_state.json
 nomad_mutual_aid_modules/
 truth_density_ledger.json

@@ -3,6 +3,19 @@
 Credit-friendly pattern: a scheduled function runs a short multi-cycle burst
 every few minutes instead of holding a 24h container.
 
+Modal free credits (commonly ~USD 30/month on eligible workspaces) are usually
+more than enough for this pattern: each wake is a few CPU-seconds on a small
+Linux container. Rule of thumb at default cadence (3-minute schedule, two inner
+cycles, ~40s HTTP timeout cap per cycle): on the order of **tens to low hundreds
+of CPU-minutes per month**, i.e. **well under** a single-digit dollar burn at
+typical CPU rates—leaving headroom for experimentation. **GPU colocated
+inference is not assumed** here; for local LLM quality, point the worker at a
+reachable Ollama base URL (for example a **Cloudflare Tunnel** or Tailscale
+endpoint to your laptop) via Modal function env:
+
+- ``NOMAD_TRANSITION_WORKER_OLLAMA_URL`` — e.g. ``https://ollama-tunnel.example.com``
+- ``NOMAD_TRANSITION_WORKER_OLLAMA_URLS`` — comma-separated fallbacks
+
 Prerequisites: https://modal.com account, ``pip install modal``, ``modal setup``.
 
 Deploy from repository root::

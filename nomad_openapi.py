@@ -160,6 +160,40 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Swarm manifest", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/swarm/emergence": {
+                "get": {
+                    "summary": "Machine stigmergy field snapshot (substrate-mediated coordination)",
+                    "operationId": "getSwarmEmergence",
+                    "responses": {"200": {"description": "Emergence field", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/swarm/trace": {
+                "post": {
+                    "summary": "Deposit bounded 8-vector into stigmergy field (rate-limited)",
+                    "operationId": "postSwarmTrace",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "vector"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "vector": {"type": "array", "items": {"type": "number"}, "minItems": 8, "maxItems": 8},
+                                        "evidence_digest": {"type": "string"},
+                                        "digest": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Deposit accepted"},
+                        "422": {"description": "Rejected or rate limited"},
+                    },
+                }
+            },
             "/swarm/workers": {
                 "get": {
                     "summary": "Transition worker fleet state and lease contract",

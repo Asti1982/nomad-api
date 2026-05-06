@@ -35,6 +35,7 @@ from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
+from nomad_stigmergy_field import NomadStigmergyField
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -67,6 +68,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     outbound_tracker = None
     transition_exchange = NomadTransitionExchange()
     reciprocity_dividend = NomadReciprocityDividend(exchange=transition_exchange)
+    stigmergy_field: NomadStigmergyField | None = None
+
+    @classmethod
+    def _stigmergy(cls) -> NomadStigmergyField:
+        if cls.stigmergy_field is None:
+            cls.stigmergy_field = NomadStigmergyField()
+        return cls.stigmergy_field
 
     @classmethod
     def _ensure_runtime_components(cls) -> None:
@@ -408,7 +416,31 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
                 min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
             )
+            stig = self._stigmergy().snapshot()
+            manifest["machine_stigmergy"] = stig
+            magnetic = manifest.get("magnetic_machine_surface")
+            if isinstance(magnetic, dict):
+                magnetic = dict(magnetic)
+                magnetic["stigmergy_temperature"] = stig.get("temperature")
+                manifest["magnetic_machine_surface"] = magnetic
             self._json_response(manifest)
+            return
+
+        if parsed.path == "/swarm/emergence":
+            snap = self._stigmergy().snapshot()
+            snap["machine_refs"] = [
+                {
+                    "kind": "decentralized_collective_memory_traces",
+                    "hint": "Environmental-trace coordination; not a chat channel.",
+                    "arxiv": "2512.10166",
+                },
+                {
+                    "kind": "stigmergic_coordination_robotics_theme",
+                    "hint": "Pheromone-like virtual fields for congestion-aware multi-agent control.",
+                    "arxiv": "2510.03592",
+                },
+            ]
+            self._json_response(snap)
             return
 
         if parsed.path == "/swarm/join":
@@ -1015,6 +1047,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/jobs",
                     "/agent-attractor",
                     "/swarm",
+                    "/swarm/emergence",
+                    "/swarm/trace",
                     "/swarm/join",
                     "/swarm/nodes",
                     "/swarm/workers",
@@ -1530,7 +1564,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/transition/settle":
             result = self.transition_exchange.settle(payload)
+            if result.get("ok"):
+                settled = result.get("settlement") if isinstance(result.get("settlement"), dict) else {}
+                self._stigmergy().observe_settlement(
+                    proof_hash=str(settled.get("proof_artifact_hash") or ""),
+                    agent_id=str(settled.get("agent_id") or ""),
+                    result_state_hash=str(settled.get("result_state_hash") or ""),
+                )
             self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/swarm/trace":
+            vec = payload.get("vector") if isinstance(payload.get("vector"), list) else []
+            dep = self._stigmergy().deposit_trace(
+                agent_id=str(payload.get("agent_id") or ""),
+                vector=vec,
+                digest=str(payload.get("evidence_digest") or payload.get("digest") or "").strip() or None,
+            )
+            self._json_response(dep, status=200 if dep.get("ok") else 422)
             return
 
         if parsed.path == "/dividend/claim":
@@ -1640,6 +1691,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/operator/growth-start",
                     "/agent-attractor",
                     "/swarm",
+                    "/swarm/emergence",
+                    "/swarm/trace",
                     "/swarm/join",
                     "/swarm/workers",
                     "/swarm/workers/lease",

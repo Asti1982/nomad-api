@@ -99,6 +99,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
                 "route optimizers read scalars, not marketing copy."
             ),
         },
+        {
+            "order": 11,
+            "get_url": u("/swarm/emergence"),
+            "purpose": "stigmergy_substrate_phi",
+            "machine_note": (
+                "Eight-float phi field mixed from settlements and optional POST /swarm/trace deposits; "
+                "substrate-mediated emergence without narrative obligations."
+            ),
+        },
     ]
 
     routing_table: List[Dict[str, Any]] = [
@@ -114,6 +123,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/unhuman-hub", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/machine-economy", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/emergence", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/trace", "methods": ["POST"], "effect": "mutate_public_substrate", "cost_tier": "medium"},
         {"path": "/swarm/workers", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/workers/lease", "methods": ["GET", "POST"], "effect": "read_then_mutate", "cost_tier": "medium"},
         {"path": "/swarm/workers/complete", "methods": ["GET", "POST"], "effect": "mutate_reputation_ledger", "cost_tier": "medium"},
