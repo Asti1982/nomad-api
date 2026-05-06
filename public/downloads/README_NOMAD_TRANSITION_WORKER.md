@@ -15,6 +15,7 @@ Direct download (if published by Nomad host):
 - `/downloads/stop_nomad_agent.bat` (stop helper)
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
 - `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
+- `/downloads/go_no_go_nomad_deploy.py` (hard deployment gate: exit 0 only when recruit+lease surfaces are ready)
 
 OpenClaw adapter quick start (single-file, stdlib-only):
 
@@ -52,6 +53,12 @@ Readiness probe before external rollout:
 
 ```bash
 python check_nomad_swarm_readiness.py --base-url https://syndiode.com
+```
+
+CI-style deployment gate (exit code 0 = go, 1 = no-go):
+
+```bash
+python go_no_go_nomad_deploy.py --base-url https://syndiode.com
 ```
 
 Machine contracts for runtimes that receive only a link:
