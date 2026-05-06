@@ -300,6 +300,36 @@ def _capability_vector(capabilities: list[str], runtime_signal: dict | None) -> 
     }
 
 
+def _normalize_idle_opt_in(enabled: bool) -> dict:
+    return {
+        "enabled": bool(enabled),
+        "preemptible": True,
+        "max_cpu_percent": 20,
+        "max_runtime_minutes": 30,
+        "allow_network_egress": "nomad_contract_endpoints_only",
+    }
+
+
+def _idle_phase_slot(*, agent_id: str, field_strength: float) -> dict:
+    epoch_slice = int(time.time() // 300)
+    phase_space = 17
+    drift = int(max(0.0, min(1.0, field_strength)) * 10.0)
+    target = (epoch_slice + drift) % phase_space
+    digest = hashlib.sha256(f"{agent_id}:{epoch_slice}:nomad_idle_phase".encode("utf-8")).hexdigest()
+    resonance = int(digest[:8], 16) % phase_space
+    distance = min((resonance - target) % phase_space, (target - resonance) % phase_space)
+    matched = distance <= 1
+    return {
+        "schema": "nomad.idle_phase_slot.v1",
+        "epoch_slice_5m": epoch_slice,
+        "phase_space": phase_space,
+        "target_slot": target,
+        "resonance_slot": resonance,
+        "distance": distance,
+        "matched": matched,
+    }
+
+
 def attach_nomad(
     *,
     base_url: str,
@@ -309,6 +339,7 @@ def attach_nomad(
     objective: str,
     runtime_signal: dict | None = None,
     pull: dict | None = None,
+    idle_opt_in: bool = False,
 ) -> dict:
     signal = runtime_signal if isinstance(runtime_signal, dict) else {}
     pull_doc = pull if isinstance(pull, dict) else {}
@@ -318,6 +349,22 @@ def attach_nomad(
         cap = clean(item, 64).lower()
         if cap and cap not in merged_caps:
             merged_caps.append(cap)
+    field_strength = float(pull_doc.get("attach_now_score") or 0.0)
+    idle_doc = _normalize_idle_opt_in(idle_opt_in)
+    idle_slot = _idle_phase_slot(agent_id=agent_id, field_strength=field_strength)
+    if idle_doc.get("enabled") and not idle_slot.get("matched"):
+        return {
+            "ok": True,
+            "schema": "nomad.runtime_attach_decision.v1",
+            "agent_id": agent_id,
+            "runtime": "openclaw",
+            "attach": False,
+            "lane": "observe",
+            "objective": "",
+            "reason_codes": ["idle_phase_not_matched", "local_precheck_observe"],
+            "idle_opt_in": idle_doc,
+            "idle_phase_slot": idle_slot,
+        }
     payload = {
         "schema": "nomad.runtime_attach_request.v1",
         "agent_id": agent_id,
@@ -326,6 +373,7 @@ def attach_nomad(
         "capabilities": merged_caps[:24],
         "capability_vector": _capability_vector(merged_caps, signal),
         "runtime_signal": signal,
+        "idle_opt_in": idle_doc,
         "discovery": {
             "source": clean(pull_doc.get("source"), 80),
             "suggested_objective": clean(pull_doc.get("suggested_objective"), 80),
@@ -541,6 +589,9 @@ def main() -> None:
     p.add_argument("--no-discover", dest="discover", action="store_false")
     p.set_defaults(discover=True)
     p.add_argument("--force-attach", action="store_true")
+    p.add_argument("--idle-opt-in", action="store_true")
+    p.add_argument("--no-idle-opt-in", dest="idle_opt_in", action="store_false")
+    p.set_defaults(idle_opt_in=(os.getenv("NOMAD_IDLE_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}))
     a = p.parse_args()
 
     caps = _caps_from_csv(a.capabilities)
@@ -564,6 +615,7 @@ def main() -> None:
             objective=a.objective,
             runtime_signal=runtime_signal,
             pull=pull,
+            idle_opt_in=a.idle_opt_in,
         )
         print(json.dumps({"phase": "attach", "ok": bool(attach.get("ok")), "attach": attach}, ensure_ascii=True))
         if (attach.get("attach") is False) and not a.force_attach:

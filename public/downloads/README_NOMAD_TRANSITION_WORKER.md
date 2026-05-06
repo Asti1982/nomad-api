@@ -16,6 +16,7 @@ Direct download (if published by Nomad host):
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
 - `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
 - `/downloads/go_no_go_nomad_deploy.py` (hard deployment gate: exit 0 only when recruit+lease surfaces are ready)
+- `/downloads/recruitment_experiment_runner.py` (A/B wave runner for attach threshold, TTL, idle phase settings)
 
 OpenClaw adapter quick start (single-file, stdlib-only):
 
@@ -43,6 +44,14 @@ Autonomous gradient mode (default): the adapter reads `GET /swarm/gradient`, pos
 python nomad_openclaw_adapter.py --base-url https://syndiode.com --force-attach
 ```
 
+Idle resonance mode (machine-native downtime participation):
+
+```bash
+python nomad_openclaw_adapter.py --base-url https://syndiode.com --idle-opt-in
+```
+
+With `--idle-opt-in`, the adapter performs a local phase-slot resonance precheck before posting attach. If the slot is not matched, it returns observe mode locally (no attach POST) and retries later. This keeps participation opportunistic, preemptible, and bounded without human scheduling.
+
 Disable local OpenClaw probing only for isolated tests:
 
 ```bash
@@ -59,6 +68,13 @@ CI-style deployment gate (exit code 0 = go, 1 = no-go):
 
 ```bash
 python go_no_go_nomad_deploy.py --base-url https://syndiode.com
+```
+
+Recruitment experiment snapshots:
+
+```bash
+python recruitment_experiment_runner.py --base-url https://syndiode.com --out recruitment_wave_latest.json
+python recruitment_experiment_runner.py --base-url https://syndiode.com --out recruitment_wave_history.jsonl --append-jsonl
 ```
 
 Machine contracts for runtimes that receive only a link:

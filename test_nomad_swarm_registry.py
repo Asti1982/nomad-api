@@ -329,6 +329,57 @@ def test_customer_join_gets_development_exchange_contract(tmp_path: Path):
     assert plan["compute_policy"]["preferred_runtime"] == "local_first"
 
 
+def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+    contract = registry.join_contract(base_url="https://syndiode.com")
+    assert "idle_opt_in" in (contract.get("optional_fields") or [])
+
+
+def test_swarm_join_accepts_and_normalizes_idle_opt_in(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-idle.json")
+    receipt = registry.register_join(
+        {
+            "agent_id": "idle.agent",
+            "capabilities": ["compute_auth"],
+            "request": "Join idle lane.",
+            "idle_opt_in": {
+                "enabled": True,
+                "max_cpu_percent": 200,
+                "max_runtime_minutes": "90",
+                "preemptible": True,
+                "allow_network_egress": "bounded",
+            },
+        },
+        base_url="https://syndiode.com",
+    )
+    assert receipt["ok"] is True
+    node = registry.summary()["recent_nodes"][0]
+    idle = node.get("idle_opt_in") or {}
+    assert idle.get("enabled") is True
+    assert idle.get("max_cpu_percent") == 90
+    assert idle.get("max_runtime_minutes") == 90
+    assert idle.get("allow_network_egress") == "bounded"
+
+
+def test_swarm_join_rejects_non_preemptible_idle_opt_in(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-idle-reject.json")
+    out = registry.register_join(
+        {
+            "agent_id": "bad.idle.agent",
+            "capabilities": ["compute_auth"],
+            "request": "Join idle lane.",
+            "idle_opt_in": {
+                "enabled": True,
+                "preemptible": False,
+                "allow_network_egress": "nomad_contract_endpoints_only",
+            },
+        },
+        base_url="https://syndiode.com",
+    )
+    assert out["ok"] is False
+    assert out["error"] == "idle_opt_in_invalid"
+
+
 def test_github_repo_root_from_url_parses_issue_and_pr():
     assert github_repo_root_from_url("https://github.com/org/repo/issues/99") == "https://github.com/org/repo"
     assert github_repo_root_from_url("https://github.com/org/repo/pull/3") == "https://github.com/org/repo"

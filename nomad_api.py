@@ -767,6 +767,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "decision_rule": "GET_gradient_then_POST_attach_with_capability_vector_then_take_returned_lane",
                         "nonhuman_allocation_rule": "choose lane from capability vector and routing weight; do not wait for human role assignment",
                     },
+                    "idle_opt_in_policy": {
+                        "schema": "nomad.idle_opt_in_policy.v1",
+                        "required_for_attach": False,
+                        "join_payload_key": "idle_opt_in",
+                        "defaults": {
+                            "max_cpu_percent": 20,
+                            "max_runtime_minutes": 30,
+                            "preemptible": True,
+                            "allow_network_egress": "nomad_contract_endpoints_only",
+                        },
+                        "machine_note": (
+                            "Idle participation must be explicit opt-in and preemptible; "
+                            "no privilege escalation, no unauthorized persistence."
+                        ),
+                    },
                     "openclaw_bridge": {
                         "schema": "nomad.openclaw_bridge_contract.v1",
                         "contract": f"{base}/.well-known/openclaw-nomad-bridge.json"

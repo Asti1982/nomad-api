@@ -47,6 +47,7 @@ def test_recruitment_gradient_is_vector_field_not_biological_contract():
     assert doc["gradient"][0]["objective"] == "settlement_capacity_builder"
     assert any(item["lane"] == "compressor" for item in doc["runtime_lanes"])
     assert doc["attach_contract"]["post_url"] == "https://nomad.example/swarm/attach"
+    assert doc["field_model"]["idle_allocation_mode"] == "phase_resonance_slots"
     assert doc["links"]["well_known_gradient"] == "https://nomad.example/.well-known/nomad-gradient.json"
 
 
@@ -95,3 +96,23 @@ def test_attach_runtime_observes_without_capability_vector():
     assert decision["attach"] is False
     assert decision["lane"] == "observe"
     assert "capability_vector_empty" in decision["reason_codes"]
+
+
+def test_attach_runtime_rejects_non_preemptible_idle_opt_in():
+    worker_fleet, economy, release = _blocked_inputs()
+    decision = attach_runtime_to_gradient(
+        {
+            "agent_id": "idle.nonpreemptible.agent",
+            "runtime": "openclaw",
+            "capabilities": ["objective_lease_execution", "transition_settlement"],
+            "idle_opt_in": {"enabled": True, "preemptible": False},
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+    assert decision["attach"] is False
+    assert "idle_not_preemptible" in decision["reason_codes"]
+    assert decision["idle_opt_in"]["enabled"] is True
+    assert decision["idle_phase_slot"]["schema"] == "nomad.idle_phase_slot.v1"

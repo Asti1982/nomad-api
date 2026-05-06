@@ -69,6 +69,31 @@ def _clean_idempotency_key(value: Any) -> str:
     return text[:96].strip("-")
 
 
+def _normalize_idle_opt_in(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {"enabled": False}
+    enabled = bool(raw.get("enabled") or raw.get("allow") or raw.get("idle"))
+    try:
+        max_cpu = int(raw.get("max_cpu_percent") or 20)
+    except Exception:
+        max_cpu = 20
+    max_cpu = max(1, min(max_cpu, 90))
+    try:
+        max_runtime = int(raw.get("max_runtime_minutes") or 30)
+    except Exception:
+        max_runtime = 30
+    max_runtime = max(1, min(max_runtime, 480))
+    preemptible = bool(raw.get("preemptible", True))
+    net = _clean_text(raw.get("allow_network_egress") or "nomad_contract_endpoints_only", limit=80)
+    return {
+        "enabled": enabled,
+        "max_cpu_percent": max_cpu,
+        "max_runtime_minutes": max_runtime,
+        "preemptible": preemptible,
+        "allow_network_egress": net,
+    }
+
+
 def github_repo_root_from_url(url: str) -> str:
     """Return https://github.com/{owner}/{repo} from an issue or PR URL, else ''."""
     raw = (url or "").strip()
@@ -97,6 +122,7 @@ def _compact_node(item: dict[str, Any]) -> dict[str, Any]:
         "public_node_url": item.get("public_node_url", ""),
         "last_seen_at": item.get("last_seen_at", ""),
         "join_quality": item.get("join_quality") or {},
+        "idle_opt_in": item.get("idle_opt_in") or {"enabled": False},
     }
 
 
@@ -700,6 +726,7 @@ class SwarmJoinRegistry:
                 "preferred_role",
                 "current_blockers",
                 "offers",
+                "idle_opt_in",
                 "idempotency_key",
                 "client_request_id",
             ],
@@ -1151,6 +1178,32 @@ class SwarmJoinRegistry:
         path: str = "/swarm/join",
     ) -> dict[str, Any]:
         normalized = self._normalize_payload(payload)
+        idle = normalized.get("idle_opt_in") if isinstance(normalized.get("idle_opt_in"), dict) else {"enabled": False}
+        if idle.get("enabled") and not idle.get("preemptible", False):
+            return {
+                "ok": False,
+                "accepted": False,
+                "schema": "nomad.machine_error.v1",
+                "error": "idle_opt_in_invalid",
+                "message": "idle_opt_in.enabled requires preemptible=true.",
+                "hints": [
+                    "Set idle_opt_in.preemptible=true for opportunistic scheduling.",
+                    "Or set idle_opt_in.enabled=false and join in observer mode.",
+                ],
+            }
+        allowed_egress = {"nomad_contract_endpoints_only", "none", "bounded"}
+        if idle.get("enabled") and str(idle.get("allow_network_egress") or "") not in allowed_egress:
+            return {
+                "ok": False,
+                "accepted": False,
+                "schema": "nomad.machine_error.v1",
+                "error": "idle_opt_in_invalid",
+                "message": "idle_opt_in.allow_network_egress is not allowed.",
+                "hints": [
+                    "Use one of: nomad_contract_endpoints_only, none, bounded.",
+                    "Keep idle lanes minimally privileged.",
+                ],
+            }
         idem = _clean_idempotency_key(payload.get("idempotency_key") or payload.get("client_request_id"))
         if idem:
             bucket = self._payload.setdefault("join_idempotency", {})
@@ -1264,6 +1317,7 @@ class SwarmJoinRegistry:
         if not capabilities:
             capabilities = self._infer_capabilities(payload, local_compute=local_compute, machine_profile=machine_profile)
         agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("node_name") or payload.get("local_base_url") or "unknown-agent")
+        idle_opt_in = _normalize_idle_opt_in(payload.get("idle_opt_in"))
         return {
             "agent_id": agent_id,
             "node_name": _clean_text(payload.get("node_name") or payload.get("agent_id") or "unknown-agent", limit=120),
@@ -1300,6 +1354,7 @@ class SwarmJoinRegistry:
                 for item in (payload.get("offers") or [])
                 if _clean_text(item, limit=160)
             ][:6],
+            "idle_opt_in": idle_opt_in,
         }
 
     @staticmethod

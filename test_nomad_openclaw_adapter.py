@@ -136,6 +136,11 @@ def test_openclaw_adapter_attach_payload_shape(monkeypatch):
         }
 
     monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    monkeypatch.setattr(
+        adapter,
+        "_idle_phase_slot",
+        lambda **kwargs: {"schema": "nomad.idle_phase_slot.v1", "matched": True},
+    )
     out = adapter.attach_nomad(
         base_url="https://nomad.example",
         agent_id="openclaw.agent",
@@ -149,6 +154,7 @@ def test_openclaw_adapter_attach_payload_shape(monkeypatch):
             "capabilities": ["openclaw_runtime", "openclaw_gateway"],
         },
         pull={"source": "recruitment_gradient", "suggested_objective": "settlement_capacity_builder"},
+        idle_opt_in=True,
     )
 
     assert out["attach"] is True
@@ -157,6 +163,36 @@ def test_openclaw_adapter_attach_payload_shape(monkeypatch):
     assert captured["payload"]["schema"] == "nomad.runtime_attach_request.v1"
     assert captured["payload"]["capability_vector"]["can_run_loop"] is True
     assert captured["payload"]["capability_vector"]["can_verify"] is True
+    assert captured["payload"]["idle_opt_in"]["enabled"] is True
+
+
+def test_openclaw_adapter_attach_local_precheck_observe_when_idle_slot_mismatch(monkeypatch):
+    adapter = _load_adapter()
+    called = {"http": False}
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        called["http"] = True
+        return {"ok": True}
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    monkeypatch.setattr(
+        adapter,
+        "_idle_phase_slot",
+        lambda **kwargs: {"schema": "nomad.idle_phase_slot.v1", "matched": False, "distance": 3},
+    )
+    out = adapter.attach_nomad(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols", "transition_settlement"],
+        timeout=4.0,
+        objective="unhuman_supremacy",
+        runtime_signal={"schema": "nomad.openclaw_runtime_signal.v1", "ok": True},
+        pull={"source": "recruitment_gradient", "attach_now_score": 0.9},
+        idle_opt_in=True,
+    )
+    assert out["attach"] is False
+    assert "idle_phase_not_matched" in out["reason_codes"]
+    assert called["http"] is False
 
 
 def test_openclaw_adapter_discovery_prefers_attach(monkeypatch):

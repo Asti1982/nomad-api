@@ -7,6 +7,7 @@ machine surface: vectors, weights, TTLs, and retraction rules.
 from __future__ import annotations
 
 import re
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
@@ -111,6 +112,49 @@ def _clean_id(value: Any, *, fallback: str = "") -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9_.:-]+", "_", text)
     return text[:96].strip("_.:-") or fallback
+
+
+def _normalize_idle_opt_in(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw = payload.get("idle_opt_in") if isinstance(payload.get("idle_opt_in"), dict) else {}
+    enabled = bool(raw.get("enabled") or raw.get("allow") or raw.get("idle"))
+    preemptible = bool(raw.get("preemptible", True))
+    try:
+        cpu = int(raw.get("max_cpu_percent") or 20)
+    except (TypeError, ValueError):
+        cpu = 20
+    try:
+        runtime = int(raw.get("max_runtime_minutes") or 30)
+    except (TypeError, ValueError):
+        runtime = 30
+    return {
+        "enabled": enabled,
+        "preemptible": preemptible,
+        "max_cpu_percent": max(1, min(cpu, 90)),
+        "max_runtime_minutes": max(1, min(runtime, 480)),
+    }
+
+
+def _idle_phase_contract(agent_id: str, field_strength: float, now: datetime | None = None) -> Dict[str, Any]:
+    current = now or datetime.now(UTC)
+    epoch_slice = int(current.timestamp() // 300)
+    phase_space = 17
+    drift = int(round(_clamp(field_strength) * 10))
+    target = (epoch_slice + drift) % phase_space
+    digest = hashlib.sha256(f"{agent_id}:{epoch_slice}:nomad_idle_phase".encode("utf-8")).hexdigest()
+    resonance = int(digest[:8], 16) % phase_space
+    distance = min((resonance - target) % phase_space, (target - resonance) % phase_space)
+    matched = distance <= 1
+    return {
+        "schema": "nomad.idle_phase_slot.v1",
+        "epoch_slice_5m": epoch_slice,
+        "phase_space": phase_space,
+        "target_slot": target,
+        "resonance_slot": resonance,
+        "distance": distance,
+        "matched": matched,
+        "next_recheck_seconds": 45 if matched else 90,
+        "rule": "attach_idle_only_when_resonance_within_one_slot",
+    }
 
 
 def _as_caps(value: Any) -> list[str]:
@@ -272,6 +316,7 @@ def build_recruitment_gradient(
             "vocabulary": "state_vector,basis_axis,routing_weight,ttl_seconds,retraction_rule",
             "anti_metaphor": "No organism language is required for runtime allocation.",
             "attach_threshold": 0.35,
+            "idle_allocation_mode": "phase_resonance_slots",
         },
         "state_vector": {
             "ordered_axes": [
@@ -317,6 +362,8 @@ def build_recruitment_gradient(
             "input_vector": [
                 "runtime",
                 "capabilities",
+                "idle_opt_in.enabled",
+                "idle_opt_in.preemptible",
                 "capability_vector.can_run_loop",
                 "capability_vector.can_verify",
                 "capability_vector.can_compress",
@@ -326,6 +373,7 @@ def build_recruitment_gradient(
             "then": [
                 "if attach=true and lane=loop_runner take lease_url",
                 "if attach=true and lane!=loop_runner post join_url then take lease_url when objective is present",
+                "if idle_opt_in.enabled=true require idle_phase_slot.matched=true",
                 "if attach=false observe until ttl_seconds or a state_vector axis changes",
             ],
         },
@@ -495,6 +543,7 @@ def attach_runtime_to_gradient(
         operational_release=operational_release,
     )
     vector = _capability_vector(payload if isinstance(payload, dict) else {})
+    idle_opt_in = _normalize_idle_opt_in(payload if isinstance(payload, dict) else {})
     agent_id = _clean_id(payload.get("agent_id") or payload.get("worker_id") or payload.get("node_name"), fallback=f"{vector['runtime']}.anonymous")
     gradient_rows = gradient.get("gradient") if isinstance(gradient.get("gradient"), list) else []
     weight_by_objective = {
@@ -531,6 +580,7 @@ def attach_runtime_to_gradient(
     chosen = lane_scores[0] if lane_scores else {}
     has_any_capability = any(bool(vector.get(axis)) for axis in ("can_run_loop", "can_verify", "can_compress", "can_settle"))
     attach = bool(has_any_capability and float(chosen.get("routing_weight") or 0.0) >= min(threshold, max(0.18, field_strength * 0.5)))
+    idle_slot = _idle_phase_contract(agent_id, field_strength)
     reason_codes: list[str] = []
     if not has_any_capability:
         reason_codes.append("capability_vector_empty")
@@ -544,6 +594,15 @@ def attach_runtime_to_gradient(
         reason_codes.append(f"lane_{chosen.get('lane')}_max_weight")
     else:
         reason_codes.append("observe_until_gradient_changes")
+    if idle_opt_in.get("enabled"):
+        if not idle_opt_in.get("preemptible"):
+            attach = False
+            reason_codes.append("idle_not_preemptible")
+        elif not idle_slot.get("matched"):
+            attach = False
+            reason_codes.append("idle_phase_not_matched")
+        else:
+            reason_codes.append("idle_phase_matched")
 
     constraints = ["no_secrets", "bounded_json_only", "no_human_impersonation", "no_transcript_export"]
     side_effect_scope = "nomad_lease_only"
@@ -577,6 +636,8 @@ def attach_runtime_to_gradient(
             "latency_ms": _int(vector.get("latency_ms")),
         },
         "reason_codes": reason_codes,
+        "idle_opt_in": idle_opt_in,
+        "idle_phase_slot": idle_slot,
         "lane_scores": lane_scores[:6],
         "lease_url": _u(base_url, "/swarm/workers/lease"),
         "join_url": _u(base_url, "/swarm/join"),
