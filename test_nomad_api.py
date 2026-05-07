@@ -208,6 +208,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-machine-product.json" in doc["paths"]
     assert "/agent-product" in doc["paths"]
     assert "/machine-product" in doc["paths"]
+    assert "/contract-conformance" in doc["paths"]
+    assert "/.well-known/nomad-contract-conformance.json" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]

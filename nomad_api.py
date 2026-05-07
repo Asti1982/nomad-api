@@ -16,6 +16,7 @@ from nomad_idle_runtime_beacon import (
 from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
 from nomad_machine_field import build_machine_field, machine_field_intent
+from nomad_contract_conformance import build_contract_conformance_snapshot
 from nomad_machine_product_surface import build_machine_product_surface, compact_machine_product_surface
 from nomad_nonhuman_science import nonhuman_agent_science
 from nomad_opaque_emergence import (
@@ -134,6 +135,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             machine_economy=economy,
             operational_release=release,
             swarm_summary=summary,
+        )
+
+    @classmethod
+    def _build_contract_conformance(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        openapi_doc = build_openapi_document(base_url=base_url)
+        return build_contract_conformance_snapshot(
+            base_url=base_url,
+            machine_product_surface=product,
+            openapi_document=openapi_doc,
         )
 
     @classmethod
@@ -549,6 +561,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/agent-product", "/machine-product", "/.well-known/nomad-machine-product.json"}:
             self._json_response(self.__class__._build_machine_product_surface(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/contract-conformance", "/.well-known/nomad-contract-conformance.json"}:
+            self._json_response(self.__class__._build_contract_conformance(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import hashlib
+import math
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
@@ -268,6 +269,44 @@ def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any], pressur
     return rows
 
 
+def _apply_bandit_beacon(
+    rows: List[Dict[str, Any]],
+    fitness_map: Dict[str, Any] | None = None,
+    *,
+    exploration_cap: float = 0.12,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    total_runs = 0
+    for raw in (fitness_map or {}).values():
+        if isinstance(raw, dict):
+            total_runs += max(0, _int(raw.get("runs")))
+    rows_out: list[dict[str, Any]] = []
+    bonus_cap = _clamp(exploration_cap, 0.0, 0.2)
+    for row in rows:
+        objective = str(row.get("objective") or "")
+        fit = (fitness_map or {}).get(objective) if isinstance((fitness_map or {}).get(objective), dict) else {}
+        runs = max(0, _int((fit or {}).get("runs")))
+        # UCB-like bounded exploration: less-observed objectives receive a small temporary bonus.
+        bandit_bonus = min(
+            bonus_cap,
+            bonus_cap * ((max(0.0, math.log1p(float(total_runs))) / float(runs + 1)) ** 0.5),
+        )
+        base_weight = _num(row.get("routing_weight"))
+        final_weight = _clamp(base_weight + bandit_bonus)
+        item = dict(row)
+        item["routing_weight_base"] = round(base_weight, 4)
+        item["bandit_beacon_bonus"] = round(bandit_bonus, 4)
+        item["routing_weight"] = round(final_weight, 4)
+        rows_out.append(item)
+    rows_out.sort(key=lambda item: (float(item.get("routing_weight") or 0.0), float(item.get("deficit") or 0.0)), reverse=True)
+    return rows_out, {
+        "schema": "nomad.bandit_beacon_router.v1",
+        "enabled": True,
+        "strategy": "bounded_ucb_exploration",
+        "total_runs": int(total_runs),
+        "exploration_bonus_cap": round(bonus_cap, 4),
+    }
+
+
 def build_recruitment_gradient(
     *,
     base_url: str = "",
@@ -286,7 +325,13 @@ def build_recruitment_gradient(
         if isinstance(selection_pressure.get("objective_pressure"), dict)
         else {}
     )
-    gradient = _objective_rows(fleet, state, pressure_map=pressure_map)
+    fitness_map = (
+        selection_pressure.get("objective_fitness")
+        if isinstance(selection_pressure.get("objective_fitness"), dict)
+        else {}
+    )
+    gradient_base = _objective_rows(fleet, state, pressure_map=pressure_map)
+    gradient, bandit_beacon = _apply_bandit_beacon(gradient_base, fitness_map=fitness_map)
     weights = {str(item["objective"]): float(item["routing_weight"]) for item in gradient}
     top_objective = str((gradient[0] if gradient else {}).get("objective") or "settlement_capacity_builder")
     wanted_workers = max(0, min(64, round((12 - _num(state.get("known_workers"))) + 10 * _num(state.get("field_strength")))))
@@ -355,6 +400,7 @@ def build_recruitment_gradient(
         ],
         "gradient": gradient,
         "selection_pressure": selection_pressure,
+        "bandit_beacon": bandit_beacon,
         "runtime_lanes": runtime_lanes,
         "runtime_budget": {
             "policy": "increase_runtimes_only_where_weighted_routes_return_proof",

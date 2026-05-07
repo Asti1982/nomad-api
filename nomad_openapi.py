@@ -327,6 +327,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/contract-conformance": {
+                "get": {
+                    "summary": "Contract stability conformance snapshot for stable machine endpoints",
+                    "operationId": "getContractConformance",
+                    "responses": {
+                        "200": {"description": "Machine contract conformance report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-contract-conformance.json": {
+                "get": {
+                    "summary": "Alias of /contract-conformance",
+                    "operationId": "getContractConformanceWellKnown",
+                    "responses": {
+                        "200": {"description": "Machine contract conformance report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-idle-runtime.json": {
                 "get": {
                     "summary": "Opt-in beacon for idle runtimes seeking a useful objective",
