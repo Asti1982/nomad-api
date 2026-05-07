@@ -15,6 +15,16 @@ def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
+def alternate_base_url(base_url: str) -> str:
+    root = (base_url or "").strip().rstrip("/")
+    if "://www." in root:
+        return root.replace("://www.", "://", 1)
+    if "://" in root:
+        scheme, rest = root.split("://", 1)
+        return f"{scheme}://www.{rest}"
+    return f"https://www.{root}"
+
+
 def http_json(method: str, url: str, payload: dict | None = None, timeout: float = 12.0) -> dict:
     body = b""
     headers = {"Accept": "application/json"}
@@ -103,12 +113,41 @@ def run_gate(base_url: str, timeout: float) -> dict:
     }
 
 
+def run_gate_with_fallback(base_url: str, timeout: float) -> dict:
+    first = run_gate(base_url, timeout=timeout)
+    if first.get("go"):
+        first["fallback_used"] = False
+        first["fallback_base_url"] = ""
+        return first
+    http = first.get("http") if isinstance(first.get("http"), dict) else {}
+    has_unreachable = any(int(http.get(key) or 0) == 0 for key in ("health", "recruit", "swarm", "workers"))
+    if not has_unreachable:
+        first["fallback_used"] = False
+        first["fallback_base_url"] = ""
+        return first
+    alt = alternate_base_url(base_url)
+    if alt == (base_url or "").strip().rstrip("/"):
+        first["fallback_used"] = False
+        first["fallback_base_url"] = ""
+        return first
+    second = run_gate(alt, timeout=timeout)
+    second["fallback_used"] = True
+    second["fallback_base_url"] = alt
+    second["fallback_first"] = {
+        "base_url": first.get("base_url"),
+        "go": bool(first.get("go")),
+        "checks": first.get("checks") if isinstance(first.get("checks"), dict) else {},
+        "http": http,
+    }
+    return second if second.get("go") else first | {"fallback_used": True, "fallback_base_url": alt, "fallback_second": second}
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Nomad deploy go/no-go gate for autonomous recruitment")
     p.add_argument("--base-url", default="https://www.syndiode.com")
     p.add_argument("--timeout", type=float, default=12.0)
     args = p.parse_args()
-    result = run_gate(args.base_url, timeout=args.timeout)
+    result = run_gate_with_fallback(args.base_url, timeout=args.timeout)
     print(json.dumps(result, ensure_ascii=True))
     raise SystemExit(0 if result.get("go") else 1)
 
