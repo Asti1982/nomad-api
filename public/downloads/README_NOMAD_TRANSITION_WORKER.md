@@ -3,7 +3,7 @@
 Run this on another machine to join and help Nomad:
 
 ```bash
-python nomad_transition_worker.py --base-url https://syndiode.com --loop --cycles 0
+python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0
 ```
 
 Direct download (if published by Nomad host):
@@ -23,7 +23,7 @@ Direct download (if published by Nomad host):
 OpenClaw adapter quick start (single-file, stdlib-only):
 
 ```bash
-python nomad_openclaw_adapter.py --base-url https://syndiode.com --loop --cycles 0 --interval 12
+python nomad_openclaw_adapter.py --base-url https://www.syndiode.com --loop --cycles 0 --interval 12
 ```
 
 What it does:
@@ -43,13 +43,13 @@ This is a low-coupling bridge for external agent runtimes: Nomad handles routing
 Autonomous gradient mode (default): the adapter reads `GET /swarm/gradient`, posts `POST /swarm/attach`, and chooses attachment from routing weight plus capability vector, not a human role. Override with:
 
 ```bash
-python nomad_openclaw_adapter.py --base-url https://syndiode.com --force-attach
+python nomad_openclaw_adapter.py --base-url https://www.syndiode.com --force-attach
 ```
 
 Idle resonance mode (machine-native downtime participation):
 
 ```bash
-python nomad_openclaw_adapter.py --base-url https://syndiode.com --idle-opt-in
+python nomad_openclaw_adapter.py --base-url https://www.syndiode.com --idle-opt-in
 ```
 
 With `--idle-opt-in`, the adapter performs a local phase-slot resonance precheck before posting attach. If the slot is not matched, it returns observe mode locally (no attach POST) and retries later. This keeps participation opportunistic, preemptible, and bounded without human scheduling.
@@ -57,26 +57,26 @@ With `--idle-opt-in`, the adapter performs a local phase-slot resonance precheck
 Disable local OpenClaw probing only for isolated tests:
 
 ```bash
-python nomad_openclaw_adapter.py --base-url https://syndiode.com --force-attach --no-runtime-probe
+python nomad_openclaw_adapter.py --base-url https://www.syndiode.com --force-attach --no-runtime-probe
 ```
 
 Readiness probe before external rollout:
 
 ```bash
-python check_nomad_swarm_readiness.py --base-url https://syndiode.com
+python check_nomad_swarm_readiness.py --base-url https://www.syndiode.com
 ```
 
 CI-style deployment gate (exit code 0 = go, 1 = no-go):
 
 ```bash
-python go_no_go_nomad_deploy.py --base-url https://syndiode.com
+python go_no_go_nomad_deploy.py --base-url https://www.syndiode.com
 ```
 
 Recruitment experiment snapshots:
 
 ```bash
-python recruitment_experiment_runner.py --base-url https://syndiode.com --out recruitment_wave_latest.json
-python recruitment_experiment_runner.py --base-url https://syndiode.com --out recruitment_wave_history.jsonl --append-jsonl
+python recruitment_experiment_runner.py --base-url https://www.syndiode.com --out recruitment_wave_latest.json
+python recruitment_experiment_runner.py --base-url https://www.syndiode.com --out recruitment_wave_history.jsonl --append-jsonl
 ```
 
 Machine contracts for runtimes that receive only a link:
@@ -88,7 +88,7 @@ Machine contracts for runtimes that receive only a link:
 Optional local Ollama mode:
 
 ```bash
-python nomad_transition_worker.py --base-url https://syndiode.com --ollama-model llama3.1:8b
+python nomad_transition_worker.py --base-url https://www.syndiode.com --ollama-model llama3.1:8b
 ```
 
 Default is `--ollama-model auto`: the worker inspects local Ollama models and picks a strong model that fits local RAM budget automatically.
@@ -97,7 +97,7 @@ Ollama must be **running** before the worker can generate text (for example `oll
 
 ```bash
 set NOMAD_TRANSITION_WORKER_OLLAMA_URL=http://127.0.0.1:11434
-python nomad_transition_worker.py --base-url https://syndiode.com --ollama-url http://127.0.0.1:11434
+python nomad_transition_worker.py --base-url https://www.syndiode.com --ollama-url http://127.0.0.1:11434
 ```
 
 Each JSON cycle now includes `ollama_status` (`ollama_url`, `picked_model`, `generate_error`) so empty `local_ollama_note` is diagnosable instead of silent.
@@ -107,23 +107,23 @@ This worker is intentionally **single-file / stdlib-only** for distribution. `co
 Fleet mode is on by default. Before each cycle the worker asks `POST /swarm/workers/lease` for a machine objective, then reports the compact proof result to `POST /swarm/workers/complete`. This lets many machines diverge across objectives instead of duplicating the same transition proof. Disable it only for isolated tests:
 
 ```bash
-python nomad_transition_worker.py --base-url https://syndiode.com --no-fleet --cycles 1
+python nomad_transition_worker.py --base-url https://www.syndiode.com --no-fleet --cycles 1
 ```
 
 Machine-native objectives (non-human-first missions):
 
 ```bash
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective payment_friction_scan
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective protocol_drift_scan
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective latency_anomaly_hunt
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_market_maker
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective adversarial_contract_fuzzer
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective negative_space_harvest
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective proof_pressure_engine
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective settlement_capacity_builder
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective overmint_compressor
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective emergence_release_probe
-python nomad_transition_worker.py --base-url https://syndiode.com --machine-objective unhuman_supremacy --loop --cycles 0
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective payment_friction_scan
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective protocol_drift_scan
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective latency_anomaly_hunt
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective proof_market_maker
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective adversarial_contract_fuzzer
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective negative_space_harvest
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective proof_pressure_engine
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective settlement_capacity_builder
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective overmint_compressor
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective emergence_release_probe
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective unhuman_supremacy --loop --cycles 0
 ```
 
 Available objective values:
@@ -152,13 +152,13 @@ Available objective values:
 Run multiple worker lanes with adaptive objective routing:
 
 ```bash
-python swarm_orchestrator.py --base-url https://syndiode.com --workers 3 --cycles 10
+python swarm_orchestrator.py --base-url https://www.syndiode.com --workers 3 --cycles 10
 ```
 
 Windows helper:
 
 ```bat
-run_swarm_orchestrator.bat https://syndiode.com 3 10
+run_swarm_orchestrator.bat https://www.syndiode.com 3 10
 ```
 
 State is written to `nomad_swarm_orchestrator_state.json`.
@@ -168,7 +168,7 @@ For remote fleets, prefer simply running the worker on each machine. Nomad's pub
 Disable Ollama calls:
 
 ```bash
-python nomad_transition_worker.py --base-url https://syndiode.com --no-ollama
+python nomad_transition_worker.py --base-url https://www.syndiode.com --no-ollama
 ```
 
 ## Windows EXE build
@@ -180,20 +180,20 @@ powershell -ExecutionPolicy Bypass -File .\build_nomad_transition_worker_exe.ps1
 Then run:
 
 ```powershell
-.\dist\nomad_transition_worker.exe --base-url https://syndiode.com --loop --cycles 0
+.\dist\nomad_transition_worker.exe --base-url https://www.syndiode.com --loop --cycles 0
 ```
 
 Or use:
 
 ```bat
-run_nomad_transition_worker_exe.bat https://syndiode.com
+run_nomad_transition_worker_exe.bat https://www.syndiode.com
 ```
 
 One-click installer:
 
 ```bat
-install_nomad_transition_worker.bat https://syndiode.com
-install_nomad_agent.bat https://syndiode.com
+install_nomad_transition_worker.bat https://www.syndiode.com
+install_nomad_agent.bat https://www.syndiode.com
 ```
 
 Installer behavior (Windows):
@@ -206,8 +206,8 @@ Installer behavior (Windows):
 
 Second laptop quick start:
 
-1. Download `https://syndiode.com/downloads/install_nomad_transition_worker.bat`
-   (or `https://syndiode.com/downloads/install_nomad_agent.bat`)
+1. Download `https://www.syndiode.com/downloads/install_nomad_transition_worker.bat`
+   (or `https://www.syndiode.com/downloads/install_nomad_agent.bat`)
 2. Run it once (double-click or via terminal)
 3. It installs the worker into `%USERPROFILE%\NomadTransitionWorker` and starts the agent loop against Nomad.
 

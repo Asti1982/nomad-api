@@ -97,7 +97,7 @@ def build_report(base_url: str, timeout: float) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nomad recruitment funnel report")
-    parser.add_argument("--base-url", default="https://syndiode.com")
+    parser.add_argument("--base-url", default="https://www.syndiode.com")
     parser.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args()
     print(json.dumps(build_report(args.base_url, args.timeout), ensure_ascii=True))

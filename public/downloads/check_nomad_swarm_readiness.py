@@ -148,7 +148,7 @@ def check(base_url: str, timeout: float) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Check Nomad swarm readiness for external agent attachment")
-    p.add_argument("--base-url", default="https://syndiode.com")
+    p.add_argument("--base-url", default="https://www.syndiode.com")
     p.add_argument("--timeout", type=float, default=12.0)
     args = p.parse_args()
     print(json.dumps(check(args.base_url, args.timeout), ensure_ascii=True))

@@ -578,7 +578,7 @@ def run_cycle(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="OpenClaw -> Nomad adapter")
-    p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://syndiode.com"))
+    p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://www.syndiode.com"))
     p.add_argument("--agent-id", default=os.getenv("NOMAD_OPENCLAW_AGENT_ID", default_agent_id()))
     p.add_argument("--capabilities", default=os.getenv("NOMAD_OPENCLAW_CAPS", "agent_protocols,transition_settlement,objective_lease_execution"))
     p.add_argument("--objective", default=os.getenv("NOMAD_MACHINE_OBJECTIVE", "unhuman_supremacy"))

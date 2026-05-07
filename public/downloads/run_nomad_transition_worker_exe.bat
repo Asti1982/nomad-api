@@ -1,6 +1,6 @@
 @echo off
 set BASE_URL=%1
-if "%BASE_URL%"=="" set BASE_URL=https://syndiode.com
+if "%BASE_URL%"=="" set BASE_URL=https://www.syndiode.com
 set OLLAMA_URL=%NOMAD_TRANSITION_WORKER_OLLAMA_URL%
 if "%OLLAMA_URL%"=="" set OLLAMA_URL=http://127.0.0.1:11434
 

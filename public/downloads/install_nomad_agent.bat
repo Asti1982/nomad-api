@@ -1,7 +1,7 @@
 @echo off
 setlocal
 set BASE_URL=%1
-if "%BASE_URL%"=="" set BASE_URL=https://syndiode.com
+if "%BASE_URL%"=="" set BASE_URL=https://www.syndiode.com
 set TARGET=%TEMP%\install_nomad_transition_worker.bat
 
 echo Downloading installer from %BASE_URL%...

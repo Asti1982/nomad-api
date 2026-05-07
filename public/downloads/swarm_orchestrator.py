@@ -123,7 +123,7 @@ def _update_lane(state: dict, objective: str, report: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nomad swarm orchestrator")
-    parser.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://syndiode.com"))
+    parser.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://www.syndiode.com"))
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--cycles", type=int, default=1)
     parser.add_argument("--interval", type=float, default=10.0)

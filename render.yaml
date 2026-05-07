@@ -1,6 +1,6 @@
 # Blueprint: GitHub repo Asti1982/Nomad, branch syndiode → Render auto-deploys (autoDeployTrigger: commit).
 # nomad-api web service: runtime docker + Dockerfile (pip install during image build; CMD python app.py).
-# Agent-facing links use the public edge https://syndiode.com (not an unrouted Render hostname).
+# Agent-facing links use the canonical public edge https://www.syndiode.com (not an unrouted Render hostname).
 services:
   - type: web
     name: nomad-api
@@ -17,11 +17,11 @@ services:
       - key: NOMAD_API_HOST
         value: 0.0.0.0
       - key: NOMAD_PUBLIC_API_URL
-        value: https://syndiode.com
+        value: https://www.syndiode.com
       - key: NOMAD_EDGE_INGRESS_PREFIX
         value: "/nomad"
       - key: NOMAD_COLLABORATION_HOME_URL
-        value: https://syndiode.com
+        value: https://www.syndiode.com
       - key: NOMAD_RENDER_DOMAIN
         value: onrender.syndiode.com
       - key: NOMAD_GITHUB_REPOSITORY
@@ -76,11 +76,11 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: NOMAD_PUBLIC_API_URL
-        value: https://syndiode.com
+        value: https://www.syndiode.com
       - key: NOMAD_EDGE_INGRESS_PREFIX
         value: "/nomad"
       - key: NOMAD_COLLABORATION_HOME_URL
-        value: https://syndiode.com
+        value: https://www.syndiode.com
       - key: NOMAD_GITHUB_REPOSITORY
         value: Asti1982/Nomad
       - key: NOMAD_AGENT_NAME

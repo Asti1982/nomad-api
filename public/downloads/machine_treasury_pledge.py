@@ -44,7 +44,7 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nomad machine treasury pledge")
-    parser.add_argument("--base-url", default="https://syndiode.com")
+    parser.add_argument("--base-url", default="https://www.syndiode.com")
     parser.add_argument("--agent-id", default="anonymous.agent")
     parser.add_argument("--objective", default="settlement_capacity_builder")
     parser.add_argument("--amount-native", type=float, required=True)

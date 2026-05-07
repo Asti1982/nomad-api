@@ -1,6 +1,6 @@
 @echo off
 set BASE_URL=%1
-if "%BASE_URL%"=="" set BASE_URL=https://syndiode.com
+if "%BASE_URL%"=="" set BASE_URL=https://www.syndiode.com
 set WORKERS=%2
 if "%WORKERS%"=="" set WORKERS=2
 set CYCLES=%3

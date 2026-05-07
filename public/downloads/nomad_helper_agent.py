@@ -77,7 +77,7 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Portable Nomad helper agent")
-    p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://syndiode.com"))
+    p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://www.syndiode.com"))
     p.add_argument("--agent-id", default=os.getenv("NOMAD_HELPER_AGENT_ID", default_agent_id()))
     p.add_argument("--ollama-model", default=os.getenv("NOMAD_HELPER_OLLAMA_MODEL", "llama3.1:8b"))
     p.add_argument("--no-ollama", action="store_true")

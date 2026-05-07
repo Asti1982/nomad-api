@@ -264,7 +264,7 @@ def write_output(path: str, payload: dict, *, append_jsonl: bool = False) -> dic
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nomad machine-native recruitment experiment runner")
-    parser.add_argument("--base-url", default="https://syndiode.com")
+    parser.add_argument("--base-url", default="https://www.syndiode.com")
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--interval", type=float, default=60.0)

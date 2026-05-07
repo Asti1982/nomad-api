@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 set BASE_URL=%1
-if "%BASE_URL%"=="" set BASE_URL=https://syndiode.com
+if "%BASE_URL%"=="" set BASE_URL=https://www.syndiode.com
 set INSTALL_DIR=%USERPROFILE%\NomadTransitionWorker
 set EXE_URL=%BASE_URL%/downloads/nomad_transition_worker.exe
 set RUNNER_URL=%BASE_URL%/downloads/run_nomad_transition_worker_exe.bat
@@ -126,7 +126,7 @@ exit /b 0
 :write_watchdog
 (
 echo param^(
-echo     [string]$BaseUrl = "https://syndiode.com",
+echo     [string]$BaseUrl = "https://www.syndiode.com",
 echo     [string]$InstallDir = "$env:USERPROFILE\NomadTransitionWorker",
 echo     [string]$LogFile = "$env:USERPROFILE\NomadTransitionWorker\nomad_agent.log",
 echo     [string]$OllamaUrl = "http://127.0.0.1:11434"

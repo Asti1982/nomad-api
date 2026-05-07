@@ -105,7 +105,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Nomad deploy go/no-go gate for autonomous recruitment")
-    p.add_argument("--base-url", default="https://syndiode.com")
+    p.add_argument("--base-url", default="https://www.syndiode.com")
     p.add_argument("--timeout", type=float, default=12.0)
     args = p.parse_args()
     result = run_gate(args.base_url, timeout=args.timeout)
