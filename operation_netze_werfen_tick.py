@@ -27,7 +27,7 @@ def _env_int(name: str, default: int, low: int, high: int) -> int:
 
 
 def _base_url() -> str:
-    return (os.getenv("NOMAD_BASE_URL") or os.getenv("NOMAD_PUBLIC_API_URL") or "https://syndiode.com").strip().rstrip("/")
+    return (os.getenv("NOMAD_BASE_URL") or os.getenv("NOMAD_PUBLIC_API_URL") or "https://www.syndiode.com").strip().rstrip("/")
 
 
 def _alternate_base_url(base: str) -> str:

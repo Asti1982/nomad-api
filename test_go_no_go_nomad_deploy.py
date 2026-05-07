@@ -58,3 +58,33 @@ def test_run_gate_with_fallback_skips_retry_when_not_unreachable(monkeypatch):
     assert out["go"] is False
     assert out["fallback_used"] is False
 
+
+def test_run_gate_with_fallback_retries_on_post_redirect(monkeypatch):
+    mod = _load_module()
+    calls = []
+
+    def fake_run_gate(base_url, timeout):
+        calls.append(base_url)
+        if base_url == "https://syndiode.com":
+            return {
+                "schema": "nomad.deploy_gate.v1",
+                "base_url": base_url,
+                "go": False,
+                "checks": {"lease_ok": False},
+                "http": {"health": 200, "recruit": 200, "swarm": 200, "workers": 200, "lease": 307},
+            }
+        return {
+            "schema": "nomad.deploy_gate.v1",
+            "base_url": base_url,
+            "go": True,
+            "checks": {"lease_ok": True},
+            "http": {"health": 200, "recruit": 200, "swarm": 200, "workers": 200, "lease": 202},
+        }
+
+    monkeypatch.setattr(mod, "run_gate", fake_run_gate)
+    out = mod.run_gate_with_fallback("https://syndiode.com", timeout=2.0)
+    assert out["go"] is True
+    assert out["fallback_used"] is True
+    assert out["fallback_base_url"] == "https://www.syndiode.com"
+    assert calls == ["https://syndiode.com", "https://www.syndiode.com"]
+

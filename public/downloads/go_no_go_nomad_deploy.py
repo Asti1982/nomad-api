@@ -121,7 +121,11 @@ def run_gate_with_fallback(base_url: str, timeout: float) -> dict:
         return first
     http = first.get("http") if isinstance(first.get("http"), dict) else {}
     has_unreachable = any(int(http.get(key) or 0) == 0 for key in ("health", "recruit", "swarm", "workers"))
-    if not has_unreachable:
+    has_redirect = any(
+        int(http.get(key) or 0) in {301, 302, 303, 307, 308}
+        for key in ("health", "recruit", "swarm", "workers", "lease")
+    )
+    if not (has_unreachable or has_redirect):
         first["fallback_used"] = False
         first["fallback_base_url"] = ""
         return first

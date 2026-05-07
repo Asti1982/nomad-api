@@ -223,9 +223,9 @@ def test_service_catalog_prefers_collaboration_home_when_local_api(tmp_path, mon
     desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
     catalog = desk.service_catalog()
 
-    assert catalog["public_api_url"] == "https://syndiode.com"
-    assert catalog["pricing"]["x402"]["verify_endpoint"] == "https://syndiode.com/tasks/x402-verify"
-    assert catalog["agent_attractor_preview"]["agent_attractor_path"] == "https://syndiode.com/agent-attractor"
+    assert catalog["public_api_url"] == "https://www.syndiode.com"
+    assert catalog["pricing"]["x402"]["verify_endpoint"] == "https://www.syndiode.com/tasks/x402-verify"
+    assert catalog["agent_attractor_preview"]["agent_attractor_path"] == "https://www.syndiode.com/agent-attractor"
 
 
 def test_service_request_detects_self_improvement_tasks(tmp_path, monkeypatch):

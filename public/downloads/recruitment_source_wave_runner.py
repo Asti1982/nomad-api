@@ -149,7 +149,7 @@ def run_waves(*, base_url: str, source_tags: list[str], attempts: int, timeout: 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run source-tagged recruitment waves")
-    p.add_argument("--base-url", default="https://syndiode.com")
+    p.add_argument("--base-url", default="https://www.syndiode.com")
     p.add_argument("--attempts-per-source", type=int, default=5)
     p.add_argument("--source-tags", default=",".join(DEFAULT_WAVES))
     p.add_argument("--timeout", type=float, default=20.0)

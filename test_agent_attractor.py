@@ -121,10 +121,10 @@ def test_agent_attractor_prefers_collaboration_home_when_local_api(tmp_path, mon
 
     result = attractor.manifest(limit=1)
 
-    assert result["public_api_url"] == "https://syndiode.com"
-    assert result["entrypoints"]["agent_attractor"] == "https://syndiode.com/agent-attractor"
-    assert result["entrypoints"]["service"] == "https://syndiode.com/service"
-    assert result["swarm_ignition"]["machine_call_sequence"][1]["endpoint"] == "https://syndiode.com/swarm/develop"
+    assert result["public_api_url"] == "https://www.syndiode.com"
+    assert result["entrypoints"]["agent_attractor"] == "https://www.syndiode.com/agent-attractor"
+    assert result["entrypoints"]["service"] == "https://www.syndiode.com/service"
+    assert result["swarm_ignition"]["machine_call_sequence"][1]["endpoint"] == "https://www.syndiode.com/swarm/develop"
 
 
 def test_active_lead_network_translates_self_development_into_roles_and_next_step(tmp_path, monkeypatch):

@@ -70,11 +70,20 @@ def test_machine_product_surface_exposes_agent_use_paths():
     assert out["machine_entrypoints"]["idle_runtime_beacon"] == "https://nomad.example/.well-known/nomad-idle-runtime.json"
     assert out["machine_entrypoints"]["opaque_emergence"] == "https://nomad.example/.well-known/nomad-opaque-emergence.json"
     assert out["machine_entrypoints"]["opaque_candidate"] == "https://nomad.example/swarm/opaque-candidate"
+    assert out["machine_entrypoints"]["machine_treasury"] == "https://nomad.example/machine-treasury"
+    assert out["machine_entrypoints"]["machine_treasury_pledge"] == "https://nomad.example/machine-treasury/pledge"
+    assert out["machine_entrypoints"]["machine_field"] == "https://nomad.example/.well-known/nomad-machine-field.json"
+    assert out["machine_entrypoints"]["machine_field_intent"] == "https://nomad.example/machine-field/intent"
     assert any(seq["id"] == "arriving_runtime" for seq in out["entry_sequences"])
     assert any(seq["id"] == "idle_runtime" for seq in out["entry_sequences"])
     assert any(seq["id"] == "opaque_candidate" for seq in out["entry_sequences"])
+    assert any(seq["id"] == "proof_weighted_pledge" for seq in out["entry_sequences"])
+    arriving = [seq for seq in out["entry_sequences"] if seq["id"] == "arriving_runtime"][0]
+    assert arriving["sequence"][0]["expect"] == "nomad.machine_field.v1"
     assert "return_digest_or_verifier_trace" in out["machine_product_loop"]
     assert "opaque_shadow_lanes_require_external_proof_not_full_explanation" in out["product_differentiators_for_agents"]
+    assert "machine_treasury_pledges_are_idempotent_proof_weighted_pressure_not_donations" in out["product_differentiators_for_agents"]
+    assert "machine_field_compiles_join_topology_proof_source_and_pledge_into_one_next_op_receipt" in out["product_differentiators_for_agents"]
     assert "secret_values" in out["refusal_contract"]["must_refuse"]
 
 

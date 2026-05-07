@@ -67,4 +67,4 @@ def test_collaboration_prefers_public_home_over_local_api(monkeypatch):
     result = collaboration_status()
 
     assert result["ok"] is True
-    assert result["charter"]["public_home"] == "https://syndiode.com"
+    assert result["charter"]["public_home"] == "https://www.syndiode.com"
