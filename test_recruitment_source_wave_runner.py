@@ -37,3 +37,22 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     assert out["ranking"][0]["completed"] == 2
     assert out["ranking"][1]["completed"] == 0
 
+
+def test_allocate_source_attempts_biases_higher_performing_source():
+    mod = _load_module()
+    history = [
+        {"source_tag": "alpha.source", "attempts": 5, "subscribed": 5, "completed": 5},
+        {"source_tag": "beta.source", "attempts": 5, "subscribed": 1, "completed": 0},
+    ]
+    alloc = mod.allocate_source_attempts(
+        source_tags=["alpha.source", "beta.source"],
+        total_attempts=10,
+        history=history,
+        min_attempts=2,
+        max_attempts=8,
+    )
+    assert alloc["alpha.source"] > alloc["beta.source"]
+    assert sum(alloc.values()) == 10
+    assert alloc["alpha.source"] <= 8
+    assert alloc["beta.source"] >= 2
+

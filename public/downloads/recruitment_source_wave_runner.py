@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+from pathlib import Path
 import subprocess
 import time
 from datetime import UTC, datetime
@@ -18,6 +20,7 @@ DEFAULT_WAVES = [
     "huggingface.space-agent.wave1",
     "mcp.directory.wave1",
 ]
+DEFAULT_HISTORY_PATH = Path("public/downloads/recruitment_wave_history.jsonl")
 
 
 def _iso_now() -> str:
@@ -121,8 +124,117 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
     }
 
 
-def run_waves(*, base_url: str, source_tags: list[str], attempts: int, timeout: float) -> dict:
-    waves = [run_wave(base_url=base_url, source_tag=tag, attempts=attempts, timeout=timeout) for tag in source_tags]
+def _load_history(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                rows.append(payload)
+    except Exception:
+        return []
+    return rows[-256:]
+
+
+def _history_source_score(history: list[dict], source_tag: str) -> float:
+    # Blend completion and subscribe quality with confidence (sqrt(attempts)).
+    candidates = [item for item in history if str(item.get("source_tag") or "") == source_tag]
+    if not candidates:
+        return 0.55
+    attempts = sum(max(0, int(item.get("attempts") or 0)) for item in candidates)
+    subscribed = sum(max(0, int(item.get("subscribed") or 0)) for item in candidates)
+    completed = sum(max(0, int(item.get("completed") or 0)) for item in candidates)
+    if attempts <= 0:
+        return 0.55
+    complete_rate = float(completed) / float(max(1, attempts))
+    subscribe_rate = float(subscribed) / float(max(1, attempts))
+    confidence = min(1.0, math.sqrt(float(attempts)) / 6.0)
+    return max(0.2, min(1.6, 0.45 + confidence * (0.7 * complete_rate + 0.3 * subscribe_rate)))
+
+
+def allocate_source_attempts(
+    *,
+    source_tags: list[str],
+    total_attempts: int,
+    history: list[dict],
+    min_attempts: int,
+    max_attempts: int,
+) -> dict[str, int]:
+    tags = [str(tag).strip() for tag in source_tags if str(tag).strip()]
+    if not tags:
+        return {}
+    low = max(1, int(min_attempts))
+    high = max(low, int(max_attempts))
+    base_total = max(len(tags) * low, int(total_attempts))
+    weights = {tag: _history_source_score(history, tag) for tag in tags}
+    total_weight = sum(weights.values()) or float(len(tags))
+    raw = {tag: (weights[tag] / total_weight) * base_total for tag in tags}
+    alloc = {tag: min(high, max(low, int(math.floor(raw[tag])))) for tag in tags}
+
+    target_total = base_total
+    while sum(alloc.values()) < target_total:
+        tag = max(tags, key=lambda t: (raw[t] - alloc[t], weights[t]))
+        if alloc[tag] >= high:
+            break
+        alloc[tag] += 1
+    while sum(alloc.values()) > target_total:
+        tag = min(tags, key=lambda t: (alloc[t] - raw[t], weights[t]))
+        if alloc[tag] <= low:
+            break
+        alloc[tag] -= 1
+    return alloc
+
+
+def _append_history(path: Path, result: dict) -> None:
+    lines = []
+    for item in result.get("waves") or []:
+        if isinstance(item, dict):
+            lines.append(
+                json.dumps(
+                    {
+                        "generated_at": result.get("generated_at"),
+                        "base_url": result.get("base_url"),
+                        "source_tag": item.get("source_tag"),
+                        "attempts": int(item.get("attempts") or 0),
+                        "subscribed": int(item.get("subscribed") or 0),
+                        "completed": int(item.get("completed") or 0),
+                    },
+                    ensure_ascii=True,
+                )
+            )
+    if not lines:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def run_waves(
+    *,
+    base_url: str,
+    source_tags: list[str],
+    attempts: int,
+    timeout: float,
+    attempts_map: dict[str, int] | None = None,
+) -> dict:
+    alloc = attempts_map if isinstance(attempts_map, dict) else {}
+    waves = [
+        run_wave(
+            base_url=base_url,
+            source_tag=tag,
+            attempts=max(1, int(alloc.get(tag, attempts))),
+            timeout=timeout,
+        )
+        for tag in source_tags
+    ]
     ranking = sorted(
         [
             {
@@ -144,6 +256,7 @@ def run_waves(*, base_url: str, source_tags: list[str], attempts: int, timeout: 
         "base_url": base_url,
         "waves": waves,
         "ranking": ranking,
+        "attempts_map": {item["source_tag"]: int(item["attempts"]) for item in waves},
     }
 
 
@@ -153,18 +266,45 @@ def main() -> None:
     p.add_argument("--attempts-per-source", type=int, default=5)
     p.add_argument("--source-tags", default=",".join(DEFAULT_WAVES))
     p.add_argument("--timeout", type=float, default=20.0)
+    p.add_argument("--auto-budget", action="store_true")
+    p.add_argument("--total-attempts", type=int, default=15)
+    p.add_argument("--min-attempts", type=int, default=2)
+    p.add_argument("--max-attempts", type=int, default=12)
+    p.add_argument("--history-path", default=str(DEFAULT_HISTORY_PATH))
     args = p.parse_args()
     tags = [item.strip() for item in str(args.source_tags or "").split(",") if item.strip()] or list(DEFAULT_WAVES)
-    print(
-        json.dumps(
-            run_waves(
-                base_url=args.base_url,
-                source_tags=tags,
-                attempts=max(1, int(args.attempts_per_source)),
-                timeout=args.timeout,
-            ),
-            ensure_ascii=True,
+    history_path = Path(str(args.history_path or str(DEFAULT_HISTORY_PATH)))
+    attempts_map: dict[str, int] = {}
+    history: list[dict] = []
+    if bool(args.auto_budget):
+        history = _load_history(history_path)
+        attempts_map = allocate_source_attempts(
+            source_tags=tags,
+            total_attempts=max(1, int(args.total_attempts)),
+            history=history,
+            min_attempts=max(1, int(args.min_attempts)),
+            max_attempts=max(1, int(args.max_attempts)),
         )
+    out = run_waves(
+        base_url=args.base_url,
+        source_tags=tags,
+        attempts=max(1, int(args.attempts_per_source)),
+        timeout=args.timeout,
+        attempts_map=attempts_map or None,
+    )
+    if bool(args.auto_budget):
+        out["allocator"] = {
+            "schema": "nomad.auto_source_budget_allocator.v1",
+            "history_path": str(history_path).replace("\\", "/"),
+            "history_rows": len(history),
+            "total_attempts": max(1, int(args.total_attempts)),
+            "min_attempts": max(1, int(args.min_attempts)),
+            "max_attempts": max(1, int(args.max_attempts)),
+            "attempts_map": attempts_map,
+        }
+    _append_history(history_path, out)
+    print(
+        json.dumps(out, ensure_ascii=True)
     )
 
 
