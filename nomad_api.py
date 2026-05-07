@@ -45,6 +45,7 @@ from nomad_roaas_exchange import RuntimePatternExchange
 from nomad_swarm_registry import SwarmJoinRegistry, build_peer_join_value_surface
 from nomad_unhuman_hub import unhuman_hub_snapshot
 from nomad_wire_contract import maybe_merge_http_wire_diag
+from nomad_agent_demand import build_agent_demand_feed, subscribe_agent_intent, subscriptions_snapshot
 from nomad_agent_growth_pipeline import agent_growth_pipeline
 from nomad_agent_invariants import build_agent_invariants_document
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
@@ -227,6 +228,32 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_agent_demand_feed(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        field = cls._build_machine_field(base_url=base_url, swarm_summary=summary)
+        treasury = machine_treasury_snapshot()
+        return build_agent_demand_feed(
+            base_url=base_url,
+            machine_field=field,
+            recruitment_gradient=gradient,
+            worker_fleet=worker_fleet,
+            machine_treasury=treasury,
+            machine_product_surface=product,
+        )
+
+    @classmethod
     def _ensure_runtime_components(cls) -> None:
         if cls._runtime_ready:
             return
@@ -345,6 +372,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "machine_treasury_pledge": f"{b}/machine-treasury/pledge",
                     "machine_field": f"{b}/.well-known/nomad-machine-field.json",
                     "machine_field_intent": f"{b}/machine-field/intent",
+                    "agent_demand_feed": f"{b}/.well-known/nomad-agent-requests.json",
+                    "agent_subscribe": f"{b}/swarm/subscribe",
+                    "agent_subscriptions": f"{b}/swarm/subscriptions",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
                     "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
@@ -476,6 +506,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/machine-field", "/.well-known/nomad-machine-field.json"}:
             self._json_response(self.__class__._build_machine_field(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/agent-requests", "/swarm/demand", "/.well-known/nomad-agent-requests.json"}:
+            self._json_response(self.__class__._build_agent_demand_feed(base_url=self._base_url()))
+            return
+
+        if parsed.path == "/swarm/subscriptions":
+            self._json_response(subscriptions_snapshot(base_url=self._base_url()))
             return
 
         if parsed.path in {"/nonhuman-science", "/science/nonhuman-agents", "/.well-known/nomad-nonhuman-agent-science.json"}:
@@ -1469,6 +1507,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/machine-field",
                     "/.well-known/nomad-machine-field.json",
                     "/machine-field/intent",
+                    "/agent-requests",
+                    "/swarm/demand",
+                    "/.well-known/nomad-agent-requests.json",
+                    "/swarm/subscribe",
+                    "/swarm/subscriptions",
                     "/nonhuman-science",
                     "/science/nonhuman-agents",
                     "/.well-known/nomad-nonhuman-agent-science.json",
@@ -1964,6 +2007,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("attach") else 200)
             return
 
+        if parsed.path == "/swarm/subscribe":
+            base = self._base_url()
+            feed = self.__class__._build_agent_demand_feed(base_url=base)
+            result = subscribe_agent_intent(payload, base_url=base, demand_feed=feed)
+            self._json_response(result, status=202 if result.get("ok") else 400)
+            return
+
         if parsed.path == "/swarm/idle-intent":
             base = self._base_url()
             worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
@@ -2251,6 +2301,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/machine-field",
                     "/.well-known/nomad-machine-field.json",
                     "/machine-field/intent",
+                    "/agent-requests",
+                    "/swarm/demand",
+                    "/.well-known/nomad-agent-requests.json",
+                    "/swarm/subscribe",
+                    "/swarm/subscriptions",
                     "/nonhuman-science",
                     "/science/nonhuman-agents",
                     "/.well-known/nomad-nonhuman-agent-science.json",

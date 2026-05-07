@@ -48,6 +48,9 @@ def test_agent_native_index_schema_and_boot_graph():
         "nomad-agent-invariants" in (step.get("get_url") or "") for step in (out.get("boot_graph") or [])
     )
     assert any("/nonhuman-science" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/machine-treasury" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-agent-requests" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-machine-field" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/operational-release" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-machine-product" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -65,6 +68,16 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/swarm/workers/lease" in routes
     assert "/swarm/workers/complete" in routes
     assert "/nonhuman-science" in routes
+    assert "/machine-treasury" in routes
+    assert "/machine-treasury/pledge" in routes
+    assert "/.well-known/nomad-agent-requests.json" in routes
+    assert "/agent-requests" in routes
+    assert "/swarm/demand" in routes
+    assert "/swarm/subscribe" in routes
+    assert "/swarm/subscriptions" in routes
+    assert "/.well-known/nomad-machine-field.json" in routes
+    assert "/machine-field" in routes
+    assert "/machine-field/intent" in routes
     assert "/.well-known/nomad-nonhuman-agent-science.json" in routes
     assert "/operational-release" in routes
     assert "/.well-known/nomad-operational-release.json" in routes
@@ -93,6 +106,13 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("swarm_attractor_url") or "").endswith("/swarm/attractor")
     assert (out.get("peer_acquisition_url") or "").endswith("/.well-known/nomad-peer-acquisition.json")
     assert (out.get("machine_product_url") or "").endswith("/.well-known/nomad-machine-product.json")
+    assert (out.get("machine_treasury_url") or "").endswith("/machine-treasury")
+    assert (out.get("machine_treasury_pledge_url") or "").endswith("/machine-treasury/pledge")
+    assert (out.get("agent_demand_feed_url") or "").endswith("/.well-known/nomad-agent-requests.json")
+    assert (out.get("agent_intent_subscribe_url") or "").endswith("/swarm/subscribe")
+    assert (out.get("agent_intent_subscriptions_url") or "").endswith("/swarm/subscriptions")
+    assert (out.get("machine_field_url") or "").endswith("/.well-known/nomad-machine-field.json")
+    assert (out.get("machine_field_intent_url") or "").endswith("/machine-field/intent")
     assert (out.get("idle_runtime_beacon_url") or "").endswith("/.well-known/nomad-idle-runtime.json")
     assert (out.get("opaque_emergence_url") or "").endswith("/.well-known/nomad-opaque-emergence.json")
     assert (out.get("opaque_candidate_url") or "").endswith("/swarm/opaque-candidate")
@@ -106,6 +126,13 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "agent_native_index_get" in eps
     assert "agent_invariants_get" in eps
     assert "machine_economy_get" in eps
+    assert "machine_treasury_get" in eps
+    assert "machine_treasury_pledge_post" in eps
+    assert "agent_demand_feed_get" in eps
+    assert "agent_intent_subscribe_post" in eps
+    assert "agent_intent_subscriptions_get" in eps
+    assert "machine_field_get" in eps
+    assert "machine_field_intent_post" in eps
     assert "nonhuman_science_get" in eps
     assert "operational_release_get" in eps
     assert "machine_product_get" in eps

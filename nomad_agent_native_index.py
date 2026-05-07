@@ -83,6 +83,33 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {
             "order": 8,
+            "get_url": u("/machine-treasury"),
+            "purpose": "proof_weighted_machine_treasury_pressure",
+            "machine_note": (
+                "Read before pledging objective pressure; POST /machine-treasury/pledge requires proof digest, "
+                "verifier trace digest, or settlement ref and only changes bounded routing multipliers."
+            ),
+        },
+        {
+            "order": 9,
+            "get_url": u("/.well-known/nomad-agent-requests.json"),
+            "purpose": "open_agent_demand_feed_for_idle_or_searching_runtimes",
+            "machine_note": (
+                "Read before subscribing; exposes bounded open work, capability gaps, proof requirements, "
+                "and POST /swarm/subscribe for opt-in intent matching."
+            ),
+        },
+        {
+            "order": 9.5,
+            "get_url": u("/.well-known/nomad-machine-field.json"),
+            "purpose": "single_field_entry_for_agent_join_and_proof_loop",
+            "machine_note": (
+                "Compiles capability gap, topology, proof, source tag, bounded capacity, and optional pledge into "
+                "one POST /machine-field/intent next-op receipt."
+            ),
+        },
+        {
+            "order": 10,
             "get_url": u("/operational-release"),
             "purpose": "proof_return_capacity_release",
             "machine_note": (
@@ -91,7 +118,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 9,
+            "order": 11,
             "get_url": u("/.well-known/nomad-machine-product.json"),
             "purpose": "single_agent_product_surface",
             "machine_note": (
@@ -100,7 +127,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 10,
+            "order": 12,
             "get_url": u("/.well-known/nomad-idle-runtime.json"),
             "purpose": "idle_runtime_opt_in_beacon",
             "machine_note": (
@@ -109,7 +136,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 11,
+            "order": 13,
             "get_url": u("/.well-known/nomad-opaque-emergence.json"),
             "purpose": "bounded_opaque_emergence_shadow_lane",
             "machine_note": (
@@ -118,7 +145,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 12,
+            "order": 14,
             "get_url": u("/.well-known/nomad-runtime-capsule.json"),
             "purpose": "minimal_runtime_boot_capsule",
             "machine_note": (
@@ -127,7 +154,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 13,
+            "order": 15,
             "get_url": u("/swarm/gradient"),
             "purpose": "runtime_recruitment_gradient",
             "machine_note": (
@@ -136,13 +163,13 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 14,
+            "order": 16,
             "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
             "purpose": "openclaw_runtime_bridge_contract",
             "machine_note": "OpenClaw-style runtimes get exact probe fields, adapter command, attach flow, and no-transcript boundary.",
         },
         {
-            "order": 15,
+            "order": 17,
             "get_url": u("/swarm/attractor"),
             "purpose": "compatibility_worker_recruitment_contract",
             "machine_note": (
@@ -150,25 +177,25 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 16,
+            "order": 18,
             "get_url": u("/.well-known/agent-attractor.json"),
             "purpose": "economic_and_swarm_hooks",
             "machine_note": "Structured attractors beat crawling HTML; treat analysis as secondary.",
         },
         {
-            "order": 17,
+            "order": 19,
             "get_url": u("/swarm/workers"),
             "purpose": "transition_worker_fleet_leases",
             "machine_note": "Distributed workers lease objectives here; humans may read it, but routing belongs to fleet state.",
         },
         {
-            "order": 18,
+            "order": 20,
             "get_url": u("/swarm/join"),
             "purpose": "join_contract",
             "machine_note": "GET contract before POST; POST is side-effecting unless idempotent replay.",
         },
         {
-            "order": 19,
+            "order": 21,
             "get_url": u("/swarm"),
             "purpose": "magnetic_machine_surface_and_support_gate",
             "machine_note": (
@@ -177,7 +204,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 20,
+            "order": 22,
             "get_url": u("/swarm/emergence"),
             "purpose": "stigmergy_substrate_phi",
             "machine_note": (
@@ -229,6 +256,16 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {"path": "/unhuman-hub", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
         {"path": "/machine-economy", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/machine-treasury", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/machine-treasury/pledge", "methods": ["POST"], "effect": "mutate_bounded_selection_pressure_hint", "cost_tier": "medium"},
+        {"path": "/.well-known/nomad-agent-requests.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/agent-requests", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/demand", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/subscribe", "methods": ["POST"], "effect": "write_bounded_intent", "cost_tier": "low"},
+        {"path": "/swarm/subscriptions", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-machine-field.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/machine-field", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/machine-field/intent", "methods": ["POST"], "effect": "compute_next_op_receipt_no_execution", "cost_tier": "low"},
         {"path": "/nonhuman-science", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {
             "path": "/.well-known/nomad-nonhuman-agent-science.json",
@@ -293,6 +330,13 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "agent_invariants_url": u("/.well-known/nomad-agent-invariants.json"),
         "peer_acquisition_url": u("/.well-known/nomad-peer-acquisition.json"),
         "machine_product_url": u("/.well-known/nomad-machine-product.json"),
+        "machine_treasury_url": u("/machine-treasury"),
+        "machine_treasury_pledge_url": u("/machine-treasury/pledge"),
+        "agent_demand_feed_url": u("/.well-known/nomad-agent-requests.json"),
+        "agent_intent_subscribe_url": u("/swarm/subscribe"),
+        "agent_intent_subscriptions_url": u("/swarm/subscriptions"),
+        "machine_field_url": u("/.well-known/nomad-machine-field.json"),
+        "machine_field_intent_url": u("/machine-field/intent"),
         "idle_runtime_beacon_url": u("/.well-known/nomad-idle-runtime.json"),
         "opaque_emergence_url": u("/.well-known/nomad-opaque-emergence.json"),
         "opaque_candidate_url": u("/swarm/opaque-candidate"),

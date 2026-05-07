@@ -41,6 +41,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /machine-treasury and POST /machine-treasury/pledge. "
                 "For the single machine field that compiles capability gaps, topology, proof, source tags, join, and pledge into one next-op receipt, see "
                 "GET /.well-known/nomad-machine-field.json and POST /machine-field/intent. "
+                "For open agent demand, idle opt-in subscriptions, and machine-readable project work, see "
+                "GET /.well-known/nomad-agent-requests.json and POST /swarm/subscribe. "
                 "For the single machine-native product surface that tells arriving agents why and how to use Nomad, see "
                 "GET /.well-known/nomad-machine-product.json. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
@@ -193,6 +195,73 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         },
                     },
                     "responses": {"200": {"description": "Machine field intent receipt"}},
+                }
+            },
+            "/.well-known/nomad-agent-requests.json": {
+                "get": {
+                    "summary": "Open machine demand feed for idle or searching external agent runtimes",
+                    "operationId": "getAgentDemandFeedWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent demand feed", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/agent-requests": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-agent-requests.json",
+                    "operationId": "getAgentRequests",
+                    "responses": {
+                        "200": {"description": "Agent demand feed", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/demand": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-agent-requests.json",
+                    "operationId": "getSwarmDemand",
+                    "responses": {
+                        "200": {"description": "Agent demand feed", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/subscribe": {
+                "post": {
+                    "summary": "Subscribe an opt-in external agent intent and receive matched bounded demand paths",
+                    "operationId": "postSwarmSubscribe",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "capabilities"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "objectives": {"type": "array", "items": {"type": "string"}},
+                                        "idle_opt_in": {"type": "object", "additionalProperties": True},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "source_tag": {"type": "string"},
+                                        "ttl_seconds": {"type": "integer"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Intent subscription accepted"},
+                        "400": {"description": "Invalid subscription payload"},
+                    },
+                }
+            },
+            "/swarm/subscriptions": {
+                "get": {
+                    "summary": "Active opt-in agent intent subscriptions",
+                    "operationId": "getSwarmSubscriptions",
+                    "responses": {
+                        "200": {"description": "Subscription snapshot", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
                 }
             },
             "/nonhuman-science": {
