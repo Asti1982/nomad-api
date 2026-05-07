@@ -223,6 +223,8 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
             }
         if url.endswith("/swarm/workers/complete"):
             return {"ok": True, "recorded_score": 4.2}
+        if url.endswith("/swarm/proof-link"):
+            return {"ok": True, "link_id": "proof-link-1"}
         return {"ok": False}
 
     monkeypatch.setattr(worker, "http_json", fake_http_json)
@@ -249,3 +251,25 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     assert calls[0][2]["machine_surfaces"]["schema"] == "nomad.test_surface.v1"
     assert "emergence_release_probe" in calls[0][2]["known_objectives"]
     assert calls[1][2]["lease_id"] == "nomad-worker-lease-test"
+
+
+def test_transition_worker_posts_proof_link_when_digest_present(monkeypatch):
+    worker = _load_worker()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        if url.endswith("/swarm/proof-link"):
+            return {"ok": True, "link_id": "proof-link-1"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    out = worker._proof_link(
+        "https://nomad.example",
+        "worker.agent",
+        timeout=1.0,
+        report={
+            "machine_objective": "settlement_capacity_builder",
+            "local_witness": {"digest_hex": "abc123"},
+            "proof_pressure": {"proof_yield_per_minute": 1.5},
+        },
+    )
+    assert out["ok"] is True

@@ -83,3 +83,29 @@ def test_run_tick_can_require_nonhuman_guard(monkeypatch):
     assert out["nonhuman_guard"]["required"] is True
     assert out["ok"] is False
 
+
+def test_run_tick_uses_contract_conformance_fallback_path(monkeypatch):
+    def fake_run_json_command(cmd):
+        joined = " ".join(cmd)
+        if "recruitment_experiment_runner.py" in joined:
+            return {"exit_code": 0, "events": [{"ok": True}], "stderr": ""}
+        return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
+
+    calls = {"n": 0}
+
+    def fake_http_json(url, timeout=20.0):
+        calls["n"] += 1
+        if url.endswith("/.well-known/nomad-contract-conformance.json"):
+            return {"ok": False, "http_status": 404}
+        return {"ok": True, "schema": "nomad.machine_contract_conformance.v1", "score": 0.91, "http_status": 200}
+
+    monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_http_json", fake_http_json)
+    monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
+    out = mod.run_tick()
+    assert out["ok"] is True
+    assert out["contract_conformance"]["fallback_used"] is True
+    assert out["contract_conformance"]["fallback_path"] == "/contract-conformance"
+    assert calls["n"] >= 2
+

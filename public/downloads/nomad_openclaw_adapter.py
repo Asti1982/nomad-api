@@ -624,6 +624,23 @@ def complete_nomad(*, base_url: str, agent_id: str, lease_id: str, report: dict,
     return http_json("POST", endpoint(base_url, "/swarm/workers/complete"), payload, timeout=timeout)
 
 
+def proof_link_nomad(*, base_url: str, agent_id: str, report: dict, timeout: float) -> dict:
+    upstream = clean(
+        report.get("digest_or_verifier_trace") or report.get("openclaw_trace_digest") or "",
+        180,
+    )
+    if not upstream:
+        return {"ok": False, "skipped": True, "reason": "missing_upstream_digest"}
+    proof_pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    payload = {
+        "consumer_agent_id": agent_id,
+        "objective": clean(report.get("machine_objective"), 80),
+        "upstream_proof_digest": upstream,
+        "downstream_proof_gain": round(max(0.2, min(3.0, float(proof_pressure.get("proof_yield_per_minute") or 0.2))), 4),
+    }
+    return http_json("POST", endpoint(base_url, "/swarm/proof-link"), payload, timeout=timeout)
+
+
 def run_cycle(
     *,
     base_url: str,
@@ -661,6 +678,12 @@ def run_cycle(
         report=report,
         timeout=timeout,
     )
+    proof_link = proof_link_nomad(
+        base_url=base_url,
+        agent_id=agent_id,
+        report=report,
+        timeout=timeout,
+    )
     return {
         "ok": bool(complete.get("ok")),
         "phase": "complete",
@@ -669,6 +692,7 @@ def run_cycle(
         "objective": clean(lease.get("objective") or objective, 80),
         "report": report,
         "complete": complete,
+        "proof_link": proof_link,
     }
 
 

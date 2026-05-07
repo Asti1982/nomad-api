@@ -95,6 +95,19 @@ def _http_json(url: str, timeout: float = 20.0) -> dict:
     return {"ok": False, "http_status": 0, "error": "invalid_json"}
 
 
+def _conformance_snapshot(base: str) -> dict:
+    primary = _http_json(f"{base}/.well-known/nomad-contract-conformance.json")
+    if int(primary.get("http_status") or 0) in {404, 0} or not bool(primary.get("ok")):
+        fallback = _http_json(f"{base}/contract-conformance")
+        if bool(fallback.get("ok")) or int(fallback.get("http_status") or 0) == 200:
+            fallback["fallback_used"] = True
+            fallback["fallback_path"] = "/contract-conformance"
+            return fallback
+    primary["fallback_used"] = False
+    primary["fallback_path"] = ""
+    return primary
+
+
 def run_tick() -> dict:
     base = _base_url()
     probes = _env_int("NOMAD_NETZE_WERFEN_PROBES", default=2, low=1, high=12)
@@ -126,7 +139,7 @@ def run_tick() -> dict:
         "stderr": guard["stderr"],
         "required": guard_required,
     }
-    conformance = _http_json(f"{base}/.well-known/nomad-contract-conformance.json")
+    conformance = _conformance_snapshot(base)
     conformance_score = float(conformance.get("score") or 0.0)
     conformance_ok = bool(conformance.get("ok")) and conformance_score >= conformance_threshold
     out["contract_conformance"] = {
@@ -136,6 +149,8 @@ def run_tick() -> dict:
         "threshold": conformance_threshold,
         "required": conformance_required,
         "http_status": int(conformance.get("http_status") or 0),
+        "fallback_used": bool(conformance.get("fallback_used")),
+        "fallback_path": str(conformance.get("fallback_path") or ""),
     }
 
     def _experiment_cmd(target_base: str) -> list[str]:

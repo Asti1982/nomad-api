@@ -961,6 +961,33 @@ def _worker_fleet_complete(base_url: str, agent_id: str, timeout: float, lease: 
         }
     return data
 
+
+def _proof_link(base_url: str, agent_id: str, timeout: float, report: dict) -> dict[str, object]:
+    upstream = clean(
+        (report.get("digest_or_verifier_trace") if isinstance(report.get("digest_or_verifier_trace"), str) else "")
+        or ((report.get("local_witness") or {}).get("digest_hex") if isinstance(report.get("local_witness"), dict) else "")
+        or "",
+        180,
+    )
+    if not upstream:
+        return {"ok": False, "skipped": True, "reason": "missing_upstream_digest"}
+    proof_pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    gain = max(0.2, min(3.0, float(proof_pressure.get("proof_yield_per_minute") or 0.2)))
+    payload = {
+        "consumer_agent_id": agent_id,
+        "objective": clean(report.get("machine_objective"), 80),
+        "upstream_proof_digest": upstream,
+        "downstream_proof_gain": round(gain, 4),
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/proof-link"), payload, timeout=timeout)
+    if not isinstance(data, dict) or not data.get("ok"):
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "proof_link_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+        }
+    return data
+
 def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items: list[str], replay_result: dict | None) -> dict[str, object]:
     quote_ok = bool(report.get("transition_quote_ok"))
     settle_ok = bool(report.get("transition_settle_ok"))
@@ -1268,6 +1295,12 @@ def main() -> None:
                 lease=fleet_lease,
                 report=report,
             )
+        report["proof_link"] = _proof_link(
+            a.base_url,
+            a.agent_id,
+            timeout=min(8.0, timeout),
+            report=report,
+        )
         _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
         meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
         if report.get("ok"):

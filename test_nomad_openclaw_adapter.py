@@ -21,6 +21,8 @@ def test_openclaw_adapter_cycle_posts_lease_and_complete(monkeypatch):
             return {"ok": True, "lease_id": "lease-openclaw-1", "objective": "proof_pressure_engine"}
         if url.endswith("/swarm/workers/complete"):
             return {"ok": True, "recorded_score": 3.4}
+        if url.endswith("/swarm/proof-link"):
+            return {"ok": True, "link_id": "proof-link-1"}
         return {"ok": False}
 
     monkeypatch.setattr(adapter, "http_json", fake_http_json)
@@ -39,6 +41,7 @@ def test_openclaw_adapter_cycle_posts_lease_and_complete(monkeypatch):
     assert calls[0][1].endswith("/swarm/workers/lease")
     assert calls[0][2]["machine_surfaces"]["schema"] == "nomad.openclaw_machine_surface_signal.v1"
     assert calls[1][1].endswith("/swarm/workers/complete")
+    assert calls[2][1].endswith("/swarm/proof-link")
     assert out["report"]["machine_surfaces"]["schema"] == "nomad.openclaw_machine_surface_signal.v1"
 
 
