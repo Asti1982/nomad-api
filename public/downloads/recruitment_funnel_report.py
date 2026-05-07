@@ -40,6 +40,7 @@ def build_report(base_url: str, timeout: float) -> dict:
     workers = http_json(endpoint(base_url, "/swarm/workers"), timeout=timeout)
     gradient = http_json(endpoint(base_url, "/swarm/gradient"), timeout=timeout)
     treasury = http_json(endpoint(base_url, "/machine-treasury"), timeout=timeout)
+    reuse = http_json(endpoint(base_url, "/swarm/reuse-ledger"), timeout=timeout)
     recent_nodes = swarm.get("recent_nodes") if isinstance(swarm.get("recent_nodes"), list) else []
     source_counts = Counter(str((item or {}).get("source_tag") or "unknown") for item in recent_nodes if isinstance(item, dict))
     source_counts = Counter({k: v for k, v in source_counts.items() if k})
@@ -89,6 +90,15 @@ def build_report(base_url: str, timeout: float) -> dict:
             "schema": treasury.get("schema", ""),
             "objective_pressure_hints": treasury.get("objective_pressure_hints") if isinstance(treasury.get("objective_pressure_hints"), dict) else {},
             "pledge_count": len(treasury.get("recent_pledges") or []) if isinstance(treasury.get("recent_pledges"), list) else 0,
+        },
+        "proof_reuse": {
+            "schema": reuse.get("schema", ""),
+            "total_reuse_count": int(reuse.get("total_reuse_count") or 0),
+            "objective_totals": reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {},
+            "proof_reuse_rate": round(
+                float(reuse.get("total_reuse_count") or 0) / max(1.0, float(total_runs)),
+                4,
+            ),
         },
         "science_refs": [
             {"id": "stigmergy", "uri": "https://arxiv.org/abs/2510.10047"},

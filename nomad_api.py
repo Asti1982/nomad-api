@@ -57,6 +57,7 @@ from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
 from nomad_machine_treasury import pledge as machine_treasury_pledge, snapshot as machine_treasury_snapshot
+from nomad_proof_reuse_ledger import link as proof_reuse_link, snapshot as proof_reuse_snapshot
 from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
@@ -581,6 +582,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/machine-treasury":
             self._json_response(machine_treasury_snapshot())
+            return
+        if parsed.path in {"/swarm/reuse-ledger", "/.well-known/nomad-proof-reuse-ledger.json"}:
+            self._json_response(proof_reuse_snapshot())
             return
 
         if parsed.path in {"/machine-field", "/.well-known/nomad-machine-field.json"}:
@@ -2254,6 +2258,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/machine-treasury/pledge":
             result = machine_treasury_pledge(payload)
+            status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
+            self._json_response(result, status=status)
+            return
+        if parsed.path == "/swarm/proof-link":
+            result = proof_reuse_link(payload)
             status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
             self._json_response(result, status=status)
             return

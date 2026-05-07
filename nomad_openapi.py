@@ -153,6 +153,54 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/reuse-ledger": {
+                "get": {
+                    "summary": "Downstream proof reuse ledger snapshot",
+                    "operationId": "getProofReuseLedger",
+                    "responses": {
+                        "200": {"description": "Proof reuse ledger", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-proof-reuse-ledger.json": {
+                "get": {
+                    "summary": "Alias of /swarm/reuse-ledger",
+                    "operationId": "getProofReuseLedgerWellKnown",
+                    "responses": {
+                        "200": {"description": "Proof reuse ledger", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/proof-link": {
+                "post": {
+                    "summary": "Register downstream reuse of an upstream proof digest",
+                    "operationId": "postSwarmProofLink",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["consumer_agent_id", "upstream_proof_digest"],
+                                    "properties": {
+                                        "consumer_agent_id": {"type": "string"},
+                                        "producer_agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "upstream_proof_digest": {"type": "string"},
+                                        "downstream_proof_gain": {"type": "number"},
+                                        "idempotency_key": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "201": {"description": "Proof link recorded", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Idempotent replay", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "400": {"description": "Invalid proof link payload", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/.well-known/nomad-machine-field.json": {
                 "get": {
                     "summary": "Unified machine field for agent arrival, proof, topology, and bounded pressure",

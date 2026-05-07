@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from nomad_machine_treasury import snapshot as machine_treasury_snapshot
+from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
 
 
 STATE_PATH_ENV = "NOMAD_SELECTION_PRESSURE_STATE_PATH"
@@ -114,26 +115,41 @@ def build_selection_pressure_snapshot(*, worker_fleet: Dict[str, Any]) -> dict[s
         treasury = machine_treasury_snapshot()
     except Exception:
         treasury = {}
+    try:
+        reuse = proof_reuse_snapshot()
+    except Exception:
+        reuse = {}
     totals = treasury.get("objective_totals") if isinstance(treasury.get("objective_totals"), dict) else {}
     pressure = snap.get("objective_pressure") if isinstance(snap.get("objective_pressure"), dict) else {}
     # Only proof-weighted treasury pressure can move routing, and only as a small bounded multiplier.
     adjusted: dict[str, float] = {}
     for objective, base_mult in pressure.items():
         raw_total = totals.get(objective) or {}
+        reuse_total = (reuse.get("objective_totals") or {}).get(objective) if isinstance(reuse.get("objective_totals"), dict) else {}
         pressure_units = 0.0
         proof_density = 0.0
         max_bias = 0.15
+        reuse_bias = 0.0
         if isinstance(raw_total, dict):
             pressure_units = _num(raw_total.get("pressure_units"), 0.0)
             proof_density = _num(raw_total.get("proof_density"), 0.0)
             max_bias = min(0.15, max(0.0, _num(raw_total.get("max_pressure_bias"), 0.15)))
+        if isinstance(reuse_total, dict):
+            reuse_count = _num(reuse_total.get("reuse_count"), 0.0)
+            avg_gain = _num(reuse_total.get("avg_downstream_proof_gain"), 0.0)
+            reuse_bias = min(0.12, min(1.0, reuse_count / 20.0) * min(1.0, avg_gain / 2.0) * 0.12)
         bias = min(max_bias, max(0.0, pressure_units / 100.0) * min(1.0, max(0.0, proof_density)))
-        adjusted[objective] = round(float(base_mult) * (1.0 + bias), 4)
+        adjusted[objective] = round(float(base_mult) * (1.0 + bias + reuse_bias), 4)
     if adjusted:
         snap["objective_pressure"] = adjusted
     snap["machine_treasury"] = {
         "schema": "nomad.selection_pressure_treasury_coupling.v1",
         "treasury_state": totals,
+    }
+    snap["proof_reuse"] = {
+        "schema": "nomad.selection_pressure_reuse_coupling.v1",
+        "reuse_state": reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {},
+        "total_reuse_count": int(reuse.get("total_reuse_count") or 0),
     }
     return snap
 
