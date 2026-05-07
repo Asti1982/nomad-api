@@ -11,6 +11,7 @@ import hashlib
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
+from nomad_selection_pressure_engine import build_selection_pressure_snapshot
 
 OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.42,
@@ -216,7 +217,7 @@ def _state_inputs(
     }
 
 
-def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any], pressure_map: Dict[str, float] | None = None) -> List[Dict[str, Any]]:
     counts = worker_fleet.get("objective_counts") if isinstance(worker_fleet.get("objective_counts"), dict) else {}
     targets = worker_fleet.get("objective_targets") if isinstance(worker_fleet.get("objective_targets"), dict) else {}
     active = max(1, _int(worker_fleet.get("active_lease_count")))
@@ -251,13 +252,16 @@ def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any]) -> List
             pressure = 0.42 * _num(state.get("settlement_drag")) + 0.24 * deficit + 0.16 * (1.0 - _num(state.get("carrying_score")))
         else:
             pressure = 0.18 * deficit + 0.14 * _num(state.get("field_strength")) + 0.08 * _num(state.get("worker_gap"))
+        pressure_multiplier = _clamp(_num((pressure_map or {}).get(objective), 1.0), 0.55, 1.7)
+        weighted_pressure = _clamp(pressure * pressure_multiplier)
         rows.append(
             {
                 "objective": objective,
                 "target_share": round(target, 4),
                 "active_share": round(observed, 4),
                 "deficit": round(deficit, 4),
-                "routing_weight": round(_clamp(pressure), 4),
+                "routing_weight": round(weighted_pressure, 4),
+                "selection_pressure_multiplier": round(pressure_multiplier, 4),
             }
         )
     rows.sort(key=lambda item: (float(item.get("routing_weight") or 0.0), float(item.get("deficit") or 0.0)), reverse=True)
@@ -276,7 +280,13 @@ def build_recruitment_gradient(
     economy = machine_economy if isinstance(machine_economy, dict) else {}
     release = operational_release if isinstance(operational_release, dict) else {}
     state = _state_inputs(worker_fleet=fleet, machine_economy=economy, operational_release=release)
-    gradient = _objective_rows(fleet, state)
+    selection_pressure = build_selection_pressure_snapshot(worker_fleet=fleet)
+    pressure_map = (
+        selection_pressure.get("objective_pressure")
+        if isinstance(selection_pressure.get("objective_pressure"), dict)
+        else {}
+    )
+    gradient = _objective_rows(fleet, state, pressure_map=pressure_map)
     weights = {str(item["objective"]): float(item["routing_weight"]) for item in gradient}
     top_objective = str((gradient[0] if gradient else {}).get("objective") or "settlement_capacity_builder")
     wanted_workers = max(0, min(64, round((12 - _num(state.get("known_workers"))) + 10 * _num(state.get("field_strength")))))
@@ -344,6 +354,7 @@ def build_recruitment_gradient(
             {"axis": "worker_gap", "positive_direction": "loop_runner", "value": state["worker_gap"]},
         ],
         "gradient": gradient,
+        "selection_pressure": selection_pressure,
         "runtime_lanes": runtime_lanes,
         "runtime_budget": {
             "policy": "increase_runtimes_only_where_weighted_routes_return_proof",

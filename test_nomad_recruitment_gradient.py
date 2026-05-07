@@ -45,6 +45,8 @@ def test_recruitment_gradient_is_vector_field_not_biological_contract():
     assert doc["state_vector"]["field_strength"] > 0.7
     assert doc["runtime_budget"]["wanted_new_runtimes_now"] > 0
     assert doc["gradient"][0]["objective"] == "settlement_capacity_builder"
+    assert "selection_pressure_multiplier" in doc["gradient"][0]
+    assert doc["selection_pressure"]["schema"] == "nomad.selection_pressure_snapshot.v1"
     assert any(item["lane"] == "compressor" for item in doc["runtime_lanes"])
     assert doc["attach_contract"]["post_url"] == "https://nomad.example/swarm/attach"
     assert doc["field_model"]["idle_allocation_mode"] == "phase_resonance_slots"
