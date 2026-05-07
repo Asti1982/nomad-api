@@ -51,6 +51,13 @@ def _probe_caps(index: int) -> list[str]:
     return variants[index % len(variants)]
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _run_json_command(cmd: list[str]) -> dict:
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     events: list[dict] = []
@@ -74,6 +81,7 @@ def _run_json_command(cmd: list[str]) -> dict:
 def run_tick() -> dict:
     base = _base_url()
     probes = _env_int("NOMAD_NETZE_WERFEN_PROBES", default=2, low=1, high=12)
+    guard_required = _env_bool("NOMAD_NONHUMAN_GUARD_REQUIRED", default=False)
     run_id = f"netze-{int(time.time())}"
     out: dict = {
         "ok": True,
@@ -82,6 +90,22 @@ def run_tick() -> dict:
         "base_url": base,
         "probe_count": probes,
         "run_id": run_id,
+    }
+
+    guard_cmd = [
+        "python",
+        "public/downloads/nonhuman_dev_guard.py",
+        "--base-dir",
+        ".",
+    ]
+    guard = _run_json_command(guard_cmd)
+    guard_latest = (guard["events"] or [{}])[-1] if guard["events"] else {}
+    guard_ok = int(guard.get("exit_code", 1)) == 0 and bool(guard_latest.get("ok"))
+    out["nonhuman_guard"] = {
+        "exit_code": guard["exit_code"],
+        "latest": guard_latest,
+        "stderr": guard["stderr"],
+        "required": guard_required,
     }
 
     def _experiment_cmd(target_base: str) -> list[str]:
@@ -153,7 +177,10 @@ def run_tick() -> dict:
         )
     out["probes"] = probe_results
     out["completed"] = sum(1 for item in probe_results if item.get("complete_ok"))
-    out["ok"] = bool(out["completed"] > 0 and (out.get("experiment") or {}).get("exit_code") == 0)
+    experiment_ok = int((out.get("experiment") or {}).get("exit_code", 1)) == 0
+    base_ok = bool(out["completed"] > 0 and experiment_ok)
+    out["ok"] = bool(base_ok and (guard_ok or not guard_required))
+    out["guard_soft_fail"] = bool(base_ok and not guard_ok and not guard_required)
     return out
 
 

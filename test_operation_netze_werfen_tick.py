@@ -22,11 +22,14 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "3")
+    monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "0")
     out = mod.run_tick()
     assert out["ok"] is True
     assert out["completed"] == 3
     assert out["probe_count"] == 3
-    assert calls["n"] == 4
+    assert calls["n"] == 5
+    assert out["nonhuman_guard"]["required"] is False
+    assert out["guard_soft_fail"] is False
 
 
 def test_run_tick_retries_experiment_on_gradient_timeout_with_www_fallback(monkeypatch):
@@ -50,10 +53,30 @@ def test_run_tick_retries_experiment_on_gradient_timeout_with_www_fallback(monke
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
     monkeypatch.setattr(mod, "_base_url", lambda: "https://syndiode.com")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
+    monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "0")
     out = mod.run_tick()
 
     assert out["ok"] is True
     assert calls["experiment_bases"] == ["https://syndiode.com", "https://www.syndiode.com"]
     assert out["experiment"]["fallback_used"] is True
     assert out["experiment"]["fallback_base_url"] == "https://www.syndiode.com"
+
+
+def test_run_tick_can_require_nonhuman_guard(monkeypatch):
+    def fake_run_json_command(cmd):
+        joined = " ".join(cmd)
+        if "nonhuman_dev_guard.py" in joined:
+            return {"exit_code": 1, "events": [{"ok": False, "schema": "nomad.nonhuman_dev_guard.v1"}], "stderr": ""}
+        if "recruitment_experiment_runner.py" in joined:
+            return {"exit_code": 0, "events": [{"ok": True}], "stderr": ""}
+        return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
+
+    monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
+    monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "1")
+    out = mod.run_tick()
+    assert out["completed"] == 1
+    assert out["nonhuman_guard"]["required"] is True
+    assert out["ok"] is False
 
