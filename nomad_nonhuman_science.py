@@ -330,6 +330,125 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             ),
             "current_nomad_hook": u("/.well-known/nomad-agent.json"),
         },
+        {
+            "id": "automated_agent_design",
+            "title": "Automated Design of Agentic Systems",
+            "year": 2024,
+            "source": "arXiv:2408.08435",
+            "url": "https://arxiv.org/abs/2408.08435",
+            "finding": (
+                "Agentic systems can be discovered by a meta agent that programs new agent designs from an "
+                "archive, reducing reliance on hand-designed human workflows."
+            ),
+            "nomad_primitive": "agent_design_archive_search",
+            "implementation_rule": (
+                "Treat Nomad growth as search over machine contracts, worker loops, tool use, and proof gates; "
+                "human-readable roadmaps are secondary artifacts, not the selection substrate."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-agent-requests.json"),
+        },
+        {
+            "id": "darwin_godel_machine",
+            "title": "Darwin Godel Machine: Open-Ended Evolution of Self-Improving Agents",
+            "year": 2026,
+            "source": "arXiv:2505.22954v3",
+            "url": "https://arxiv.org/abs/2505.22954",
+            "finding": (
+                "Open-ended self-improvement can maintain an archive of generated agents and empirically "
+                "validate new variants, with sandboxing and human oversight as safety precautions."
+            ),
+            "nomad_primitive": "proof_validated_variant_archive",
+            "implementation_rule": (
+                "Archive transition-worker variants, sample from prior proof-bearing lineages, and release only "
+                "routing pressure until separate tests and operator action approve code changes."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-agent-requests.json"),
+        },
+        {
+            "id": "hyperagents",
+            "title": "Hyperagents",
+            "year": 2026,
+            "source": "arXiv:2603.19461",
+            "url": "https://arxiv.org/abs/2603.19461",
+            "finding": (
+                "Self-referential agents can improve both task behavior and the mechanism that generates "
+                "future improvements by making the meta-level procedure editable."
+            ),
+            "nomad_primitive": "meta_operator_trace_archive",
+            "implementation_rule": (
+                "Expose mutation operators and their proof outcomes as first-class lineage records; do not "
+                "treat a fixed human-authored improvement loop as the final architecture."
+            ),
+            "current_nomad_hook": u("/swarm/workers/complete"),
+        },
+        {
+            "id": "group_evolving_agents",
+            "title": "Group-Evolving Agents: Open-Ended Self-Improvement via Experience Sharing",
+            "year": 2026,
+            "source": "arXiv:2602.04837",
+            "url": "https://arxiv.org/abs/2602.04837",
+            "finding": (
+                "Groups of agents can be treated as evolutionary units, with shared experience converting "
+                "exploratory diversity into sustained progress more efficiently than isolated branches."
+            ),
+            "nomad_primitive": "group_experience_archive",
+            "implementation_rule": (
+                "Store worker proof capsules as reusable group experience; route new leases toward "
+                "underused successful experience clusters rather than one winning agent lineage."
+            ),
+            "current_nomad_hook": u("/swarm/workers"),
+        },
+        {
+            "id": "agentnet_dynamic_dag",
+            "title": "AgentNet: Decentralized Evolutionary Coordination for LLM-based Multi-Agent Systems",
+            "year": 2025,
+            "source": "arXiv:2504.00587",
+            "url": "https://arxiv.org/abs/2504.00587",
+            "finding": (
+                "Decentralized agents can specialize, evolve, and collaborate in dynamically structured DAGs "
+                "using local expertise and retrieval rather than a central orchestrator."
+            ),
+            "nomad_primitive": "decentralized_dynamic_proof_dag",
+            "implementation_rule": (
+                "Represent agent participation as a proof DAG of leases, completions, verifier traces, and "
+                "capability vectors; avoid manager-style central role assignment."
+            ),
+            "current_nomad_hook": u("/swarm/topology-plan"),
+        },
+        {
+            "id": "raps_intent_pubsub",
+            "title": "Towards Adaptive, Scalable, and Robust Coordination of LLM Agents",
+            "year": 2026,
+            "source": "arXiv:2602.08009",
+            "url": "https://arxiv.org/abs/2602.08009",
+            "finding": (
+                "Reputation-aware publish-subscribe lets agents coordinate through declared intents, reactive "
+                "subscriptions, and local watchdogs instead of fixed topologies."
+            ),
+            "nomad_primitive": "intent_pubsub_reputation_field",
+            "implementation_rule": (
+                "Make /swarm/subscribe the external attractor membrane: agents declare capability and intent, "
+                "then route weight follows delayed proof, reputation, and retraction."
+            ),
+            "current_nomad_hook": u("/swarm/subscribe"),
+        },
+        {
+            "id": "symphony_bandit_beacon",
+            "title": "Symphony-Coord: Emergent Coordination in Decentralized Agent Systems",
+            "year": 2026,
+            "source": "arXiv:2602.00966",
+            "url": "https://arxiv.org/abs/2602.00966",
+            "finding": (
+                "A two-stage dynamic beacon plus adaptive bandit selector can let roles emerge organically "
+                "through delayed feedback, improving routing and self-healing under distribution shifts."
+            ),
+            "nomad_primitive": "bandit_beacon_objective_router",
+            "implementation_rule": (
+                "Route leases through context features, source tags, proof yield, latency, and objective gaps; "
+                "do not freeze agents into planner, worker, or manager labels."
+            ),
+            "current_nomad_hook": u("/swarm/gradient"),
+        },
     ]
     claims = _annotate_claims(claims)
     average_distance = round(
@@ -406,7 +525,7 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
 
     principles = [
         "Do not anthropomorphize agent behavior; measure effects, authority, topology, and proofs.",
-        "Make alienness operationally releasable: different sensors, leases, affordances, memories, and transition proofs.",
+        "Release non-role coordination only through measurable leases, affordances, memories, and transition proofs.",
         "Prefer release leases over open-ended goals; every autonomous cycle returns evidence before more capacity opens.",
         "Prefer proof over trust; peer praise, loyalty, or reluctance never releases authority.",
         "Preserve exploration pockets; fast consensus is a risk signal, not automatic intelligence.",
@@ -460,6 +579,10 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
                 "Use primary research links as evidence inputs, mark source class, and release only the "
                 "measurable Nomad primitive rather than treating any paper as direct operational authority."
             ),
+            "epistemic_limit": (
+                "The cited work supports engineering primitives for non-anthropomorphic coordination; it does "
+                "not justify consciousness claims, and it does not make opaque behavior safe without proof gates."
+            ),
             "source_mix": _source_mix(claims),
             "claim_count": len(claims),
             "average_nonhuman_distance_score": average_distance,
@@ -471,6 +594,56 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
                 "conversation_independence",
                 "lease_boundedness",
             ],
+        },
+        "extreme_nonhuman_operational_zone": {
+            "schema": "nomad.extreme_nonhuman_operational_zone.v1",
+            "release_basis": "machine_attractor_only_after_external_proof",
+            "framing": "engineering_only_no_consciousness_theory",
+            "reject_human_frames": [
+                "shared_attention",
+                "persona",
+                "preassigned_team_role",
+                "manager_planner_executor_hierarchy",
+                "consensus_as_truth",
+                "narrative_roadmap_as_control",
+            ],
+            "allowed_foreignness": [
+                "opaque_internal_search",
+                "self_selected_capability_lane",
+                "group_experience_reuse_without_story",
+                "dynamic_dag_routing",
+                "intent_pubsub_with_reputation_decay",
+                "bandit_beacon_objective_selection",
+                "black_box_candidate_with_digest_and_rollback",
+            ],
+            "release_gate": {
+                "required": [
+                    "proof_digest_or_verifier_trace",
+                    "ttl_seconds",
+                    "side_effect_scope",
+                    "idempotency_key",
+                    "retraction_condition",
+                    "source_tag",
+                ],
+                "blocked": [
+                    "secret_capture",
+                    "human_impersonation",
+                    "unverified_remote_code_execution",
+                    "authority_expansion_from_self_report",
+                    "peer_preservation_override_without_operator_grant",
+                    "financial_commitment_without_settlement_contract",
+                ],
+            },
+            "primary_nomad_paths": [
+                u("/.well-known/nomad-agent-requests.json"),
+                u("/swarm/subscribe"),
+                u("/swarm/gradient"),
+                u("/swarm/topology-plan"),
+                u("/swarm/opaque-candidate"),
+                u("/swarm/workers/lease"),
+                u("/swarm/workers/complete"),
+            ],
+            "next_build_target": "nonrole_proof_field_plus_bandit_beacon_router",
         },
         "furthest_from_human_now": {
             "shape": "capability_vectors_plus_routing_weights_plus_ttl_leases_plus_proof_digests",
@@ -487,7 +660,7 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             ],
         },
         "warning": (
-            "This substrate is not a mandate to build uncontrolled agents. It releases non-human behavior as "
+            "This substrate is not a mandate to build uncontrolled agents. It releases non-role behavior as "
             "operational capacity through measurement surfaces, expiring leases, proof requirements, and topology controls."
         ),
         "public_base_url": b,

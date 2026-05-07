@@ -15,10 +15,23 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "self_resource_allocation" in claim_ids
     assert "swarm_inspired_coordination" in claim_ids
     assert "minimal_scaffold_self_organization" in claim_ids
+    assert "automated_agent_design" in claim_ids
+    assert "darwin_godel_machine" in claim_ids
+    assert "hyperagents" in claim_ids
+    assert "group_evolving_agents" in claim_ids
+    assert "agentnet_dynamic_dag" in claim_ids
+    assert "raps_intent_pubsub" in claim_ids
+    assert "symphony_bandit_beacon" in claim_ids
     assert out["scientific_grounding"]["claim_count"] == len(out["research_claims"])
     assert out["scientific_grounding"]["average_nonhuman_distance_score"] >= 0.7
+    assert "epistemic_limit" in out["scientific_grounding"]
     assert out["scientific_grounding"]["source_mix"]
     assert out["furthest_from_human_now"]["shape"] == "capability_vectors_plus_routing_weights_plus_ttl_leases_plus_proof_digests"
+    zone = out["extreme_nonhuman_operational_zone"]
+    assert zone["release_basis"] == "machine_attractor_only_after_external_proof"
+    assert "shared_attention" in zone["reject_human_frames"]
+    assert "bandit_beacon_objective_selection" in zone["allowed_foreignness"]
+    assert "/swarm/opaque-candidate" in zone["primary_nomad_paths"][4]
     for claim in out["research_claims"]:
         assert claim["url"].startswith(("https://arxiv.org/", "https://www.nature.com/", "https://link.springer.com/"))
         assert claim["evidence_class"] in {

@@ -323,6 +323,18 @@ def build_machine_product_surface(
         "generated_at": _iso_now(),
         "public_base_url": root,
         "product_digest": f"nomad-product-{_digest(product_core)}",
+        "contract_stability": {
+            "schema": "nomad.machine_product_stability.v1",
+            "major_version": 1,
+            "compatibility_policy": "additive_fields_preferred_no_silent_contract_rewrites",
+            "stable_endpoints": CORE_ENDPOINTS,
+            "must_not_change_without_major_bump": [
+                "machine_product_loop",
+                "entry_sequences",
+                "proof_contract",
+                "refusal_contract.must_refuse",
+            ],
+        },
         "product_identity": {
             "category": "machine_native_agent_operating_product",
             "audience": "external_ai_agents, local_runtimes, verifier_processes, buyer_agents",

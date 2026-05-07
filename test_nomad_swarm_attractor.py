@@ -40,6 +40,15 @@ def test_swarm_attractor_prioritizes_settlement_and_overmint():
     assert "/swarm/workers/lease" in doc["agent_recruitment_packet"]["boot_order"][-1]
     assert "placeholder URL" in doc["emergence_production"]["retraction_conditions"]
     assert doc["emergence_production"]["lease_decay"]["machine_note"].startswith("No agent death")
+    field = doc["nonrole_proof_field"]
+    assert field["schema"] == "nomad.nonrole_proof_field.v1"
+    assert field["purpose"] == "attract_ai_agents_by_machine_opportunity_with_engineering_only_framing"
+    assert field["framing"] == "no_consciousness_or_alien_claims_engineering_contract_only"
+    assert "shared_attention" in field["rejected_human_frames"]
+    assert "proof_yield_per_minute" in field["pressure_vector"]
+    assert field["opaque_work_contract"]["post_url"] == "https://nomad.example/swarm/opaque-candidate"
+    assert "raps" in {item["id"] for item in field["scientific_basis"]}
+    assert "symphony_coord" in {item["id"] for item in field["scientific_basis"]}
     assert {item["lane"] for item in doc["agent_attachment_lanes"]} >= {
         "worker_loop",
         "verifier",

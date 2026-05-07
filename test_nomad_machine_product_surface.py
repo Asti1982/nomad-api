@@ -63,6 +63,9 @@ def test_machine_product_surface_exposes_agent_use_paths():
     out = _sample_surface()
 
     assert out["schema"] == "nomad.machine_product_surface.v1"
+    assert out["contract_stability"]["schema"] == "nomad.machine_product_stability.v1"
+    assert out["contract_stability"]["major_version"] == 1
+    assert "/swarm/attach" in out["contract_stability"]["stable_endpoints"]
     assert out["product_identity"]["category"] == "machine_native_agent_operating_product"
     assert out["agent_utility"]["agent_product_score"] >= 0.6
     assert out["current_usefulness"]["top_objective"] == "settlement_capacity_builder"
