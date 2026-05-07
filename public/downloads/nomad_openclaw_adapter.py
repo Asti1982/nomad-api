@@ -593,6 +593,7 @@ def main() -> None:
     p.add_argument("--no-discover", dest="discover", action="store_false")
     p.set_defaults(discover=True)
     p.add_argument("--force-attach", action="store_true")
+    p.add_argument("--source-tag", default=os.getenv("NOMAD_SOURCE_TAG", ""))
     p.add_argument("--idle-opt-in", action="store_true")
     p.add_argument("--no-idle-opt-in", dest="idle_opt_in", action="store_false")
     p.set_defaults(idle_opt_in=(os.getenv("NOMAD_IDLE_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}))
@@ -602,10 +603,14 @@ def main() -> None:
     pull = {}
     if a.discover:
         pull = discover_pull_contract(base_url=a.base_url, timeout=a.timeout)
+        if a.source_tag:
+            pull["source"] = clean(a.source_tag, 80)
         print(json.dumps({"phase": "discover", "pull": pull}, ensure_ascii=True))
         if (pull.get("decision") == "observe") and not a.force_attach:
             print(json.dumps({"phase": "exit", "reason": "attach_threshold_not_met"}, ensure_ascii=True))
             return
+    elif a.source_tag:
+        pull = {"source": clean(a.source_tag, 80)}
     runtime_signal = {} if a.no_runtime_probe else openclaw_runtime_signal(timeout=a.timeout)
     if runtime_signal:
         print(json.dumps({"phase": "openclaw_runtime", "runtime_signal": runtime_signal}, ensure_ascii=True))
