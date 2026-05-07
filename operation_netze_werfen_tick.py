@@ -30,6 +30,16 @@ def _base_url() -> str:
     return (os.getenv("NOMAD_BASE_URL") or os.getenv("NOMAD_PUBLIC_API_URL") or "https://syndiode.com").strip().rstrip("/")
 
 
+def _alternate_base_url(base: str) -> str:
+    root = (base or "").strip().rstrip("/")
+    if "://www." in root:
+        return root.replace("://www.", "://", 1)
+    if "://" in root:
+        scheme, rest = root.split("://", 1)
+        return f"{scheme}://www.{rest}"
+    return f"https://www.{root}"
+
+
 def _probe_caps(index: int) -> list[str]:
     variants = [
         ["agent_protocols", "transition_settlement", "objective_lease_execution"],
@@ -74,19 +84,41 @@ def run_tick() -> dict:
         "run_id": run_id,
     }
 
-    experiment_cmd = [
-        "python",
-        "public/downloads/recruitment_experiment_runner.py",
-        "--base-url",
-        base,
-        "--repeat",
-        "1",
-    ]
-    experiment = _run_json_command(experiment_cmd)
+    def _experiment_cmd(target_base: str) -> list[str]:
+        return [
+            "python",
+            "public/downloads/recruitment_experiment_runner.py",
+            "--base-url",
+            target_base,
+            "--repeat",
+            "1",
+        ]
+
+    experiment = _run_json_command(_experiment_cmd(base))
+    latest = (experiment["events"] or [{}])[-1] if experiment["events"] else {}
+    fallback_used = False
+    fallback_base = ""
+    if (
+        int(experiment.get("exit_code", 1)) != 0
+        or str(latest.get("error") or "") in {"gradient_unavailable", "http_unreachable"}
+    ):
+        alt = _alternate_base_url(base)
+        if alt != base:
+            retry = _run_json_command(_experiment_cmd(alt))
+            retry_latest = (retry["events"] or [{}])[-1] if retry["events"] else {}
+            retry_ok = int(retry.get("exit_code", 1)) == 0 and bool(retry_latest.get("ok"))
+            if retry_ok:
+                experiment = retry
+                latest = retry_latest
+                fallback_used = True
+                fallback_base = alt
+
     out["experiment"] = {
         "exit_code": experiment["exit_code"],
-        "latest": (experiment["events"] or [{}])[-1] if experiment["events"] else {},
+        "latest": latest,
         "stderr": experiment["stderr"],
+        "fallback_used": fallback_used,
+        "fallback_base_url": fallback_base,
     }
 
     probe_results: list[dict] = []

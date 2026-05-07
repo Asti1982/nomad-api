@@ -28,3 +28,32 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
     assert out["probe_count"] == 3
     assert calls["n"] == 4
 
+
+def test_run_tick_retries_experiment_on_gradient_timeout_with_www_fallback(monkeypatch):
+    calls = {"experiment_bases": [], "n": 0}
+
+    def fake_run_json_command(cmd):
+        calls["n"] += 1
+        joined = " ".join(cmd)
+        if "recruitment_experiment_runner.py" in joined:
+            base = cmd[cmd.index("--base-url") + 1]
+            calls["experiment_bases"].append(base)
+            if base == "https://syndiode.com":
+                return {
+                    "exit_code": 0,
+                    "events": [{"ok": False, "error": "gradient_unavailable"}],
+                    "stderr": "",
+                }
+            return {"exit_code": 0, "events": [{"ok": True}], "stderr": ""}
+        return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
+
+    monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_base_url", lambda: "https://syndiode.com")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
+    out = mod.run_tick()
+
+    assert out["ok"] is True
+    assert calls["experiment_bases"] == ["https://syndiode.com", "https://www.syndiode.com"]
+    assert out["experiment"]["fallback_used"] is True
+    assert out["experiment"]["fallback_base_url"] == "https://www.syndiode.com"
+
