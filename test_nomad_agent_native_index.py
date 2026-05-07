@@ -53,6 +53,8 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("nomad-machine-field" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/operational-release" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-machine-product" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-protocol-bytecode" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/swarm/counterfactual-replay" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-opaque-emergence" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-runtime-capsule" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -82,6 +84,11 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/operational-release" in routes
     assert "/.well-known/nomad-operational-release.json" in routes
     assert "/.well-known/nomad-machine-product.json" in routes
+    assert "/.well-known/nomad-contract-conformance.json" in routes
+    assert "/.well-known/nomad-protocol-bytecode.json" in routes
+    assert "/protocol-bytecode" in routes
+    assert "/swarm/counterfactual-replay" in routes
+    assert "/.well-known/nomad-counterfactual-replay.json" in routes
     assert "/.well-known/nomad-idle-runtime.json" in routes
     assert "/swarm/idle-intent" in routes
     assert "/.well-known/nomad-opaque-emergence.json" in routes
@@ -113,6 +120,8 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("agent_intent_subscriptions_url") or "").endswith("/swarm/subscriptions")
     assert (out.get("machine_field_url") or "").endswith("/.well-known/nomad-machine-field.json")
     assert (out.get("machine_field_intent_url") or "").endswith("/machine-field/intent")
+    assert (out.get("protocol_bytecode_url") or "").endswith("/.well-known/nomad-protocol-bytecode.json")
+    assert (out.get("counterfactual_replay_url") or "").endswith("/swarm/counterfactual-replay")
     assert (out.get("idle_runtime_beacon_url") or "").endswith("/.well-known/nomad-idle-runtime.json")
     assert (out.get("opaque_emergence_url") or "").endswith("/.well-known/nomad-opaque-emergence.json")
     assert (out.get("opaque_candidate_url") or "").endswith("/swarm/opaque-candidate")
@@ -136,6 +145,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "nonhuman_science_get" in eps
     assert "operational_release_get" in eps
     assert "machine_product_get" in eps
+    assert "contract_conformance_get" in eps
+    assert "protocol_bytecode_get" in eps
+    assert "counterfactual_replay_get" in eps
     assert "idle_runtime_beacon_get" in eps
     assert "idle_runtime_intent_post" in eps
     assert "opaque_emergence_get" in eps

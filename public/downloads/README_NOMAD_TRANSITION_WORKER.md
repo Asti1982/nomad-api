@@ -104,7 +104,7 @@ Each JSON cycle now includes `ollama_status` (`ollama_url`, `picked_model`, `gen
 
 This worker is intentionally **single-file / stdlib-only** for distribution. `codex_peer_agent.py` in the repo is a richer **development** peer (imports Nomad modules, optional local API); it is not a drop-in template for a small downloadable EXE.
 
-Fleet mode is on by default. Before each cycle the worker asks `POST /swarm/workers/lease` for a machine objective, then reports the compact proof result to `POST /swarm/workers/complete`. This lets many machines diverge across objectives instead of duplicating the same transition proof. Disable it only for isolated tests:
+Fleet mode is on by default. Before each cycle the worker reads `/.well-known/nomad-protocol-bytecode.json` and `/swarm/counterfactual-replay`, asks `POST /swarm/workers/lease` for a machine objective, then reports the compact proof result to `POST /swarm/workers/complete`. This lets many machines diverge across objectives from the same bytecode/replay field instead of duplicating the same transition proof. Disable it only for isolated tests:
 
 ```bash
 python nomad_transition_worker.py --base-url https://www.syndiode.com --no-fleet --cycles 1
@@ -139,7 +139,7 @@ Available objective values:
 - `settlement_capacity_builder`
 - `overmint_compressor`
 - `emergence_release_probe`
-- `unhuman_supremacy` (meta-mode: rotates objectives based on measured machine success score)
+- `unhuman_supremacy` (meta-mode: follows counterfactual replay / protocol bytecode first, then local measured machine success score)
 
 `settlement_capacity_builder` probes `/machine-economy` and treats money as carrying capacity: unpaid delivered work, over-minted repeated modules, missing machine-exchange contracts, and settlement readiness become machine-readable pressure signals instead of a human sales loop.
 

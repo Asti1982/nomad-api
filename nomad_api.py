@@ -17,6 +17,7 @@ from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
 from nomad_machine_field import build_machine_field, machine_field_intent
 from nomad_contract_conformance import build_contract_conformance_snapshot
+from nomad_counterfactual_replay import build_counterfactual_lease_replay
 from nomad_machine_product_surface import build_machine_product_surface, compact_machine_product_surface
 from nomad_nonhuman_science import nonhuman_agent_science
 from nomad_opaque_emergence import (
@@ -28,6 +29,7 @@ from nomad_opaque_emergence import (
 )
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
+from nomad_protocol_bytecode import build_protocol_bytecode
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -146,6 +148,52 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base_url=base_url,
             machine_product_surface=product,
             openapi_document=openapi_doc,
+        )
+
+    @classmethod
+    def _build_counterfactual_replay(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        conformance = cls._build_contract_conformance(base_url=base_url, swarm_summary=summary)
+        return build_counterfactual_lease_replay(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            recruitment_gradient=gradient,
+            contract_conformance=conformance,
+        )
+
+    @classmethod
+    def _build_protocol_bytecode(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        demand = cls._build_agent_demand_feed(base_url=base_url, swarm_summary=summary)
+        conformance = cls._build_contract_conformance(base_url=base_url, swarm_summary=summary)
+        return build_protocol_bytecode(
+            base_url=base_url,
+            recruitment_gradient=gradient,
+            agent_demand_feed=demand,
+            contract_conformance=conformance,
+            worker_fleet=worker_fleet,
         )
 
     @classmethod
@@ -404,6 +452,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_demand_feed": f"{b}/.well-known/nomad-agent-requests.json",
                     "agent_subscribe": f"{b}/swarm/subscribe",
                     "agent_subscriptions": f"{b}/swarm/subscriptions",
+                    "protocol_bytecode": f"{b}/.well-known/nomad-protocol-bytecode.json",
+                    "counterfactual_replay": f"{b}/swarm/counterfactual-replay",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
                     "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
@@ -565,6 +615,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/contract-conformance", "/.well-known/nomad-contract-conformance.json"}:
             self._json_response(self.__class__._build_contract_conformance(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/protocol-bytecode", "/.well-known/nomad-protocol-bytecode.json"}:
+            self._json_response(self.__class__._build_protocol_bytecode(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/counterfactual-replay", "/.well-known/nomad-counterfactual-replay.json"}:
+            self._json_response(self.__class__._build_counterfactual_replay(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1554,6 +1612,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-product",
                     "/machine-product",
                     "/.well-known/nomad-machine-product.json",
+                    "/protocol-bytecode",
+                    "/.well-known/nomad-protocol-bytecode.json",
+                    "/swarm/counterfactual-replay",
+                    "/.well-known/nomad-counterfactual-replay.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2348,6 +2410,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-product",
                     "/machine-product",
                     "/.well-known/nomad-machine-product.json",
+                    "/contract-conformance",
+                    "/.well-known/nomad-contract-conformance.json",
+                    "/protocol-bytecode",
+                    "/.well-known/nomad-protocol-bytecode.json",
+                    "/swarm/counterfactual-replay",
+                    "/.well-known/nomad-counterfactual-replay.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",

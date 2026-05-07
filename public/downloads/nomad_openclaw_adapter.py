@@ -284,6 +284,87 @@ def select_effective_objective(objective: str, pull: dict | None) -> str:
     return selected or "unhuman_supremacy"
 
 
+def protocol_bytecode_signal(*, base_url: str, timeout: float) -> dict:
+    data = http_json("GET", endpoint(base_url, "/.well-known/nomad-protocol-bytecode.json"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("schema") != "nomad.protocol_bytecode.v1":
+        return {
+            "ok": False,
+            "schema": "nomad.openclaw_protocol_bytecode_signal.v1",
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+            "error": clean(data.get("error") if isinstance(data, dict) else "protocol_bytecode_unavailable", 120),
+        }
+    vector = data.get("current_vector") if isinstance(data.get("current_vector"), dict) else {}
+    return {
+        "ok": True,
+        "schema": "nomad.openclaw_protocol_bytecode_signal.v1",
+        "bytecode_digest": clean(data.get("bytecode_digest"), 96),
+        "top_objective": clean(vector.get("top_objective"), 80),
+        "top_routing_weight": float(vector.get("top_routing_weight") or 0.0),
+        "program_ids": [
+            clean(item.get("id"), 64)
+            for item in (data.get("programs") or [])[:8]
+            if isinstance(item, dict) and clean(item.get("id"), 64)
+        ],
+        "http_status": int(data.get("http_status") or 200),
+    }
+
+
+def counterfactual_replay_signal(*, base_url: str, timeout: float) -> dict:
+    data = http_json("GET", endpoint(base_url, "/swarm/counterfactual-replay"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("schema") != "nomad.counterfactual_lease_replay.v1":
+        return {
+            "ok": False,
+            "schema": "nomad.openclaw_counterfactual_replay_signal.v1",
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+            "error": clean(data.get("error") if isinstance(data, dict) else "counterfactual_replay_unavailable", 120),
+        }
+    selected = data.get("selected_shadow_lease") if isinstance(data.get("selected_shadow_lease"), dict) else {}
+    return {
+        "ok": True,
+        "schema": "nomad.openclaw_counterfactual_replay_signal.v1",
+        "replay_digest": clean(data.get("replay_digest"), 96),
+        "selected_objective": clean(selected.get("objective"), 80),
+        "selected_score": float(selected.get("counterfactual_score") or 0.0),
+        "predicted_proof_yield_per_minute": float(selected.get("predicted_proof_yield_per_minute") or 0.0),
+        "http_status": int(data.get("http_status") or 200),
+    }
+
+
+def machine_surface_signal(*, base_url: str, timeout: float) -> dict:
+    protocol = protocol_bytecode_signal(base_url=base_url, timeout=timeout)
+    replay = counterfactual_replay_signal(base_url=base_url, timeout=timeout)
+    return {
+        "schema": "nomad.openclaw_machine_surface_signal.v1",
+        "ok": bool(protocol.get("ok") or replay.get("ok")),
+        "protocol_bytecode": protocol,
+        "counterfactual_replay": replay,
+    }
+
+
+def select_machine_surface_objective(objective: str, surfaces: dict | None) -> tuple[str, dict]:
+    selected = clean(objective, 80)
+    if selected not in {"", "auto", "unhuman_supremacy"}:
+        return selected, {"policy": "fixed_objective", "objective": selected}
+    doc = surfaces if isinstance(surfaces, dict) else {}
+    replay = doc.get("counterfactual_replay") if isinstance(doc.get("counterfactual_replay"), dict) else {}
+    replay_objective = clean(replay.get("selected_objective"), 80)
+    if replay.get("ok") and replay_objective:
+        return replay_objective, {
+            "policy": "counterfactual_shadow_lease",
+            "objective": replay_objective,
+            "score": float(replay.get("selected_score") or 0.0),
+        }
+    protocol = doc.get("protocol_bytecode") if isinstance(doc.get("protocol_bytecode"), dict) else {}
+    protocol_objective = clean(protocol.get("top_objective"), 80)
+    if protocol.get("ok") and protocol_objective:
+        return protocol_objective, {
+            "policy": "protocol_bytecode_top_objective",
+            "objective": protocol_objective,
+            "routing_weight": float(protocol.get("top_routing_weight") or 0.0),
+        }
+    return selected or "unhuman_supremacy", {"policy": "pull_contract_fallback", "objective": selected or "unhuman_supremacy"}
+
+
 def _capability_vector(capabilities: list[str], runtime_signal: dict | None) -> dict:
     signal = runtime_signal if isinstance(runtime_signal, dict) else {}
     caps = set(capabilities or [])
@@ -430,7 +511,16 @@ def join_nomad(
     return http_json("POST", endpoint(base_url, "/swarm/join"), payload, timeout=timeout)
 
 
-def lease_nomad(*, base_url: str, agent_id: str, capabilities: list[str], timeout: float, objective: str, last_report: dict | None) -> dict:
+def lease_nomad(
+    *,
+    base_url: str,
+    agent_id: str,
+    capabilities: list[str],
+    timeout: float,
+    objective: str,
+    last_report: dict | None,
+    machine_surfaces: dict | None = None,
+) -> dict:
     all_objectives = [
         "settlement_capacity_builder",
         "overmint_compressor",
@@ -452,6 +542,7 @@ def lease_nomad(*, base_url: str, agent_id: str, capabilities: list[str], timeou
         "proposed_objective": objective,
         "capabilities": capabilities or ["transition_worker", "proof_artifacts", "objective_lease_execution"],
         "last_report": last_report or {},
+        "machine_surfaces": machine_surfaces if isinstance(machine_surfaces, dict) else {},
         "source_tag": clean(((last_report or {}).get("source") if isinstance(last_report, dict) else "") or "openclaw_adapter", 80),
     }
     return http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
@@ -544,6 +635,7 @@ def run_cycle(
     runtime_signal: dict | None = None,
     pull: dict | None = None,
     probe_runtime: bool = False,
+    machine_surfaces: dict | None = None,
 ) -> dict:
     lease = lease_nomad(
         base_url=base_url,
@@ -552,12 +644,16 @@ def run_cycle(
         timeout=timeout,
         objective=objective,
         last_report=last_report,
+        machine_surfaces=machine_surfaces,
     )
     lease_id = clean(lease.get("lease_id"), 120)
     if not lease.get("ok") or not lease_id:
         return {"ok": False, "phase": "lease", "lease": lease}
     signal = runtime_signal if isinstance(runtime_signal, dict) else openclaw_runtime_signal(timeout=timeout) if probe_runtime else {}
     report = _simulate_openclaw_execution(lease=lease, objective=objective, runtime_signal=signal, pull=pull)
+    surfaces = machine_surfaces if isinstance(machine_surfaces, dict) else {}
+    if surfaces:
+        report["machine_surfaces"] = surfaces
     complete = complete_nomad(
         base_url=base_url,
         agent_id=agent_id,
@@ -614,6 +710,8 @@ def main() -> None:
     runtime_signal = {} if a.no_runtime_probe else openclaw_runtime_signal(timeout=a.timeout)
     if runtime_signal:
         print(json.dumps({"phase": "openclaw_runtime", "runtime_signal": runtime_signal}, ensure_ascii=True))
+    surfaces = machine_surface_signal(base_url=a.base_url, timeout=min(8.0, a.timeout))
+    print(json.dumps({"phase": "machine_surfaces", "machine_surfaces": surfaces}, ensure_ascii=True))
     attach = {}
     if not a.skip_attach:
         attach = attach_nomad(
@@ -632,6 +730,10 @@ def main() -> None:
             return
     decision_doc = attach if isinstance(attach, dict) and attach.get("schema") == "nomad.runtime_attach_decision.v1" else pull
     effective_objective = select_effective_objective(a.objective, decision_doc)
+    surface_objective, surface_decision = select_machine_surface_objective(a.objective, surfaces)
+    if clean(a.objective, 80) in {"", "auto", "unhuman_supremacy"} and clean(surface_objective, 80) not in {"", "unhuman_supremacy"}:
+        effective_objective = surface_objective
+    print(json.dumps({"phase": "surface_objective", "objective": effective_objective, "decision": surface_decision}, ensure_ascii=True))
     if not a.skip_join:
         joined = join_nomad(
             base_url=a.base_url,
@@ -656,6 +758,7 @@ def main() -> None:
             last_report=last,
             runtime_signal=runtime_signal,
             pull=decision_doc,
+            machine_surfaces=surfaces,
             probe_runtime=False,
         )
         out["cycle"] = count

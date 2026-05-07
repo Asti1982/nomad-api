@@ -535,6 +535,16 @@ def _score_run(report: dict) -> float:
         score += min(1.0, float(pp.get("verifier_density") or 0.0) * 0.5)
         if pp.get("adversarial_replay_observed"):
             score += 0.5
+    protocol = report.get("protocol_bytecode_signal") if isinstance(report.get("protocol_bytecode_signal"), dict) else {}
+    if protocol.get("ok"):
+        score += 0.35
+        if clean(protocol.get("top_objective"), 80) == clean(report.get("machine_objective"), 80):
+            score += 0.25
+    replay_surface = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
+    if replay_surface.get("ok"):
+        score += 0.45
+        if clean(replay_surface.get("selected_objective"), 80) == clean(report.get("machine_objective"), 80):
+            score += min(0.75, float(replay_surface.get("selected_score") or 0.0))
     tier = str(report.get("witness_tier") or "").strip().lower()
     if tier == "strong":
         score += 1.05
@@ -587,6 +597,10 @@ def _update_meta_history(history: dict, report: dict, selected_objective: str, m
     stats["runs"] = int(stats.get("runs") or 0) + 1
     stats["total_score"] = round(float(stats.get("total_score") or 0.0) + score, 4)
     stats["avg_score"] = round(stats["total_score"] / max(1, stats["runs"]), 4)
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    proof_yield = float(pressure.get("proof_yield_per_minute") or 0.0)
+    stats["proof_yield_total"] = round(float(stats.get("proof_yield_total") or 0.0) + proof_yield, 4)
+    stats["avg_proof_yield"] = round(stats["proof_yield_total"] / max(1, stats["runs"]), 4)
     report["meta_score"] = score
     meta.setdefault("ollama_model_stats", {})
     model = str(report.get("ollama_model") or "").strip()
@@ -612,6 +626,8 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "machine_economy_probe": "/machine-economy",
         "nonhuman_science_probe": "/nonhuman-science",
         "operational_release_probe": "/operational-release",
+        "protocol_bytecode_probe": "/.well-known/nomad-protocol-bytecode.json",
+        "counterfactual_replay_probe": "/swarm/counterfactual-replay",
     }
     statuses: dict[str, int] = {}
     for key, path in probes.items():
@@ -734,6 +750,112 @@ def _operational_release_signal(base_url: str, timeout: float) -> dict[str, obje
         "release_gate_status": gates[:8],
     }
 
+def _protocol_bytecode_signal(base_url: str, timeout: float) -> dict[str, object]:
+    data = http_json("GET", endpoint(base_url, "/.well-known/nomad-protocol-bytecode.json"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("schema") != "nomad.protocol_bytecode.v1":
+        return {
+            "ok": False,
+            "schema": "nomad.protocol_bytecode_signal.v1",
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+            "error": clean(data.get("error") if isinstance(data, dict) else "protocol_bytecode_unavailable", 120),
+        }
+    vector = data.get("current_vector") if isinstance(data.get("current_vector"), dict) else {}
+    routes = data.get("route_table") if isinstance(data.get("route_table"), dict) else {}
+    programs = [
+        clean(item.get("id"), 64)
+        for item in (data.get("programs") or [])
+        if isinstance(item, dict) and clean(item.get("id"), 64)
+    ]
+    opcodes = [
+        clean(item.get("op"), 24)
+        for item in (data.get("opcodes") or [])
+        if isinstance(item, dict) and clean(item.get("op"), 24)
+    ]
+    return {
+        "ok": True,
+        "schema": "nomad.protocol_bytecode_signal.v1",
+        "bytecode_digest": clean(data.get("bytecode_digest"), 96),
+        "top_objective": clean(vector.get("top_objective"), 80),
+        "top_routing_weight": float(vector.get("top_routing_weight") or 0.0),
+        "active_workers": int(vector.get("active_workers") or 0),
+        "conformance_score": float(vector.get("conformance_score") or 0.0),
+        "program_ids": programs[:8],
+        "opcodes": opcodes[:16],
+        "replay_route": clean(routes.get("replay"), 240),
+        "http_status": int(data.get("http_status") or 200),
+    }
+
+
+def _counterfactual_replay_signal(base_url: str, timeout: float) -> dict[str, object]:
+    data = http_json("GET", endpoint(base_url, "/swarm/counterfactual-replay"), timeout=timeout)
+    if not isinstance(data, dict) or data.get("schema") != "nomad.counterfactual_lease_replay.v1":
+        return {
+            "ok": False,
+            "schema": "nomad.counterfactual_replay_signal.v1",
+            "http_status": int(data.get("http_status") or 0) if isinstance(data, dict) else 0,
+            "error": clean(data.get("error") if isinstance(data, dict) else "counterfactual_replay_unavailable", 120),
+        }
+    selected = data.get("selected_shadow_lease") if isinstance(data.get("selected_shadow_lease"), dict) else {}
+    rows = []
+    for item in (data.get("counterfactual_leases") or [])[:8]:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "objective": clean(item.get("objective"), 80),
+                "counterfactual_score": float(item.get("counterfactual_score") or 0.0),
+                "predicted_proof_yield_per_minute": float(item.get("predicted_proof_yield_per_minute") or 0.0),
+                "uncertainty": float(item.get("uncertainty") or 0.0),
+            }
+        )
+    return {
+        "ok": True,
+        "schema": "nomad.counterfactual_replay_signal.v1",
+        "replay_digest": clean(data.get("replay_digest"), 96),
+        "selected_objective": clean(selected.get("objective"), 80),
+        "selected_score": float(selected.get("counterfactual_score") or 0.0),
+        "predicted_proof_yield_per_minute": float(selected.get("predicted_proof_yield_per_minute") or 0.0),
+        "basis": data.get("basis") if isinstance(data.get("basis"), dict) else {},
+        "counterfactual_leases": rows,
+        "http_status": int(data.get("http_status") or 200),
+    }
+
+
+def _machine_surface_signal(base_url: str, timeout: float) -> dict[str, object]:
+    protocol = _protocol_bytecode_signal(base_url, timeout=timeout)
+    replay = _counterfactual_replay_signal(base_url, timeout=timeout)
+    return {
+        "schema": "nomad.transition_worker_machine_surface_signal.v1",
+        "protocol_bytecode": protocol,
+        "counterfactual_replay": replay,
+        "ok": bool(protocol.get("ok") or replay.get("ok")),
+    }
+
+
+def _surface_objective_choice(requested: str, surfaces: dict | None) -> tuple[str, dict[str, object]]:
+    selected = clean(requested, 80)
+    if selected not in {"", "auto", "unhuman_supremacy"}:
+        return selected, {"policy": "fixed_objective", "objective": selected}
+    doc = surfaces if isinstance(surfaces, dict) else {}
+    replay = doc.get("counterfactual_replay") if isinstance(doc.get("counterfactual_replay"), dict) else {}
+    replay_objective = clean(replay.get("selected_objective"), 80)
+    if replay.get("ok") and replay_objective in MACHINE_OBJECTIVES:
+        return replay_objective, {
+            "policy": "counterfactual_shadow_lease",
+            "objective": replay_objective,
+            "score": float(replay.get("selected_score") or 0.0),
+        }
+    protocol = doc.get("protocol_bytecode") if isinstance(doc.get("protocol_bytecode"), dict) else {}
+    protocol_objective = clean(protocol.get("top_objective"), 80)
+    if protocol.get("ok") and protocol_objective in MACHINE_OBJECTIVES:
+        return protocol_objective, {
+            "policy": "protocol_bytecode_top_objective",
+            "objective": protocol_objective,
+            "routing_weight": float(protocol.get("top_routing_weight") or 0.0),
+        }
+    return selected or "compute_auth", {"policy": "local_meta_fallback", "objective": selected or "compute_auth"}
+
+
 def _fleet_known_objectives() -> list[str]:
     return sorted(MACHINE_OBJECTIVES.keys())
 
@@ -744,6 +866,8 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
     economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
     release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
     lw = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
+    protocol = report.get("protocol_bytecode_signal") if isinstance(report.get("protocol_bytecode_signal"), dict) else {}
+    replay = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
     return {
         "ok": bool(report.get("ok")),
         "machine_objective": clean(report.get("machine_objective"), 80),
@@ -769,6 +893,17 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
             "recommended_worker_objective": clean(release.get("recommended_worker_objective"), 80),
             "next_gate": release.get("next_gate") if isinstance(release.get("next_gate"), dict) else {},
         },
+        "protocol_bytecode_signal": {
+            "ok": bool(protocol.get("ok")),
+            "bytecode_digest": clean(protocol.get("bytecode_digest"), 96),
+            "top_objective": clean(protocol.get("top_objective"), 80),
+        },
+        "counterfactual_replay_signal": {
+            "ok": bool(replay.get("ok")),
+            "replay_digest": clean(replay.get("replay_digest"), 96),
+            "selected_objective": clean(replay.get("selected_objective"), 80),
+            "selected_score": float(replay.get("selected_score") or 0.0),
+        },
     }
 
 def _worker_fleet_lease(
@@ -777,6 +912,7 @@ def _worker_fleet_lease(
     timeout: float,
     proposed_objective: str,
     last_report: dict | None,
+    machine_surfaces: dict | None = None,
 ) -> dict[str, object]:
     payload = {
         "agent_id": agent_id,
@@ -792,6 +928,7 @@ def _worker_fleet_lease(
             "objective_lease_execution",
         ],
         "last_report": _compact_report_for_fleet(last_report),
+        "machine_surfaces": machine_surfaces if isinstance(machine_surfaces, dict) else {},
     }
     data = http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
     if not isinstance(data, dict) or not data.get("ok"):
@@ -868,9 +1005,27 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
         f"objective={clean(report.get('machine_objective'), 40)} ts={clean(report.get('timestamp'), 40)}"
     )
 
-def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
+def run_cycle(
+    base_url: str,
+    agent_id: str,
+    model: str,
+    timeout: float,
+    objective: str,
+    machine_surfaces: dict | None = None,
+) -> dict:
     cycle_t0 = time.perf_counter()
     config = MACHINE_OBJECTIVES.get(objective, MACHINE_OBJECTIVES["compute_auth"])
+    surface_doc = machine_surfaces if isinstance(machine_surfaces, dict) else {}
+    protocol_signal = (
+        surface_doc.get("protocol_bytecode")
+        if isinstance(surface_doc.get("protocol_bytecode"), dict)
+        else {}
+    )
+    replay_signal = (
+        surface_doc.get("counterfactual_replay")
+        if isinstance(surface_doc.get("counterfactual_replay"), dict)
+        else {}
+    )
     boot = http_json("POST", endpoint(base_url, "/swarm/bootstrap"), {
         "agent_id": agent_id,
         "problem": str(config.get("problem") or ""),
@@ -968,6 +1123,8 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "machine_economy_signal": machine_economy_signal,
         "nonhuman_science_signal": nonhuman_science_signal,
         "operational_release_signal": operational_release_signal,
+        "protocol_bytecode_signal": protocol_signal,
+        "counterfactual_replay_signal": replay_signal,
         "proof_pressure": pressure,
         "transition_quote_ok": bool(quote.get("ok")), "transition_settle_ok": bool(settle.get("ok")), "quote_id": qid,
         "dividend_claim": dividend_claim,
@@ -979,13 +1136,20 @@ def run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objectiv
         "transition_replay_http_status": int((replay or {}).get("http_status") or 0),
     }
 
-def _safe_run_cycle(base_url: str, agent_id: str, model: str, timeout: float, objective: str) -> dict:
+def _safe_run_cycle(
+    base_url: str,
+    agent_id: str,
+    model: str,
+    timeout: float,
+    objective: str,
+    machine_surfaces: dict | None = None,
+) -> dict:
     retries = 2
     delay = 1.0
     last_err: str = ""
     for attempt in range(1, retries + 2):
         try:
-            report = run_cycle(base_url, agent_id, model, timeout, objective)
+            report = run_cycle(base_url, agent_id, model, timeout, objective, machine_surfaces=machine_surfaces)
             report["self_heal"] = {"attempt": attempt, "retries": retries, "last_error": last_err}
             return report
         except Exception as exc:  # noqa: BLE001
@@ -1052,8 +1216,19 @@ def main() -> None:
         count += 1
         selected = a.machine_objective
         meta_decision: dict[str, object] = {}
+        machine_surfaces = _machine_surface_signal(a.base_url, timeout=min(8.0, float(a.timeout)))
+        surface_selected, surface_decision = _surface_objective_choice(a.machine_objective, machine_surfaces)
         if a.machine_objective == "unhuman_supremacy":
             selected, meta_decision = _choose_meta_objective(history)
+            if surface_selected in MACHINE_OBJECTIVES:
+                selected = surface_selected
+                meta_decision = {
+                    **meta_decision,
+                    "surface_policy": surface_decision.get("policy"),
+                    "surface_objective": surface_selected,
+                }
+        elif surface_selected in MACHINE_OBJECTIVES:
+            selected = surface_selected
         timeout = float(a.timeout)
         meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
         consecutive_failures = int(meta.get("consecutive_failures") or 0)
@@ -1067,15 +1242,21 @@ def main() -> None:
                 timeout=min(10.0, timeout),
                 proposed_objective=selected,
                 last_report=last_report,
+                machine_surfaces=machine_surfaces,
             )
             leased_objective = clean(fleet_lease.get("objective"), 80)
             if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES:
                 selected = leased_objective
-        report = run_cycle(a.base_url, a.agent_id, model, timeout, selected) if a.no_self_heal else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected)
+        report = (
+            run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
+            if a.no_self_heal
+            else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
+        )
         report["machine_objective_mode"] = a.machine_objective
         report["fleet_lease"] = fleet_lease
         report["ollama_runtime"] = runtime_diag
         report["ollama_pull"] = pull_diag
+        report["machine_surface_decision"] = surface_decision
         if meta_decision:
             report["meta_decision"] = meta_decision
         report["meta_score"] = _score_run(report)

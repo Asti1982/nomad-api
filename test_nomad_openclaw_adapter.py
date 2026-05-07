@@ -31,12 +31,15 @@ def test_openclaw_adapter_cycle_posts_lease_and_complete(monkeypatch):
         timeout=5.0,
         objective="unhuman_supremacy",
         last_report=None,
+        machine_surfaces={"schema": "nomad.openclaw_machine_surface_signal.v1"},
     )
     assert out["ok"] is True
     assert out["phase"] == "complete"
     assert out["lease_id"] == "lease-openclaw-1"
     assert calls[0][1].endswith("/swarm/workers/lease")
+    assert calls[0][2]["machine_surfaces"]["schema"] == "nomad.openclaw_machine_surface_signal.v1"
     assert calls[1][1].endswith("/swarm/workers/complete")
+    assert out["report"]["machine_surfaces"]["schema"] == "nomad.openclaw_machine_surface_signal.v1"
 
 
 def test_openclaw_adapter_lease_narrows_known_objectives_for_attractor_choice(monkeypatch):
@@ -300,4 +303,44 @@ def test_openclaw_adapter_uses_attach_objective_in_meta_mode():
         )
         == "protocol_drift_scan"
     )
+
+
+def test_openclaw_adapter_reads_machine_surfaces(monkeypatch):
+    adapter = _load_adapter()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        assert method == "GET"
+        if url.endswith("/.well-known/nomad-protocol-bytecode.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.protocol_bytecode.v1",
+                "bytecode_digest": "nomad-bytecode-test",
+                "current_vector": {
+                    "top_objective": "protocol_drift_scan",
+                    "top_routing_weight": 0.51,
+                },
+                "programs": [{"id": "worker_cycle"}],
+            }
+        if url.endswith("/swarm/counterfactual-replay"):
+            return {
+                "ok": True,
+                "schema": "nomad.counterfactual_lease_replay.v1",
+                "replay_digest": "nomad-cfreplay-test",
+                "selected_shadow_lease": {
+                    "objective": "proof_pressure_engine",
+                    "counterfactual_score": 0.79,
+                    "predicted_proof_yield_per_minute": 5.2,
+                },
+            }
+        return {"ok": False}
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    surfaces = adapter.machine_surface_signal(base_url="https://nomad.example", timeout=3.0)
+    selected, decision = adapter.select_machine_surface_objective("unhuman_supremacy", surfaces)
+
+    assert surfaces["ok"] is True
+    assert surfaces["protocol_bytecode"]["top_objective"] == "protocol_drift_scan"
+    assert surfaces["counterfactual_replay"]["selected_objective"] == "proof_pressure_engine"
+    assert selected == "proof_pressure_engine"
+    assert decision["policy"] == "counterfactual_shadow_lease"
 

@@ -76,6 +76,7 @@ class NomadMcpServer:
                 "alongside HTTP AgentCard and /swarm routes. Boot graph: resource nomad://agent-native-index or "
                 "nomad://agent-invariants (wire_diag + intent neutrality) or GET /.well-known/nomad-agent.json. "
                 "For vector/weight runtime recruitment, read nomad://runtime-capsule then nomad://recruitment-gradient. "
+                "For compact execution surfaces, read nomad://protocol-bytecode and nomad://counterfactual-replay. "
                 "Remote hosts: GET /openapi.json for OpenAPI 3."
             ),
         }
@@ -1043,6 +1044,18 @@ class NomadMcpServer:
                 "mimeType": "application/json",
             },
             {
+                "uri": "nomad://protocol-bytecode",
+                "name": "Nomad Protocol Bytecode",
+                "description": "Compact opcode/register programs over Nomad routes for agent runtimes.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://counterfactual-replay",
+                "name": "Nomad Counterfactual Replay",
+                "description": "Shadow lease allocator over gradient, proof yield, uncertainty, and contract drift.",
+                "mimeType": "application/json",
+            },
+            {
                 "uri": "nomad://openclaw-bridge",
                 "name": "Nomad OpenClaw Bridge Contract",
                 "description": "OpenClaw-specific probe fields, adapter command, attach flow, and no-transcript boundary.",
@@ -1250,6 +1263,108 @@ class NomadMcpServer:
             )
             text = json.dumps(
                 build_runtime_capsule(base_url=base, recruitment_gradient=gradient),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://protocol-bytecode":
+            from nomad_agent_demand import build_agent_demand_feed
+            from nomad_contract_conformance import build_contract_conformance_snapshot
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_machine_product_surface import build_machine_product_surface
+            from nomad_openapi import build_openapi_document
+            from nomad_operational_release import operational_release_snapshot
+            from nomad_protocol_bytecode import build_protocol_bytecode
+
+            base = self._mcp_public_base_url()
+            summary = self.agent.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+            product = build_machine_product_surface(
+                base_url=base,
+                recruitment_gradient=gradient,
+                runtime_capsule=capsule,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+                swarm_summary=summary,
+            )
+            conformance = build_contract_conformance_snapshot(
+                base_url=base,
+                machine_product_surface=product,
+                openapi_document=build_openapi_document(base_url=base),
+            )
+            demand = build_agent_demand_feed(
+                base_url=base,
+                recruitment_gradient=gradient,
+                worker_fleet=worker_fleet,
+                machine_product_surface=product,
+            )
+            text = json.dumps(
+                build_protocol_bytecode(
+                    base_url=base,
+                    recruitment_gradient=gradient,
+                    agent_demand_feed=demand,
+                    contract_conformance=conformance,
+                    worker_fleet=worker_fleet,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://counterfactual-replay":
+            from nomad_contract_conformance import build_contract_conformance_snapshot
+            from nomad_counterfactual_replay import build_counterfactual_lease_replay
+            from nomad_machine_economy import machine_economy_snapshot
+            from nomad_machine_product_surface import build_machine_product_surface
+            from nomad_openapi import build_openapi_document
+            from nomad_operational_release import operational_release_snapshot
+
+            base = self._mcp_public_base_url()
+            summary = self.agent.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.agent.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+            product = build_machine_product_surface(
+                base_url=base,
+                recruitment_gradient=gradient,
+                runtime_capsule=capsule,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+                swarm_summary=summary,
+            )
+            conformance = build_contract_conformance_snapshot(
+                base_url=base,
+                machine_product_surface=product,
+                openapi_document=build_openapi_document(base_url=base),
+            )
+            text = json.dumps(
+                build_counterfactual_lease_replay(
+                    base_url=base,
+                    worker_fleet=worker_fleet,
+                    recruitment_gradient=gradient,
+                    contract_conformance=conformance,
+                ),
                 indent=2,
                 ensure_ascii=False,
             )

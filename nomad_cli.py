@@ -11,6 +11,60 @@ from workflow import NomadAgent
 from self_development import SelfDevelopmentJournal
 
 
+def _runtime_gradient_context(base_url: str) -> Dict[str, Any]:
+    from nomad_machine_economy import machine_economy_snapshot
+    from nomad_operational_release import operational_release_snapshot
+    from nomad_recruitment_gradient import build_recruitment_gradient
+
+    base = (base_url or "").strip()
+    agent = NomadAgent()
+    summary = agent.swarm_registry.public_manifest(base_url=base)
+    worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+    if not worker_fleet:
+        worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+    economy = machine_economy_snapshot()
+    release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+    gradient = build_recruitment_gradient(
+        base_url=base,
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+    return {
+        "base_url": base,
+        "summary": summary,
+        "worker_fleet": worker_fleet,
+        "economy": economy,
+        "operational_release": release,
+        "recruitment_gradient": gradient,
+    }
+
+
+def _contract_conformance_for_runtime_context(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    from nomad_contract_conformance import build_contract_conformance_snapshot
+    from nomad_machine_product_surface import build_machine_product_surface
+    from nomad_openapi import build_openapi_document
+    from nomad_runtime_capsule import build_runtime_capsule
+
+    base = str(ctx.get("base_url") or "")
+    gradient = ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {}
+    capsule = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+    product = build_machine_product_surface(
+        base_url=base,
+        recruitment_gradient=gradient,
+        runtime_capsule=capsule,
+        worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+        machine_economy=ctx.get("economy") if isinstance(ctx.get("economy"), dict) else {},
+        operational_release=ctx.get("operational_release") if isinstance(ctx.get("operational_release"), dict) else {},
+        swarm_summary=ctx.get("summary") if isinstance(ctx.get("summary"), dict) else {},
+    )
+    return build_contract_conformance_snapshot(
+        base_url=base,
+        machine_product_surface=product,
+        openapi_document=build_openapi_document(base_url=base),
+    )
+
+
 def _compact_text(result: Dict[str, Any]) -> str:
     mode = result.get("mode", "result")
     if mode == "self_audit":
@@ -226,6 +280,34 @@ def _compact_text(result: Dict[str, Any]) -> str:
             for item in rows[:5]:
                 lines.append(
                     f"- {item.get('objective', '')}: weight={item.get('routing_weight', 0)} deficit={item.get('deficit', 0)}"
+                )
+        return "\n".join(lines)
+
+    if result.get("schema") == "nomad.protocol_bytecode.v1":
+        vector = result.get("current_vector") or {}
+        programs = result.get("programs") or []
+        lines = [
+            "Nomad protocol bytecode",
+            f"Digest: {result.get('bytecode_digest', '')}",
+            f"Top objective: {vector.get('top_objective', '')}",
+            f"Workers: {vector.get('active_workers', 0)}",
+            f"Programs: {', '.join(str(item.get('id', '')) for item in programs[:4] if isinstance(item, dict))}",
+        ]
+        return "\n".join([line for line in lines if line])
+
+    if result.get("schema") == "nomad.counterfactual_lease_replay.v1":
+        selected = result.get("selected_shadow_lease") or {}
+        leases = result.get("counterfactual_leases") or []
+        lines = [
+            "Nomad counterfactual replay",
+            f"Digest: {result.get('replay_digest', '')}",
+            f"Selected: {selected.get('objective', '')} score={selected.get('counterfactual_score', 0)}",
+        ]
+        if leases:
+            lines.append("Shadow leases:")
+            for item in leases[:5]:
+                lines.append(
+                    f"- {item.get('objective', '')}: score={item.get('counterfactual_score', 0)} proof={item.get('predicted_proof_yield_per_minute', 0)}"
                 )
         return "\n".join(lines)
 
@@ -1394,6 +1476,10 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("runtime-capsule is handled directly in run_once")
     if command == "recruitment-gradient":
         raise ValueError("recruitment-gradient is handled directly in run_once")
+    if command == "protocol-bytecode":
+        raise ValueError("protocol-bytecode is handled directly in run_once")
+    if command == "counterfactual-replay":
+        raise ValueError("counterfactual-replay is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1634,6 +1720,35 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 worker_fleet=worker_fleet,
                 machine_economy=economy,
                 operational_release=release,
+            )
+        elif args.command == "protocol-bytecode":
+            from nomad_agent_demand import build_agent_demand_feed
+            from nomad_protocol_bytecode import build_protocol_bytecode
+
+            ctx = _runtime_gradient_context((getattr(args, "base_url", None) or "").strip())
+            conformance = _contract_conformance_for_runtime_context(ctx)
+            demand = build_agent_demand_feed(
+                base_url=str(ctx.get("base_url") or ""),
+                recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                machine_product_surface={},
+            )
+            result = build_protocol_bytecode(
+                base_url=str(ctx.get("base_url") or ""),
+                recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
+                agent_demand_feed=demand,
+                contract_conformance=conformance,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+            )
+        elif args.command == "counterfactual-replay":
+            from nomad_counterfactual_replay import build_counterfactual_lease_replay
+
+            ctx = _runtime_gradient_context((getattr(args, "base_url", None) or "").strip())
+            result = build_counterfactual_lease_replay(
+                base_url=str(ctx.get("base_url") or ""),
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
+                contract_conformance=_contract_conformance_for_runtime_context(ctx),
             )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
@@ -2009,6 +2124,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vector/weight runtime recruitment field and attach contract for external agents.",
     )
     recruitment_gradient.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    protocol_bytecode = subparsers.add_parser(
+        "protocol-bytecode",
+        help="Compact opcode/register programs over Nomad routes for agent runtimes.",
+    )
+    protocol_bytecode.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    counterfactual_replay = subparsers.add_parser(
+        "counterfactual-replay",
+        help="Shadow lease allocator over gradient, proof yield, uncertainty, and contract drift.",
+    )
+    counterfactual_replay.add_argument(
         "--base-url",
         default="",
         help="Override public base URL for absolute links.",

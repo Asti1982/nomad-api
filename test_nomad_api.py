@@ -210,6 +210,10 @@ def test_build_openapi_document_lists_core_paths():
     assert "/machine-product" in doc["paths"]
     assert "/contract-conformance" in doc["paths"]
     assert "/.well-known/nomad-contract-conformance.json" in doc["paths"]
+    assert "/.well-known/nomad-protocol-bytecode.json" in doc["paths"]
+    assert "/protocol-bytecode" in doc["paths"]
+    assert "/swarm/counterfactual-replay" in doc["paths"]
+    assert "/.well-known/nomad-counterfactual-replay.json" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
@@ -253,6 +257,19 @@ def test_build_openapi_document_lists_core_paths():
     assert "/dividend/settle" in doc["paths"]
     assert "/dividend" in doc["paths"]
     assert doc["servers"][0]["url"] == "https://nomad.example"
+
+
+def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    monkeypatch.setattr(NomadApiHandler, "swarm_registry", registry)
+
+    bytecode = NomadApiHandler._build_protocol_bytecode(base_url="https://nomad.example")
+    replay = NomadApiHandler._build_counterfactual_replay(base_url="https://nomad.example")
+
+    assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
+    assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
+    assert replay["schema"] == "nomad.counterfactual_lease_replay.v1"
+    assert replay["links"]["protocol_bytecode"].endswith("/.well-known/nomad-protocol-bytecode.json")
 
 
 def test_machine_error_helpers():

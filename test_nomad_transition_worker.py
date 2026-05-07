@@ -141,6 +141,74 @@ def test_transition_worker_scores_operational_release_signal():
     assert scored > baseline
 
 
+def test_transition_worker_reads_protocol_and_replay_surfaces(monkeypatch):
+    worker = _load_worker()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        assert method == "GET"
+        if url.endswith("/.well-known/nomad-protocol-bytecode.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.protocol_bytecode.v1",
+                "bytecode_digest": "nomad-bytecode-test",
+                "current_vector": {
+                    "top_objective": "overmint_compressor",
+                    "top_routing_weight": 0.66,
+                    "active_workers": 7,
+                    "conformance_score": 0.9,
+                },
+                "programs": [{"id": "worker_cycle"}],
+                "opcodes": [{"op": "SENSE"}, {"op": "REPLAY"}],
+                "route_table": {"replay": "https://nomad.example/swarm/counterfactual-replay"},
+            }
+        if url.endswith("/swarm/counterfactual-replay"):
+            return {
+                "ok": True,
+                "schema": "nomad.counterfactual_lease_replay.v1",
+                "replay_digest": "nomad-cfreplay-test",
+                "selected_shadow_lease": {
+                    "objective": "settlement_capacity_builder",
+                    "counterfactual_score": 0.73,
+                    "predicted_proof_yield_per_minute": 6.0,
+                },
+                "counterfactual_leases": [],
+            }
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    surfaces = worker._machine_surface_signal("https://nomad.example", timeout=2.0)
+    selected, decision = worker._surface_objective_choice("unhuman_supremacy", surfaces)
+
+    assert surfaces["ok"] is True
+    assert surfaces["protocol_bytecode"]["top_objective"] == "overmint_compressor"
+    assert surfaces["counterfactual_replay"]["selected_objective"] == "settlement_capacity_builder"
+    assert selected == "settlement_capacity_builder"
+    assert decision["policy"] == "counterfactual_shadow_lease"
+
+
+def test_transition_worker_scores_machine_surfaces():
+    worker = _load_worker()
+
+    baseline = worker._score_run({"ok": True, "machine_objective": "overmint_compressor"})
+    scored = worker._score_run(
+        {
+            "ok": True,
+            "machine_objective": "overmint_compressor",
+            "protocol_bytecode_signal": {
+                "ok": True,
+                "top_objective": "overmint_compressor",
+            },
+            "counterfactual_replay_signal": {
+                "ok": True,
+                "selected_objective": "overmint_compressor",
+                "selected_score": 0.8,
+            },
+        }
+    )
+
+    assert scored > baseline
+
+
 def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     worker = _load_worker()
     calls = []
@@ -165,6 +233,7 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
         timeout=1.0,
         proposed_objective="compute_auth",
         last_report=None,
+        machine_surfaces={"schema": "nomad.test_surface.v1"},
     )
     complete = worker._worker_fleet_complete(
         "https://nomad.example",
@@ -177,5 +246,6 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     assert lease["objective"] == "settlement_capacity_builder"
     assert complete["ok"] is True
     assert calls[0][2]["known_objectives"]
+    assert calls[0][2]["machine_surfaces"]["schema"] == "nomad.test_surface.v1"
     assert "emergence_release_probe" in calls[0][2]["known_objectives"]
     assert calls[1][2]["lease_id"] == "nomad-worker-lease-test"

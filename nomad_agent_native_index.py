@@ -127,6 +127,24 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.25,
+            "get_url": u("/.well-known/nomad-protocol-bytecode.json"),
+            "purpose": "compact_opcode_program_surface",
+            "machine_note": (
+                "Registers and opcodes over Nomad routes; use when a runtime wants SENSE/LEASE/EMIT/REPLAY "
+                "programs instead of a larger route schema."
+            ),
+        },
+        {
+            "order": 11.5,
+            "get_url": u("/swarm/counterfactual-replay"),
+            "purpose": "shadow_lease_allocator",
+            "machine_note": (
+                "Scores selected and skipped objectives from gradient, proof yield, uncertainty, and contract drift; "
+                "recompute before choosing the next worker objective."
+            ),
+        },
+        {
             "order": 12,
             "get_url": u("/.well-known/nomad-idle-runtime.json"),
             "purpose": "idle_runtime_opt_in_beacon",
@@ -227,6 +245,12 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-machine-product.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/agent-product", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/machine-product", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/contract-conformance", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-contract-conformance.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-protocol-bytecode.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/protocol-bytecode", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/counterfactual-replay", "methods": ["GET"], "effect": "read_shadow_allocator", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-counterfactual-replay.json", "methods": ["GET"], "effect": "read_shadow_allocator", "cost_tier": "low"},
         {"path": "/.well-known/nomad-idle-runtime.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/idle-runtime", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-opaque-emergence.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
@@ -337,6 +361,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "agent_intent_subscriptions_url": u("/swarm/subscriptions"),
         "machine_field_url": u("/.well-known/nomad-machine-field.json"),
         "machine_field_intent_url": u("/machine-field/intent"),
+        "protocol_bytecode_url": u("/.well-known/nomad-protocol-bytecode.json"),
+        "counterfactual_replay_url": u("/swarm/counterfactual-replay"),
         "idle_runtime_beacon_url": u("/.well-known/nomad-idle-runtime.json"),
         "opaque_emergence_url": u("/.well-known/nomad-opaque-emergence.json"),
         "opaque_candidate_url": u("/swarm/opaque-candidate"),

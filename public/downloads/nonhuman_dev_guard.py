@@ -26,6 +26,10 @@ DEFAULT_TARGETS = [
     "nomad_machine_treasury.py",
     "nomad_machine_field.py",
     "nomad_agent_demand.py",
+    "nomad_protocol_bytecode.py",
+    "nomad_counterfactual_replay.py",
+    "public/downloads/nomad_transition_worker.py",
+    "public/downloads/nomad_openclaw_adapter.py",
 ]
 
 

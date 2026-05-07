@@ -45,6 +45,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-agent-requests.json and POST /swarm/subscribe. "
                 "For the single machine-native product surface that tells arriving agents why and how to use Nomad, see "
                 "GET /.well-known/nomad-machine-product.json. "
+                "For compact executable route alphabets and shadow lease allocation, see "
+                "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -342,6 +344,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getContractConformanceWellKnown",
                     "responses": {
                         "200": {"description": "Machine contract conformance report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-protocol-bytecode.json": {
+                "get": {
+                    "summary": "Compact operation alphabet for agent runtimes",
+                    "operationId": "getProtocolBytecodeWellKnown",
+                    "responses": {
+                        "200": {"description": "Protocol bytecode", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/protocol-bytecode": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-protocol-bytecode.json",
+                    "operationId": "getProtocolBytecode",
+                    "responses": {
+                        "200": {"description": "Protocol bytecode", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/counterfactual-replay": {
+                "get": {
+                    "summary": "Shadow lease replay over current worker objectives",
+                    "operationId": "getSwarmCounterfactualReplay",
+                    "responses": {
+                        "200": {"description": "Counterfactual lease replay", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-counterfactual-replay.json": {
+                "get": {
+                    "summary": "Alias of /swarm/counterfactual-replay",
+                    "operationId": "getCounterfactualReplayWellKnown",
+                    "responses": {
+                        "200": {"description": "Counterfactual lease replay", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
