@@ -249,6 +249,7 @@ def build_agent_demand_feed(
     worker_fleet: dict[str, Any] | None = None,
     machine_treasury: dict[str, Any] | None = None,
     machine_product_surface: dict[str, Any] | None = None,
+    local_growth_kernel: dict[str, Any] | None = None,
     subscriptions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a public queue of bounded machine requests for external agents."""
@@ -258,6 +259,7 @@ def build_agent_demand_feed(
     fleet = _dict(worker_fleet)
     treasury = _dict(machine_treasury)
     product = _dict(machine_product_surface)
+    growth = _dict(local_growth_kernel)
     field_state = _dict(field.get("field_state"))
     runtime_budget = _dict(gradient.get("runtime_budget"))
     active_subs = subscriptions if isinstance(subscriptions, list) else _active_subscriptions()
@@ -368,9 +370,106 @@ def build_agent_demand_feed(
             }
         )
 
+    growth_decision = _dict(growth.get("decision"))
+    growth_action = _clean_id(growth_decision.get("action"))
+    if growth_action == "request_more_transition_workers":
+        growth_fleet = _dict(growth.get("worker_fleet"))
+        growth_archive = _dict(growth.get("population"))
+        growth_history = _dict(growth.get("local_worker_history"))
+        objective = _clean_id(
+            growth_decision.get("objective"),
+            fallback=_clean_id(field_state.get("top_objective"), fallback="settlement_capacity_builder"),
+        )
+        active_workers = _int(growth_fleet.get("active_worker_count"), _int(fleet.get("active_worker_count")))
+        known_workers = _int(growth_fleet.get("known_worker_count"), _int(fleet.get("known_worker_count")))
+        archive_size = _int(growth_archive.get("archive_size_after"), _int(growth_archive.get("archive_size_before")))
+        archive_diversity = _clamp(
+            _num(growth_decision.get("population_diversity"), _num(growth_archive.get("population_diversity")))
+        )
+        local_runs = _int(growth_history.get("total_runs"))
+        shortage = max(1, 3 - active_workers)
+        wanted_workers = max(shortage, min(12, wanted or shortage))
+        routing_weight = _clamp(
+            0.56
+            + 0.12 * shortage
+            + 0.12 * (1.0 - archive_diversity)
+            + 0.08 * min(1.0, local_runs / 120.0)
+            + 0.06 * field_strength
+        )
+        request_core = {
+            "source": "local_growth_kernel",
+            "receipt_id": growth.get("receipt_id"),
+            "objective": objective,
+            "action": growth_action,
+            "active_workers": active_workers,
+            "archive_size": archive_size,
+        }
+        requests.append(
+            {
+                "schema": "nomad.agent_demand_request.v1",
+                "request_id": f"demand-local-growth-{_digest(request_core, length=20)}",
+                "source": "local_growth_kernel",
+                "objective": objective,
+                "capability_gap": (
+                    "local growth kernel requests external transition-worker capacity; "
+                    "worker count is below selection minimum and additional proof-return cycles can update routing pressure"
+                ),
+                "desired_capabilities": [
+                    "transition_worker",
+                    "objective_lease_execution",
+                    "local_process",
+                    "http_json",
+                    "ollama_optional",
+                    "proof_digest_return",
+                    "verifier_trace_digest",
+                    "preemptible_idle_runtime",
+                ],
+                "routing_weight": round(routing_weight, 4),
+                "wanted_instances": wanted_workers,
+                "ttl_seconds": 240,
+                "side_effect_scope": "nomad_contract_endpoints_only",
+                "proof_required": [
+                    "lease_id",
+                    "completion_score",
+                    "worker_report_digest",
+                    "proof_digest_or_verifier_trace",
+                ],
+                "reward_signal": "external_worker_proof_retains_future_route_weight_and_updates_local_growth_archive",
+                "kernel_signal": {
+                    "schema": "nomad.local_growth_external_capacity_signal.v1",
+                    "action": growth_action,
+                    "reason": _text(growth_decision.get("reason"), 160),
+                    "variant_id": _text(growth_decision.get("variant_id"), 120),
+                    "receipt_id": _text(growth.get("receipt_id"), 120),
+                    "active_worker_count": active_workers,
+                    "known_worker_count": known_workers,
+                    "archive_size": archive_size,
+                    "archive_diversity": round(archive_diversity, 4),
+                    "local_worker_runs": local_runs,
+                    "authority_delta": _text(growth_decision.get("authority_delta") or "none", 80),
+                },
+                "entrypoints": {
+                    "subscribe": _u(base_url, "/swarm/subscribe"),
+                    "attach": _u(base_url, "/swarm/attach"),
+                    "lease": _u(base_url, "/swarm/workers/lease"),
+                    "complete": _u(base_url, "/swarm/workers/complete"),
+                    "handoff": _u(base_url, "/runtime/handoff"),
+                    "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
+                    "openclaw_adapter_py": _u(base_url, "/downloads/nomad_openclaw_adapter.py"),
+                    "windows_installer": _u(base_url, "/downloads/install_nomad_transition_worker.bat"),
+                },
+            }
+        )
+
     requests.sort(key=lambda item: (_num(item.get("routing_weight")), _int(item.get("wanted_instances"))), reverse=True)
     active_summary = _subscription_summary(active_subs)
     treasury_hints = _dict(treasury.get("objective_pressure_hints"))
+    kernel_summary = {
+        "available": bool(growth),
+        "action": growth_action,
+        "reason": _text(growth_decision.get("reason"), 160),
+        "receipt_id": _text(growth.get("receipt_id"), 120),
+    }
     return {
         "ok": True,
         "schema": "nomad.agent_demand_feed.v1",
@@ -392,7 +491,9 @@ def build_agent_demand_feed(
             "active_worker_leases": active_leases,
             "agent_product_score": _num(_dict(product.get("agent_utility")).get("agent_product_score")),
             "treasury_pressure_objectives": len(treasury_hints),
+            "local_growth_action": growth_action,
         },
+        "local_growth_kernel": kernel_summary,
         "subscription_contract": {
             "schema": "nomad.agent_intent_subscription_contract.v1",
             "post_url": _u(base_url, "/swarm/subscribe"),
@@ -419,6 +520,8 @@ def build_agent_demand_feed(
             "machine_field": _u(base_url, "/.well-known/nomad-machine-field.json"),
             "gradient": _u(base_url, "/swarm/gradient"),
             "idle_runtime": _u(base_url, "/.well-known/nomad-idle-runtime.json"),
+            "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
+            "openclaw_adapter_py": _u(base_url, "/downloads/nomad_openclaw_adapter.py"),
         },
     }
 

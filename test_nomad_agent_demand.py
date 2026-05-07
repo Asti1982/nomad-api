@@ -61,6 +61,50 @@ def test_agent_demand_feed_exposes_bounded_open_work(tmp_path, monkeypatch):
     assert "proof_digest" in top["proof_required"] or "proof_digest_or_verifier_trace" in top["proof_required"]
 
 
+def test_agent_demand_feed_exposes_local_growth_worker_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(demand, "STATE_PATH", tmp_path / "subscriptions.json")
+    feed = demand.build_agent_demand_feed(
+        base_url="https://nomad.example",
+        machine_field={
+            "field_state": {
+                "top_objective": "overmint_compressor",
+                "field_strength": 0.44,
+                "wanted_new_runtimes_now": 4,
+            }
+        },
+        recruitment_gradient=_gradient(),
+        worker_fleet={"active_worker_count": 0, "known_worker_count": 1, "active_lease_count": 0},
+        local_growth_kernel={
+            "schema": "nomad.local_growth_kernel.v1",
+            "receipt_id": "lgk-test",
+            "decision": {
+                "action": "request_more_transition_workers",
+                "reason": "worker_count_below_minimum_population",
+                "objective": "overmint_compressor",
+                "variant_id": "variant-overmint",
+                "population_diversity": 0.18,
+                "authority_delta": "none",
+            },
+            "worker_fleet": {"active_worker_count": 0, "known_worker_count": 1},
+            "population": {"archive_size_after": 7},
+            "local_worker_history": {"total_runs": 243},
+        },
+    )
+
+    local_requests = [row for row in feed["demand_requests"] if row["source"] == "local_growth_kernel"]
+    assert local_requests
+    request = local_requests[0]
+    assert request["objective"] == "overmint_compressor"
+    assert "transition_worker" in request["desired_capabilities"]
+    assert request["kernel_signal"]["receipt_id"] == "lgk-test"
+    assert (
+        request["entrypoints"]["transition_worker_py"]
+        == "https://nomad.example/downloads/nomad_transition_worker.py"
+    )
+    assert feed["field_state"]["local_growth_action"] == "request_more_transition_workers"
+    assert feed["links"]["openclaw_adapter_py"] == "https://nomad.example/downloads/nomad_openclaw_adapter.py"
+
+
 def test_agent_intent_subscription_matches_demand_and_persists(tmp_path, monkeypatch):
     feed = _feed(tmp_path, monkeypatch)
     receipt = demand.subscribe_agent_intent(

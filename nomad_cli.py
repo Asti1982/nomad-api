@@ -178,6 +178,40 @@ def _compact_text(result: Dict[str, Any]) -> str:
                 )
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.local_growth_kernel.v1":
+        pop = result.get("population") or {}
+        decision = result.get("decision") or {}
+        worker_execution = result.get("worker_execution") or {}
+        post_decision = worker_execution.get("post_execution_decision") or {}
+        evidence = worker_execution.get("fresh_evidence") or {}
+        fleet = result.get("worker_fleet") or {}
+        history = result.get("local_worker_history") or {}
+        top = (pop.get("top_variants") or [{}])[0]
+        top_fit = top.get("fitness") if isinstance(top, dict) else {}
+        lines = [
+            "Nomad local growth kernel",
+            f"Decision: {decision.get('action', '')} [{decision.get('reason', '')}]",
+            f"Objective: {decision.get('objective', '')}",
+            f"Workers: active={fleet.get('active_worker_count', 0)} known={fleet.get('known_worker_count', 0)} leases={fleet.get('active_lease_count', 0)}",
+            f"Local worker history: runs={history.get('total_runs', 0)} last={history.get('last_objective', '')}",
+            f"Archive: {pop.get('archive_size_before', 0)} -> {pop.get('archive_size_after', 0)} candidates={pop.get('candidate_count', 0)} diversity={pop.get('population_diversity', 0)}",
+            f"Top variant: {top.get('variant_id', '') if isinstance(top, dict) else ''} frontier={top_fit.get('frontier_score', 0) if isinstance(top_fit, dict) else 0}",
+        ]
+        if worker_execution.get("requested"):
+            lines.append(
+                f"Worker pulse: events={evidence.get('event_count', 0)} ok={evidence.get('ok_count', 0)}"
+            )
+        if post_decision:
+            lines.append(
+                f"Post-pulse: {post_decision.get('action', '')} objective={post_decision.get('objective', '')}"
+            )
+        lines.append(result.get("analysis", ""))
+        return "\n".join(
+            [
+                line for line in lines if line
+            ]
+        )
+
     if result.get("schema") == "nomad.recruitment_gradient.v1":
         state = result.get("state_vector") or {}
         rows = result.get("gradient") or []
@@ -1354,6 +1388,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("nonhuman-science is handled directly in run_once")
     if command == "operational-release":
         raise ValueError("operational-release is handled directly in run_once")
+    if command == "local-growth-kernel":
+        raise ValueError("local-growth-kernel is handled directly in run_once")
     if command == "runtime-capsule":
         raise ValueError("runtime-capsule is handled directly in run_once")
     if command == "recruitment-gradient":
@@ -1552,6 +1588,19 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             from nomad_operational_release import operational_release_snapshot
 
             result = operational_release_snapshot(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "local-growth-kernel":
+            from nomad_local_growth_kernel import run_local_growth_kernel
+
+            result = run_local_growth_kernel(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                state_path=(getattr(args, "state_path", None) or "").strip() or None,
+                transition_worker_state_path=(getattr(args, "transition_worker_state_path", None) or "").strip() or None,
+                persist=not bool(getattr(args, "dry_run", False)),
+                execute_workers=bool(getattr(args, "execute_workers", False)),
+                worker_cycles=int(getattr(args, "worker_cycles", 0) or 0),
+                no_ollama=not bool(getattr(args, "with_ollama", False)),
+                timeout=float(getattr(args, "timeout", 20.0) or 20.0),
+            )
         elif args.command == "runtime-capsule":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -1934,6 +1983,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Override public base URL for absolute links.",
     )
+    local_growth_kernel = subparsers.add_parser(
+        "local-growth-kernel",
+        help="Local archive-selection kernel: transition-worker variants -> proof -> selection pressure.",
+    )
+    local_growth_kernel.add_argument("--base-url", default="", help="Nomad base URL used only for worker execution hints.")
+    local_growth_kernel.add_argument("--state-path", default="", help="Override nomad_local_growth_kernel_state.json.")
+    local_growth_kernel.add_argument("--transition-worker-state-path", default="", help="Override nomad_transition_worker_state.json.")
+    local_growth_kernel.add_argument("--dry-run", action="store_true", help="Do not write the local archive receipt.")
+    local_growth_kernel.add_argument("--execute-workers", action="store_true", help="Actually run local transition-worker cycles.")
+    local_growth_kernel.add_argument("--worker-cycles", type=int, default=0, help="Worker cycles to run when --execute-workers is set.")
+    local_growth_kernel.add_argument("--with-ollama", action="store_true", help="Allow spawned transition workers to use Ollama.")
+    local_growth_kernel.add_argument("--timeout", type=float, default=20.0, help="Per-worker timeout hint in seconds.")
     runtime_capsule = subparsers.add_parser(
         "runtime-capsule",
         help="Minimal boot capsule for external agent runtimes.",

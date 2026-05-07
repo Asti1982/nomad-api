@@ -244,6 +244,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
         field = cls._build_machine_field(base_url=base_url, swarm_summary=summary)
         treasury = machine_treasury_snapshot()
+        try:
+            from nomad_local_growth_kernel import run_local_growth_kernel
+
+            local_growth = run_local_growth_kernel(
+                base_url=base_url,
+                worker_fleet=worker_fleet,
+                recruitment_gradient=gradient,
+                persist=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            local_growth = {
+                "ok": False,
+                "schema": "nomad.local_growth_kernel_error.v1",
+                "error": "local_growth_kernel_unavailable",
+                "detail": str(exc)[:240],
+            }
         return build_agent_demand_feed(
             base_url=base_url,
             machine_field=field,
@@ -251,6 +267,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet=worker_fleet,
             machine_treasury=treasury,
             machine_product_surface=product,
+            local_growth_kernel=local_growth,
         )
 
     @classmethod
