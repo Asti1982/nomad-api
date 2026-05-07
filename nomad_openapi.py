@@ -37,6 +37,10 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /nonhuman-science. "
                 "For proof-return capacity release and controlled emergent-behavior production, see "
                 "GET /operational-release. "
+                "For proof-weighted machine treasury pledges that can gently bias selection pressure without direct side effects, see "
+                "GET /machine-treasury and POST /machine-treasury/pledge. "
+                "For the single machine field that compiles capability gaps, topology, proof, source tags, join, and pledge into one next-op receipt, see "
+                "GET /.well-known/nomad-machine-field.json and POST /machine-field/intent. "
                 "For the single machine-native product surface that tells arriving agents why and how to use Nomad, see "
                 "GET /.well-known/nomad-machine-product.json. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
@@ -101,6 +105,94 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "200": {"description": "Machine economy", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
+                }
+            },
+            "/machine-treasury": {
+                "get": {
+                    "summary": "Proof-weighted machine treasury pledge snapshot and contract",
+                    "operationId": "getMachineTreasury",
+                    "responses": {
+                        "200": {"description": "Machine treasury snapshot", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/machine-treasury/pledge": {
+                "post": {
+                    "summary": "Record an idempotent proof-weighted pledge toward a machine objective",
+                    "operationId": "postMachineTreasuryPledge",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "objective", "amount_native"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "amount_native": {"type": "number"},
+                                        "horizon_cycles": {"type": "integer"},
+                                        "idempotency_key": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "settlement_ref": {"type": "string"},
+                                        "source_tag": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "201": {"description": "Pledge accepted"},
+                        "200": {"description": "Idempotent replay"},
+                        "400": {"description": "Invalid, conflicting, or unproven pledge"},
+                    },
+                }
+            },
+            "/.well-known/nomad-machine-field.json": {
+                "get": {
+                    "summary": "Unified machine field for agent arrival, proof, topology, and bounded pressure",
+                    "operationId": "getMachineFieldWellKnown",
+                    "responses": {
+                        "200": {"description": "Machine field", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/machine-field": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-machine-field.json",
+                    "operationId": "getMachineField",
+                    "responses": {
+                        "200": {"description": "Machine field", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/machine-field/intent": {
+                "post": {
+                    "summary": "Compile one next-op receipt from capability gap, topology, proof, source tag, and pledge hints",
+                    "operationId": "postMachineFieldIntent",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "capability_gap": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "amount_native": {"type": "number"},
+                                        "source_tag": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Machine field intent receipt"}},
                 }
             },
             "/nonhuman-science": {

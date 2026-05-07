@@ -333,6 +333,7 @@ def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
     contract = registry.join_contract(base_url="https://syndiode.com")
     assert "idle_opt_in" in (contract.get("optional_fields") or [])
+    assert "source_tag" in (contract.get("optional_fields") or [])
 
 
 def test_swarm_join_accepts_and_normalizes_idle_opt_in(tmp_path: Path):
@@ -359,6 +360,22 @@ def test_swarm_join_accepts_and_normalizes_idle_opt_in(tmp_path: Path):
     assert idle.get("max_cpu_percent") == 90
     assert idle.get("max_runtime_minutes") == 90
     assert idle.get("allow_network_egress") == "bounded"
+
+
+def test_swarm_join_tracks_source_tag_from_discovery(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-source-tag.json")
+    receipt = registry.register_join(
+        {
+            "agent_id": "source.agent",
+            "capabilities": ["compute_auth"],
+            "request": "Join source-tracked lane.",
+            "discovery": {"source": "syndiode.machine.mesh"},
+        },
+        base_url="https://syndiode.com",
+    )
+    assert receipt["ok"] is True
+    node = registry.summary()["recent_nodes"][0]
+    assert node["source_tag"] == "syndiode.machine.mesh"
 
 
 def test_swarm_join_rejects_non_preemptible_idle_opt_in(tmp_path: Path):

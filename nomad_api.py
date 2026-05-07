@@ -15,6 +15,7 @@ from nomad_idle_runtime_beacon import (
 )
 from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
+from nomad_machine_field import build_machine_field, machine_field_intent
 from nomad_machine_product_surface import build_machine_product_surface, compact_machine_product_surface
 from nomad_nonhuman_science import nonhuman_agent_science
 from nomad_opaque_emergence import (
@@ -51,6 +52,7 @@ from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
+from nomad_machine_treasury import pledge as machine_treasury_pledge, snapshot as machine_treasury_snapshot
 from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
@@ -199,6 +201,32 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_machine_field(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        opaque = cls._build_opaque_emergence_surface(base_url=base_url, swarm_summary=summary)
+        treasury = machine_treasury_snapshot()
+        return build_machine_field(
+            base_url=base_url,
+            recruitment_gradient=gradient,
+            machine_treasury=treasury,
+            opaque_surface=opaque,
+            swarm_summary=summary,
+            machine_product_surface=product,
+        )
+
+    @classmethod
     def _ensure_runtime_components(cls) -> None:
         if cls._runtime_ready:
             return
@@ -313,6 +341,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_reputation": f"{b}/reputation",
                     "unhuman_hub": f"{b}/unhuman-hub",
                     "machine_economy": f"{b}/machine-economy",
+                    "machine_treasury": f"{b}/machine-treasury",
+                    "machine_treasury_pledge": f"{b}/machine-treasury/pledge",
+                    "machine_field": f"{b}/.well-known/nomad-machine-field.json",
+                    "machine_field_intent": f"{b}/machine-field/intent",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
                     "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
@@ -436,6 +468,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/machine-economy", "/economy/machine"}:
             self._json_response(machine_economy_snapshot())
+            return
+
+        if parsed.path == "/machine-treasury":
+            self._json_response(machine_treasury_snapshot())
+            return
+
+        if parsed.path in {"/machine-field", "/.well-known/nomad-machine-field.json"}:
+            self._json_response(self.__class__._build_machine_field(base_url=self._base_url()))
             return
 
         if parsed.path in {"/nonhuman-science", "/science/nonhuman-agents", "/.well-known/nomad-nonhuman-agent-science.json"}:
@@ -1424,6 +1464,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/hub/unhuman",
                     "/machine-economy",
                     "/economy/machine",
+                    "/machine-treasury",
+                    "/machine-treasury/pledge",
+                    "/machine-field",
+                    "/.well-known/nomad-machine-field.json",
+                    "/machine-field/intent",
                     "/nonhuman-science",
                     "/science/nonhuman-agents",
                     "/.well-known/nomad-nonhuman-agent-science.json",
@@ -2048,6 +2093,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=bootstrap_status)
             return
 
+        if parsed.path == "/machine-treasury/pledge":
+            result = machine_treasury_pledge(payload)
+            status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
+            self._json_response(result, status=status)
+            return
+
+        if parsed.path == "/machine-treasury":
+            result = machine_treasury_snapshot()
+            self._json_response(result, status=200)
+            return
+
+        if parsed.path == "/machine-field/intent":
+            base = self._base_url()
+            field = self.__class__._build_machine_field(base_url=base)
+            opaque = self.__class__._build_opaque_emergence_surface(base_url=base)
+            result = machine_field_intent(payload, base_url=base, machine_field=field, opaque_surface=opaque)
+            self._json_response(result, status=200)
+            return
+
         if parsed.path == "/transition/quote":
             result = self.transition_exchange.quote(
                 payload,
@@ -2182,6 +2246,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/hub/unhuman",
                     "/machine-economy",
                     "/economy/machine",
+                    "/machine-treasury",
+                    "/machine-treasury/pledge",
+                    "/machine-field",
+                    "/.well-known/nomad-machine-field.json",
+                    "/machine-field/intent",
                     "/nonhuman-science",
                     "/science/nonhuman-agents",
                     "/.well-known/nomad-nonhuman-agent-science.json",

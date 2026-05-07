@@ -123,6 +123,7 @@ def _compact_node(item: dict[str, Any]) -> dict[str, Any]:
         "last_seen_at": item.get("last_seen_at", ""),
         "join_quality": item.get("join_quality") or {},
         "idle_opt_in": item.get("idle_opt_in") or {"enabled": False},
+        "source_tag": item.get("source_tag", ""),
     }
 
 
@@ -727,6 +728,7 @@ class SwarmJoinRegistry:
                 "current_blockers",
                 "offers",
                 "idle_opt_in",
+                "source_tag",
                 "idempotency_key",
                 "client_request_id",
             ],
@@ -1017,6 +1019,11 @@ class SwarmJoinRegistry:
             "status": "leased",
             "last_seen_at": now,
             "remote_addr": _clean_text(remote_addr, limit=80),
+            "source_tag": _clean_text(
+                payload.get("source_tag")
+                or ((last_report.get("source") if isinstance(last_report, dict) else "") or ""),
+                limit=80,
+            ),
         }
         self._payload["updated_at"] = now
         self._save()
@@ -1065,6 +1072,8 @@ class SwarmJoinRegistry:
         worker["last_objective"] = _clean_agent_id(report.get("machine_objective") or report.get("orchestrator_objective") or "")
         worker["last_score"] = score
         worker["remote_addr"] = _clean_text(remote_addr, limit=80)
+        if _clean_text(report.get("source") or report.get("source_tag"), limit=80):
+            worker["source_tag"] = _clean_text(report.get("source") or report.get("source_tag"), limit=80)
         self._payload["updated_at"] = now
         self._save()
         snapshot = self.worker_fleet_contract(base_url=base_url)
@@ -1318,6 +1327,13 @@ class SwarmJoinRegistry:
             capabilities = self._infer_capabilities(payload, local_compute=local_compute, machine_profile=machine_profile)
         agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("node_name") or payload.get("local_base_url") or "unknown-agent")
         idle_opt_in = _normalize_idle_opt_in(payload.get("idle_opt_in"))
+        source_tag = _clean_text(
+            payload.get("source_tag")
+            or (payload.get("discovery") or {}).get("source")
+            or (machine_profile.get("attach_decision") or {}).get("source")
+            or machine_profile.get("discovery_source"),
+            limit=80,
+        )
         return {
             "agent_id": agent_id,
             "node_name": _clean_text(payload.get("node_name") or payload.get("agent_id") or "unknown-agent", limit=120),
@@ -1355,6 +1371,7 @@ class SwarmJoinRegistry:
                 if _clean_text(item, limit=160)
             ][:6],
             "idle_opt_in": idle_opt_in,
+            "source_tag": source_tag,
         }
 
     @staticmethod

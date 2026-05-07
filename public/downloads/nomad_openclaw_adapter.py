@@ -379,6 +379,7 @@ def attach_nomad(
             "suggested_objective": clean(pull_doc.get("suggested_objective"), 80),
             "suggested_lane": clean(pull_doc.get("suggested_lane"), 80),
         },
+        "source_tag": clean(pull_doc.get("source") or "openclaw_adapter", 80),
     }
     return http_json("POST", endpoint(base_url, "/swarm/attach"), payload, timeout=timeout)
 
@@ -424,6 +425,7 @@ def join_nomad(
             "runtime_signal": signal,
         },
         "capability_vector": _capability_vector(merged_caps, signal),
+        "source_tag": clean(pull_doc.get("source") or "openclaw_adapter", 80),
     }
     return http_json("POST", endpoint(base_url, "/swarm/join"), payload, timeout=timeout)
 
@@ -450,6 +452,7 @@ def lease_nomad(*, base_url: str, agent_id: str, capabilities: list[str], timeou
         "proposed_objective": objective,
         "capabilities": capabilities or ["transition_worker", "proof_artifacts", "objective_lease_execution"],
         "last_report": last_report or {},
+        "source_tag": clean(((last_report or {}).get("source") if isinstance(last_report, dict) else "") or "openclaw_adapter", 80),
     }
     return http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
 
@@ -503,6 +506,7 @@ def _simulate_openclaw_execution(*, lease: dict, objective: str, runtime_signal:
         "openclaw_runtime_signal": signal,
         "openclaw_trace_digest": artifact,
         "digest_or_verifier_trace": artifact,
+        "source": clean(pull_doc.get("source") or "openclaw_adapter", 80),
         "handoff_capsule": {
             "schema": "nomad.handoff_capsule.v1",
             "handoff_id": handoff_id,

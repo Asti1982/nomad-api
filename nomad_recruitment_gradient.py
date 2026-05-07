@@ -556,6 +556,12 @@ def attach_runtime_to_gradient(
     vector = _capability_vector(payload if isinstance(payload, dict) else {})
     idle_opt_in = _normalize_idle_opt_in(payload if isinstance(payload, dict) else {})
     agent_id = _clean_id(payload.get("agent_id") or payload.get("worker_id") or payload.get("node_name"), fallback=f"{vector['runtime']}.anonymous")
+    source_tag = _clean_text(
+        payload.get("source_tag")
+        or (payload.get("discovery") or {}).get("source")
+        or "unknown",
+        80,
+    )
     gradient_rows = gradient.get("gradient") if isinstance(gradient.get("gradient"), list) else []
     weight_by_objective = {
         str(item.get("objective")): _num(item.get("routing_weight"))
@@ -678,4 +684,5 @@ def attach_runtime_to_gradient(
             "top_objective": top_objective,
             "wanted_new_runtimes_now": _int(_nested(gradient, "runtime_budget").get("wanted_new_runtimes_now")),
         },
+        "source_tag": source_tag,
     }

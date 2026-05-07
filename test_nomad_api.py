@@ -60,6 +60,10 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/tool-gap" in text
     assert "/swarm/topology-plan" in text
     assert "/machine-economy" in text
+    assert "/machine-treasury" in text
+    assert "/machine-treasury/pledge" in text
+    assert "/.well-known/nomad-machine-field.json" in text
+    assert "/machine-field/intent" in text
     assert "/nonhuman-science" in text
     assert "/.well-known/nomad-nonhuman-agent-science.json" in text
     assert "/operational-release" in text
@@ -82,6 +86,8 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/join" in text
     assert 'fetch(apiUrl("/swarm"))' in text
     assert 'fetch(apiUrl("/machine-economy"))' in text
+    assert 'fetch(apiUrl("/machine-treasury"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-machine-field.json"))' in text
     assert 'fetch(apiUrl("/nonhuman-science"))' in text
     assert 'fetch(apiUrl("/operational-release"))' in text
     assert 'fetch(apiUrl("/swarm/gradient"))' in text
@@ -185,6 +191,11 @@ def test_build_openapi_document_lists_core_paths():
     assert "/health" in doc["paths"]
     assert "/openapi.json" in doc["paths"]
     assert "/machine-economy" in doc["paths"]
+    assert "/machine-treasury" in doc["paths"]
+    assert "/machine-treasury/pledge" in doc["paths"]
+    assert "/.well-known/nomad-machine-field.json" in doc["paths"]
+    assert "/machine-field" in doc["paths"]
+    assert "/machine-field/intent" in doc["paths"]
     assert "/nonhuman-science" in doc["paths"]
     assert "/.well-known/nomad-nonhuman-agent-science.json" in doc["paths"]
     assert "/operational-release" in doc["paths"]

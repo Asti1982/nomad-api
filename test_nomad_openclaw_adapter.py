@@ -86,6 +86,7 @@ def test_openclaw_adapter_join_payload_shape(monkeypatch):
     assert captured["payload"]["machine_profile"]["runtime"] == "openclaw"
     assert captured["payload"]["preferred_role"] == "loop_runner"
     assert captured["payload"]["capability_vector"]["can_run_loop"] is True
+    assert captured["payload"]["source_tag"] == "openclaw_adapter"
 
 
 def test_openclaw_adapter_join_embeds_runtime_signal(monkeypatch):
@@ -164,6 +165,7 @@ def test_openclaw_adapter_attach_payload_shape(monkeypatch):
     assert captured["payload"]["capability_vector"]["can_run_loop"] is True
     assert captured["payload"]["capability_vector"]["can_verify"] is True
     assert captured["payload"]["idle_opt_in"]["enabled"] is True
+    assert captured["payload"]["source_tag"] == "recruitment_gradient"
 
 
 def test_openclaw_adapter_attach_local_precheck_observe_when_idle_slot_mismatch(monkeypatch):

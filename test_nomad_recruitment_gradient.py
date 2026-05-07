@@ -118,3 +118,20 @@ def test_attach_runtime_rejects_non_preemptible_idle_opt_in():
     assert "idle_not_preemptible" in decision["reason_codes"]
     assert decision["idle_opt_in"]["enabled"] is True
     assert decision["idle_phase_slot"]["schema"] == "nomad.idle_phase_slot.v1"
+
+
+def test_attach_runtime_keeps_source_tag_for_funnel_tracking():
+    worker_fleet, economy, release = _blocked_inputs()
+    decision = attach_runtime_to_gradient(
+        {
+            "agent_id": "source.agent",
+            "runtime": "openclaw",
+            "source_tag": "syndiode.machine.mesh",
+            "capabilities": ["objective_lease_execution", "transition_settlement"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+    assert decision["source_tag"] == "syndiode.machine.mesh"
