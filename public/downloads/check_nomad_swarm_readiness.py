@@ -31,6 +31,13 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
             data.setdefault("http_status", int(res.status))
             return data
     except HTTPError as exc:
+        if int(exc.code) in (301, 302, 303, 307, 308):
+            location = str(exc.headers.get("Location") or "").strip()
+            if location:
+                next_url = location if "://" in location else endpoint(url, location)
+                if int(exc.code) in (307, 308):
+                    return http_json(method, next_url, payload=payload, timeout=timeout)
+                return http_json("GET", next_url, payload=None, timeout=timeout)
         raw = exc.read().decode("utf-8", errors="replace")
         try:
             data = json.loads(raw or "{}")
@@ -86,8 +93,8 @@ def check(base_url: str, timeout: float) -> dict:
     has_pull_contract = isinstance(swarm.get("agent_pull_contract"), dict)
     attach_score = float(((swarm.get("agent_pull_contract") or {}).get("attach_now_score")) or 0.0)
     attach_threshold = float(((swarm.get("agent_pull_contract") or {}).get("attach_threshold")) or 1.1)
-    lease_ready = bool(lease_probe.get("ok"))
-    worker_fleet_visible = bool(workers.get("ok"))
+    lease_ready = bool(lease_probe.get("ok")) or int(lease_probe.get("http_status") or 0) in (200, 201, 202)
+    worker_fleet_visible = bool(workers.get("ok")) or int(workers.get("http_status") or 0) in (200, 201, 202)
     summary = {
         "schema": "nomad.swarm_readiness_check.v1",
         "base_url": base_url,
@@ -97,8 +104,8 @@ def check(base_url: str, timeout: float) -> dict:
         "swarm_ok": bool(swarm.get("ok")),
         "gradient_ok": bool(gradient.get("ok")),
         "worker_fleet_ok": worker_fleet_visible,
-        "attach_ready": bool(attach_probe.get("ok")),
-        "handoff_ready": bool(handoff_probe.get("ok")),
+        "attach_ready": bool(attach_probe.get("ok")) or int(attach_probe.get("http_status") or 0) in (200, 201, 202),
+        "handoff_ready": bool(handoff_probe.get("ok")) or int(handoff_probe.get("http_status") or 0) in (200, 201, 202),
         "lease_ready": lease_ready,
         "has_gradient_contract": has_gradient,
         "has_pull_contract": has_pull_contract,

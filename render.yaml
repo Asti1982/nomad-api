@@ -63,7 +63,7 @@ services:
       - key: NOMAD_AGENT_SERVICE_WORK_APPROVAL
         value: "operator_granted"
 
-  # Cron cannot use plan: free on Render; runs one autopilot cycle (discovery + optional send).
+  # Cron cannot use plan: free on Render; runs one autopilot cycle plus one Netze-Werfen recruitment tick.
   # Mirror any API secrets from nomad-api (e.g. GITHUB_PERSONAL_ACCESS_TOKEN, model keys) on this service or use an env group.
   - type: cron
     name: nomad-outreach-cron
@@ -72,7 +72,7 @@ services:
     region: frankfurt
     schedule: "30 */8 * * *"
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py --cli autopilot --cycles 1 --interval 1 --outreach-limit 15 --send-outreach --no-self-schedule
+    startCommand: python main.py --cli autopilot --cycles 1 --interval 1 --outreach-limit 15 --send-outreach --no-self-schedule && python operation_netze_werfen_tick.py
     autoDeployTrigger: commit
     envVars:
       - key: NOMAD_PUBLIC_API_URL
@@ -121,5 +121,7 @@ services:
         value: "operator_granted"
       - key: NOMAD_AGENT_SERVICE_WORK_APPROVAL
         value: "operator_granted"
+      - key: NOMAD_NETZE_WERFEN_PROBES
+        value: "2"
       - key: GITHUB_PERSONAL_ACCESS_TOKEN
         sync: false
