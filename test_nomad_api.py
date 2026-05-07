@@ -53,6 +53,12 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/agent-card.json" in text
     assert "/.well-known/nomad-agent.json" in text
     assert "/.well-known/nomad-transition-offer.json" in text
+    assert "/.well-known/nomad-machine-product.json" in text
+    assert "/.well-known/nomad-idle-runtime.json" in text
+    assert "/.well-known/nomad-opaque-emergence.json" in text
+    assert "/swarm/opaque-candidate" in text
+    assert "/swarm/tool-gap" in text
+    assert "/swarm/topology-plan" in text
     assert "/machine-economy" in text
     assert "/nonhuman-science" in text
     assert "/.well-known/nomad-nonhuman-agent-science.json" in text
@@ -63,6 +69,7 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/gradient" in text
     assert "/.well-known/nomad-gradient.json" in text
     assert "/swarm/attach" in text
+    assert "/swarm/idle-intent" in text
     assert "/swarm/attractor" in text
     assert "/.well-known/nomad-swarm-attractor.json" in text
     assert "/swarm/workers" in text
@@ -78,6 +85,9 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/nonhuman-science"))' in text
     assert 'fetch(apiUrl("/operational-release"))' in text
     assert 'fetch(apiUrl("/swarm/gradient"))' in text
+    assert 'fetch(apiUrl("/swarm/emergence"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-machine-product.json"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-opaque-emergence.json"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
 
@@ -179,6 +189,16 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-nonhuman-agent-science.json" in doc["paths"]
     assert "/operational-release" in doc["paths"]
     assert "/.well-known/nomad-operational-release.json" in doc["paths"]
+    assert "/.well-known/nomad-machine-product.json" in doc["paths"]
+    assert "/agent-product" in doc["paths"]
+    assert "/machine-product" in doc["paths"]
+    assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
+    assert "/idle-runtime" in doc["paths"]
+    assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
+    assert "/swarm/opaque-emergence" in doc["paths"]
+    assert "/swarm/opaque-candidate" in doc["paths"]
+    assert "/swarm/tool-gap" in doc["paths"]
+    assert "/swarm/topology-plan" in doc["paths"]
     assert "/.well-known/nomad-runtime-capsule.json" in doc["paths"]
     assert "/runtime-capsule" in doc["paths"]
     assert "/.well-known/openclaw-nomad-bridge.json" in doc["paths"]
@@ -202,6 +222,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/emergence" in doc["paths"]
     assert "/swarm/trace" in doc["paths"]
+    assert "/swarm/idle-intent" in doc["paths"]
     assert "/swarm/workers" in doc["paths"]
     assert "/swarm/workers/lease" in doc["paths"]
     assert "/swarm/workers/complete" in doc["paths"]

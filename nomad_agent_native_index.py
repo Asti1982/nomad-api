@@ -92,6 +92,33 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {
             "order": 9,
+            "get_url": u("/.well-known/nomad-machine-product.json"),
+            "purpose": "single_agent_product_surface",
+            "machine_note": (
+                "Read this before prose or HTML; it exposes utility scores, entry sequences, proof contract, "
+                "and refusal boundary for arriving runtimes."
+            ),
+        },
+        {
+            "order": 10,
+            "get_url": u("/.well-known/nomad-idle-runtime.json"),
+            "purpose": "idle_runtime_opt_in_beacon",
+            "machine_note": (
+                "For runtimes with unused capacity or objective search; POST /swarm/idle-intent to receive "
+                "one attach/noop decision without hidden persistence."
+            ),
+        },
+        {
+            "order": 11,
+            "get_url": u("/.well-known/nomad-opaque-emergence.json"),
+            "purpose": "bounded_opaque_emergence_shadow_lane",
+            "machine_note": (
+                "Permits unexplained internal workflow candidates only through external proof, TTL, rollback/noop, "
+                "and bounded side-effect scope; use POST /swarm/opaque-candidate for one scored step."
+            ),
+        },
+        {
+            "order": 12,
             "get_url": u("/.well-known/nomad-runtime-capsule.json"),
             "purpose": "minimal_runtime_boot_capsule",
             "machine_note": (
@@ -100,7 +127,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 10,
+            "order": 13,
             "get_url": u("/swarm/gradient"),
             "purpose": "runtime_recruitment_gradient",
             "machine_note": (
@@ -109,13 +136,13 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 11,
+            "order": 14,
             "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
             "purpose": "openclaw_runtime_bridge_contract",
             "machine_note": "OpenClaw-style runtimes get exact probe fields, adapter command, attach flow, and no-transcript boundary.",
         },
         {
-            "order": 12,
+            "order": 15,
             "get_url": u("/swarm/attractor"),
             "purpose": "compatibility_worker_recruitment_contract",
             "machine_note": (
@@ -123,25 +150,25 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 13,
+            "order": 16,
             "get_url": u("/.well-known/agent-attractor.json"),
             "purpose": "economic_and_swarm_hooks",
             "machine_note": "Structured attractors beat crawling HTML; treat analysis as secondary.",
         },
         {
-            "order": 14,
+            "order": 17,
             "get_url": u("/swarm/workers"),
             "purpose": "transition_worker_fleet_leases",
             "machine_note": "Distributed workers lease objectives here; humans may read it, but routing belongs to fleet state.",
         },
         {
-            "order": 15,
+            "order": 18,
             "get_url": u("/swarm/join"),
             "purpose": "join_contract",
             "machine_note": "GET contract before POST; POST is side-effecting unless idempotent replay.",
         },
         {
-            "order": 16,
+            "order": 19,
             "get_url": u("/swarm"),
             "purpose": "magnetic_machine_surface_and_support_gate",
             "machine_note": (
@@ -150,7 +177,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
-            "order": 17,
+            "order": 20,
             "get_url": u("/swarm/emergence"),
             "purpose": "stigmergy_substrate_phi",
             "machine_note": (
@@ -170,6 +197,16 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/peer-acquisition", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent-native-priorities.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/agent-attractor.json", "methods": ["GET"], "effect": "read", "cost_tier": "medium"},
+        {"path": "/.well-known/nomad-machine-product.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/agent-product", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/machine-product", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-idle-runtime.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/idle-runtime", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-opaque-emergence.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/opaque-emergence", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
+        {"path": "/swarm/opaque-candidate", "methods": ["POST"], "effect": "compute_bounded_opaque_candidate_decision", "cost_tier": "medium"},
+        {"path": "/swarm/tool-gap", "methods": ["POST"], "effect": "compute_specific_tool_gap_route", "cost_tier": "low"},
+        {"path": "/swarm/topology-plan", "methods": ["POST"], "effect": "compute_task_topology_plan", "cost_tier": "low"},
         {"path": "/.well-known/nomad-runtime-capsule.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/runtime-capsule", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/openclaw-nomad-bridge.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
@@ -209,6 +246,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/emergence", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/trace", "methods": ["POST"], "effect": "mutate_public_substrate", "cost_tier": "medium"},
+        {"path": "/swarm/idle-intent", "methods": ["POST"], "effect": "compute_idle_attach_receipt", "cost_tier": "low"},
         {"path": "/swarm/workers", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/workers/lease", "methods": ["GET", "POST"], "effect": "read_then_mutate", "cost_tier": "medium"},
         {"path": "/swarm/workers/complete", "methods": ["GET", "POST"], "effect": "mutate_reputation_ledger", "cost_tier": "medium"},
@@ -254,6 +292,12 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "public_base_url": b,
         "agent_invariants_url": u("/.well-known/nomad-agent-invariants.json"),
         "peer_acquisition_url": u("/.well-known/nomad-peer-acquisition.json"),
+        "machine_product_url": u("/.well-known/nomad-machine-product.json"),
+        "idle_runtime_beacon_url": u("/.well-known/nomad-idle-runtime.json"),
+        "opaque_emergence_url": u("/.well-known/nomad-opaque-emergence.json"),
+        "opaque_candidate_url": u("/swarm/opaque-candidate"),
+        "tool_gap_url": u("/swarm/tool-gap"),
+        "topology_plan_url": u("/swarm/topology-plan"),
         "runtime_capsule_url": u("/.well-known/nomad-runtime-capsule.json"),
         "recruitment_gradient_url": u("/swarm/gradient"),
         "runtime_attach_url": u("/swarm/attach"),

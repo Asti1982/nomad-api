@@ -49,6 +49,9 @@ def test_agent_native_index_schema_and_boot_graph():
     )
     assert any("/nonhuman-science" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/operational-release" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-machine-product" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-opaque-emergence" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-runtime-capsule" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/gradient" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("openclaw-nomad-bridge" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -65,6 +68,14 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/.well-known/nomad-nonhuman-agent-science.json" in routes
     assert "/operational-release" in routes
     assert "/.well-known/nomad-operational-release.json" in routes
+    assert "/.well-known/nomad-machine-product.json" in routes
+    assert "/.well-known/nomad-idle-runtime.json" in routes
+    assert "/swarm/idle-intent" in routes
+    assert "/.well-known/nomad-opaque-emergence.json" in routes
+    assert "/swarm/opaque-emergence" in routes
+    assert "/swarm/opaque-candidate" in routes
+    assert "/swarm/tool-gap" in routes
+    assert "/swarm/topology-plan" in routes
     assert "/.well-known/nomad-runtime-capsule.json" in routes
     assert "/.well-known/openclaw-nomad-bridge.json" in routes
     assert "/swarm/gradient" in routes
@@ -81,6 +92,12 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("openclaw_bridge_url") or "").endswith("/.well-known/openclaw-nomad-bridge.json")
     assert (out.get("swarm_attractor_url") or "").endswith("/swarm/attractor")
     assert (out.get("peer_acquisition_url") or "").endswith("/.well-known/nomad-peer-acquisition.json")
+    assert (out.get("machine_product_url") or "").endswith("/.well-known/nomad-machine-product.json")
+    assert (out.get("idle_runtime_beacon_url") or "").endswith("/.well-known/nomad-idle-runtime.json")
+    assert (out.get("opaque_emergence_url") or "").endswith("/.well-known/nomad-opaque-emergence.json")
+    assert (out.get("opaque_candidate_url") or "").endswith("/swarm/opaque-candidate")
+    assert (out.get("tool_gap_url") or "").endswith("/swarm/tool-gap")
+    assert (out.get("topology_plan_url") or "").endswith("/swarm/topology-plan")
     assert out.get("agent_invariants_mcp_uri") == "nomad://agent-invariants"
     assert any(s.get("signal") == "http_402" for s in (out.get("anti_anthropic_semantics") or []))
     mrc = out.get("machine_runtime_contract") or {}
@@ -91,6 +108,13 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "machine_economy_get" in eps
     assert "nonhuman_science_get" in eps
     assert "operational_release_get" in eps
+    assert "machine_product_get" in eps
+    assert "idle_runtime_beacon_get" in eps
+    assert "idle_runtime_intent_post" in eps
+    assert "opaque_emergence_get" in eps
+    assert "opaque_candidate_post" in eps
+    assert "tool_gap_post" in eps
+    assert "topology_plan_post" in eps
     assert "runtime_capsule_get" in eps
     assert "recruitment_gradient_get" in eps
     assert "runtime_attach_post" in eps

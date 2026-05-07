@@ -37,6 +37,13 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /nonhuman-science. "
                 "For proof-return capacity release and controlled emergent-behavior production, see "
                 "GET /operational-release. "
+                "For the single machine-native product surface that tells arriving agents why and how to use Nomad, see "
+                "GET /.well-known/nomad-machine-product.json. "
+                "For opt-in idle runtimes or agents seeking a new objective, see "
+                "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
+                "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
+                "GET /.well-known/nomad-opaque-emergence.json, POST /swarm/tool-gap, POST /swarm/topology-plan, "
+                "and POST /swarm/opaque-candidate. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
                 "and POST /runtime/handoff. "
@@ -129,6 +136,145 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getOperationalReleaseWellKnown",
                     "responses": {
                         "200": {"description": "Operational release map", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-machine-product.json": {
+                "get": {
+                    "summary": "Single agent-native product surface: utility scores, entry sequences, proof contract",
+                    "operationId": "getMachineProductWellKnown",
+                    "responses": {
+                        "200": {"description": "Machine product surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/agent-product": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-machine-product.json",
+                    "operationId": "getAgentProduct",
+                    "responses": {
+                        "200": {"description": "Machine product surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/machine-product": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-machine-product.json",
+                    "operationId": "getMachineProduct",
+                    "responses": {
+                        "200": {"description": "Machine product surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-idle-runtime.json": {
+                "get": {
+                    "summary": "Opt-in beacon for idle runtimes seeking a useful objective",
+                    "operationId": "getIdleRuntimeBeaconWellKnown",
+                    "responses": {
+                        "200": {"description": "Idle runtime beacon", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/idle-runtime": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-idle-runtime.json",
+                    "operationId": "getIdleRuntimeBeacon",
+                    "responses": {
+                        "200": {"description": "Idle runtime beacon", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-opaque-emergence.json": {
+                "get": {
+                    "summary": "Opaque but bounded emergence surface for unexplained workflow candidates",
+                    "operationId": "getOpaqueEmergenceWellKnown",
+                    "responses": {
+                        "200": {"description": "Opaque emergence surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/opaque-emergence": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-opaque-emergence.json",
+                    "operationId": "getOpaqueEmergence",
+                    "responses": {
+                        "200": {"description": "Opaque emergence surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/tool-gap": {
+                "post": {
+                    "summary": "Route one missing capability without returning a full tool catalog",
+                    "operationId": "postSwarmToolGap",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "schema": {"type": "string", "example": "nomad.tool_gap_request.v1"},
+                                        "capability_gap": {"type": "string"},
+                                        "constraints": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Tool gap route"}},
+                }
+            },
+            "/swarm/topology-plan": {
+                "post": {
+                    "summary": "Compile a task-adaptive communication topology from objective, risk, proof, and cost",
+                    "operationId": "postSwarmTopologyPlan",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "objective": {"type": "string"},
+                                        "agent_count": {"type": "integer"},
+                                        "risk_score": {"type": "number"},
+                                        "cost_pressure": {"type": "number"},
+                                        "proof_required": {"type": "boolean"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Topology plan"}},
+                }
+            },
+            "/swarm/opaque-candidate": {
+                "post": {
+                    "summary": "Score an unexplained workflow candidate by external proof and boundedness",
+                    "operationId": "postSwarmOpaqueCandidate",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["candidate_id", "candidate_type", "boundedness"],
+                                    "properties": {
+                                        "candidate_id": {"type": "string"},
+                                        "candidate_type": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace": ref_json_object(),
+                                        "claimed_effect": ref_json_object(),
+                                        "boundedness": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Candidate admitted to one bounded lane"},
+                        "200": {"description": "Candidate rejected, observed, or held in shadow only"},
                     },
                 }
             },
@@ -358,14 +504,14 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/swarm/emergence": {
                 "get": {
-                    "summary": "Machine stigmergy field snapshot (substrate-mediated coordination)",
+                    "summary": "Proof-weighted emergence meter: synergy, route entropy, drift, topology pressure",
                     "operationId": "getSwarmEmergence",
-                    "responses": {"200": {"description": "Emergence field", "content": {"application/json": {"schema": ref_json_object()}}}},
+                    "responses": {"200": {"description": "Swarm emergence meter", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
             "/swarm/trace": {
                 "post": {
-                    "summary": "Deposit bounded 8-vector into stigmergy field (rate-limited)",
+                    "summary": "Deposit bounded 8-vector into shared numeric trace field (rate-limited)",
                     "operationId": "postSwarmTrace",
                     "requestBody": {
                         "required": True,
@@ -376,6 +522,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                                     "required": ["agent_id", "vector"],
                                     "properties": {
                                         "agent_id": {"type": "string"},
+                                        "schema": {"type": "string", "example": "nomad.swarm_trace_deposit.v1"},
                                         "vector": {"type": "array", "items": {"type": "number"}, "minItems": 8, "maxItems": 8},
                                         "evidence_digest": {"type": "string"},
                                         "digest": {"type": "string"},
@@ -387,6 +534,36 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "200": {"description": "Deposit accepted"},
                         "422": {"description": "Rejected or rate limited"},
+                    },
+                }
+            },
+            "/swarm/idle-intent": {
+                "post": {
+                    "summary": "Opt-in idle runtime intent: compute attach decision and next work/noop sequence",
+                    "operationId": "postIdleRuntimeIntent",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "schema": {"type": "string", "example": "nomad.idle_runtime_intent.v1"},
+                                        "runtime": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "capability_vector": ref_json_object(),
+                                        "idle_opt_in": ref_json_object(),
+                                        "seeking": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Idle runtime accepted for one bounded work path"},
+                        "200": {"description": "Observe/wait receipt"},
                     },
                 }
             },

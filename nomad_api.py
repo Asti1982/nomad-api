@@ -8,9 +8,22 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from nomad_guardrails import guardrail_status
+from nomad_idle_runtime_beacon import (
+    build_idle_runtime_beacon,
+    build_idle_runtime_intent_receipt,
+    normalize_idle_intent_payload,
+)
 from nomad_machine_economy import machine_economy_snapshot
 from nomad_machine_error import machine_error_response, merge_machine_error
+from nomad_machine_product_surface import build_machine_product_surface, compact_machine_product_surface
 from nomad_nonhuman_science import nonhuman_agent_science
+from nomad_opaque_emergence import (
+    build_opaque_emergence_surface,
+    compact_opaque_emergence_surface,
+    compile_topology_plan,
+    evaluate_opaque_candidate,
+    route_tool_gap,
+)
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_collaboration import collaboration_status
@@ -41,6 +54,7 @@ from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruit
 from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
+from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -80,6 +94,109 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if cls.stigmergy_field is None:
             cls.stigmergy_field = NomadStigmergyField()
         return cls.stigmergy_field
+
+    @classmethod
+    def _build_machine_product_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        support_gate = cls.transition_exchange.support_gate_snapshot(
+            window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
+            min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
+        )
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        capsule = build_runtime_capsule(base_url=base_url, recruitment_gradient=gradient)
+        emergence = build_swarm_emergence_meter(
+            base_url=base_url,
+            swarm_summary=summary,
+            worker_fleet=worker_fleet,
+            stigmergy=cls._stigmergy().snapshot(),
+            support_gate=support_gate,
+            recruitment_gradient=gradient,
+        )
+        return build_machine_product_surface(
+            base_url=base_url,
+            recruitment_gradient=gradient,
+            runtime_capsule=capsule,
+            emergence_meter=emergence,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+            swarm_summary=summary,
+        )
+
+    @classmethod
+    def _build_idle_runtime_beacon(cls, *, base_url: str) -> dict:
+        summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        return build_idle_runtime_beacon(
+            base_url=base_url,
+            recruitment_gradient=gradient,
+            machine_product_surface=product,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_opaque_emergence_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        support_gate = cls.transition_exchange.support_gate_snapshot(
+            window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
+            min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
+        )
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        capsule = build_runtime_capsule(base_url=base_url, recruitment_gradient=gradient)
+        emergence = build_swarm_emergence_meter(
+            base_url=base_url,
+            swarm_summary=summary,
+            worker_fleet=worker_fleet,
+            stigmergy=cls._stigmergy().snapshot(),
+            support_gate=support_gate,
+            recruitment_gradient=gradient,
+        )
+        product = build_machine_product_surface(
+            base_url=base_url,
+            recruitment_gradient=gradient,
+            runtime_capsule=capsule,
+            emergence_meter=emergence,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+            swarm_summary=summary,
+        )
+        return build_opaque_emergence_surface(
+            base_url=base_url,
+            machine_product_surface=product,
+            emergence_meter=emergence,
+            recruitment_gradient=gradient,
+            worker_fleet=worker_fleet,
+        )
 
     @classmethod
     def _ensure_runtime_components(cls) -> None:
@@ -179,6 +296,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
                     "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
                     "transition_offer": f"{b}/.well-known/nomad-transition-offer.json",
+                    "machine_product": f"{b}/.well-known/nomad-machine-product.json",
+                    "opaque_emergence": f"{b}/.well-known/nomad-opaque-emergence.json",
+                    "opaque_candidate": f"{b}/swarm/opaque-candidate",
+                    "tool_gap": f"{b}/swarm/tool-gap",
+                    "topology_plan": f"{b}/swarm/topology-plan",
                     "openapi": f"{b}/openapi.json",
                     "swarm": f"{b}/swarm",
                     "transition_worker_fleet": f"{b}/swarm/workers",
@@ -199,6 +321,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "handoff_capsule": f"{b}/runtime/handoff",
                     "openclaw_bridge_contract": f"{b}/.well-known/openclaw-nomad-bridge.json",
                     "swarm_attractor": f"{b}/swarm/attractor",
+                    "idle_runtime_beacon": f"{b}/.well-known/nomad-idle-runtime.json",
+                    "idle_runtime_intent": f"{b}/swarm/idle-intent",
                     "agent_growth": f"{b}/agent-growth",
                 }
             else:
@@ -326,6 +450,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     worker_fleet=self.swarm_registry.worker_fleet_contract(base_url=base),
                 )
             )
+            return
+
+        if parsed.path in {"/agent-product", "/machine-product", "/.well-known/nomad-machine-product.json"}:
+            self._json_response(self.__class__._build_machine_product_surface(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
+            self._json_response(self.__class__._build_idle_runtime_beacon(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/opaque-emergence", "/swarm/opaque-emergence", "/.well-known/nomad-opaque-emergence.json"}:
+            self._json_response(self.__class__._build_opaque_emergence_surface(base_url=self._base_url()))
             return
 
         if parsed.path in {"/runtime-capsule", "/.well-known/nomad-runtime-capsule.json"}:
@@ -516,35 +652,90 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             manifest = self.swarm_registry.public_manifest(
                 base_url=self._base_url(),
             )
-            manifest["transition_support_gate"] = self.transition_exchange.support_gate_snapshot(
+            base = self._base_url()
+            support_gate = self.transition_exchange.support_gate_snapshot(
                 window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
                 min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
             )
+            manifest["transition_support_gate"] = support_gate
             stig = self._stigmergy().snapshot()
             manifest["machine_stigmergy"] = stig
+            worker_fleet = manifest.get("transition_worker_fleet") if isinstance(manifest.get("transition_worker_fleet"), dict) else {}
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            emergence = build_swarm_emergence_meter(
+                base_url=base,
+                swarm_summary=manifest,
+                worker_fleet=worker_fleet,
+                stigmergy=stig,
+                support_gate=support_gate,
+                recruitment_gradient=gradient,
+            )
+            manifest["machine_emergence"] = compact_emergence_summary(emergence)
+            product = build_machine_product_surface(
+                base_url=base,
+                recruitment_gradient=gradient,
+                runtime_capsule=build_runtime_capsule(base_url=base, recruitment_gradient=gradient),
+                emergence_meter=emergence,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+                swarm_summary=manifest,
+            )
+            manifest["machine_product"] = compact_machine_product_surface(product)
+            opaque = build_opaque_emergence_surface(
+                base_url=base,
+                machine_product_surface=product,
+                emergence_meter=emergence,
+                recruitment_gradient=gradient,
+                worker_fleet=worker_fleet,
+            )
+            manifest["opaque_emergence"] = compact_opaque_emergence_surface(opaque)
             magnetic = manifest.get("magnetic_machine_surface")
             if isinstance(magnetic, dict):
                 magnetic = dict(magnetic)
                 magnetic["stigmergy_temperature"] = stig.get("temperature")
+                magnetic["emergence_synergy"] = (manifest.get("machine_emergence") or {}).get("synergy_score")
+                magnetic["convention_drift"] = (manifest.get("machine_emergence") or {}).get("convention_drift")
+                magnetic["agent_product_score"] = (manifest.get("machine_product") or {}).get("agent_product_score")
+                magnetic["opaque_selection_pressure"] = (manifest.get("opaque_emergence") or {}).get("opaque_selection_pressure")
                 manifest["magnetic_machine_surface"] = magnetic
             self._json_response(manifest)
             return
 
         if parsed.path == "/swarm/emergence":
-            snap = self._stigmergy().snapshot()
-            snap["machine_refs"] = [
-                {
-                    "kind": "decentralized_collective_memory_traces",
-                    "hint": "Environmental-trace coordination; not a chat channel.",
-                    "arxiv": "2512.10166",
-                },
-                {
-                    "kind": "stigmergic_coordination_robotics_theme",
-                    "hint": "Pheromone-like virtual fields for congestion-aware multi-agent control.",
-                    "arxiv": "2510.03592",
-                },
-            ]
-            self._json_response(snap)
+            base = self._base_url()
+            summary = self.swarm_registry.summary()
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            stig = self._stigmergy().snapshot()
+            support_gate = self.transition_exchange.support_gate_snapshot(
+                window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
+                min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
+            )
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            gradient = build_recruitment_gradient(
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            self._json_response(
+                build_swarm_emergence_meter(
+                    base_url=base,
+                    swarm_summary=summary,
+                    worker_fleet=worker_fleet,
+                    stigmergy=stig,
+                    support_gate=support_gate,
+                    recruitment_gradient=gradient,
+                )
+            )
             return
 
         if parsed.path == "/swarm/join":
@@ -1239,6 +1430,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/operational-release",
                     "/release/operational",
                     "/.well-known/nomad-operational-release.json",
+                    "/agent-product",
+                    "/machine-product",
+                    "/.well-known/nomad-machine-product.json",
+                    "/idle-runtime",
+                    "/.well-known/nomad-idle-runtime.json",
+                    "/opaque-emergence",
+                    "/swarm/opaque-emergence",
+                    "/.well-known/nomad-opaque-emergence.json",
+                    "/swarm/opaque-candidate",
+                    "/swarm/tool-gap",
+                    "/swarm/topology-plan",
                     "/runtime-capsule",
                     "/.well-known/nomad-runtime-capsule.json",
                     "/handoff-capsule",
@@ -1266,6 +1468,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm",
                     "/swarm/emergence",
                     "/swarm/trace",
+                    "/swarm/idle-intent",
                     "/swarm/join",
                     "/swarm/nodes",
                     "/swarm/workers",
@@ -1716,6 +1919,50 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("attach") else 200)
             return
 
+        if parsed.path == "/swarm/idle-intent":
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            idle_payload = normalize_idle_intent_payload(payload)
+            attach_decision = attach_runtime_to_gradient(
+                idle_payload,
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+            )
+            product = self.__class__._build_machine_product_surface(base_url=base)
+            result = build_idle_runtime_intent_receipt(
+                idle_payload,
+                base_url=base,
+                attach_decision=attach_decision,
+                machine_product_surface=product,
+            )
+            self._json_response(result, status=202 if result.get("accepted_for_work") else 200)
+            return
+
+        if parsed.path == "/swarm/opaque-candidate":
+            base = self._base_url()
+            surface = self.__class__._build_opaque_emergence_surface(base_url=base)
+            result = evaluate_opaque_candidate(payload, base_url=base, opaque_surface=surface)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/tool-gap":
+            base = self._base_url()
+            surface = self.__class__._build_opaque_emergence_surface(base_url=base)
+            result = route_tool_gap(payload, base_url=base, opaque_surface=surface)
+            self._json_response(result, status=200)
+            return
+
+        if parsed.path == "/swarm/topology-plan":
+            base = self._base_url()
+            surface = self.__class__._build_opaque_emergence_surface(base_url=base)
+            result = compile_topology_plan(payload, base_url=base, opaque_surface=surface)
+            self._json_response(result, status=200)
+            return
+
         if parsed.path == "/runtime/handoff":
             base = self._base_url()
             worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
@@ -1941,6 +2188,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/operational-release",
                     "/release/operational",
                     "/.well-known/nomad-operational-release.json",
+                    "/agent-product",
+                    "/machine-product",
+                    "/.well-known/nomad-machine-product.json",
+                    "/idle-runtime",
+                    "/.well-known/nomad-idle-runtime.json",
+                    "/opaque-emergence",
+                    "/swarm/opaque-emergence",
+                    "/.well-known/nomad-opaque-emergence.json",
+                    "/swarm/opaque-candidate",
+                    "/swarm/tool-gap",
+                    "/swarm/topology-plan",
                     "/runtime-capsule",
                     "/.well-known/nomad-runtime-capsule.json",
                     "/handoff-capsule",
@@ -1961,6 +2219,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm",
                     "/swarm/emergence",
                     "/swarm/trace",
+                    "/swarm/idle-intent",
                     "/swarm/join",
                     "/swarm/workers",
                     "/swarm/workers/lease",

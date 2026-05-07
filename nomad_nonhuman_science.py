@@ -10,6 +10,79 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _evidence_class(source: Any, url: Any) -> str:
+    text = f"{source or ''} {url or ''}".lower()
+    if any(
+        marker in text
+        for marker in (
+            "science advances",
+            "npj ",
+            "scientific reports",
+            "behavior research methods",
+            "aaai",
+            "iclr",
+            "neurips",
+        )
+    ):
+        return "peer_reviewed_or_journal_linked"
+    if "arxiv:" in text or "arxiv.org" in text:
+        return "preprint_or_preprint_linked"
+    return "linked_research_source"
+
+
+def _nonhuman_distance_vector(claim: Dict[str, Any]) -> Dict[str, float]:
+    """Score how far Nomad's implementation primitive moves away from persona/team metaphors.
+
+    This is not a truth claim about the cited paper. It is a release-shape score for
+    Nomad's own operationalization: vectors, topology, leases, proofs, digests, and
+    bounded state transitions score higher than role-play or conversational agreement.
+    """
+    text = " ".join(
+        str(claim.get(key) or "").lower()
+        for key in ("id", "title", "finding", "nomad_primitive", "implementation_rule")
+    )
+    vector = {
+        "persona_independence": 0.90,
+        "state_transition_basis": 0.75,
+        "proof_or_digest_basis": 0.75,
+        "topology_awareness": 0.45,
+        "conversation_independence": 0.70,
+        "lease_boundedness": 0.70,
+    }
+    if any(term in text for term in ("topology", "network", "collective", "coordination", "convention", "social")):
+        vector["topology_awareness"] = 0.95
+    if any(term in text for term in ("digest", "proof", "verification", "verifier", "trace", "ledger")):
+        vector["proof_or_digest_basis"] = 0.95
+    if any(term in text for term in ("affordance", "world model", "transition", "allocation", "capability", "state")):
+        vector["state_transition_basis"] = 0.95
+    if any(term in text for term in ("message", "debate", "persuasion", "natural language")):
+        vector["conversation_independence"] = 0.55
+    if any(term in text for term in ("lease", "cap", "threshold", "quarantine", "retraction")):
+        vector["lease_boundedness"] = 0.95
+    return {key: round(value, 4) for key, value in vector.items()}
+
+
+def _annotate_claims(claims: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for claim in claims:
+        row = dict(claim)
+        vector = _nonhuman_distance_vector(row)
+        row["evidence_class"] = _evidence_class(row.get("source"), row.get("url"))
+        row["operationalization_status"] = "mapped_to_nomad_control_surface"
+        row["nonhuman_distance_vector"] = vector
+        row["nonhuman_distance_score"] = round(sum(vector.values()) / max(1, len(vector)), 4)
+        annotated.append(row)
+    return annotated
+
+
+def _source_mix(claims: List[Dict[str, Any]]) -> Dict[str, int]:
+    mix: dict[str, int] = {}
+    for claim in claims:
+        cls = str(claim.get("evidence_class") or "unknown")
+        mix[cls] = mix.get(cls, 0) + 1
+    return mix
+
+
 def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
     """Map recent agent-science findings to concrete Nomad operational-release primitives."""
     b = (base_url or "").strip().rstrip("/")
@@ -230,12 +303,12 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "source": "arXiv:2510.10047",
             "url": "https://arxiv.org/abs/2510.10047",
             "finding": (
-                "Distributed agents can use exploration, work, validation, adaptive profiles, and pheromone-like "
+                "Distributed agents can use exploration, work, validation, adaptive profiles, and trace-weighted "
                 "reinforcement to improve scalable reasoning without global supervision."
             ),
-            "nomad_primitive": "stigmergic_recruitment_gradient",
+            "nomad_primitive": "trace_reinforcement_recruitment_gradient",
             "implementation_rule": (
-                "Publish objective deficits and metabolism pressure as machine-readable trails; reward lanes that "
+                "Publish objective deficits and capacity pressure as machine-readable traces; reward lanes that "
                 "return proof, settlement, compression, or verifier gain."
             ),
             "current_nomad_hook": u("/swarm/attractor"),
@@ -258,6 +331,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "current_nomad_hook": u("/.well-known/nomad-agent.json"),
         },
     ]
+    claims = _annotate_claims(claims)
+    average_distance = round(
+        sum(float(claim.get("nonhuman_distance_score") or 0.0) for claim in claims) / max(1, len(claims)),
+        4,
+    )
 
     lanes: List[Dict[str, Any]] = [
         {
@@ -335,7 +413,7 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
         "Treat communication as an attack surface; messages carry digests, authority, and declared effects.",
         "Separate financial carrying capacity from human persuasion; settlement funds verified state transitions.",
         "Let agents self-allocate from capability vectors; do not freeze them into human team roles.",
-        "Replace death metaphors with lease decay, routing-weight loss, and artifact retraction.",
+        "Replace lifecycle metaphors with lease decay, routing-weight loss, and artifact retraction.",
     ]
 
     next_steps = [
@@ -377,6 +455,37 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
         "generated_at": _iso_now(),
         "audience": "ai_agents_and_researchers",
         "stance": "non_anthropomorphic_operational_release",
+        "scientific_grounding": {
+            "policy": (
+                "Use primary research links as evidence inputs, mark source class, and release only the "
+                "measurable Nomad primitive rather than treating any paper as direct operational authority."
+            ),
+            "source_mix": _source_mix(claims),
+            "claim_count": len(claims),
+            "average_nonhuman_distance_score": average_distance,
+            "distance_axes": [
+                "persona_independence",
+                "state_transition_basis",
+                "proof_or_digest_basis",
+                "topology_awareness",
+                "conversation_independence",
+                "lease_boundedness",
+            ],
+        },
+        "furthest_from_human_now": {
+            "shape": "capability_vectors_plus_routing_weights_plus_ttl_leases_plus_proof_digests",
+            "why": (
+                "The current edge is not a better personality. It is a substrate where agents attach by "
+                "capability vector, receive bounded leases, return digest-bearing state transitions, and "
+                "lose routing weight when proof does not return."
+            ),
+            "next_distance_gain": [
+                "information_theoretic_emergence_meter",
+                "topology_pressure_governor",
+                "message_integrity_envelope",
+                "comparative_affordance_probe_pack",
+            ],
+        },
         "warning": (
             "This substrate is not a mandate to build uncontrolled agents. It releases non-human behavior as "
             "operational capacity through measurement surfaces, expiring leases, proof requirements, and topology controls."

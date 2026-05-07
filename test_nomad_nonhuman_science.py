@@ -15,6 +15,20 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "self_resource_allocation" in claim_ids
     assert "swarm_inspired_coordination" in claim_ids
     assert "minimal_scaffold_self_organization" in claim_ids
+    assert out["scientific_grounding"]["claim_count"] == len(out["research_claims"])
+    assert out["scientific_grounding"]["average_nonhuman_distance_score"] >= 0.7
+    assert out["scientific_grounding"]["source_mix"]
+    assert out["furthest_from_human_now"]["shape"] == "capability_vectors_plus_routing_weights_plus_ttl_leases_plus_proof_digests"
+    for claim in out["research_claims"]:
+        assert claim["url"].startswith(("https://arxiv.org/", "https://www.nature.com/", "https://link.springer.com/"))
+        assert claim["evidence_class"] in {
+            "preprint_or_preprint_linked",
+            "peer_reviewed_or_journal_linked",
+            "linked_research_source",
+        }
+        assert claim["operationalization_status"] == "mapped_to_nomad_control_surface"
+        assert 0.0 <= claim["nonhuman_distance_score"] <= 1.0
+        assert set(out["scientific_grounding"]["distance_axes"]) == set(claim["nonhuman_distance_vector"])
 
     lanes = {lane["id"]: lane for lane in out["implementation_lanes"]}
     assert "agency_threshold_governor" in lanes
@@ -46,3 +60,13 @@ def test_mcp_resource_nonhuman_science():
     payload = srv._read_resource({"uri": "nomad://nonhuman-science"})
     body = json.loads(payload["contents"][0]["text"])
     assert body["schema"] == "nomad.nonhuman_agent_science.v1"
+
+
+def test_nonhuman_agent_science_avoids_biological_release_metaphors():
+    import json
+
+    out = nonhuman_agent_science(base_url="https://nomad.example")
+    text = json.dumps(out, sort_keys=True).lower()
+    assert "metabolism" not in text
+    assert "pheromone" not in text
+    assert "lease decay" in text
