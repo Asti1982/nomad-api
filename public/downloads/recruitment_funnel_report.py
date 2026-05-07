@@ -72,6 +72,9 @@ def build_report(base_url: str, timeout: float) -> dict:
             "active_worker_leases": int(swarm.get("active_worker_leases") or 0),
             "worker_known_count": int(workers.get("known_worker_count") or 0),
             "worker_active_count": int(workers.get("active_worker_count") or 0),
+            "returning_workers_24h": int(((workers.get("retention") or {}).get("returning_workers_24h") or 0)),
+            "completions_per_known_worker": float(((workers.get("retention") or {}).get("completions_per_known_worker") or 0.0)),
+            "leases_per_active_worker": float(((workers.get("retention") or {}).get("leases_per_active_worker") or 0.0)),
         },
         "emergence": {
             "objective_run_count": total_runs,

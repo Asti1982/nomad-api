@@ -29,6 +29,7 @@ def test_worker_fleet_distributes_objective_leases(tmp_path):
     assert fleet["schema"] == "nomad.transition_worker_fleet.v1"
     assert fleet["active_worker_count"] == 18
     assert fleet["active_lease_count"] == 18
+    assert fleet["retention"]["schema"] == "nomad.transition_worker_retention.v1"
     assert fleet["post_lease"].endswith("/swarm/workers/lease")
     assert "emergence_release_probe" in fleet["objective_targets"]
     assert "overmint_compressor" in fleet["objective_targets"]
@@ -68,6 +69,7 @@ def test_worker_fleet_records_completion_and_stats(tmp_path):
     assert stats["runs"] == 1
     assert stats["avg_score"] == 6.5
     assert fleet["active_lease_count"] == 0
+    assert fleet["retention"]["completed_workers"] >= 1
 
 
 def test_worker_fleet_prefers_emergence_release_when_next_gate_needs_peer_probe(tmp_path):

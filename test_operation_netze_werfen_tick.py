@@ -20,6 +20,7 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "3")
     monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "0")
@@ -51,6 +52,7 @@ def test_run_tick_retries_experiment_on_gradient_timeout_with_www_fallback(monke
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
     monkeypatch.setattr(mod, "_base_url", lambda: "https://syndiode.com")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
     monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "0")
@@ -72,6 +74,7 @@ def test_run_tick_can_require_nonhuman_guard(monkeypatch):
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
     monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "1")

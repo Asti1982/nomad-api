@@ -2185,8 +2185,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/workers/lease":
+            lease_payload = payload if isinstance(payload, dict) else {}
+            proposed = str(lease_payload.get("proposed_objective") or lease_payload.get("objective") or "").strip()
+            if proposed in {"", "auto", "unhuman_supremacy"}:
+                try:
+                    replay = self.__class__._build_counterfactual_replay(base_url=self._base_url())
+                    selected = replay.get("selected_shadow_lease") if isinstance(replay.get("selected_shadow_lease"), dict) else {}
+                    objective = str(selected.get("objective") or "").strip()
+                    if objective:
+                        lease_payload = dict(lease_payload)
+                        lease_payload["proposed_objective"] = objective
+                        if not str(lease_payload.get("source_tag") or "").strip():
+                            lease_payload["source_tag"] = "counterfactual_replay.shadow_allocator"
+                except Exception:
+                    pass
             result = self.swarm_registry.worker_fleet_lease(
-                payload,
+                lease_payload,
                 base_url=self._base_url(),
                 remote_addr=self._remote_addr(),
             )

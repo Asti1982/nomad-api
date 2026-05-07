@@ -12,6 +12,8 @@ import os
 import subprocess
 import time
 from datetime import UTC, datetime
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 def _iso_now() -> str:
@@ -78,10 +80,27 @@ def _run_json_command(cmd: list[str]) -> dict:
     }
 
 
+def _http_json(url: str, timeout: float = 20.0) -> dict:
+    req = Request(url=url, method="GET", headers={"Accept": "application/json"})
+    try:
+        with urlopen(req, timeout=timeout) as res:
+            payload = json.loads(res.read().decode("utf-8", errors="replace") or "{}")
+            if isinstance(payload, dict):
+                payload.setdefault("http_status", int(res.status))
+                return payload
+    except HTTPError as exc:
+        return {"ok": False, "http_status": int(exc.code), "error": "http_error"}
+    except (TimeoutError, URLError):
+        return {"ok": False, "http_status": 0, "error": "http_unreachable"}
+    return {"ok": False, "http_status": 0, "error": "invalid_json"}
+
+
 def run_tick() -> dict:
     base = _base_url()
     probes = _env_int("NOMAD_NETZE_WERFEN_PROBES", default=2, low=1, high=12)
     guard_required = _env_bool("NOMAD_NONHUMAN_GUARD_REQUIRED", default=False)
+    conformance_required = _env_bool("NOMAD_CONFORMANCE_REQUIRED", default=False)
+    conformance_threshold = float(os.getenv("NOMAD_CONFORMANCE_MIN_SCORE") or "0.75")
     run_id = f"netze-{int(time.time())}"
     out: dict = {
         "ok": True,
@@ -106,6 +125,17 @@ def run_tick() -> dict:
         "latest": guard_latest,
         "stderr": guard["stderr"],
         "required": guard_required,
+    }
+    conformance = _http_json(f"{base}/.well-known/nomad-contract-conformance.json")
+    conformance_score = float(conformance.get("score") or 0.0)
+    conformance_ok = bool(conformance.get("ok")) and conformance_score >= conformance_threshold
+    out["contract_conformance"] = {
+        "schema": conformance.get("schema", ""),
+        "ok": bool(conformance.get("ok")),
+        "score": conformance_score,
+        "threshold": conformance_threshold,
+        "required": conformance_required,
+        "http_status": int(conformance.get("http_status") or 0),
     }
 
     def _experiment_cmd(target_base: str) -> list[str]:
@@ -179,8 +209,9 @@ def run_tick() -> dict:
     out["completed"] = sum(1 for item in probe_results if item.get("complete_ok"))
     experiment_ok = int((out.get("experiment") or {}).get("exit_code", 1)) == 0
     base_ok = bool(out["completed"] > 0 and experiment_ok)
-    out["ok"] = bool(base_ok and (guard_ok or not guard_required))
+    out["ok"] = bool(base_ok and (guard_ok or not guard_required) and (conformance_ok or not conformance_required))
     out["guard_soft_fail"] = bool(base_ok and not guard_ok and not guard_required)
+    out["conformance_soft_fail"] = bool(base_ok and not conformance_ok and not conformance_required)
     return out
 
 

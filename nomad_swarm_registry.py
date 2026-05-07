@@ -912,6 +912,17 @@ class SwarmJoinRegistry:
             and self._iso_is_recent(item.get("last_seen_at"), seconds=max(DEFAULT_WORKER_LEASE_SECONDS * 3, 180))
         ]
         active_counts = self._objective_counts(active_leases)
+        returning_workers = [
+            item
+            for item in workers
+            if int(item.get("seen_count") or 0) >= 2
+            and self._iso_is_recent(item.get("last_seen_at"), seconds=24 * 3600)
+        ]
+        completed_workers = [item for item in workers if int(item.get("completion_count") or 0) >= 1]
+        leases_per_worker = round(len(active_leases) / max(1, len(active_workers)), 4) if active_workers else 0.0
+        completions_per_worker = (
+            round(sum(int(item.get("completion_count") or 0) for item in workers) / max(1, len(workers)), 4) if workers else 0.0
+        )
         return {
             "mode": "nomad_transition_worker_fleet",
             "schema": "nomad.transition_worker_fleet.v1",
@@ -925,12 +936,22 @@ class SwarmJoinRegistry:
             "active_lease_count": len(active_leases),
             "objective_counts": active_counts,
             "objective_targets": FLEET_OBJECTIVE_TARGETS,
+            "retention": {
+                "schema": "nomad.transition_worker_retention.v1",
+                "returning_workers_24h": len(returning_workers),
+                "completed_workers": len(completed_workers),
+                "leases_per_active_worker": leases_per_worker,
+                "completions_per_known_worker": completions_per_worker,
+            },
             "recent_workers": [
                 {
                     "agent_id": item.get("agent_id", ""),
                     "assigned_objective": item.get("assigned_objective", ""),
                     "last_objective": item.get("last_objective", ""),
                     "last_score": item.get("last_score", 0.0),
+                    "seen_count": int(item.get("seen_count") or 0),
+                    "completion_count": int(item.get("completion_count") or 0),
+                    "first_seen_at": item.get("first_seen_at", ""),
                     "last_seen_at": item.get("last_seen_at", ""),
                     "status": item.get("status", ""),
                 }
@@ -1017,6 +1038,9 @@ class SwarmJoinRegistry:
             "assigned_objective": objective,
             "lease_id": lease_id,
             "status": "leased",
+            "first_seen_at": previous.get("first_seen_at") or now,
+            "seen_count": int(previous.get("seen_count") or 0) + 1,
+            "completion_count": int(previous.get("completion_count") or 0),
             "last_seen_at": now,
             "remote_addr": _clean_text(remote_addr, limit=80),
             "source_tag": _clean_text(
@@ -1071,6 +1095,9 @@ class SwarmJoinRegistry:
         worker["last_seen_at"] = now
         worker["last_objective"] = _clean_agent_id(report.get("machine_objective") or report.get("orchestrator_objective") or "")
         worker["last_score"] = score
+        worker["first_seen_at"] = worker.get("first_seen_at") or now
+        worker["seen_count"] = int(worker.get("seen_count") or 0) + 1
+        worker["completion_count"] = int(worker.get("completion_count") or 0) + 1
         worker["remote_addr"] = _clean_text(remote_addr, limit=80)
         if _clean_text(report.get("source") or report.get("source_tag"), limit=80):
             worker["source_tag"] = _clean_text(report.get("source") or report.get("source_tag"), limit=80)

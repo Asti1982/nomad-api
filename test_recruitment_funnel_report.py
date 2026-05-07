@@ -31,6 +31,11 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
             return {
                 "known_worker_count": 4,
                 "active_worker_count": 2,
+                "retention": {
+                    "returning_workers_24h": 2,
+                    "completions_per_known_worker": 1.25,
+                    "leases_per_active_worker": 0.5,
+                },
                 "objective_stats": {
                     "settlement_capacity_builder": {"runs": 3, "avg_score": 3.4},
                     "proof_pressure_engine": {"runs": 2, "avg_score": 2.6},
@@ -55,6 +60,7 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
     assert out["funnel"]["connected_agents"] == 3
     assert out["source_tags"][0]["source_tag"] == "mesh.alpha"
     assert out["source_tags"][0]["count"] == 2
+    assert out["funnel"]["returning_workers_24h"] == 2
     assert out["emergence"]["objective_run_count"] == 5
     assert out["machine_treasury"]["pledge_count"] == 1
     assert out["machine_treasury"]["objective_pressure_hints"]["settlement_capacity_builder"]["pressure_units"] == 4.0

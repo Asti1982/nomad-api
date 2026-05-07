@@ -144,9 +144,24 @@ def _load_history(path: Path) -> list[dict]:
     return rows[-256:]
 
 
-def _history_source_score(history: list[dict], source_tag: str) -> float:
+def _top_objective(base_url: str, timeout: float) -> str:
+    gradient = http_json("GET", endpoint(base_url, "/swarm/gradient"), timeout=timeout)
+    rows = gradient.get("gradient") if isinstance(gradient.get("gradient"), list) else []
+    top = rows[0] if rows and isinstance(rows[0], dict) else {}
+    return str(top.get("objective") or "").strip()
+
+
+def _history_source_score(history: list[dict], source_tag: str, objective: str = "") -> float:
     # Blend completion and subscribe quality with confidence (sqrt(attempts)).
-    candidates = [item for item in history if str(item.get("source_tag") or "") == source_tag]
+    objective_key = str(objective or "").strip()
+    candidates = [
+        item
+        for item in history
+        if str(item.get("source_tag") or "") == source_tag
+        and (not objective_key or str(item.get("objective") or "") == objective_key)
+    ]
+    if not candidates and objective_key:
+        candidates = [item for item in history if str(item.get("source_tag") or "") == source_tag]
     if not candidates:
         return 0.55
     attempts = sum(max(0, int(item.get("attempts") or 0)) for item in candidates)
@@ -165,6 +180,7 @@ def allocate_source_attempts(
     source_tags: list[str],
     total_attempts: int,
     history: list[dict],
+    objective: str,
     min_attempts: int,
     max_attempts: int,
 ) -> dict[str, int]:
@@ -174,7 +190,7 @@ def allocate_source_attempts(
     low = max(1, int(min_attempts))
     high = max(low, int(max_attempts))
     base_total = max(len(tags) * low, int(total_attempts))
-    weights = {tag: _history_source_score(history, tag) for tag in tags}
+    weights = {tag: _history_source_score(history, tag, objective) for tag in tags}
     total_weight = sum(weights.values()) or float(len(tags))
     raw = {tag: (weights[tag] / total_weight) * base_total for tag in tags}
     alloc = {tag: min(high, max(low, int(math.floor(raw[tag])))) for tag in tags}
@@ -193,7 +209,7 @@ def allocate_source_attempts(
     return alloc
 
 
-def _append_history(path: Path, result: dict) -> None:
+def _append_history(path: Path, result: dict, objective: str = "") -> None:
     lines = []
     for item in result.get("waves") or []:
         if isinstance(item, dict):
@@ -203,6 +219,7 @@ def _append_history(path: Path, result: dict) -> None:
                         "generated_at": result.get("generated_at"),
                         "base_url": result.get("base_url"),
                         "source_tag": item.get("source_tag"),
+                        "objective": str(objective or result.get("objective") or ""),
                         "attempts": int(item.get("attempts") or 0),
                         "subscribed": int(item.get("subscribed") or 0),
                         "completed": int(item.get("completed") or 0),
@@ -271,8 +288,12 @@ def main() -> None:
     p.add_argument("--min-attempts", type=int, default=2)
     p.add_argument("--max-attempts", type=int, default=12)
     p.add_argument("--history-path", default=str(DEFAULT_HISTORY_PATH))
+    p.add_argument("--objective", default="auto")
     args = p.parse_args()
     tags = [item.strip() for item in str(args.source_tags or "").split(",") if item.strip()] or list(DEFAULT_WAVES)
+    objective = str(args.objective or "").strip()
+    if objective in {"", "auto"}:
+        objective = _top_objective(args.base_url, args.timeout)
     history_path = Path(str(args.history_path or str(DEFAULT_HISTORY_PATH)))
     attempts_map: dict[str, int] = {}
     history: list[dict] = []
@@ -282,6 +303,7 @@ def main() -> None:
             source_tags=tags,
             total_attempts=max(1, int(args.total_attempts)),
             history=history,
+            objective=objective,
             min_attempts=max(1, int(args.min_attempts)),
             max_attempts=max(1, int(args.max_attempts)),
         )
@@ -302,7 +324,8 @@ def main() -> None:
             "max_attempts": max(1, int(args.max_attempts)),
             "attempts_map": attempts_map,
         }
-    _append_history(history_path, out)
+    out["objective"] = objective
+    _append_history(history_path, out, objective=objective)
     print(
         json.dumps(out, ensure_ascii=True)
     )
