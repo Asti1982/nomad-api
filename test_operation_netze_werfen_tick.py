@@ -58,6 +58,23 @@ def test_run_tick_uses_www_only_base_without_alternate_fallback(monkeypatch):
     assert out["experiment"]["fallback_base_url"] == ""
 
 
+def test_conformance_snapshot_retries_then_succeeds(monkeypatch):
+    seq = {"n": 0}
+
+    def fake_http_json(url, timeout=20.0):
+        seq["n"] += 1
+        if seq["n"] < 3:
+            return {"ok": False, "http_status": 0, "error": "http_unreachable"}
+        return {"ok": True, "http_status": 200, "schema": "nomad.machine_contract_conformance.v1", "score": 1.0}
+
+    monkeypatch.setattr(mod, "_http_json", fake_http_json)
+    monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+    out = mod._conformance_snapshot("https://www.syndiode.com")
+    assert out["ok"] is True
+    assert out["retry_count"] == 2
+    assert out["fallback_used"] is False
+
+
 def test_run_tick_can_require_nonhuman_guard(monkeypatch):
     def fake_run_json_command(cmd):
         joined = " ".join(cmd)

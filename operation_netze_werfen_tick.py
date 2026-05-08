@@ -99,10 +99,28 @@ def _http_json(url: str, timeout: float = 20.0) -> dict:
     return {"ok": False, "http_status": 0, "error": "invalid_json"}
 
 
+def _http_json_retry(url: str, timeout: float = 20.0, attempts: int = 3) -> dict:
+    tries = max(1, int(attempts))
+    last: dict = {"ok": False, "http_status": 0, "error": "http_unreachable"}
+    for idx in range(tries):
+        out = _http_json(url, timeout=timeout)
+        status = int(out.get("http_status") or 0)
+        if bool(out.get("ok")) or status in {200, 201, 202}:
+            out["retry_count"] = idx
+            return out
+        last = out
+        if str(out.get("error") or "") not in {"http_unreachable", "invalid_json"}:
+            break
+        if idx < tries - 1:
+            time.sleep(0.4 * (idx + 1))
+    last["retry_count"] = max(0, tries - 1)
+    return last
+
+
 def _conformance_snapshot(base: str) -> dict:
-    primary = _http_json(f"{base}/.well-known/nomad-contract-conformance.json")
+    primary = _http_json_retry(f"{base}/.well-known/nomad-contract-conformance.json")
     if int(primary.get("http_status") or 0) in {404, 0} or not bool(primary.get("ok")):
-        fallback = _http_json(f"{base}/contract-conformance")
+        fallback = _http_json_retry(f"{base}/contract-conformance")
         if bool(fallback.get("ok")) or int(fallback.get("http_status") or 0) == 200:
             fallback["fallback_used"] = True
             fallback["fallback_path"] = "/contract-conformance"
