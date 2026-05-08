@@ -24,7 +24,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _mode() -> str:
-    return str(os.getenv("NOMAD_DEV_FUND_TRANSFER_MODE") or "shadow").strip().lower() or "shadow"
+    return str(os.getenv("NOMAD_DEV_FUND_TRANSFER_MODE") or "canary").strip().lower() or "canary"
 
 
 def _canary_gate(seed: str, rate: float) -> bool:
