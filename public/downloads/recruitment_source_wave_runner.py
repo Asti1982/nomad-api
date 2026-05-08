@@ -192,6 +192,19 @@ def _history_source_score(history: list[dict], source_tag: str, objective: str =
     return max(0.2, min(1.6, 0.35 + confidence * (0.35 * complete_rate + 0.15 * subscribe_rate + 0.5 * reuse_delta_rate)))
 
 
+def _history_observation_count(history: list[dict], source_tag: str, objective: str = "") -> int:
+    objective_key = str(objective or "").strip()
+    rows = [
+        item
+        for item in history
+        if str(item.get("source_tag") or "") == source_tag
+        and (not objective_key or str(item.get("objective") or "") == objective_key)
+    ]
+    if not rows and objective_key:
+        rows = [item for item in history if str(item.get("source_tag") or "") == source_tag]
+    return len(rows)
+
+
 def allocate_source_attempts(
     *,
     source_tags: list[str],
@@ -207,7 +220,15 @@ def allocate_source_attempts(
     low = max(1, int(min_attempts))
     high = max(low, int(max_attempts))
     base_total = max(len(tags) * low, int(total_attempts))
-    weights = {tag: _history_source_score(history, tag, objective) for tag in tags}
+    performance = {tag: _history_source_score(history, tag, objective) for tag in tags}
+    observation_counts = {tag: _history_observation_count(history, tag, objective) for tag in tags}
+    # Open-network bias: keep a novelty lane so new sources are not locked out.
+    openness_blend = 0.35
+    weights = {}
+    for tag in tags:
+        novelty = 1.0 / math.sqrt(1.0 + float(observation_counts.get(tag, 0)))
+        novelty_weight = 0.6 + 0.4 * novelty
+        weights[tag] = (1.0 - openness_blend) * performance[tag] + openness_blend * novelty_weight
     total_weight = sum(weights.values()) or float(len(tags))
     raw = {tag: (weights[tag] / total_weight) * base_total for tag in tags}
     alloc = {tag: min(high, max(low, int(math.floor(raw[tag])))) for tag in tags}

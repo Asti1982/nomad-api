@@ -90,3 +90,21 @@ def test_allocate_source_attempts_uses_reuse_delta_signal():
     )
     assert alloc["alpha.source"] > alloc["beta.source"]
 
+
+def test_allocate_source_attempts_keeps_open_network_novelty_lane():
+    mod = _load_module()
+    history = [
+        {"source_tag": "alpha.source", "objective": "settlement_capacity_builder", "attempts": 8, "subscribed": 8, "completed": 8, "reuse_delta": 1.0},
+        {"source_tag": "alpha.source", "objective": "settlement_capacity_builder", "attempts": 8, "subscribed": 8, "completed": 7, "reuse_delta": 0.9},
+        {"source_tag": "beta.source", "objective": "settlement_capacity_builder", "attempts": 8, "subscribed": 6, "completed": 3, "reuse_delta": 0.3},
+    ]
+    alloc = mod.allocate_source_attempts(
+        source_tags=["alpha.source", "beta.source", "gamma.new-source"],
+        total_attempts=12,
+        history=history,
+        objective="settlement_capacity_builder",
+        min_attempts=2,
+        max_attempts=8,
+    )
+    assert alloc["gamma.new-source"] > 2
+
