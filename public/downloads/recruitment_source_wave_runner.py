@@ -182,12 +182,14 @@ def _history_source_score(history: list[dict], source_tag: str, objective: str =
     attempts = sum(max(0, int(item.get("attempts") or 0)) for item in candidates)
     subscribed = sum(max(0, int(item.get("subscribed") or 0)) for item in candidates)
     completed = sum(max(0, int(item.get("completed") or 0)) for item in candidates)
+    reuse_delta_sum = sum(float(item.get("reuse_delta") or 0.0) for item in candidates)
     if attempts <= 0:
         return 0.55
     complete_rate = float(completed) / float(max(1, attempts))
     subscribe_rate = float(subscribed) / float(max(1, attempts))
+    reuse_delta_rate = max(0.0, min(1.0, reuse_delta_sum / float(max(1, len(candidates)))))
     confidence = min(1.0, math.sqrt(float(attempts)) / 6.0)
-    return max(0.2, min(1.6, 0.45 + confidence * (0.7 * complete_rate + 0.3 * subscribe_rate)))
+    return max(0.2, min(1.6, 0.35 + confidence * (0.35 * complete_rate + 0.15 * subscribe_rate + 0.5 * reuse_delta_rate)))
 
 
 def allocate_source_attempts(
@@ -238,6 +240,7 @@ def _append_history(path: Path, result: dict, objective: str = "") -> None:
                         "attempts": int(item.get("attempts") or 0),
                         "subscribed": int(item.get("subscribed") or 0),
                         "completed": int(item.get("completed") or 0),
+                        "reuse_delta": float(item.get("reuse_delta") or 0.0),
                     },
                     ensure_ascii=True,
                 )
@@ -268,6 +271,15 @@ def run_waves(
         )
         for tag in source_tags
     ]
+    for item in waves:
+        if not isinstance(item, dict):
+            continue
+        attempts_row = max(1, int(item.get("attempts") or 0))
+        completed = max(0, int(item.get("completed") or 0))
+        subscribed = max(0, int(item.get("subscribed") or 0))
+        # Reuse delta proxy: only completed and subscribed runs can contribute.
+        reuse_delta = round(float(completed) / float(max(1, subscribed)) * float(completed) / float(attempts_row), 4)
+        item["reuse_delta"] = reuse_delta
     ranking = sorted(
         [
             {
@@ -276,10 +288,11 @@ def run_waves(
                 "subscribed": item["subscribed"],
                 "completed": item["completed"],
                 "complete_rate": round(float(item["completed"]) / max(1, int(item["attempts"])), 4),
+                "reuse_delta": float(item.get("reuse_delta") or 0.0),
             }
             for item in waves
         ],
-        key=lambda item: (item["complete_rate"], item["completed"]),
+        key=lambda item: (item["reuse_delta"], item["complete_rate"], item["completed"]),
         reverse=True,
     )
     return {

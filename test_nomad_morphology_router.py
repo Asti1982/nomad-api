@@ -19,3 +19,42 @@ def test_morphology_router_returns_selected_and_twin():
     assert out["twin_objective"] in {"settlement_capacity_builder", "overmint_compressor", "protocol_drift_scan"}
     assert out["anti_identity"] == "agent_id_and_source_tag_not_used_for_objective_routing"
 
+
+def test_morphology_router_extinction_window_suppresses_dominant_policy():
+    out = route_objectives(
+        allowed=["settlement_capacity_builder", "overmint_compressor"],
+        targets={"settlement_capacity_builder": 0.5, "overmint_compressor": 0.5},
+        active_counts={"settlement_capacity_builder": 1, "overmint_compressor": 1},
+        stats_map={
+            "settlement_capacity_builder": {"runs": 12, "avg_score": 4.0, "avg_proof_yield": 1.2},
+            "overmint_compressor": {"runs": 2, "avg_score": 2.4, "avg_proof_yield": 0.6},
+        },
+        proposed_objective="",
+        reuse_totals={},
+        dominant_objective="settlement_capacity_builder",
+        dominant_streak=6,
+        lease_index=3,
+    )
+    assert out["extinction_window"]["active"] is True
+    assert out["selected_objective"] == "overmint_compressor"
+
+
+def test_morphology_router_entropy_quota_forces_exploration_lane():
+    out = route_objectives(
+        allowed=["settlement_capacity_builder", "overmint_compressor", "protocol_drift_scan"],
+        targets={"settlement_capacity_builder": 0.6, "overmint_compressor": 0.3, "protocol_drift_scan": 0.1},
+        active_counts={"settlement_capacity_builder": 0, "overmint_compressor": 0, "protocol_drift_scan": 0},
+        stats_map={
+            "settlement_capacity_builder": {"runs": 20, "avg_score": 3.8, "avg_proof_yield": 1.0},
+            "overmint_compressor": {"runs": 7, "avg_score": 2.2, "avg_proof_yield": 0.6},
+            "protocol_drift_scan": {"runs": 0, "avg_score": 0.0, "avg_proof_yield": 0.0},
+        },
+        proposed_objective="settlement_capacity_builder",
+        reuse_totals={},
+        lease_index=5,
+        entropy_interval=5,
+    )
+    assert out["entropy_quota"]["override_used"] is True
+    assert out["selected_objective"] in {"overmint_compressor", "protocol_drift_scan"}
+    assert out["selected_objective"] != "settlement_capacity_builder"
+

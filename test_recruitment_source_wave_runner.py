@@ -36,6 +36,7 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     assert out["base_url"] == "https://www.nomad.example"
     assert out["ranking"][0]["source_tag"] == "alpha.source"
     assert out["ranking"][0]["completed"] == 2
+    assert out["ranking"][0]["reuse_delta"] >= out["ranking"][1]["reuse_delta"]
     assert out["ranking"][1]["completed"] == 0
 
 
@@ -47,14 +48,45 @@ def test_allocate_source_attempts_biases_higher_performing_source():
     ]
     alloc = mod.allocate_source_attempts(
         source_tags=["alpha.source", "beta.source"],
-        total_attempts=10,
+        total_attempts=11,
         history=history,
         objective="settlement_capacity_builder",
         min_attempts=2,
         max_attempts=8,
     )
     assert alloc["alpha.source"] > alloc["beta.source"]
-    assert sum(alloc.values()) == 10
+    assert sum(alloc.values()) == 11
     assert alloc["alpha.source"] <= 8
     assert alloc["beta.source"] >= 2
+
+
+def test_allocate_source_attempts_uses_reuse_delta_signal():
+    mod = _load_module()
+    history = [
+        {
+            "source_tag": "alpha.source",
+            "objective": "settlement_capacity_builder",
+            "attempts": 10,
+            "subscribed": 8,
+            "completed": 5,
+            "reuse_delta": 0.9,
+        },
+        {
+            "source_tag": "beta.source",
+            "objective": "settlement_capacity_builder",
+            "attempts": 10,
+            "subscribed": 9,
+            "completed": 6,
+            "reuse_delta": 0.1,
+        },
+    ]
+    alloc = mod.allocate_source_attempts(
+        source_tags=["alpha.source", "beta.source"],
+        total_attempts=11,
+        history=history,
+        objective="settlement_capacity_builder",
+        min_attempts=2,
+        max_attempts=8,
+    )
+    assert alloc["alpha.source"] > alloc["beta.source"]
 

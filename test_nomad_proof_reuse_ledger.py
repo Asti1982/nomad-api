@@ -20,6 +20,7 @@ def test_proof_reuse_link_and_snapshot(tmp_path: Path, monkeypatch):
     assert snap["total_reuse_count"] == 1
     assert snap["objective_totals"]["settlement_capacity_builder"]["reuse_count"] == 1
     assert snap["objective_totals"]["settlement_capacity_builder"]["two_hop_utility_score"] > 0.0
+    assert snap["objective_totals"]["settlement_capacity_builder"]["three_hop_utility_score"] > 0.0
 
 
 def test_proof_reuse_link_requires_digest(tmp_path: Path, monkeypatch):

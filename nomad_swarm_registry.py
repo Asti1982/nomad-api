@@ -1986,6 +1986,10 @@ class SwarmJoinRegistry:
             fleet["objective_stats"] = {}
         if not isinstance(fleet.get("reports"), list):
             fleet["reports"] = []
+        if not isinstance(fleet.get("morphology_dominance"), dict):
+            fleet["morphology_dominance"] = {"objective": "", "streak": 0}
+        if not isinstance(fleet.get("lease_index"), int):
+            fleet["lease_index"] = 0
         return fleet
 
     @staticmethod
@@ -2148,6 +2152,8 @@ class SwarmJoinRegistry:
         except Exception:
             reuse = {}
         reuse_totals = reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {}
+        dominance = fleet.get("morphology_dominance") if isinstance(fleet.get("morphology_dominance"), dict) else {}
+        lease_index = int(fleet.get("lease_index") or 0) + 1
         morphology = route_objectives(
             allowed=allowed,
             targets=targets,
@@ -2155,9 +2161,20 @@ class SwarmJoinRegistry:
             stats_map=stats_map,
             proposed_objective=proposed_objective,
             reuse_totals=reuse_totals,
+            dominant_objective=str(dominance.get("objective") or ""),
+            dominant_streak=int(dominance.get("streak") or 0),
+            lease_index=lease_index,
         )
+        selected = _clean_agent_id(morphology.get("selected_objective") or allowed[0])
+        prev = str(dominance.get("objective") or "")
+        streak = int(dominance.get("streak") or 0)
+        fleet["morphology_dominance"] = {
+            "objective": selected,
+            "streak": streak + 1 if prev == selected else 1,
+        }
+        fleet["lease_index"] = lease_index
         fleet["last_morphology"] = morphology
-        return _clean_agent_id(morphology.get("selected_objective") or allowed[0])
+        return selected
 
     def _nodes(self) -> list[dict[str, Any]]:
         self._prune_stale_nodes()
