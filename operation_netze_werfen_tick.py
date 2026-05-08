@@ -202,15 +202,33 @@ def run_tick() -> dict:
         "fallback_used": bool(economics.get("fallback_used")),
         "fallback_path": str(economics.get("fallback_path") or ""),
     }
+    economics_actions = [
+        str((item or {}).get("action") or "")
+        for item in (economics.get("control_actions") or [])
+        if isinstance(item, dict)
+    ]
+    adaptive_probes = probes
+    if "decrease_high_cost_attempts" in economics_actions:
+        adaptive_probes = max(1, probes - 1)
+    if "expand_external_source_attempts" in economics_actions:
+        adaptive_probes = min(12, adaptive_probes + 1)
+    out["adaptive_policy"] = {
+        "schema": "nomad.netze_werfen_adaptive_policy.v1",
+        "economics_actions": economics_actions,
+        "probe_count_before": probes,
+        "probe_count_after": adaptive_probes,
+    }
+    probes = adaptive_probes
 
     def _experiment_cmd(target_base: str) -> list[str]:
+        repeat = 1 if "decrease_high_cost_attempts" not in economics_actions else 1
         return [
             "python",
             "public/downloads/recruitment_experiment_runner.py",
             "--base-url",
             target_base,
             "--repeat",
-            "1",
+            str(repeat),
         ]
 
     experiment = _run_json_command(_experiment_cmd(base))

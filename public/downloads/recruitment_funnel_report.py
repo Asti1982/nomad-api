@@ -108,6 +108,40 @@ def _source_objective_diversity(history: list[dict]) -> dict:
     }
 
 
+def _marginal_utility_per_cost(history: list[dict]) -> dict:
+    by_source: dict[str, dict[str, float]] = {}
+    for row in history:
+        source_tag = str(row.get("source_tag") or "").strip()
+        if not source_tag:
+            continue
+        source = by_source.setdefault(source_tag, {"gain": 0.0, "cost": 0.0})
+        source["gain"] += _num(row.get("downstream_proof_gain_total"), 0.0)
+        attempts = max(1.0, _num(row.get("attempts"), 1.0))
+        source["cost"] += attempts
+    rows = []
+    total_gain = 0.0
+    total_cost = 0.0
+    for source_tag, values in by_source.items():
+        gain = _num(values.get("gain"), 0.0)
+        cost = max(0.1, _num(values.get("cost"), 0.1))
+        total_gain += gain
+        total_cost += cost
+        rows.append(
+            {
+                "source_tag": source_tag,
+                "downstream_gain_total": round(gain, 4),
+                "cost_units": round(cost, 4),
+                "marginal_utility_per_cost": round(gain / cost, 4),
+            }
+        )
+    rows.sort(key=lambda item: item["marginal_utility_per_cost"], reverse=True)
+    return {
+        "schema": "nomad.marginal_utility_per_cost.v1",
+        "global_marginal_utility_per_cost": round(total_gain / max(0.1, total_cost), 4),
+        "rows": rows[:16],
+    }
+
+
 def build_report(base_url: str, timeout: float, history_path: str = "public/downloads/recruitment_wave_history.jsonl") -> dict:
     canonical = canonical_base_url(base_url)
     swarm = http_json(endpoint(canonical, "/swarm"), timeout=timeout)
@@ -161,6 +195,7 @@ def build_report(base_url: str, timeout: float, history_path: str = "public/down
         },
         "source_tags": [{"source_tag": k, "count": v} for k, v in source_counts.most_common(16)],
         "source_objective_diversity": _source_objective_diversity(history),
+        "marginal_utility_per_cost": _marginal_utility_per_cost(history),
         "selection_pressure": pressure,
         "machine_treasury": {
             "schema": treasury.get("schema", ""),

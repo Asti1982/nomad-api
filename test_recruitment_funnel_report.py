@@ -105,4 +105,6 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
     assert out["source_objective_diversity"]["schema"] == "nomad.source_objective_diversity.v1"
     assert out["source_objective_diversity"]["rows"][0]["source_tag"] == "mesh.alpha"
     assert out["source_objective_diversity"]["rows"][0]["objective_count"] == 2
+    assert out["marginal_utility_per_cost"]["schema"] == "nomad.marginal_utility_per_cost.v1"
+    assert out["marginal_utility_per_cost"]["global_marginal_utility_per_cost"] >= 0.0
     assert out["machine_treasury"]["objective_pressure_hints"]["settlement_capacity_builder"]["pressure_units"] == 4.0

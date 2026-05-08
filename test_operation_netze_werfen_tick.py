@@ -31,6 +31,7 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
     assert calls["n"] == 5
     assert out["nonhuman_guard"]["required"] is False
     assert out["guard_soft_fail"] is False
+    assert out["adaptive_policy"]["schema"] == "nomad.netze_werfen_adaptive_policy.v1"
 
 
 def test_run_tick_uses_www_only_base_without_alternate_fallback(monkeypatch):

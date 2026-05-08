@@ -47,6 +47,7 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     assert out["waves"][0]["downstream_proof_gain_total"] > out["waves"][1]["downstream_proof_gain_total"]
     assert out["waves"][0]["objective_counts"]
     assert out["ranking"][0]["reuse_delta"] >= out["ranking"][1]["reuse_delta"]
+    assert out["waves"][0]["marginal_utility_per_cost"] > out["waves"][1]["marginal_utility_per_cost"]
     assert out["ranking"][1]["completed"] == 0
 
 
@@ -165,4 +166,26 @@ def test_append_history_emits_objective_split_rows(tmp_path):
     parsed = [__import__("json").loads(line) for line in rows]
     objectives = {item["objective"] for item in parsed}
     assert objectives == {"settlement_capacity_builder", "proof_pressure_engine"}
+
+
+def test_economics_policy_maps_control_actions(monkeypatch):
+    mod = _load_module()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        return {
+            "ok": True,
+            "economics_score": 0.71,
+            "control_actions": [
+                {"action": "decrease_high_cost_attempts"},
+                {"action": "increase_entropy_quota_and_source_novelty"},
+            ],
+            "http_status": 200,
+        }
+
+    monkeypatch.setattr(mod, "http_json", fake_http_json)
+    out = mod._economics_policy("https://www.syndiode.com", 5.0)
+    assert out["enabled"] is True
+    assert out["attempts_multiplier"] < 1.0
+    assert out["ttl_multiplier"] < 1.0
+    assert out["novelty_blend"] > 0.35
 

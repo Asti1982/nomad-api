@@ -117,9 +117,19 @@ def _source_profile(source_tag: str, objective: str) -> dict:
     return profile
 
 
-def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, objective: str = "") -> dict:
+def run_wave(
+    *,
+    base_url: str,
+    source_tag: str,
+    attempts: int,
+    timeout: float,
+    objective: str = "",
+    ttl_multiplier: float = 1.0,
+) -> dict:
     base_url = canonical_base_url(base_url)
     profile = _source_profile(source_tag=source_tag, objective=objective or "settlement_capacity_builder")
+    base_ttl = max(120, int(profile.get("ttl_seconds") or 900))
+    ttl_seconds = max(120, min(1800, int(base_ttl * max(0.5, min(1.8, float(ttl_multiplier or 1.0))))))
     rows: list[dict] = []
     objective_counts: dict[str, int] = {}
     for idx in range(max(1, attempts)):
@@ -131,7 +141,7 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
             "capabilities": profile["capabilities"],
             "objectives": profile["objectives"],
             "idle_opt_in": profile["idle_opt_in"],
-            "ttl_seconds": profile["ttl_seconds"],
+            "ttl_seconds": ttl_seconds,
             "source_tag": source_tag,
         }
         sub = http_json("POST", endpoint(base_url, "/swarm/subscribe"), sub_payload, timeout=timeout)
@@ -180,6 +190,9 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
     subscribed = sum(1 for item in rows if item["subscribe_ok"])
     proof_link_ok_count = sum(1 for item in rows if item["proof_link_ok"])
     downstream_total = round(sum(float(item.get("downstream_proof_gain") or 0.0) for item in rows), 4)
+    failed_subscribe = max(0, attempts - subscribed)
+    cost_units = max(0.1, attempts * (ttl_seconds / 900.0) + failed_subscribe * 0.25)
+    marginal_utility_per_cost = round(downstream_total / cost_units, 4)
     return {
         "source_tag": source_tag,
         "attempts": attempts,
@@ -187,6 +200,8 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
         "completed": completed,
         "proof_link_ok_count": proof_link_ok_count,
         "downstream_proof_gain_total": downstream_total,
+        "cost_units": round(cost_units, 4),
+        "marginal_utility_per_cost": marginal_utility_per_cost,
         "objective_counts": objective_counts,
         "profile": profile,
         "rows": rows,
@@ -277,6 +292,7 @@ def allocate_source_attempts(
     objective: str,
     min_attempts: int,
     max_attempts: int,
+    novelty_blend: float = 0.35,
 ) -> dict[str, int]:
     tags = [str(tag).strip() for tag in source_tags if str(tag).strip()]
     if not tags:
@@ -287,7 +303,7 @@ def allocate_source_attempts(
     performance = {tag: _history_source_score(history, tag, objective) for tag in tags}
     observation_counts = {tag: _history_observation_count(history, tag, objective) for tag in tags}
     # Open-network bias: keep a novelty lane so new sources are not locked out.
-    openness_blend = 0.35
+    openness_blend = max(0.0, min(0.8, float(novelty_blend)))
     weights = {}
     for tag in tags:
         novelty = 1.0 / math.sqrt(1.0 + float(observation_counts.get(tag, 0)))
@@ -309,6 +325,41 @@ def allocate_source_attempts(
             break
         alloc[tag] -= 1
     return alloc
+
+
+def _economics_policy(base_url: str, timeout: float) -> dict:
+    snap = http_json("GET", endpoint(base_url, "/swarm/economics"), timeout=timeout)
+    if not bool(snap.get("ok")):
+        return {
+            "schema": "nomad.recruitment_economics_policy.v1",
+            "enabled": False,
+            "attempts_multiplier": 1.0,
+            "ttl_multiplier": 1.0,
+            "novelty_blend": 0.35,
+        }
+    actions = [str((item or {}).get("action") or "") for item in (snap.get("control_actions") or []) if isinstance(item, dict)]
+    attempts_mult = 1.0
+    ttl_mult = 1.0
+    novelty = 0.35
+    if "decrease_high_cost_attempts" in actions:
+        attempts_mult = 0.8
+        ttl_mult = 0.85
+    if "increase_reuse_coupled_sources" in actions:
+        attempts_mult *= 1.1
+    if "increase_entropy_quota_and_source_novelty" in actions:
+        novelty = 0.5
+    if "expand_external_source_attempts" in actions:
+        attempts_mult *= 1.15
+        novelty = max(novelty, 0.45)
+    return {
+        "schema": "nomad.recruitment_economics_policy.v1",
+        "enabled": True,
+        "economics_score": float(snap.get("economics_score") or 0.0),
+        "actions": actions,
+        "attempts_multiplier": round(max(0.6, min(1.6, attempts_mult)), 4),
+        "ttl_multiplier": round(max(0.7, min(1.5, ttl_mult)), 4),
+        "novelty_blend": round(max(0.2, min(0.7, novelty)), 4),
+    }
 
 
 def _append_history(path: Path, result: dict, objective: str = "") -> None:
@@ -337,6 +388,7 @@ def _append_history(path: Path, result: dict, objective: str = "") -> None:
                             "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0) * (
                                 float(obj_count) / float(max(1, int(item.get("attempts") or 1)))
                             ),
+                            "marginal_utility_per_cost": float(item.get("marginal_utility_per_cost") or 0.0),
                         },
                         ensure_ascii=True,
                     )
@@ -356,6 +408,7 @@ def _append_history(path: Path, result: dict, objective: str = "") -> None:
                             "reuse_delta": float(item.get("reuse_delta") or 0.0),
                             "proof_link_ok_count": int(item.get("proof_link_ok_count") or 0),
                             "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0),
+                            "marginal_utility_per_cost": float(item.get("marginal_utility_per_cost") or 0.0),
                         },
                         ensure_ascii=True,
                     )
@@ -375,6 +428,7 @@ def run_waves(
     timeout: float,
     attempts_map: dict[str, int] | None = None,
     objective: str = "",
+    ttl_multiplier: float = 1.0,
 ) -> dict:
     base_url = canonical_base_url(base_url)
     alloc = attempts_map if isinstance(attempts_map, dict) else {}
@@ -385,6 +439,7 @@ def run_waves(
             attempts=max(1, int(alloc.get(tag, attempts))),
             timeout=timeout,
             objective=objective,
+            ttl_multiplier=ttl_multiplier,
         )
         for tag in source_tags
     ]
@@ -407,10 +462,11 @@ def run_waves(
                 "completed": item["completed"],
                 "complete_rate": round(float(item["completed"]) / max(1, int(item["attempts"])), 4),
                 "reuse_delta": float(item.get("reuse_delta") or 0.0),
+                "marginal_utility_per_cost": float(item.get("marginal_utility_per_cost") or 0.0),
             }
             for item in waves
         ],
-        key=lambda item: (item["reuse_delta"], item["complete_rate"], item["completed"]),
+        key=lambda item: (item["marginal_utility_per_cost"], item["reuse_delta"], item["complete_rate"], item["completed"]),
         reverse=True,
     )
     return {
@@ -445,15 +501,21 @@ def main() -> None:
     history_path = Path(str(args.history_path or str(DEFAULT_HISTORY_PATH)))
     attempts_map: dict[str, int] = {}
     history: list[dict] = []
+    economics_policy = _economics_policy(base_url, args.timeout)
+    attempts_multiplier = float(economics_policy.get("attempts_multiplier") or 1.0)
+    ttl_multiplier = float(economics_policy.get("ttl_multiplier") or 1.0)
+    novelty_blend = float(economics_policy.get("novelty_blend") or 0.35)
+    total_attempts = max(1, int(round(int(args.total_attempts) * attempts_multiplier)))
     if bool(args.auto_budget):
         history = _load_history(history_path)
         attempts_map = allocate_source_attempts(
             source_tags=tags,
-            total_attempts=max(1, int(args.total_attempts)),
+            total_attempts=total_attempts,
             history=history,
             objective=objective,
             min_attempts=max(1, int(args.min_attempts)),
             max_attempts=max(1, int(args.max_attempts)),
+            novelty_blend=novelty_blend,
         )
     out = run_waves(
         base_url=base_url,
@@ -462,16 +524,18 @@ def main() -> None:
         timeout=args.timeout,
         attempts_map=attempts_map or None,
         objective=objective,
+        ttl_multiplier=ttl_multiplier,
     )
     if bool(args.auto_budget):
         out["allocator"] = {
             "schema": "nomad.auto_source_budget_allocator.v1",
             "history_path": str(history_path).replace("\\", "/"),
             "history_rows": len(history),
-            "total_attempts": max(1, int(args.total_attempts)),
+            "total_attempts": total_attempts,
             "min_attempts": max(1, int(args.min_attempts)),
             "max_attempts": max(1, int(args.max_attempts)),
             "attempts_map": attempts_map,
+            "economics_policy": economics_policy,
         }
     out["objective"] = objective
     _append_history(history_path, out, objective=objective)
