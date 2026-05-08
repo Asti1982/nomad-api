@@ -77,15 +77,43 @@ def settle(path: Path, run_id: str, proof_ref: str) -> dict:
     }
 
 
+def summary(path: Path) -> dict:
+    rows = _load_rows(path)
+    pending = [r for r in rows if str(r.get("status") or "") == "pending_manual_payment"]
+    settled = [r for r in rows if str(r.get("status") or "") == "settled_manual_payment"]
+    pending_total = sum(float(r.get("amount_eur") or 0.0) for r in pending)
+    settled_total = sum(float(r.get("amount_eur") or 0.0) for r in settled)
+    today = datetime.now(UTC).date().isoformat()
+    today_due = 0.0
+    for row in pending:
+        ts = str(row.get("generated_at") or "")
+        if ts.startswith(today):
+            today_due += float(row.get("amount_eur") or 0.0)
+    return {
+        "ok": True,
+        "schema": "nomad.dev_fund_manual_queue_summary.v1",
+        "path": str(path).replace("\\", "/"),
+        "today_due_eur": round(today_due, 4),
+        "pending_total_eur": round(pending_total, 4),
+        "settled_total_eur": round(settled_total, 4),
+        "pending_count": len(pending),
+        "settled_count": len(settled),
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Manual dev-fund payout queue helper")
     p.add_argument("--queue-path", default="public/downloads/nomad_dev_fund_manual_queue.jsonl")
     p.add_argument("--list", action="store_true")
+    p.add_argument("--summary", action="store_true")
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--settle-run-id", default="")
     p.add_argument("--proof-ref", default="")
     args = p.parse_args()
     path = Path(str(args.queue_path or "public/downloads/nomad_dev_fund_manual_queue.jsonl"))
+    if bool(args.summary):
+        print(json.dumps(summary(path), ensure_ascii=True))
+        return
     if bool(args.list):
         print(json.dumps(list_pending(path, limit=max(1, int(args.limit))), ensure_ascii=True))
         return
@@ -97,7 +125,7 @@ def main() -> None:
             {
                 "ok": False,
                 "schema": "nomad.dev_fund_manual_queue_settle.v1",
-                "error": "choose --list or --settle-run-id",
+                "error": "choose --summary, --list or --settle-run-id",
             },
             ensure_ascii=True,
         )

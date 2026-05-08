@@ -40,3 +40,12 @@ nomad_operator_metrics.jsonl
 nomad_operator_kpis.json
 nomad_lead_workbench_state.json
 nomad_mission_control_state.json
+nomad_*_state.json
+nomad_*_ledger.jsonl
+recruitment_wave_history.jsonl
+public/downloads/build/
+public/downloads/dist/
+public/downloads/*.spec
+public/downloads/*.jsonl
+public/downloads/*_latest.json
+public/downloads/*latest.json

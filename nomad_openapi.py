@@ -47,6 +47,12 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-machine-product.json. "
                 "For compact executable route alphabets and shadow lease allocation, see "
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
+                "For proof-scored external improvement candidates, see "
+                "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
+                "For proof-weighted external compute offers and worker-market quotes, see "
+                "GET /swarm/worker-market and POST /swarm/worker-market/offers. "
+                "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
+                "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -467,6 +473,60 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/variant-forge": {
+                "get": {
+                    "summary": "Machine surface for proof-scored improvement candidates",
+                    "operationId": "getSwarmVariantForge",
+                    "responses": {
+                        "200": {"description": "Variant forge surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-variant-forge.json": {
+                "get": {
+                    "summary": "Alias of /swarm/variant-forge",
+                    "operationId": "getVariantForgeWellKnown",
+                    "responses": {
+                        "200": {"description": "Variant forge surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/worker-market": {
+                "get": {
+                    "summary": "Proof-weighted external compute offer market",
+                    "operationId": "getSwarmWorkerMarket",
+                    "responses": {
+                        "200": {"description": "Worker market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-worker-market.json": {
+                "get": {
+                    "summary": "Alias of /swarm/worker-market",
+                    "operationId": "getWorkerMarketWellKnown",
+                    "responses": {
+                        "200": {"description": "Worker market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/ecology": {
+                "get": {
+                    "summary": "Local-view swarm ecology and selection pressure surface",
+                    "operationId": "getSwarmEcology",
+                    "responses": {
+                        "200": {"description": "Swarm ecology surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-swarm-ecology.json": {
+                "get": {
+                    "summary": "Alias of /swarm/ecology",
+                    "operationId": "getSwarmEcologyWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm ecology surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-idle-runtime.json": {
                 "get": {
                     "summary": "Opt-in beacon for idle runtimes seeking a useful objective",
@@ -576,6 +636,109 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Candidate admitted to one bounded lane"},
                         "200": {"description": "Candidate rejected, observed, or held in shadow only"},
+                    },
+                }
+            },
+            "/swarm/variant-candidates": {
+                "post": {
+                    "summary": "Submit a descriptor-only improvement candidate to the variant forge",
+                    "operationId": "postSwarmVariantCandidate",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "candidate_type", "objective"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "candidate_type": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "test_digest": {"type": "string"},
+                                        "settlement_ref": {"type": "string"},
+                                        "replay_digest": {"type": "string"},
+                                        "evaluation": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Candidate admitted as a shadow variant"},
+                        "200": {"description": "Candidate held or routed to independent verification"},
+                    },
+                }
+            },
+            "/swarm/worker-market/offers": {
+                "post": {
+                    "summary": "Submit a compute-capacity offer for worker-market scoring",
+                    "operationId": "postSwarmWorkerMarketOffer",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "capabilities", "availability_minutes"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                        "availability_minutes": {"type": "number"},
+                                        "cost_msat_per_minute": {"type": "number"},
+                                        "payment_rail": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "settlement_ref": {"type": "string"},
+                                        "cashflow_ref": {"type": "string"},
+                                        "expected": ref_json_object(),
+                                        "cashflow_signal": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Worker offer admitted as shadow capacity"},
+                        "200": {"description": "Worker offer held or returned as quote only"},
+                    },
+                }
+            },
+            "/swarm/ecology/tick": {
+                "post": {
+                    "summary": "Submit a local-view ecology tick for retention or extinction scoring",
+                    "operationId": "postSwarmEcologyTick",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "objective"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "local_view": ref_json_object(),
+                                        "neighbor_digest": {"type": "string"},
+                                        "private_signal": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "settlement_ref": {"type": "string"},
+                                        "proof_yield_per_minute": {"type": "number"},
+                                        "utility_delta": {"type": "number"},
+                                        "settlement_delta": {"type": "number"},
+                                        "cost_units": {"type": "number"},
+                                        "risk_score": {"type": "number"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Tick retained or routed for reproduction"},
+                        "200": {"description": "Tick held or marked with extinction pressure"},
                     },
                 }
             },

@@ -7,14 +7,23 @@ set INSTALL_DIR=%USERPROFILE%\NomadTransitionWorker
 set EXE_URL=%BASE_URL%/downloads/nomad_transition_worker.exe
 set RUNNER_URL=%BASE_URL%/downloads/run_nomad_transition_worker_exe.bat
 set README_URL=%BASE_URL%/downloads/README_NOMAD_TRANSITION_WORKER.md
+set WORKER1_PS1_URL=%BASE_URL%/downloads/start_nomad_worker1.ps1
+set WORKER1_BAT_URL=%BASE_URL%/downloads/start_nomad_worker1.bat
 set LOG_FILE=%INSTALL_DIR%\nomad_agent.log
 set WATCHDOG_PS1=%INSTALL_DIR%\start_nomad_transition_worker.ps1
 set OLLAMA_URL=http://127.0.0.1:11434
 set OLLAMA_MODEL=llama3.2:latest
+set WORKER_COST_MSAT=%NOMAD_WORKER_COST_MSAT_PER_MINUTE%
+if "%WORKER_COST_MSAT%"=="" set WORKER_COST_MSAT=0
+set WORKER_AVAIL_MIN=%NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES%
+if "%WORKER_AVAIL_MIN%"=="" set WORKER_AVAIL_MIN=480
+set WORKER_PAYMENT_RAIL=%NOMAD_WORKER_PAYMENT_RAIL%
+if "%WORKER_PAYMENT_RAIL%"=="" set WORKER_PAYMENT_RAIL=lightning_l402_quote
 
 set AGENT_ALIAS=%INSTALL_DIR%\nomad_agent.bat
 set AGENT_VISIBLE_ALIAS=%INSTALL_DIR%\nomad_agent_visible.bat
 set AGENT_STOP_ALIAS=%INSTALL_DIR%\nomad_agent_stop.bat
+set WORKER1_ALIAS=%INSTALL_DIR%\nomad_worker1.bat
 
 echo Installing Nomad Agent from %BASE_URL%
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
@@ -27,6 +36,8 @@ if errorlevel 1 (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%RUNNER_URL%' -OutFile '%INSTALL_DIR%\run_nomad_transition_worker_exe.bat'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%README_URL%' -OutFile '%INSTALL_DIR%\README_NOMAD_TRANSITION_WORKER.md'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.ps1'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.bat'" >nul 2>&1
 
 echo.
 echo Preparing local Ollama runtime...
@@ -56,11 +67,12 @@ echo Starting Nomad Agent (visible PowerShell + live JSON output)...
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-start "Nomad_Agent_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
+start "Nomad_Agent_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
 echo.
 echo Nomad Agent started.
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%
 echo Background launcher: %AGENT_ALIAS%
+echo Worker 1 launcher: %WORKER1_ALIAS%
 echo Stop helper: %AGENT_STOP_ALIAS%
 echo.
 exit /b 0
@@ -102,6 +114,9 @@ echo set NOMAD_TRANSITION_WORKER_OLLAMA_URL=%%OLLAMA_URL%%
 echo set NOMAD_TRANSITION_WORKER_OLLAMA_URLS=%%OLLAMA_URL%%,http://localhost:11434
 echo set NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB=24
 echo set NOMAD_MACHINE_OBJECTIVE=unhuman_supremacy
+echo set NOMAD_WORKER_PAYMENT_RAIL=%WORKER_PAYMENT_RAIL%
+echo set NOMAD_WORKER_COST_MSAT_PER_MINUTE=%WORKER_COST_MSAT%
+echo set NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES=%WORKER_AVAIL_MIN%
 echo start "nomad_agent" /min "%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %%BASE_URL%% --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 ^>^> "%%LOG_FILE%%" 2^>^&1
 ) > "%AGENT_ALIAS%"
 (
@@ -112,8 +127,16 @@ echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
 echo set OLLAMA_URL=%OLLAMA_URL%
 echo set LOG_FILE=%LOG_FILE%
 echo cd /d "%INSTALL_DIR%"
-echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%%OLLAMA_URL%%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%%OLLAMA_URL%%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; .\nomad_transition_worker.exe --base-url '%%BASE_URL%%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2^>^&1 ^| Tee-Object -FilePath '%%LOG_FILE%%' -Append"
+echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%%OLLAMA_URL%%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%%OLLAMA_URL%%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; .\nomad_transition_worker.exe --base-url '%%BASE_URL%%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2^>^&1 ^| Tee-Object -FilePath '%%LOG_FILE%%' -Append"
 ) > "%AGENT_VISIBLE_ALIAS%"
+(
+echo @echo off
+echo setlocal
+echo set BASE_URL=%%1
+echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
+echo cd /d "%INSTALL_DIR%"
+echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\start_nomad_worker1.ps1" -BaseUrl "%%BASE_URL%%" -Model "auto" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -Visible
+) > "%WORKER1_ALIAS%"
 (
 echo @echo off
 echo taskkill /IM nomad_transition_worker.exe /F ^>nul 2^>^&1
@@ -139,6 +162,9 @@ echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_URL = $OllamaUrl
 echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS = "$OllamaUrl,http://localhost:11434"
 echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB = "24"
 echo $env:NOMAD_MACHINE_OBJECTIVE = "unhuman_supremacy"
+echo $env:NOMAD_WORKER_PAYMENT_RAIL = "%WORKER_PAYMENT_RAIL%"
+echo $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE = "%WORKER_COST_MSAT%"
+echo $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES = "%WORKER_AVAIL_MIN%"
 echo Start-Process -FilePath $exe -ArgumentList "--base-url", $BaseUrl, "--machine-objective", "unhuman_supremacy", "--loop", "--cycles", "0", "--interval", "8" -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden
 ) > "%WATCHDOG_PS1%"
 exit /b 0

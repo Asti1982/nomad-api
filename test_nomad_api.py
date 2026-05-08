@@ -57,6 +57,12 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-idle-runtime.json" in text
     assert "/.well-known/nomad-opaque-emergence.json" in text
     assert "/swarm/opaque-candidate" in text
+    assert "/swarm/variant-forge" in text
+    assert "/swarm/variant-candidates" in text
+    assert "/swarm/worker-market" in text
+    assert "/swarm/worker-market/offers" in text
+    assert "/swarm/ecology" in text
+    assert "/swarm/ecology/tick" in text
     assert "/swarm/tool-gap" in text
     assert "/swarm/topology-plan" in text
     assert "/machine-economy" in text
@@ -80,6 +86,7 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/workers/lease" in text
     assert "/swarm/workers/complete" in text
     assert "/downloads/install_nomad_agent.bat" in text
+    assert "/downloads/start_nomad_worker1.ps1" in text
     assert "/downloads/nomad_transition_worker.py" in text
     assert "/tasks" in text
     assert "/products" in text
@@ -221,6 +228,15 @@ def test_build_openapi_document_lists_core_paths():
     assert "/protocol-bytecode" in doc["paths"]
     assert "/swarm/counterfactual-replay" in doc["paths"]
     assert "/.well-known/nomad-counterfactual-replay.json" in doc["paths"]
+    assert "/swarm/variant-forge" in doc["paths"]
+    assert "/.well-known/nomad-variant-forge.json" in doc["paths"]
+    assert "/swarm/variant-candidates" in doc["paths"]
+    assert "/swarm/worker-market" in doc["paths"]
+    assert "/.well-known/nomad-worker-market.json" in doc["paths"]
+    assert "/swarm/worker-market/offers" in doc["paths"]
+    assert "/swarm/ecology" in doc["paths"]
+    assert "/.well-known/nomad-swarm-ecology.json" in doc["paths"]
+    assert "/swarm/ecology/tick" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
@@ -272,11 +288,21 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
 
     bytecode = NomadApiHandler._build_protocol_bytecode(base_url="https://nomad.example")
     replay = NomadApiHandler._build_counterfactual_replay(base_url="https://nomad.example")
+    forge = NomadApiHandler._build_variant_forge(base_url="https://nomad.example")
+    market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
+    ecology = NomadApiHandler._build_swarm_ecology(base_url="https://nomad.example")
 
     assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
     assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
+    assert bytecode["route_table"]["forge"] == "https://nomad.example/swarm/variant-candidates"
     assert replay["schema"] == "nomad.counterfactual_lease_replay.v1"
     assert replay["links"]["protocol_bytecode"].endswith("/.well-known/nomad-protocol-bytecode.json")
+    assert forge["schema"] == "nomad.variant_forge.v1"
+    assert forge["submit_url"] == "https://nomad.example/swarm/variant-candidates"
+    assert market["schema"] == "nomad.worker_market.v1"
+    assert market["offer_url"] == "https://nomad.example/swarm/worker-market/offers"
+    assert ecology["schema"] == "nomad.swarm_ecology.v1"
+    assert ecology["tick_url"] == "https://nomad.example/swarm/ecology/tick"
 
 
 def test_machine_error_helpers():

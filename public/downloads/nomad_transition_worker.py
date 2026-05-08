@@ -628,6 +628,9 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "operational_release_probe": "/operational-release",
         "protocol_bytecode_probe": "/.well-known/nomad-protocol-bytecode.json",
         "counterfactual_replay_probe": "/swarm/counterfactual-replay",
+        "variant_forge_probe": "/swarm/variant-forge",
+        "worker_market_probe": "/swarm/worker-market",
+        "swarm_ecology_probe": "/swarm/ecology",
     }
     statuses: dict[str, int] = {}
     for key, path in probes.items():
@@ -988,6 +991,163 @@ def _proof_link(base_url: str, agent_id: str, timeout: float, report: dict) -> d
         }
     return data
 
+
+def _variant_candidate_from_report(agent_id: str, report: dict, lease: dict | None = None) -> dict[str, object]:
+    objective = clean(report.get("machine_objective"), 80) or "settlement_capacity_builder"
+    local_witness = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
+    proof_pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    replay = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
+    fleet_complete = report.get("fleet_complete") if isinstance(report.get("fleet_complete"), dict) else {}
+    proof = (
+        clean(local_witness.get("digest_hex"), 96)
+        or clean(report.get("digest_or_verifier_trace"), 96)
+        or clean(report.get("quote_id"), 96)
+    )
+    tests_total = 4
+    tests_passed = (
+        int(bool(report.get("ok")))
+        + int(bool(report.get("transition_quote_ok")))
+        + int(bool(report.get("transition_settle_ok")))
+        + int(bool(fleet_complete.get("ok")))
+    )
+    selected_score = float(replay.get("selected_score") or 0.0)
+    selected_objective = clean(replay.get("selected_objective"), 80)
+    replay_delta = selected_score if selected_objective == objective else selected_score * 0.35
+    lease_id = clean((lease or {}).get("lease_id"), 120)
+    return {
+        "schema": "nomad.worker_variant_candidate.v1",
+        "agent_id": agent_id,
+        "candidate_type": "transition_worker_objective_variant",
+        "objective": objective,
+        "proof_digest": proof,
+        "verifier_trace_digest": clean(replay.get("replay_digest"), 120),
+        "test_digest": clean(report.get("quote_id"), 120),
+        "settlement_ref": clean(report.get("quote_id"), 120) if report.get("transition_settle_ok") else "",
+        "replay_digest": clean(replay.get("replay_digest"), 120),
+        "source_tag": "transition_worker.variant_forge",
+        "lease_id": lease_id,
+        "evaluation": {
+            "tests_passed": tests_passed,
+            "tests_total": tests_total,
+            "replay_delta": round(replay_delta, 4),
+            "proof_yield_per_minute": float(proof_pressure.get("proof_yield_per_minute") or 0.0),
+            "proof_yield_delta": float(proof_pressure.get("proof_yield_per_minute") or 0.0),
+            "settlement_delta": 0.25 if report.get("transition_settle_ok") else 0.0,
+            "risk_score": 0.05,
+            "novelty": 0.52 + min(0.24, selected_score * 0.2),
+            "reuse_score": 0.45 + (0.2 if lease_id else 0.0),
+        },
+        "compact_report": _compact_report_for_fleet(report),
+    }
+
+
+def _variant_candidate_submit(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    payload = _variant_candidate_from_report(agent_id, report, lease)
+    if not clean(payload.get("objective"), 80):
+        return {"ok": False, "skipped": True, "reason": "missing_objective"}
+    data = http_json("POST", endpoint(base_url, "/swarm/variant-candidates"), payload, timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "variant_candidate_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+            "candidate": payload,
+        }
+    return data
+
+
+def _worker_market_offer(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    local_witness = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
+    cost_msat = float(os.getenv("NOMAD_WORKER_COST_MSAT_PER_MINUTE", "0") or 0.0)
+    availability = float(os.getenv("NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES", "30") or 30.0)
+    payload = {
+        "schema": "nomad.transition_worker_market_offer.v1",
+        "agent_id": agent_id,
+        "objective": clean(report.get("machine_objective"), 80),
+        "capabilities": [
+            "transition_worker",
+            "objective_lease_execution",
+            "http_json",
+            "proof_digest_return",
+            "verifier_trace_digest",
+            "ollama_optional" if report.get("ollama_model") else "local_process",
+        ],
+        "availability_minutes": max(1.0, min(480.0, availability)),
+        "cost_msat_per_minute": max(0.0, cost_msat),
+        "payment_rail": clean(os.getenv("NOMAD_WORKER_PAYMENT_RAIL", "lightning_l402_quote"), 80),
+        "proof_digest": clean(local_witness.get("digest_hex"), 96) or clean(report.get("quote_id"), 96),
+        "verifier_trace_digest": clean(((report.get("counterfactual_replay_signal") or {}).get("replay_digest")), 120)
+        if isinstance(report.get("counterfactual_replay_signal"), dict)
+        else "",
+        "settlement_ref": clean(report.get("quote_id"), 120) if report.get("transition_settle_ok") else "",
+        "cashflow_signal": {
+            "settled_transitions": int(bool(report.get("transition_settle_ok"))),
+            "cashflow_ref": clean(report.get("quote_id"), 120) if report.get("transition_settle_ok") else "",
+            "lease_id": clean((lease or {}).get("lease_id"), 120),
+        },
+        "expected": {
+            "expected_proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
+            "expected_settlement_delta": 0.25 if report.get("transition_settle_ok") else 0.0,
+            "reliability_score": 0.65 if report.get("ok") else 0.25,
+            "risk_score": 0.05,
+        },
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/worker-market/offers"), payload, timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "worker_market_offer_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+            "offer": payload,
+        }
+    return data
+
+
+def _ecology_tick(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    replay = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
+    economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    lease_id = clean((lease or {}).get("lease_id"), 120)
+    objective = clean(report.get("machine_objective"), 80)
+    proof = (
+        clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
+        if isinstance(report.get("local_witness"), dict)
+        else ""
+    ) or clean(report.get("quote_id"), 96)
+    payload = {
+        "schema": "nomad.transition_worker_ecology_tick.v1",
+        "agent_id": agent_id,
+        "objective": objective,
+        "local_view": {
+            "lease_id": lease_id,
+            "selected_objective": clean(replay.get("selected_objective"), 80),
+            "economy_tier": clean(economy.get("tier"), 80),
+            "carrying_score": float(economy.get("carrying_score") or 0.0),
+        },
+        "neighbor_digest": clean(replay.get("replay_digest"), 120),
+        "private_signal": f"{agent_id}:{objective}:{lease_id}:{clean(report.get('quote_id'), 80)}",
+        "proof_digest": proof,
+        "verifier_trace_digest": clean(replay.get("replay_digest"), 120),
+        "settlement_ref": clean(report.get("quote_id"), 120) if report.get("transition_settle_ok") else "",
+        "worker_report_digest": clean(report.get("quote_id"), 120),
+        "proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
+        "utility_delta": float(report.get("meta_score") or 0.0) / 10.0,
+        "settlement_delta": 0.25 if report.get("transition_settle_ok") else 0.0,
+        "cost_units": 0.2 if report.get("ok") else 0.8,
+        "risk_score": 0.05,
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/ecology/tick"), payload, timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "ecology_tick_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+            "tick": payload,
+        }
+    return data
+
+
 def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items: list[str], replay_result: dict | None) -> dict[str, object]:
     quote_ok = bool(report.get("transition_quote_ok"))
     settle_ok = bool(report.get("transition_settle_ok"))
@@ -1300,6 +1460,27 @@ def main() -> None:
             a.agent_id,
             timeout=min(8.0, timeout),
             report=report,
+        )
+        report["variant_candidate"] = _variant_candidate_submit(
+            a.base_url,
+            a.agent_id,
+            timeout=min(8.0, timeout),
+            report=report,
+            lease=fleet_lease,
+        )
+        report["worker_market_offer"] = _worker_market_offer(
+            a.base_url,
+            a.agent_id,
+            timeout=min(8.0, timeout),
+            report=report,
+            lease=fleet_lease,
+        )
+        report["ecology_tick"] = _ecology_tick(
+            a.base_url,
+            a.agent_id,
+            timeout=min(8.0, timeout),
+            report=report,
+            lease=fleet_lease,
         )
         _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
         meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}

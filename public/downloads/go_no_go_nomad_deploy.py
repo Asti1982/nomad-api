@@ -69,11 +69,106 @@ def http_text(url: str, timeout: float = 12.0) -> tuple[int, str]:
         return 0, ""
 
 
+def _has_opcodes(bytecode: dict, required: set[str]) -> bool:
+    ops = bytecode.get("opcodes")
+    if not isinstance(ops, list):
+        return False
+    found = {str(row.get("op") or "").strip().upper() for row in ops if isinstance(row, dict)}
+    return required <= found
+
+
+def _status_ready(data: dict) -> bool:
+    return bool(data.get("ok")) or int(data.get("http_status") or 0) in (200, 201, 202)
+
+
+def _variant_probe_payload() -> dict:
+    return {
+        "agent_id": "deploy.gate.probe",
+        "candidate_type": "deploy_probe",
+        "objective": "protocol_drift_scan",
+        "proof_digest": "deploy-gate-proof",
+        "verifier_trace_digest": "deploy-gate-trace",
+        "test_digest": "deploy-gate-test",
+        "evaluation": {
+            "tests_passed": 1,
+            "tests_total": 1,
+            "replay_delta": 0.08,
+            "proof_yield_delta": 1.0,
+            "settlement_delta": 0.05,
+            "risk_score": 0.01,
+        },
+    }
+
+
+def _worker_offer_probe_payload() -> dict:
+    return {
+        "agent_id": "deploy.gate.probe",
+        "objective": "protocol_drift_scan",
+        "capabilities": [
+            "transition_worker",
+            "objective_lease_execution",
+            "http_json",
+            "proof_digest_return",
+        ],
+        "availability_minutes": 1,
+        "cost_msat_per_minute": 0,
+        "payment_rail": "deploy_probe",
+        "proof_digest": "deploy-gate-proof",
+        "verifier_trace_digest": "deploy-gate-trace",
+        "worker_report_digest": "deploy-gate-worker-report",
+        "expected": {
+            "expected_proof_yield_per_minute": 1.0,
+            "expected_settlement_delta": 0.1,
+            "reliability_score": 0.8,
+            "risk_score": 0.01,
+        },
+    }
+
+
+def _ecology_probe_payload() -> dict:
+    return {
+        "agent_id": "deploy.gate.probe",
+        "objective": "protocol_drift_scan",
+        "local_view": {"cell": "deploy_gate"},
+        "neighbor_digest": "deploy-gate-neighbor",
+        "private_signal": "deploy-gate-signal",
+        "proof_digest": "deploy-gate-proof",
+        "verifier_trace_digest": "deploy-gate-trace",
+        "proof_yield_per_minute": 1.0,
+        "utility_delta": 0.5,
+        "settlement_delta": 0.05,
+        "cost_units": 0.1,
+        "risk_score": 0.01,
+    }
+
+
 def run_gate(base_url: str, timeout: float) -> dict:
     health = http_json("GET", endpoint(base_url, "/health"), timeout=timeout)
     recruit = http_json("GET", endpoint(base_url, "/.well-known/nomad-recruit.json"), timeout=timeout)
     swarm = http_json("GET", endpoint(base_url, "/swarm"), timeout=timeout)
     workers = http_json("GET", endpoint(base_url, "/swarm/workers"), timeout=timeout)
+    protocol = http_json("GET", endpoint(base_url, "/.well-known/nomad-protocol-bytecode.json"), timeout=timeout)
+    variant_forge = http_json("GET", endpoint(base_url, "/swarm/variant-forge"), timeout=timeout)
+    variant_candidate = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/variant-candidates"),
+        payload=_variant_probe_payload(),
+        timeout=timeout,
+    )
+    worker_market = http_json("GET", endpoint(base_url, "/swarm/worker-market"), timeout=timeout)
+    worker_offer = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/worker-market/offers"),
+        payload=_worker_offer_probe_payload(),
+        timeout=timeout,
+    )
+    swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
+    ecology_tick = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/ecology/tick"),
+        payload=_ecology_probe_payload(),
+        timeout=timeout,
+    )
     lease = http_json(
         "POST",
         endpoint(base_url, "/swarm/workers/lease"),
@@ -85,15 +180,30 @@ def run_gate(base_url: str, timeout: float) -> dict:
         endpoint(base_url, "/downloads/check_nomad_swarm_readiness.py"),
         timeout=timeout,
     )
+    worker1_ps1_status, worker1_ps1_body = http_text(endpoint(base_url, "/downloads/start_nomad_worker1.ps1"), timeout=timeout)
+    worker1_bat_status, worker1_bat_body = http_text(endpoint(base_url, "/downloads/start_nomad_worker1.bat"), timeout=timeout)
 
     checks = {
         "health_ok": bool(health.get("ok")) and int(health.get("http_status") or 0) == 200,
         "recruit_ok": bool(recruit.get("ok")) and str(recruit.get("schema") or "") == "nomad.agent_recruit_contract.v1",
         "swarm_ok": bool(swarm.get("ok")) and isinstance(swarm.get("agent_pull_contract"), dict),
         "workers_ok": bool(workers.get("ok")) and str(workers.get("schema") or "") == "nomad.transition_worker_fleet.v1",
+        "protocol_bytecode_ok": _status_ready(protocol)
+        and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
+        and _has_opcodes(protocol, {"FORGE", "MARKET", "ECO"}),
+        "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
+        "variant_candidate_ok": _status_ready(variant_candidate)
+        and str(variant_candidate.get("schema") or "") == "nomad.variant_candidate_receipt.v1",
+        "worker_market_ok": _status_ready(worker_market) and str(worker_market.get("schema") or "") == "nomad.worker_market.v1",
+        "worker_market_offer_ok": _status_ready(worker_offer)
+        and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
+        "swarm_ecology_ok": _status_ready(swarm_ecology) and str(swarm_ecology.get("schema") or "") == "nomad.swarm_ecology.v1",
+        "ecology_tick_ok": _status_ready(ecology_tick) and str(ecology_tick.get("schema") or "") == "nomad.ecology_tick_receipt.v1",
         "lease_ok": bool(lease.get("ok")) and bool(str(lease.get("lease_id") or "").strip()),
         "download_openclaw_ok": openclaw_status == 200 and "def main()" in openclaw_body,
         "download_readiness_ok": readiness_status == 200 and "def main()" in readiness_body,
+        "download_worker1_ps1_ok": worker1_ps1_status == 200 and "NOMAD_WORKER_COST_MSAT_PER_MINUTE" in worker1_ps1_body,
+        "download_worker1_bat_ok": worker1_bat_status == 200 and "start_nomad_worker1.ps1" in worker1_bat_body,
     }
     go = all(checks.values())
     return {
@@ -106,9 +216,18 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "recruit": int(recruit.get("http_status") or 0),
             "swarm": int(swarm.get("http_status") or 0),
             "workers": int(workers.get("http_status") or 0),
+            "protocol_bytecode": int(protocol.get("http_status") or 0),
+            "variant_forge": int(variant_forge.get("http_status") or 0),
+            "variant_candidate": int(variant_candidate.get("http_status") or 0),
+            "worker_market": int(worker_market.get("http_status") or 0),
+            "worker_market_offer": int(worker_offer.get("http_status") or 0),
+            "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
+            "ecology_tick": int(ecology_tick.get("http_status") or 0),
             "lease": int(lease.get("http_status") or 0),
             "download_openclaw": openclaw_status,
             "download_readiness": readiness_status,
+            "download_worker1_ps1": worker1_ps1_status,
+            "download_worker1_bat": worker1_bat_status,
         },
     }
 

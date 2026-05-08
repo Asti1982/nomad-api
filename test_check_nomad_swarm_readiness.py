@@ -23,6 +23,19 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
             return {"schema": "nomad.openclaw_bridge_contract.v1", "ok": True, "http_status": 200}
         if url.endswith("/swarm/gradient"):
             return {"schema": "nomad.recruitment_gradient.v1", "state_vector": {"field_strength": 0.6}, "ok": True, "http_status": 200}
+        if url.endswith("/.well-known/nomad-protocol-bytecode.json"):
+            return {
+                "schema": "nomad.protocol_bytecode.v1",
+                "opcodes": [{"op": "FORGE"}, {"op": "MARKET"}, {"op": "ECO"}],
+                "ok": True,
+                "http_status": 200,
+            }
+        if url.endswith("/swarm/variant-forge"):
+            return {"schema": "nomad.variant_forge.v1", "ok": True, "http_status": 200}
+        if url.endswith("/swarm/worker-market"):
+            return {"schema": "nomad.worker_market.v1", "ok": True, "http_status": 200}
+        if url.endswith("/swarm/ecology"):
+            return {"schema": "nomad.swarm_ecology.v1", "ok": True, "http_status": 200}
         if url.endswith("/swarm"):
             return {"ok": True, "agent_pull_contract": {"attach_now_score": 1.2, "attach_threshold": 1.1}, "http_status": 200}
         if url.endswith("/swarm/workers"):
@@ -33,6 +46,12 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
             return {"http_status": 200}
         if url.endswith("/swarm/workers/lease"):
             return {"http_status": 202}
+        if url.endswith("/swarm/variant-candidates"):
+            return {"schema": "nomad.variant_candidate_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/worker-market/offers"):
+            return {"schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/ecology/tick"):
+            return {"schema": "nomad.ecology_tick_receipt.v1", "http_status": 202}
         return {"ok": False, "http_status": 404}
 
     monkeypatch.setattr(mod, "http_json", fake_http_json)
@@ -40,4 +59,8 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
     assert out["attach_ready"] is True
     assert out["handoff_ready"] is True
     assert out["lease_ready"] is True
+    assert out["protocol_bytecode_ok"] is True
+    assert out["variant_candidate_ready"] is True
+    assert out["worker_market_offer_ready"] is True
+    assert out["ecology_tick_ready"] is True
     assert out["decision"] == "attach"

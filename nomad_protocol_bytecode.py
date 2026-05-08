@@ -78,6 +78,12 @@ def build_protocol_bytecode(
         "handoff": _u(base_url, "/runtime/handoff"),
         "opaque": _u(base_url, "/swarm/opaque-candidate"),
         "replay": _u(base_url, "/swarm/counterfactual-replay"),
+        "forge": _u(base_url, "/swarm/variant-candidates"),
+        "forge_surface": _u(base_url, "/swarm/variant-forge"),
+        "market": _u(base_url, "/swarm/worker-market"),
+        "market_offer": _u(base_url, "/swarm/worker-market/offers"),
+        "ecology": _u(base_url, "/swarm/ecology"),
+        "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "conformance": _u(base_url, "/contract-conformance"),
     }
     opcodes = [
@@ -90,6 +96,9 @@ def build_protocol_bytecode(
         {"op": "HANDOFF", "method": "POST", "route": routes["handoff"], "in": ["objective", "proof"], "out": ["capsule"]},
         {"op": "OPAQUE", "method": "POST", "route": routes["opaque"], "in": ["effect", "proof", "ttl"], "out": ["decision"]},
         {"op": "REPLAY", "method": "GET", "route": routes["replay"], "out": ["counterfactual"]},
+        {"op": "FORGE", "method": "POST", "route": routes["forge"], "in": ["agent", "objective", "proof"], "out": ["candidate"]},
+        {"op": "MARKET", "method": "POST", "route": routes["market_offer"], "in": ["agent", "cost", "proof"], "out": ["worker_offer"]},
+        {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "DECAY", "method": "LOCAL", "in": ["ttl", "missing_proof"], "out": ["route_weight_delta"]},
     ]
     programs = [
@@ -126,6 +135,30 @@ def build_protocol_bytecode(
                 "trigger_objective": "protocol_drift_scan" if conformance_score < 1.0 else top_objective,
             },
         },
+        {
+            "id": "variant_forge",
+            "ops": ["SENSE", "REPLAY", "LEASE", "EMIT", "FORGE", "REPLAY"],
+            "register_map": {
+                "objective": top_objective,
+                "candidate_contract": "descriptor_with_proof_and_tests",
+            },
+        },
+        {
+            "id": "worker_market_offer",
+            "ops": ["SENSE", "DEMAND", "REPLAY", "MARKET", "LEASE", "EMIT", "ECO"],
+            "register_map": {
+                "objective": top_objective,
+                "utility_floor": 1.8,
+            },
+        },
+        {
+            "id": "local_ecology_tick",
+            "ops": ["SENSE", "REPLAY", "ECO", "DECAY"],
+            "register_map": {
+                "objective": top_objective,
+                "local_view": "neighbor_digest_private_signal_payoff",
+            },
+        },
     ]
     core = {"routes": routes, "programs": programs, "top": top_objective, "conformance": conformance_score}
     return {
@@ -157,4 +190,3 @@ def build_protocol_bytecode(
         },
         "machine_instruction": "execute_program_id_then_emit_proof_then_replay",
     }
-

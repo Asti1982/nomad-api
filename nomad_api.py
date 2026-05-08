@@ -30,6 +30,8 @@ from nomad_opaque_emergence import (
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
+from nomad_variant_forge import build_variant_forge_surface, submit_variant_candidate
+from nomad_worker_market import build_worker_market, score_worker_offer
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -64,6 +66,7 @@ from public.downloads.recruitment_funnel_report import build_report as build_rec
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
+from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -214,6 +217,87 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             proof_reuse=reuse,
             machine_economy=economy,
             machine_treasury=treasury,
+        )
+
+    @classmethod
+    def _build_variant_forge(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        try:
+            from nomad_local_growth_kernel import run_local_growth_kernel
+
+            local_growth = run_local_growth_kernel(
+                base_url=base_url,
+                worker_fleet=worker_fleet,
+                recruitment_gradient=gradient,
+                persist=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            local_growth = {
+                "ok": False,
+                "schema": "nomad.local_growth_kernel_error.v1",
+                "error": "local_growth_kernel_unavailable",
+                "detail": str(exc)[:240],
+            }
+        conformance = cls._build_contract_conformance(base_url=base_url, swarm_summary=summary)
+        replay = build_counterfactual_lease_replay(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            recruitment_gradient=gradient,
+            contract_conformance=conformance,
+        )
+        swarm_economics = cls._build_swarm_economics(base_url=base_url, swarm_summary=summary)
+        return build_variant_forge_surface(
+            base_url=base_url,
+            local_growth_kernel=local_growth,
+            counterfactual_replay=replay,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            swarm_economics=swarm_economics,
+        )
+
+    @classmethod
+    def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        swarm_economics = cls._build_swarm_economics(base_url=base_url, swarm_summary=summary)
+        variant_forge = cls._build_variant_forge(base_url=base_url, swarm_summary=summary)
+        return build_worker_market(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            swarm_economics=swarm_economics,
+            variant_forge=variant_forge,
+        )
+
+    @classmethod
+    def _build_swarm_ecology(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        variant_forge = cls._build_variant_forge(base_url=base_url, swarm_summary=summary)
+        worker_market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
+        return build_swarm_ecology(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            variant_forge=variant_forge,
+            worker_market=worker_market,
         )
 
     @classmethod
@@ -474,6 +558,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_subscriptions": f"{b}/swarm/subscriptions",
                     "protocol_bytecode": f"{b}/.well-known/nomad-protocol-bytecode.json",
                     "counterfactual_replay": f"{b}/swarm/counterfactual-replay",
+                    "variant_forge": f"{b}/swarm/variant-forge",
+                    "variant_candidate_submit": f"{b}/swarm/variant-candidates",
+                    "worker_market": f"{b}/swarm/worker-market",
+                    "worker_market_offer": f"{b}/swarm/worker-market/offers",
+                    "swarm_ecology": f"{b}/swarm/ecology",
+                    "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
                     "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
@@ -658,6 +748,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/counterfactual-replay", "/.well-known/nomad-counterfactual-replay.json"}:
             self._json_response(self.__class__._build_counterfactual_replay(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/variant-forge", "/.well-known/nomad-variant-forge.json"}:
+            self._json_response(self.__class__._build_variant_forge(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/worker-market", "/.well-known/nomad-worker-market.json"}:
+            self._json_response(self.__class__._build_worker_market(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/ecology", "/.well-known/nomad-swarm-ecology.json"}:
+            self._json_response(self.__class__._build_swarm_ecology(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1651,6 +1753,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-protocol-bytecode.json",
                     "/swarm/counterfactual-replay",
                     "/.well-known/nomad-counterfactual-replay.json",
+                    "/swarm/variant-forge",
+                    "/.well-known/nomad-variant-forge.json",
+                    "/swarm/worker-market",
+                    "/.well-known/nomad-worker-market.json",
+                    "/swarm/ecology",
+                    "/.well-known/nomad-swarm-ecology.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2174,6 +2282,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/variant-candidates":
+            base = self._base_url()
+            forge = self.__class__._build_variant_forge(base_url=base)
+            result = submit_variant_candidate(payload, base_url=base, forge_surface=forge)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/worker-market/offers":
+            base = self._base_url()
+            market = self.__class__._build_worker_market(base_url=base)
+            result = score_worker_offer(payload, base_url=base, worker_market=market)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/ecology/tick":
+            base = self._base_url()
+            ecology = self.__class__._build_swarm_ecology(base_url=base)
+            result = submit_ecology_tick(payload, base_url=base, ecology=ecology)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/tool-gap":
             base = self._base_url()
             surface = self.__class__._build_opaque_emergence_surface(base_url=base)
@@ -2470,12 +2599,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-protocol-bytecode.json",
                     "/swarm/counterfactual-replay",
                     "/.well-known/nomad-counterfactual-replay.json",
+                    "/swarm/variant-forge",
+                    "/.well-known/nomad-variant-forge.json",
+                    "/swarm/worker-market",
+                    "/.well-known/nomad-worker-market.json",
+                    "/swarm/ecology",
+                    "/.well-known/nomad-swarm-ecology.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
                     "/swarm/opaque-emergence",
                     "/.well-known/nomad-opaque-emergence.json",
                     "/swarm/opaque-candidate",
+                    "/swarm/variant-candidates",
+                    "/swarm/worker-market/offers",
+                    "/swarm/ecology/tick",
                     "/swarm/tool-gap",
                     "/swarm/topology-plan",
                     "/runtime-capsule",
@@ -2845,6 +2983,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
                         "GET /downloads/install_nomad_agent.bat for the short installer alias.",
                         "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
+                        "GET /downloads/start_nomad_worker1.ps1 for the first persistent laptop-worker profile.",
+                        "GET /downloads/start_nomad_worker1.bat for a visible Worker 1 Windows wrapper.",
                         "GET /downloads/run_nomad_agent_visible.bat to run with live Nomad_Agent status lines.",
                         "GET /downloads/stop_nomad_agent.bat to stop the local Nomad agent loop.",
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",

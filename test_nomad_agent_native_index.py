@@ -55,6 +55,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("nomad-machine-product" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-protocol-bytecode" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/counterfactual-replay" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/swarm/variant-forge" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/swarm/worker-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/swarm/ecology" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-opaque-emergence" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-runtime-capsule" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -89,6 +92,15 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/protocol-bytecode" in routes
     assert "/swarm/counterfactual-replay" in routes
     assert "/.well-known/nomad-counterfactual-replay.json" in routes
+    assert "/swarm/variant-forge" in routes
+    assert "/.well-known/nomad-variant-forge.json" in routes
+    assert "/swarm/variant-candidates" in routes
+    assert "/swarm/worker-market" in routes
+    assert "/.well-known/nomad-worker-market.json" in routes
+    assert "/swarm/worker-market/offers" in routes
+    assert "/swarm/ecology" in routes
+    assert "/.well-known/nomad-swarm-ecology.json" in routes
+    assert "/swarm/ecology/tick" in routes
     assert "/.well-known/nomad-idle-runtime.json" in routes
     assert "/swarm/idle-intent" in routes
     assert "/.well-known/nomad-opaque-emergence.json" in routes
@@ -122,6 +134,12 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("machine_field_intent_url") or "").endswith("/machine-field/intent")
     assert (out.get("protocol_bytecode_url") or "").endswith("/.well-known/nomad-protocol-bytecode.json")
     assert (out.get("counterfactual_replay_url") or "").endswith("/swarm/counterfactual-replay")
+    assert (out.get("variant_forge_url") or "").endswith("/swarm/variant-forge")
+    assert (out.get("variant_candidate_submit_url") or "").endswith("/swarm/variant-candidates")
+    assert (out.get("worker_market_url") or "").endswith("/swarm/worker-market")
+    assert (out.get("worker_market_offer_url") or "").endswith("/swarm/worker-market/offers")
+    assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
+    assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
     assert (out.get("idle_runtime_beacon_url") or "").endswith("/.well-known/nomad-idle-runtime.json")
     assert (out.get("opaque_emergence_url") or "").endswith("/.well-known/nomad-opaque-emergence.json")
     assert (out.get("opaque_candidate_url") or "").endswith("/swarm/opaque-candidate")
@@ -148,6 +166,12 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "contract_conformance_get" in eps
     assert "protocol_bytecode_get" in eps
     assert "counterfactual_replay_get" in eps
+    assert "variant_forge_get" in eps
+    assert "variant_candidate_post" in eps
+    assert "worker_market_get" in eps
+    assert "worker_market_offer_post" in eps
+    assert "swarm_ecology_get" in eps
+    assert "swarm_ecology_tick_post" in eps
     assert "idle_runtime_beacon_get" in eps
     assert "idle_runtime_intent_post" in eps
     assert "opaque_emergence_get" in eps

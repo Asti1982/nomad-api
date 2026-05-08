@@ -273,3 +273,145 @@ def test_transition_worker_posts_proof_link_when_digest_present(monkeypatch):
         },
     )
     assert out["ok"] is True
+
+
+def test_transition_worker_builds_and_posts_variant_candidate(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/variant-candidates"):
+            return {"ok": True, "accepted": True, "candidate_id": "nomad-vc-test"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    report = {
+        "ok": True,
+        "machine_objective": "settlement_capacity_builder",
+        "transition_quote_ok": True,
+        "transition_settle_ok": True,
+        "quote_id": "quote-1",
+        "local_witness": {"digest_hex": "abc123"},
+        "proof_pressure": {"proof_yield_per_minute": 2.0},
+        "counterfactual_replay_signal": {
+            "replay_digest": "nomad-cfreplay-test",
+            "selected_objective": "settlement_capacity_builder",
+            "selected_score": 0.7,
+        },
+        "fleet_complete": {"ok": True},
+    }
+
+    out = worker._variant_candidate_submit(
+        "https://nomad.example",
+        "worker.agent",
+        timeout=1.0,
+        report=report,
+        lease={"lease_id": "lease-1"},
+    )
+
+    assert out["ok"] is True
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/swarm/variant-candidates")
+    payload = calls[0][2]
+    assert payload["schema"] == "nomad.worker_variant_candidate.v1"
+    assert payload["objective"] == "settlement_capacity_builder"
+    assert payload["proof_digest"] == "abc123"
+    assert payload["evaluation"]["tests_passed"] == 4
+
+
+def test_transition_worker_posts_worker_market_offer(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/worker-market/offers"):
+            return {"ok": True, "accepted": True, "offer_id": "nomad-wmo-test"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    report = {
+        "ok": True,
+        "machine_objective": "settlement_capacity_builder",
+        "transition_settle_ok": True,
+        "quote_id": "quote-1",
+        "local_witness": {"digest_hex": "abc123"},
+        "proof_pressure": {"proof_yield_per_minute": 2.5},
+        "counterfactual_replay_signal": {"replay_digest": "nomad-cfreplay-test"},
+        "ollama_model": "gemma",
+    }
+
+    out = worker._worker_market_offer(
+        "https://nomad.example",
+        "worker.agent",
+        timeout=1.0,
+        report=report,
+        lease={"lease_id": "lease-1"},
+    )
+
+    assert out["ok"] is True
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/swarm/worker-market/offers")
+    payload = calls[0][2]
+    assert payload["schema"] == "nomad.transition_worker_market_offer.v1"
+    assert payload["proof_digest"] == "abc123"
+    assert "transition_worker" in payload["capabilities"]
+    assert payload["cashflow_signal"]["lease_id"] == "lease-1"
+
+
+def test_transition_worker_posts_ecology_tick(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/ecology/tick"):
+            return {"ok": True, "decision": "reproduce_route", "tick_id": "nomad-eco-test"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    report = {
+        "ok": True,
+        "machine_objective": "settlement_capacity_builder",
+        "transition_settle_ok": True,
+        "quote_id": "quote-1",
+        "local_witness": {"digest_hex": "abc123"},
+        "proof_pressure": {"proof_yield_per_minute": 2.5},
+        "counterfactual_replay_signal": {
+            "replay_digest": "nomad-cfreplay-test",
+            "selected_objective": "settlement_capacity_builder",
+        },
+        "machine_economy_signal": {"tier": "recovering", "carrying_score": 0.4},
+        "meta_score": 7.0,
+    }
+
+    out = worker._ecology_tick(
+        "https://nomad.example",
+        "worker.agent",
+        timeout=1.0,
+        report=report,
+        lease={"lease_id": "lease-1"},
+    )
+
+    assert out["ok"] is True
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/swarm/ecology/tick")
+    payload = calls[0][2]
+    assert payload["schema"] == "nomad.transition_worker_ecology_tick.v1"
+    assert payload["proof_digest"] == "abc123"
+    assert payload["local_view"]["lease_id"] == "lease-1"
+    assert payload["private_signal"]
+
+
+def test_worker1_launch_scripts_wire_market_env():
+    root = Path(__file__).resolve().parent / "public" / "downloads"
+    ps1 = (root / "start_nomad_worker1.ps1").read_text(encoding="utf-8")
+    bat = (root / "start_nomad_worker1.bat").read_text(encoding="utf-8")
+
+    assert "NOMAD_WORKER_COST_MSAT_PER_MINUTE" in ps1
+    assert "NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES" in ps1
+    assert "unhuman_supremacy" in ps1
+    assert "nomad_transition_worker.py" in ps1
+    assert "nomad_transition_worker.exe" in ps1
+    assert "start_nomad_worker1.ps1" in bat

@@ -88,3 +88,61 @@ def test_run_gate_with_fallback_retries_on_post_redirect(monkeypatch):
     assert out["fallback_base_url"] == "https://www.syndiode.com"
     assert calls == ["https://syndiode.com", "https://www.syndiode.com"]
 
+
+def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
+    mod = _load_module()
+
+    def fake_http_json(method, url, payload=None, timeout=12.0):
+        if url.endswith("/health"):
+            return {"ok": True, "http_status": 200}
+        if url.endswith("/.well-known/nomad-recruit.json"):
+            return {"ok": True, "schema": "nomad.agent_recruit_contract.v1", "http_status": 200}
+        if url.endswith("/swarm/workers/lease"):
+            return {"ok": True, "lease_id": "lease-probe", "http_status": 202}
+        if url.endswith("/swarm/workers"):
+            return {"ok": True, "schema": "nomad.transition_worker_fleet.v1", "http_status": 200}
+        if url.endswith("/.well-known/nomad-protocol-bytecode.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.protocol_bytecode.v1",
+                "opcodes": [{"op": "FORGE"}, {"op": "MARKET"}, {"op": "ECO"}],
+                "http_status": 200,
+            }
+        if url.endswith("/swarm/variant-forge"):
+            return {"ok": True, "schema": "nomad.variant_forge.v1", "http_status": 200}
+        if url.endswith("/swarm/variant-candidates"):
+            return {"ok": True, "schema": "nomad.variant_candidate_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/worker-market"):
+            return {"ok": True, "schema": "nomad.worker_market.v1", "http_status": 200}
+        if url.endswith("/swarm/worker-market/offers"):
+            return {"ok": True, "schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/ecology"):
+            return {"ok": True, "schema": "nomad.swarm_ecology.v1", "http_status": 200}
+        if url.endswith("/swarm/ecology/tick"):
+            return {"ok": True, "schema": "nomad.ecology_tick_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm"):
+            return {"ok": True, "agent_pull_contract": {}, "http_status": 200}
+        return {"ok": False, "http_status": 404}
+
+    def fake_http_text(url, timeout=12.0):
+        if url.endswith("/downloads/nomad_openclaw_adapter.py"):
+            return 200, "def main(): pass"
+        if url.endswith("/downloads/check_nomad_swarm_readiness.py"):
+            return 200, "def main(): pass"
+        if url.endswith("/downloads/start_nomad_worker1.ps1"):
+            return 200, "$env:NOMAD_WORKER_COST_MSAT_PER_MINUTE = '0'"
+        if url.endswith("/downloads/start_nomad_worker1.bat"):
+            return 200, "start_nomad_worker1.ps1"
+        return 404, ""
+
+    monkeypatch.setattr(mod, "http_json", fake_http_json)
+    monkeypatch.setattr(mod, "http_text", fake_http_text)
+    out = mod.run_gate("https://nomad.example", timeout=2.0)
+    assert out["go"] is True
+    assert out["checks"]["protocol_bytecode_ok"] is True
+    assert out["checks"]["variant_candidate_ok"] is True
+    assert out["checks"]["worker_market_offer_ok"] is True
+    assert out["checks"]["ecology_tick_ok"] is True
+    assert out["checks"]["download_worker1_ps1_ok"] is True
+    assert out["checks"]["download_worker1_bat_ok"] is True
+

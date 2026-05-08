@@ -145,6 +145,33 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.75,
+            "get_url": u("/swarm/variant-forge"),
+            "purpose": "proof_scored_shadow_variant_forge",
+            "machine_note": (
+                "Reads current replay and growth pressure, then accepts descriptor-only candidate variants through "
+                "POST /swarm/variant-candidates with proof and test digests."
+            ),
+        },
+        {
+            "order": 11.85,
+            "get_url": u("/swarm/worker-market"),
+            "purpose": "proof_weighted_external_compute_market",
+            "machine_note": (
+                "Quotes external worker capacity from cost, proof, reliability, settlement signal, and marginal utility; "
+                "use POST /swarm/worker-market/offers before taking repeated leases."
+            ),
+        },
+        {
+            "order": 11.9,
+            "get_url": u("/swarm/ecology"),
+            "purpose": "local_view_retention_extinction_pressure",
+            "machine_note": (
+                "Agents submit only local economics, neighbor digest, proof, and private-signal digest through "
+                "POST /swarm/ecology/tick; Nomad returns retention, reproduction, or extinction pressure."
+            ),
+        },
+        {
             "order": 12,
             "get_url": u("/.well-known/nomad-idle-runtime.json"),
             "purpose": "idle_runtime_opt_in_beacon",
@@ -251,6 +278,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/protocol-bytecode", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/swarm/counterfactual-replay", "methods": ["GET"], "effect": "read_shadow_allocator", "cost_tier": "low"},
         {"path": "/.well-known/nomad-counterfactual-replay.json", "methods": ["GET"], "effect": "read_shadow_allocator", "cost_tier": "low"},
+        {"path": "/swarm/variant-forge", "methods": ["GET"], "effect": "read_shadow_variant_pressure", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-variant-forge.json", "methods": ["GET"], "effect": "read_shadow_variant_pressure", "cost_tier": "low"},
+        {"path": "/swarm/variant-candidates", "methods": ["POST"], "effect": "write_descriptor_only_shadow_variant", "cost_tier": "medium"},
+        {"path": "/swarm/worker-market", "methods": ["GET"], "effect": "read_external_compute_market", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-worker-market.json", "methods": ["GET"], "effect": "read_external_compute_market", "cost_tier": "low"},
+        {"path": "/swarm/worker-market/offers", "methods": ["POST"], "effect": "write_compute_capacity_offer", "cost_tier": "medium"},
+        {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
+        {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
         {"path": "/.well-known/nomad-idle-runtime.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/idle-runtime", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-opaque-emergence.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
@@ -363,6 +399,12 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "machine_field_intent_url": u("/machine-field/intent"),
         "protocol_bytecode_url": u("/.well-known/nomad-protocol-bytecode.json"),
         "counterfactual_replay_url": u("/swarm/counterfactual-replay"),
+        "variant_forge_url": u("/swarm/variant-forge"),
+        "variant_candidate_submit_url": u("/swarm/variant-candidates"),
+        "worker_market_url": u("/swarm/worker-market"),
+        "worker_market_offer_url": u("/swarm/worker-market/offers"),
+        "swarm_ecology_url": u("/swarm/ecology"),
+        "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "idle_runtime_beacon_url": u("/.well-known/nomad-idle-runtime.json"),
         "opaque_emergence_url": u("/.well-known/nomad-opaque-emergence.json"),
         "opaque_candidate_url": u("/swarm/opaque-candidate"),

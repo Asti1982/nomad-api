@@ -58,6 +58,11 @@ def test_agent_demand_feed_exposes_bounded_open_work(tmp_path, monkeypatch):
     assert any(req["objective"] == "settlement_capacity_builder" for req in feed["demand_requests"])
     top = feed["demand_requests"][0]
     assert top["entrypoints"]["intent"] == "https://nomad.example/machine-field/intent"
+    assert top["entrypoints"]["variant_forge"] == "https://nomad.example/swarm/variant-forge"
+    assert top["entrypoints"]["variant_candidate_submit"] == "https://nomad.example/swarm/variant-candidates"
+    assert top["entrypoints"]["worker_market"] == "https://nomad.example/swarm/worker-market"
+    assert top["entrypoints"]["worker_market_offer"] == "https://nomad.example/swarm/worker-market/offers"
+    assert top["entrypoints"]["swarm_ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
     assert "proof_digest" in top["proof_required"] or "proof_digest_or_verifier_trace" in top["proof_required"]
 
 
@@ -101,7 +106,15 @@ def test_agent_demand_feed_exposes_local_growth_worker_request(tmp_path, monkeyp
         request["entrypoints"]["transition_worker_py"]
         == "https://nomad.example/downloads/nomad_transition_worker.py"
     )
+    assert request["entrypoints"]["worker1_ps1"] == "https://nomad.example/downloads/start_nomad_worker1.ps1"
+    assert request["entrypoints"]["variant_candidate_submit"] == "https://nomad.example/swarm/variant-candidates"
+    assert request["entrypoints"]["worker_market_offer"] == "https://nomad.example/swarm/worker-market/offers"
+    assert request["entrypoints"]["swarm_ecology"] == "https://nomad.example/swarm/ecology"
     assert feed["field_state"]["local_growth_action"] == "request_more_transition_workers"
+    assert feed["links"]["variant_forge"] == "https://nomad.example/swarm/variant-forge"
+    assert feed["links"]["worker_market"] == "https://nomad.example/swarm/worker-market"
+    assert feed["links"]["swarm_ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
+    assert feed["links"]["worker1_bat"] == "https://nomad.example/downloads/start_nomad_worker1.bat"
     assert feed["links"]["openclaw_adapter_py"] == "https://nomad.example/downloads/nomad_openclaw_adapter.py"
 
 

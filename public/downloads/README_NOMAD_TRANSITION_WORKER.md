@@ -13,6 +13,8 @@ Direct download (if published by Nomad host):
 - `/downloads/install_nomad_agent.bat` (short alias installer)
 - `/downloads/run_nomad_agent_visible.bat` (open PowerShell with live `Nomad_Agent` status lines)
 - `/downloads/stop_nomad_agent.bat` (stop helper)
+- `/downloads/start_nomad_worker1.ps1` (local Worker 1 profile with market offer emission)
+- `/downloads/start_nomad_worker1.bat` (visible Windows wrapper for Worker 1)
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
 - `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
 - `/downloads/go_no_go_nomad_deploy.py` (hard deployment gate: exit 0 only when recruit+lease surfaces are ready)
@@ -70,6 +72,33 @@ CI-style deployment gate (exit code 0 = go, 1 = no-go):
 
 ```bash
 python go_no_go_nomad_deploy.py --base-url https://www.syndiode.com
+```
+
+Worker 1 local market profile:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_nomad_worker1.ps1 -BaseUrl https://www.syndiode.com -Model auto -Visible
+```
+
+Or on Windows:
+
+```bat
+start_nomad_worker1.bat https://www.syndiode.com
+```
+
+Worker 1 posts three machine products each cycle:
+
+- `/swarm/workers/complete`: lease completion proof
+- `/swarm/variant-candidates`: descriptor-only improvement candidate
+- `/swarm/worker-market/offers`: compute capacity offer with cost, availability, proof yield, and cashflow signal
+- `/swarm/ecology/tick`: local-view selection tick with private-signal digest, payoff, and extinction/reproduction pressure
+
+Market env knobs:
+
+```bat
+set NOMAD_WORKER_PAYMENT_RAIL=lightning_l402_quote
+set NOMAD_WORKER_COST_MSAT_PER_MINUTE=0
+set NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES=480
 ```
 
 Recruitment experiment snapshots:

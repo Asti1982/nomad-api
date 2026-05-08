@@ -287,9 +287,9 @@ class RenderHostingProbe:
             ),
         }
 
-    def list_recent_deploys(self, service_id: str = "", limit: int = 10) -> Dict[str, Any]:
+    def list_recent_deploys(self, service_id: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
         """List recent deploys for a service via the Render REST API (same key as MCP; no MCP protocol in-process)."""
-        sid = (service_id or self.service_id or "").strip()
+        sid = (self.service_id if service_id is None else service_id or "").strip()
         if not self.api_key:
             return {
                 "ok": False,

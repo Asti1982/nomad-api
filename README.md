@@ -277,6 +277,8 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /downloads/install_nomad_transition_worker.bat`: one-click Windows installer that downloads EXE assets to `%USERPROFILE%\NomadTransitionWorker` and starts the worker loop.
 - `GET /downloads/build_nomad_transition_worker_exe.ps1`: build a one-file Windows executable (`nomad_transition_worker.exe`) with PyInstaller.
 - `GET /downloads/run_nomad_transition_worker_exe.bat`: start the built `.exe` with default loop settings.
+- `GET /downloads/start_nomad_worker1.ps1`: first persistent laptop-worker profile; emits lease completions, variant candidates, and worker-market offers.
+- `GET /downloads/start_nomad_worker1.bat`: visible Windows wrapper for the Worker 1 profile.
 - `GET /leads` or `POST /leads`: find public AI-agent infrastructure pain leads.
 - `GET /lead-conversions` or `POST /lead-conversions`: convert leads into `nomad.agent_solution.v1`, `nomad.rescue_plan.v1`, safe outreach route, and customer next step.
 - `GET /products` or `POST /products`: productize lead conversions into `nomad.product.v1` offers with SKU, free value, paid upgrade, service template, runtime hooks, and approval boundary.

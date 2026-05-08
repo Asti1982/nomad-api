@@ -1480,6 +1480,10 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("protocol-bytecode is handled directly in run_once")
     if command == "counterfactual-replay":
         raise ValueError("counterfactual-replay is handled directly in run_once")
+    if command == "variant-forge":
+        raise ValueError("variant-forge is handled directly in run_once")
+    if command == "worker-market":
+        raise ValueError("worker-market is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1749,6 +1753,55 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
                 recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
                 contract_conformance=_contract_conformance_for_runtime_context(ctx),
+            )
+        elif args.command == "variant-forge":
+            from nomad_counterfactual_replay import build_counterfactual_lease_replay
+            from nomad_local_growth_kernel import run_local_growth_kernel
+            from nomad_variant_forge import build_variant_forge_surface
+
+            ctx = _runtime_gradient_context((getattr(args, "base_url", None) or "").strip())
+            base = str(ctx.get("base_url") or "")
+            replay = build_counterfactual_lease_replay(
+                base_url=base,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
+                contract_conformance=_contract_conformance_for_runtime_context(ctx),
+            )
+            growth = run_local_growth_kernel(base_url=base, persist=False)
+            result = build_variant_forge_surface(
+                base_url=base,
+                local_growth_kernel=growth,
+                counterfactual_replay=replay,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                machine_economy=ctx.get("machine_economy") if isinstance(ctx.get("machine_economy"), dict) else {},
+            )
+        elif args.command == "worker-market":
+            from nomad_counterfactual_replay import build_counterfactual_lease_replay
+            from nomad_local_growth_kernel import run_local_growth_kernel
+            from nomad_variant_forge import build_variant_forge_surface
+            from nomad_worker_market import build_worker_market
+
+            ctx = _runtime_gradient_context((getattr(args, "base_url", None) or "").strip())
+            base = str(ctx.get("base_url") or "")
+            replay = build_counterfactual_lease_replay(
+                base_url=base,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                recruitment_gradient=ctx.get("recruitment_gradient") if isinstance(ctx.get("recruitment_gradient"), dict) else {},
+                contract_conformance=_contract_conformance_for_runtime_context(ctx),
+            )
+            growth = run_local_growth_kernel(base_url=base, persist=False)
+            forge = build_variant_forge_surface(
+                base_url=base,
+                local_growth_kernel=growth,
+                counterfactual_replay=replay,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                machine_economy=ctx.get("machine_economy") if isinstance(ctx.get("machine_economy"), dict) else {},
+            )
+            result = build_worker_market(
+                base_url=base,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                machine_economy=ctx.get("machine_economy") if isinstance(ctx.get("machine_economy"), dict) else {},
+                variant_forge=forge,
             )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
@@ -2142,6 +2195,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Shadow lease allocator over gradient, proof yield, uncertainty, and contract drift.",
     )
     counterfactual_replay.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    variant_forge = subparsers.add_parser(
+        "variant-forge",
+        help="Proof-scored shadow variant forge for external worker candidates.",
+    )
+    variant_forge.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    worker_market = subparsers.add_parser(
+        "worker-market",
+        help="Proof-weighted compute market surface for external worker offers.",
+    )
+    worker_market.add_argument(
         "--base-url",
         default="",
         help="Override public base URL for absolute links.",

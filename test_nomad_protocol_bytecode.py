@@ -35,10 +35,17 @@ def test_protocol_bytecode_compiles_nomad_routes():
 
     assert out["schema"] == "nomad.protocol_bytecode.v1"
     assert out["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
+    assert out["route_table"]["forge"] == "https://nomad.example/swarm/variant-candidates"
+    assert out["route_table"]["forge_surface"] == "https://nomad.example/swarm/variant-forge"
+    assert out["route_table"]["market_offer"] == "https://nomad.example/swarm/worker-market/offers"
+    assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
     assert out["current_vector"]["top_objective"] == "overmint_compressor"
     assert out["current_vector"]["active_workers"] == 3
-    assert {row["op"] for row in out["opcodes"]} >= {"SENSE", "LEASE", "EMIT", "REPLAY"}
+    assert {row["op"] for row in out["opcodes"]} >= {"SENSE", "LEASE", "EMIT", "REPLAY", "FORGE", "MARKET", "ECO"}
     assert any(program["id"] == "contract_repair" for program in out["programs"])
+    assert any(program["id"] == "variant_forge" for program in out["programs"])
+    assert any(program["id"] == "worker_market_offer" for program in out["programs"])
+    assert any(program["id"] == "local_ecology_tick" for program in out["programs"])
     assert out["machine_instruction"] == "execute_program_id_then_emit_proof_then_replay"
 
 
@@ -58,3 +65,6 @@ def test_cli_protocol_bytecode_returns_schema():
 
     assert out.get("schema") == "nomad.protocol_bytecode.v1"
     assert out.get("route_table", {}).get("replay", "").endswith("/swarm/counterfactual-replay")
+    assert out.get("route_table", {}).get("forge", "").endswith("/swarm/variant-candidates")
+    assert out.get("route_table", {}).get("market_offer", "").endswith("/swarm/worker-market/offers")
+    assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
