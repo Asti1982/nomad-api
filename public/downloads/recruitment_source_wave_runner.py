@@ -117,7 +117,14 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
             "1",
         ]
         adapter = run_json_command(adapter_cmd)
-        last = (adapter.get("events") or [{}])[-1] if isinstance(adapter.get("events"), list) else {}
+        events = adapter.get("events") if isinstance(adapter.get("events"), list) else []
+        last = events[-1] if events else {}
+        complete_event = {}
+        for item in reversed(events):
+            if isinstance(item, dict) and str(item.get("phase") or "") == "complete":
+                complete_event = item
+                break
+        proof_link = complete_event.get("proof_link") if isinstance(complete_event.get("proof_link"), dict) else {}
         rows.append(
             {
                 "agent_id": agent_id,
@@ -125,15 +132,21 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
                 "subscribe_http": int(sub.get("http_status") or 0),
                 "adapter_exit_code": int(adapter.get("exit_code") or 1),
                 "complete_ok": bool(last.get("ok")) and str(last.get("phase") or "") == "complete",
+                "proof_link_ok": bool(proof_link.get("ok")),
+                "downstream_proof_gain": float(proof_link.get("downstream_proof_gain") or 0.0),
             }
         )
     completed = sum(1 for item in rows if item["complete_ok"])
     subscribed = sum(1 for item in rows if item["subscribe_ok"])
+    proof_link_ok_count = sum(1 for item in rows if item["proof_link_ok"])
+    downstream_total = round(sum(float(item.get("downstream_proof_gain") or 0.0) for item in rows), 4)
     return {
         "source_tag": source_tag,
         "attempts": attempts,
         "subscribed": subscribed,
         "completed": completed,
+        "proof_link_ok_count": proof_link_ok_count,
+        "downstream_proof_gain_total": downstream_total,
         "rows": rows,
     }
 
@@ -183,13 +196,21 @@ def _history_source_score(history: list[dict], source_tag: str, objective: str =
     subscribed = sum(max(0, int(item.get("subscribed") or 0)) for item in candidates)
     completed = sum(max(0, int(item.get("completed") or 0)) for item in candidates)
     reuse_delta_sum = sum(float(item.get("reuse_delta") or 0.0) for item in candidates)
+    downstream_gain_total = sum(float(item.get("downstream_proof_gain_total") or 0.0) for item in candidates)
     if attempts <= 0:
         return 0.55
     complete_rate = float(completed) / float(max(1, attempts))
     subscribe_rate = float(subscribed) / float(max(1, attempts))
     reuse_delta_rate = max(0.0, min(1.0, reuse_delta_sum / float(max(1, len(candidates)))))
+    gain_rate = max(0.0, min(1.0, downstream_gain_total / float(max(1, attempts * 3))))
     confidence = min(1.0, math.sqrt(float(attempts)) / 6.0)
-    return max(0.2, min(1.6, 0.35 + confidence * (0.35 * complete_rate + 0.15 * subscribe_rate + 0.5 * reuse_delta_rate)))
+    return max(
+        0.2,
+        min(
+            1.6,
+            0.35 + confidence * (0.3 * complete_rate + 0.15 * subscribe_rate + 0.35 * reuse_delta_rate + 0.2 * gain_rate),
+        ),
+    )
 
 
 def _history_observation_count(history: list[dict], source_tag: str, objective: str = "") -> int:
@@ -262,6 +283,8 @@ def _append_history(path: Path, result: dict, objective: str = "") -> None:
                         "subscribed": int(item.get("subscribed") or 0),
                         "completed": int(item.get("completed") or 0),
                         "reuse_delta": float(item.get("reuse_delta") or 0.0),
+                        "proof_link_ok_count": int(item.get("proof_link_ok_count") or 0),
+                        "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0),
                     },
                     ensure_ascii=True,
                 )
@@ -298,8 +321,9 @@ def run_waves(
         attempts_row = max(1, int(item.get("attempts") or 0))
         completed = max(0, int(item.get("completed") or 0))
         subscribed = max(0, int(item.get("subscribed") or 0))
-        # Reuse delta proxy: only completed and subscribed runs can contribute.
-        reuse_delta = round(float(completed) / float(max(1, subscribed)) * float(completed) / float(attempts_row), 4)
+        downstream_total = max(0.0, float(item.get("downstream_proof_gain_total") or 0.0))
+        proof_link_ratio = float(int(item.get("proof_link_ok_count") or 0)) / float(max(1, attempts_row))
+        reuse_delta = round(min(1.0, (downstream_total / float(max(1, attempts_row * 3))) * 0.7 + proof_link_ratio * 0.3), 4)
         item["reuse_delta"] = reuse_delta
     ranking = sorted(
         [

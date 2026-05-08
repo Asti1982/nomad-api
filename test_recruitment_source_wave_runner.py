@@ -21,8 +21,16 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     def fake_run_json_command(cmd):
         seq["n"] += 1
         if seq["n"] <= 2:
-            return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
-        return {"exit_code": 0, "events": [{"ok": False, "phase": "attach"}], "stderr": ""}
+            return {
+                "exit_code": 0,
+                "events": [{"ok": True, "phase": "complete", "proof_link": {"ok": True, "downstream_proof_gain": 1.6}}],
+                "stderr": "",
+            }
+        return {
+            "exit_code": 0,
+            "events": [{"ok": False, "phase": "attach", "proof_link": {"ok": False}}],
+            "stderr": "",
+        }
 
     monkeypatch.setattr(mod, "http_json", fake_http_json)
     monkeypatch.setattr(mod, "run_json_command", fake_run_json_command)
@@ -36,6 +44,7 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     assert out["base_url"] == "https://www.nomad.example"
     assert out["ranking"][0]["source_tag"] == "alpha.source"
     assert out["ranking"][0]["completed"] == 2
+    assert out["waves"][0]["downstream_proof_gain_total"] > out["waves"][1]["downstream_proof_gain_total"]
     assert out["ranking"][0]["reuse_delta"] >= out["ranking"][1]["reuse_delta"]
     assert out["ranking"][1]["completed"] == 0
 
