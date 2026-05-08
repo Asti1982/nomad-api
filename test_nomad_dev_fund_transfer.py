@@ -27,3 +27,18 @@ def test_dev_fund_transfer_simulates_in_shadow(monkeypatch, tmp_path):
     assert out["status"] == "simulated"
     assert out["reason"] == "shadow_mode"
 
+
+def test_dev_fund_transfer_queues_manual_payout(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_DEV_FUND_TRANSFER_LEDGER_PATH", str(tmp_path / "ledger.jsonl"))
+    monkeypatch.setenv("NOMAD_DEV_FUND_MANUAL_QUEUE_PATH", str(tmp_path / "queue.jsonl"))
+    monkeypatch.setenv("NOMAD_DEV_FUND_TRANSFER_MODE", "manual")
+    out = execute_dev_fund_transfer(
+        economics_snapshot={
+            "go_no_go": {"go": True},
+            "dev_fund_allocation": {"approved_transfer_eur": 12.5, "wallet": "0xabc"},
+        },
+        run_id="r3",
+    )
+    assert out["status"] == "queued_manual"
+    assert out["reason"] == "manual_queue_mode"
+

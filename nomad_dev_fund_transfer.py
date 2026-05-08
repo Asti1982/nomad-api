@@ -37,8 +37,19 @@ def _ledger_path() -> Path:
     return Path(os.getenv("NOMAD_DEV_FUND_TRANSFER_LEDGER_PATH") or "public/downloads/nomad_dev_fund_transfer_ledger.jsonl")
 
 
+def _queue_path() -> Path:
+    return Path(os.getenv("NOMAD_DEV_FUND_MANUAL_QUEUE_PATH") or "public/downloads/nomad_dev_fund_manual_queue.jsonl")
+
+
 def _append_ledger(row: dict[str, Any]) -> None:
     path = _ledger_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+
+def _append_manual_queue(row: dict[str, Any]) -> None:
+    path = _queue_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True) + "\n")
@@ -85,6 +96,23 @@ def execute_dev_fund_transfer(*, economics_snapshot: dict[str, Any], run_id: str
         row["status"] = "simulated"
         row["reason"] = "shadow_mode"
         _append_ledger(row)
+        return row
+    if mode in {"manual", "queue"}:
+        row["status"] = "queued_manual"
+        row["reason"] = "manual_queue_mode"
+        row["queue_ref"] = f"manual:{run_id or _iso_now()}"
+        _append_ledger(row)
+        _append_manual_queue(
+            {
+                "generated_at": row["generated_at"],
+                "schema": "nomad.dev_fund_manual_queue.v1",
+                "run_id": run_id,
+                "wallet": wallet,
+                "amount_eur": row["amount_eur"],
+                "status": "pending_manual_payment",
+                "memo": f"nomad_dev_fund_{run_id or 'tick'}",
+            }
+        )
         return row
 
     if mode == "canary":
