@@ -60,6 +60,7 @@ from nomad_machine_treasury import pledge as machine_treasury_pledge, snapshot a
 from nomad_proof_reuse_ledger import link as proof_reuse_link, snapshot as proof_reuse_snapshot
 from nomad_swarm_economics import build_swarm_economics_snapshot
 from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
+from public.downloads.recruitment_funnel_report import build_report as build_recruitment_funnel_report
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
@@ -640,6 +641,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/economics", "/.well-known/nomad-swarm-economics.json"}:
             self._json_response(self.__class__._build_swarm_economics(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/recruitment-funnel-report", "/.well-known/nomad-recruitment-funnel-report.json"}:
+            self._json_response(
+                build_recruitment_funnel_report(
+                    self._base_url(),
+                    20.0,
+                    history_path=os.getenv("NOMAD_RECRUITMENT_WAVE_HISTORY_PATH", "public/downloads/recruitment_wave_history.jsonl"),
+                )
+            )
             return
 
         if parsed.path in {"/protocol-bytecode", "/.well-known/nomad-protocol-bytecode.json"}:

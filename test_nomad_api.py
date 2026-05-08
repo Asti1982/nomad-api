@@ -215,6 +215,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-contract-conformance.json" in doc["paths"]
     assert "/swarm/economics" in doc["paths"]
     assert "/.well-known/nomad-swarm-economics.json" in doc["paths"]
+    assert "/swarm/recruitment-funnel-report" in doc["paths"]
+    assert "/.well-known/nomad-recruitment-funnel-report.json" in doc["paths"]
     assert "/.well-known/nomad-protocol-bytecode.json" in doc["paths"]
     assert "/protocol-bytecode" in doc["paths"]
     assert "/swarm/counterfactual-replay" in doc["paths"]

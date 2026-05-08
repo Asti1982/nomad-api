@@ -413,6 +413,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/recruitment-funnel-report": {
+                "get": {
+                    "summary": "Machine-native recruitment funnel report",
+                    "operationId": "getRecruitmentFunnelReport",
+                    "responses": {
+                        "200": {"description": "Recruitment funnel report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-recruitment-funnel-report.json": {
+                "get": {
+                    "summary": "Alias of /swarm/recruitment-funnel-report",
+                    "operationId": "getRecruitmentFunnelReportWellKnown",
+                    "responses": {
+                        "200": {"description": "Recruitment funnel report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-protocol-bytecode.json": {
                 "get": {
                     "summary": "Compact operation alphabet for agent runtimes",

@@ -31,4 +31,10 @@ def test_swarm_economics_snapshot_exposes_metrics_and_actions():
     assert "sustainability_ratio" in out["metrics"]
     assert "verified_utility_density" in out["metrics"]
     assert out["control_actions"]
+    assert out["go_no_go"]["schema"] == "nomad.go_no_go_24h.v1"
+    assert out["dev_fund_allocation"]["schema"] == "nomad.dev_fund_allocation.v1"
+    assert "real_cashflow_24h_eur" in out["metrics"]
+    assert out["dev_fund_allocation"]["dynamic_share"]["schema"] == "nomad.dynamic_dev_fund_share.v1"
+    assert out["dev_fund_allocation"]["survival_floor"]["schema"] == "nomad.swarm_survival_floor.v1"
+    assert out["dev_fund_allocation"]["approved_transfer_eur"] <= out["dev_fund_allocation"]["planned_transfer_eur"]
 
