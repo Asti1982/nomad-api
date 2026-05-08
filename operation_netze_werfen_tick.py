@@ -14,6 +14,7 @@ import time
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from nomad_dev_fund_transfer import execute_dev_fund_transfer
 
 
 def _iso_now() -> str:
@@ -202,6 +203,7 @@ def run_tick() -> dict:
         "fallback_used": bool(economics.get("fallback_used")),
         "fallback_path": str(economics.get("fallback_path") or ""),
     }
+    out["dev_fund_transfer"] = execute_dev_fund_transfer(economics_snapshot=economics, run_id=run_id)
     economics_actions = [
         str((item or {}).get("action") or "")
         for item in (economics.get("control_actions") or [])

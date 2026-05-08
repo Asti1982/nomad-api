@@ -37,4 +37,6 @@ def test_swarm_economics_snapshot_exposes_metrics_and_actions():
     assert out["dev_fund_allocation"]["dynamic_share"]["schema"] == "nomad.dynamic_dev_fund_share.v1"
     assert out["dev_fund_allocation"]["survival_floor"]["schema"] == "nomad.swarm_survival_floor.v1"
     assert out["dev_fund_allocation"]["approved_transfer_eur"] <= out["dev_fund_allocation"]["planned_transfer_eur"]
+    assert out["inputs"]["infra_cost_estimate_24h"]["schema"] == "nomad.infra_cost_estimate_24h.v1"
+    assert "revenue_24h_eur" in out["metrics"]
 

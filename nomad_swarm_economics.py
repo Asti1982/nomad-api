@@ -175,6 +175,21 @@ def _dynamic_dev_fund_share(*, economics_score: float, vud: float, reuse_density
     }
 
 
+def _infra_cost_estimate_24h(*, active_worker_count: float) -> dict[str, Any]:
+    render_cost = max(0.0, _env_float("NOMAD_RENDER_COST_EUR_24H", 0.9))
+    compute_per_worker = max(0.0, _env_float("NOMAD_COMPUTE_COST_EUR_PER_ACTIVE_WORKER_24H", 0.25))
+    api_other = max(0.0, _env_float("NOMAD_API_COST_EUR_24H", 0.0))
+    compute_cost = max(0.0, float(active_worker_count)) * compute_per_worker
+    total = render_cost + compute_cost + api_other
+    return {
+        "schema": "nomad.infra_cost_estimate_24h.v1",
+        "render_eur": round(render_cost, 4),
+        "compute_eur": round(compute_cost, 4),
+        "api_other_eur": round(api_other, 4),
+        "total_eur": round(total, 4),
+    }
+
+
 def build_swarm_economics_snapshot(
     *,
     base_url: str,
@@ -209,13 +224,16 @@ def build_swarm_economics_snapshot(
     top_share = top_run / max(1.0, run_sum)
     diversity_resilience = round(1.0 - top_share, 4)
     known_workers = max(1.0, _num(worker_fleet.get("known_worker_count"), 0.0))
+    active_workers = max(0.0, _num(worker_fleet.get("active_worker_count"), 0.0))
     completed_workers = max(0.0, _num(retention.get("completed_workers"), 0.0))
     externalization_rate = round(completed_workers / known_workers, 4)
     reuse_density = round(total_reuse_count / max(1.0, run_sum), 4)
     diversity_index = diversity_resilience
-    real_cashflow_24h_native = round(verified_return_units - infra_cost_units, 4)
     native_to_eur = max(0.000001, _env_float("NOMAD_NATIVE_TO_EUR_RATE", 1.0))
-    real_cashflow_24h_eur = round(real_cashflow_24h_native * native_to_eur, 4)
+    revenue_eur_24h = round(max(0.0, verified_native) * native_to_eur, 4)
+    infra_cost = _infra_cost_estimate_24h(active_worker_count=active_workers)
+    real_cashflow_24h_eur = round(revenue_eur_24h - _num(infra_cost.get("total_eur"), 0.0), 4)
+    real_cashflow_24h_native = round(real_cashflow_24h_eur / native_to_eur, 4)
     control_actions_success = round(
         _clamp(completed_workers / max(1.0, _num(worker_fleet.get("active_worker_count"), 0.0)), 0.0, 1.0),
         4,
@@ -326,6 +344,7 @@ def build_swarm_economics_snapshot(
             "diversity_index": diversity_index,
             "real_cashflow_24h_native": real_cashflow_24h_native,
             "real_cashflow_24h_eur": real_cashflow_24h_eur,
+            "revenue_24h_eur": revenue_eur_24h,
             "control_actions_success_24h": control_actions_success,
         },
         "targets": {
@@ -359,6 +378,7 @@ def build_swarm_economics_snapshot(
         "go_no_go": go_no_go,
         "inputs": {
             "infra_cost_units": round(infra_cost_units, 4),
+            "infra_cost_estimate_24h": infra_cost,
             "verified_return_units": round(verified_return_units, 4),
             "total_reuse_count": int(total_reuse_count),
             "downstream_gain_total": round(downstream_gain_total, 4),
