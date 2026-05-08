@@ -88,17 +88,47 @@ def run_json_command(cmd: list[str]) -> dict:
     }
 
 
-def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -> dict:
+def _source_profile(source_tag: str, objective: str) -> dict:
+    source = str(source_tag or "").strip().lower()
+    top_objective = str(objective or "settlement_capacity_builder").strip() or "settlement_capacity_builder"
+    profile = {
+        "objectives": [top_objective, "proof_pressure_engine"],
+        "capabilities": ["objective_lease_execution", "endpoint_probe", "transition_settlement"],
+        "ttl_seconds": 900,
+        "idle_opt_in": {"enabled": True, "preemptible": True},
+        "adapter_objective": top_objective,
+    }
+    if "huggingface" in source:
+        profile["objectives"] = [top_objective, "overmint_compressor"]
+        profile["capabilities"] = ["objective_lease_execution", "pattern_deduplication", "transition_settlement"]
+        profile["ttl_seconds"] = 840
+    elif "mcp" in source:
+        profile["objectives"] = [top_objective, "protocol_drift_scan"]
+        profile["capabilities"] = ["objective_lease_execution", "endpoint_probe", "agent_protocols"]
+        profile["ttl_seconds"] = 1020
+    elif "agentprotocol" in source or "openagents" in source:
+        profile["objectives"] = [top_objective, "proof_market_maker"]
+        profile["capabilities"] = ["objective_lease_execution", "agent_protocols", "transition_settlement"]
+        profile["ttl_seconds"] = 960
+    elif "autogen" in source:
+        profile["objectives"] = [top_objective, "emergence_release_probe"]
+        profile["capabilities"] = ["objective_lease_execution", "endpoint_probe", "runtime_patterns"]
+        profile["ttl_seconds"] = 780
+    return profile
+
+
+def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, objective: str = "") -> dict:
     base_url = canonical_base_url(base_url)
+    profile = _source_profile(source_tag=source_tag, objective=objective or "settlement_capacity_builder")
     rows: list[dict] = []
     for idx in range(max(1, attempts)):
         agent_id = f"wave.{source_tag}.{int(time.time())}.{idx+1}".replace(":", "-")
         sub_payload = {
             "agent_id": agent_id,
-            "capabilities": ["objective_lease_execution", "endpoint_probe", "transition_settlement"],
-            "objectives": ["settlement_capacity_builder", "proof_pressure_engine"],
-            "idle_opt_in": {"enabled": True, "preemptible": True},
-            "ttl_seconds": 900,
+            "capabilities": profile["capabilities"],
+            "objectives": profile["objectives"],
+            "idle_opt_in": profile["idle_opt_in"],
+            "ttl_seconds": profile["ttl_seconds"],
             "source_tag": source_tag,
         }
         sub = http_json("POST", endpoint(base_url, "/swarm/subscribe"), sub_payload, timeout=timeout)
@@ -114,6 +144,8 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
             agent_id,
             "--source-tag",
             source_tag,
+            "--objective",
+            str(profile.get("adapter_objective") or "settlement_capacity_builder"),
             "--no-runtime-probe",
             "--force-attach",
             "--cycles",
@@ -150,6 +182,7 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
         "completed": completed,
         "proof_link_ok_count": proof_link_ok_count,
         "downstream_proof_gain_total": downstream_total,
+        "profile": profile,
         "rows": rows,
     }
 
@@ -307,6 +340,7 @@ def run_waves(
     attempts: int,
     timeout: float,
     attempts_map: dict[str, int] | None = None,
+    objective: str = "",
 ) -> dict:
     base_url = canonical_base_url(base_url)
     alloc = attempts_map if isinstance(attempts_map, dict) else {}
@@ -316,6 +350,7 @@ def run_waves(
             source_tag=tag,
             attempts=max(1, int(alloc.get(tag, attempts))),
             timeout=timeout,
+            objective=objective,
         )
         for tag in source_tags
     ]
@@ -392,6 +427,7 @@ def main() -> None:
         attempts=max(1, int(args.attempts_per_source)),
         timeout=args.timeout,
         attempts_map=attempts_map or None,
+        objective=objective,
     )
     if bool(args.auto_budget):
         out["allocator"] = {

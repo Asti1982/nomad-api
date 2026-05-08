@@ -124,3 +124,13 @@ def test_top_objective_falls_back_when_gradient_missing(monkeypatch):
     out = mod._top_objective("https://www.nomad.example", 3.0)
     assert out == "settlement_capacity_builder"
 
+
+def test_source_profile_varies_by_channel():
+    mod = _load_module()
+    a = mod._source_profile("huggingface.space-agent.wave1", "settlement_capacity_builder")
+    b = mod._source_profile("mcp.directory.wave1", "settlement_capacity_builder")
+    c = mod._source_profile("autogen.community.wave1", "settlement_capacity_builder")
+    assert "overmint_compressor" in a["objectives"]
+    assert "protocol_drift_scan" in b["objectives"]
+    assert "emergence_release_probe" in c["objectives"]
+
