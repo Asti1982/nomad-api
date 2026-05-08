@@ -16,8 +16,28 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _num(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
+
+
+def canonical_base_url(base: str) -> str:
+    raw = str(base or "").strip().rstrip("/")
+    if not raw:
+        return "https://www.syndiode.com"
+    if "://www." in raw:
+        return raw
+    if raw.startswith("https://"):
+        return raw.replace("https://", "https://www.", 1)
+    if raw.startswith("http://"):
+        return raw.replace("http://", "https://www.", 1)
+    return f"https://www.{raw.lstrip('/')}"
 
 
 def http_json(url: str, timeout: float = 20.0) -> dict:
@@ -36,11 +56,12 @@ def http_json(url: str, timeout: float = 20.0) -> dict:
 
 
 def build_report(base_url: str, timeout: float) -> dict:
-    swarm = http_json(endpoint(base_url, "/swarm"), timeout=timeout)
-    workers = http_json(endpoint(base_url, "/swarm/workers"), timeout=timeout)
-    gradient = http_json(endpoint(base_url, "/swarm/gradient"), timeout=timeout)
-    treasury = http_json(endpoint(base_url, "/machine-treasury"), timeout=timeout)
-    reuse = http_json(endpoint(base_url, "/swarm/reuse-ledger"), timeout=timeout)
+    canonical = canonical_base_url(base_url)
+    swarm = http_json(endpoint(canonical, "/swarm"), timeout=timeout)
+    workers = http_json(endpoint(canonical, "/swarm/workers"), timeout=timeout)
+    gradient = http_json(endpoint(canonical, "/swarm/gradient"), timeout=timeout)
+    treasury = http_json(endpoint(canonical, "/machine-treasury"), timeout=timeout)
+    reuse = http_json(endpoint(canonical, "/swarm/reuse-ledger"), timeout=timeout)
     recent_nodes = swarm.get("recent_nodes") if isinstance(swarm.get("recent_nodes"), list) else []
     source_counts = Counter(str((item or {}).get("source_tag") or "unknown") for item in recent_nodes if isinstance(item, dict))
     source_counts = Counter({k: v for k, v in source_counts.items() if k})
@@ -65,7 +86,7 @@ def build_report(base_url: str, timeout: float) -> dict:
         "ok": True,
         "schema": "nomad.recruitment_funnel_report.v1",
         "generated_at": _iso_now(),
-        "base_url": base_url,
+        "base_url": canonical,
         "funnel": {
             "connected_agents": int(swarm.get("connected_agents") or 0),
             "active_transition_workers": int(swarm.get("active_transition_workers") or 0),
@@ -97,6 +118,13 @@ def build_report(base_url: str, timeout: float) -> dict:
             "objective_totals": reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {},
             "proof_reuse_rate": round(
                 float(reuse.get("total_reuse_count") or 0) / max(1.0, float(total_runs)),
+                4,
+            ),
+            "two_hop_utility_score": round(
+                max(
+                    [_num((row or {}).get("two_hop_utility_score"), 0.0) for row in (reuse.get("objective_totals") or {}).values() if isinstance(row, dict)]
+                    or [0.0]
+                ),
                 4,
             ),
         },

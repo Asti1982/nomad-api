@@ -53,7 +53,13 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
             return {
                 "schema": "nomad.proof_reuse_ledger_snapshot.v1",
                 "total_reuse_count": 3,
-                "objective_totals": {"settlement_capacity_builder": {"reuse_count": 3, "avg_downstream_proof_gain": 1.2}},
+                "objective_totals": {
+                    "settlement_capacity_builder": {
+                        "reuse_count": 3,
+                        "avg_downstream_proof_gain": 1.2,
+                        "two_hop_utility_score": 0.82,
+                    }
+                },
             }
         return {
             "gradient": [{"objective": "settlement_capacity_builder", "routing_weight": 0.73}],
@@ -70,4 +76,6 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
     assert out["emergence"]["objective_run_count"] == 5
     assert out["machine_treasury"]["pledge_count"] == 1
     assert out["proof_reuse"]["total_reuse_count"] == 3
+    assert out["proof_reuse"]["two_hop_utility_score"] == 0.82
+    assert out["base_url"] == "https://www.syndiode.com"
     assert out["machine_treasury"]["objective_pressure_hints"]["settlement_capacity_builder"]["pressure_units"] == 4.0

@@ -104,10 +104,15 @@ def link(payload: dict[str, Any]) -> dict[str, Any]:
     prev = totals.get(objective) if isinstance(totals.get(objective), dict) else {}
     prev_count = int(prev.get("reuse_count") or 0)
     prev_gain = _num(prev.get("downstream_proof_gain_total"), 0.0)
+    prev_two_hop = _num(prev.get("two_hop_utility_score"), 0.0)
+    projected_avg = (prev_gain + downstream_gain) / max(1, prev_count + 1)
+    # 2-hop utility grows when reuse depth and gain both persist.
+    two_hop = min(4.0, 0.65 * projected_avg + 0.35 * min(1.0, (prev_count + 1) / 10.0) + 0.25 * prev_two_hop)
     totals[objective] = {
         "reuse_count": prev_count + 1,
         "downstream_proof_gain_total": round(prev_gain + downstream_gain, 4),
         "avg_downstream_proof_gain": round((prev_gain + downstream_gain) / max(1, prev_count + 1), 4),
+        "two_hop_utility_score": round(two_hop, 4),
     }
     state["objective_totals"] = totals
     index[idem] = {"link_id": link_id, "request_digest": request_digest}

@@ -30,6 +30,7 @@ def test_worker_fleet_distributes_objective_leases(tmp_path):
     assert fleet["active_worker_count"] == 18
     assert fleet["active_lease_count"] == 18
     assert fleet["retention"]["schema"] == "nomad.transition_worker_retention.v1"
+    assert fleet["morphology_router"]["schema"] == "nomad.morphology_router.v1"
     assert fleet["post_lease"].endswith("/swarm/workers/lease")
     assert "emergence_release_probe" in fleet["objective_targets"]
     assert "overmint_compressor" in fleet["objective_targets"]
@@ -119,4 +120,5 @@ def test_worker_fleet_routes_overmint_pressure_to_compressor(tmp_path):
     )
 
     assert lease["ok"] is True
+    assert lease["twin_objective"]
     assert lease["objective"] == "overmint_compressor"

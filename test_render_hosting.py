@@ -193,6 +193,7 @@ def test_list_recent_logs_hits_render_api(monkeypatch, tmp_path):
 
 def test_list_recent_deploys_requires_service_id(monkeypatch, tmp_path):
     monkeypatch.setenv("RENDER_API_KEY", "rnd-x")
+    monkeypatch.delenv("NOMAD_RENDER_SERVICE_ID", raising=False)
     out = RenderHostingProbe(repo_root=tmp_path).list_recent_deploys(service_id="", limit=3)
     assert out["ok"] is False
     assert out["issue"] == "render_service_id_missing"

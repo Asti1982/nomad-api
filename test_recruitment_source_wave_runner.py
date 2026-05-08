@@ -33,6 +33,7 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
         timeout=4.0,
     )
     assert out["schema"] == "nomad.recruitment_source_wave_result.v1"
+    assert out["base_url"] == "https://www.nomad.example"
     assert out["ranking"][0]["source_tag"] == "alpha.source"
     assert out["ranking"][0]["completed"] == 2
     assert out["ranking"][1]["completed"] == 0

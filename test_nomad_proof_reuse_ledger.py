@@ -19,6 +19,7 @@ def test_proof_reuse_link_and_snapshot(tmp_path: Path, monkeypatch):
     assert snap["schema"] == "nomad.proof_reuse_ledger_snapshot.v1"
     assert snap["total_reuse_count"] == 1
     assert snap["objective_totals"]["settlement_capacity_builder"]["reuse_count"] == 1
+    assert snap["objective_totals"]["settlement_capacity_builder"]["two_hop_utility_score"] > 0.0
 
 
 def test_proof_reuse_link_requires_digest(tmp_path: Path, monkeypatch):

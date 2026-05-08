@@ -73,4 +73,6 @@ def test_selection_pressure_couples_with_proof_reuse(tmp_path: Path, monkeypatch
     )
     assert snap["proof_reuse"]["total_reuse_count"] >= 1
     assert "settlement_capacity_builder" in snap["objective_pressure"]
+    reuse_state = snap["proof_reuse"]["reuse_state"]["settlement_capacity_builder"]
+    assert reuse_state["two_hop_utility_score"] > 0.0
 

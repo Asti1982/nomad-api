@@ -29,17 +29,21 @@ def _env_int(name: str, default: int, low: int, high: int) -> int:
 
 
 def _base_url() -> str:
-    return (os.getenv("NOMAD_BASE_URL") or os.getenv("NOMAD_PUBLIC_API_URL") or "https://www.syndiode.com").strip().rstrip("/")
+    raw = (os.getenv("NOMAD_BASE_URL") or os.getenv("NOMAD_PUBLIC_API_URL") or "https://www.syndiode.com").strip().rstrip("/")
+    if not raw:
+        return "https://www.syndiode.com"
+    if "://www." in raw:
+        return raw
+    if raw.startswith("https://"):
+        return raw.replace("https://", "https://www.", 1)
+    if raw.startswith("http://"):
+        return raw.replace("http://", "https://www.", 1)
+    return f"https://www.{raw.lstrip('/')}"
 
 
 def _alternate_base_url(base: str) -> str:
-    root = (base or "").strip().rstrip("/")
-    if "://www." in root:
-        return root.replace("://www.", "://", 1)
-    if "://" in root:
-        scheme, rest = root.split("://", 1)
-        return f"{scheme}://www.{rest}"
-    return f"https://www.{root}"
+    # Alpha-wave monitoring is pinned to canonical www host only.
+    return _base_url()
 
 
 def _probe_caps(index: int) -> list[str]:

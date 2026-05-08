@@ -31,6 +31,19 @@ def endpoint(base: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
+def canonical_base_url(base: str) -> str:
+    raw = str(base or "").strip().rstrip("/")
+    if not raw:
+        return "https://www.syndiode.com"
+    if "://www." in raw:
+        return raw
+    if raw.startswith("https://"):
+        return raw.replace("https://", "https://www.", 1)
+    if raw.startswith("http://"):
+        return raw.replace("http://", "https://www.", 1)
+    return f"https://www.{raw.lstrip('/')}"
+
+
 def http_json(method: str, url: str, payload: dict | None = None, timeout: float = 20.0, _redirects: int = 0) -> dict:
     data = None
     headers = {"Accept": "application/json"}
@@ -76,6 +89,7 @@ def run_json_command(cmd: list[str]) -> dict:
 
 
 def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -> dict:
+    base_url = canonical_base_url(base_url)
     rows: list[dict] = []
     for idx in range(max(1, attempts)):
         agent_id = f"wave.{source_tag}.{int(time.time())}.{idx+1}".replace(":", "-")
@@ -145,6 +159,7 @@ def _load_history(path: Path) -> list[dict]:
 
 
 def _top_objective(base_url: str, timeout: float) -> str:
+    base_url = canonical_base_url(base_url)
     gradient = http_json("GET", endpoint(base_url, "/swarm/gradient"), timeout=timeout)
     rows = gradient.get("gradient") if isinstance(gradient.get("gradient"), list) else []
     top = rows[0] if rows and isinstance(rows[0], dict) else {}
@@ -242,6 +257,7 @@ def run_waves(
     timeout: float,
     attempts_map: dict[str, int] | None = None,
 ) -> dict:
+    base_url = canonical_base_url(base_url)
     alloc = attempts_map if isinstance(attempts_map, dict) else {}
     waves = [
         run_wave(
@@ -292,8 +308,9 @@ def main() -> None:
     args = p.parse_args()
     tags = [item.strip() for item in str(args.source_tags or "").split(",") if item.strip()] or list(DEFAULT_WAVES)
     objective = str(args.objective or "").strip()
+    base_url = canonical_base_url(args.base_url)
     if objective in {"", "auto"}:
-        objective = _top_objective(args.base_url, args.timeout)
+        objective = _top_objective(base_url, args.timeout)
     history_path = Path(str(args.history_path or str(DEFAULT_HISTORY_PATH)))
     attempts_map: dict[str, int] = {}
     history: list[dict] = []
@@ -308,7 +325,7 @@ def main() -> None:
             max_attempts=max(1, int(args.max_attempts)),
         )
     out = run_waves(
-        base_url=args.base_url,
+        base_url=base_url,
         source_tags=tags,
         attempts=max(1, int(args.attempts_per_source)),
         timeout=args.timeout,

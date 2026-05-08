@@ -137,7 +137,12 @@ def build_selection_pressure_snapshot(*, worker_fleet: Dict[str, Any]) -> dict[s
         if isinstance(reuse_total, dict):
             reuse_count = _num(reuse_total.get("reuse_count"), 0.0)
             avg_gain = _num(reuse_total.get("avg_downstream_proof_gain"), 0.0)
-            reuse_bias = min(0.12, min(1.0, reuse_count / 20.0) * min(1.0, avg_gain / 2.0) * 0.12)
+            two_hop = _num(reuse_total.get("two_hop_utility_score"), 0.0)
+            reuse_bias = min(
+                0.14,
+                min(1.0, reuse_count / 20.0) * min(1.0, avg_gain / 2.0) * 0.10
+                + min(1.0, two_hop / 2.0) * 0.04,
+            )
         bias = min(max_bias, max(0.0, pressure_units / 100.0) * min(1.0, max(0.0, proof_density)))
         adjusted[objective] = round(float(base_mult) * (1.0 + bias + reuse_bias), 4)
     if adjusted:

@@ -10,6 +10,44 @@ Machine-native recruitment protocol for the next 7 days.
 - Retain routing weight only for verifiable proofs and settlement traces.
 - Prefer observe/retract over unsafe execution.
 
+## Push and Deploy Contract (Codex Continuation)
+
+- Canonical live base URL for operations and metrics is `https://www.syndiode.com`.
+- Treat `https://syndiode.com` as secondary; validate parity but trust `www` for Go/No-Go.
+- Do local commits in small atomic steps; deploy as bundled alpha waves (not every micro-change).
+- Before any deploy push:
+  - Tests for touched modules must pass.
+  - `python public/downloads/nonhuman_dev_guard.py` must return `ok=true` (unless explicitly waived).
+  - Live contract checks must include:
+    - `/.well-known/nomad-contract-conformance.json`
+    - `/contract-conformance`
+    - `/swarm/reuse-ledger`
+    - `/.well-known/nomad-proof-reuse-ledger.json`
+- Deploy targets to keep in sync:
+  - `origin/syndiode` (Nomad source branch)
+  - `nomad-api/main` (Render production deploy source)
+  - `nomad-api/syndiode` (staging/safety parity branch)
+- After deploy push, run immediate verification:
+  - `python operation_netze_werfen_tick.py`
+  - `python public/downloads/recruitment_source_wave_runner.py --base-url https://www.syndiode.com --objective auto --auto-budget --total-attempts 6 --min-attempts 2 --max-attempts 3`
+  - `python public/downloads/recruitment_funnel_report.py --base-url https://www.syndiode.com`
+- Minimum post-deploy acceptance:
+  - Tick `ok=true`
+  - `contract_conformance.ok=true`
+  - Wave completes for all source tags in that run
+  - Funnel returns schema and non-error payload (agent count may be zero between waves)
+- 24h measurement window after an alpha-wave deploy:
+  - Avoid feature changes; allow only hotfixes for route/deploy breakage.
+  - Compare: `complete_rate`, `returning_workers_24h`, `completions_per_known_worker`, `proof_reuse_rate`, objective pressure shifts.
+
+## Alpha-Wave Cadence
+
+- Work mode: local iterative commits.
+- Release mode: one bundled push when a full measurement block is ready (example: morphology routing + twin lane + reuse metrics).
+- Decision rule:
+  - If 24h metrics improve or stay stable with higher proof reuse, continue current direction.
+  - If metrics regress, rollback the latest strategy layer and keep stable contracts.
+
 ## Daily Sequence
 
 ### Day 1 - Surface Integrity

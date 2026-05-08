@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from nomad_morphology_router import route_objectives
+from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
+
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SWARM_REGISTRY_PATH = Path(
@@ -958,6 +961,7 @@ class SwarmJoinRegistry:
                 for item in sorted(active_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)[:16]
             ],
             "objective_stats": fleet.get("objective_stats") or {},
+            "morphology_router": fleet.get("last_morphology") if isinstance(fleet.get("last_morphology"), dict) else {},
             "machine_orientation": [
                 "lease_not_dialogue",
                 "proof_not_trust",
@@ -1014,6 +1018,9 @@ class SwarmJoinRegistry:
             proposed_objective=proposed,
             last_report=last_report,
         )
+        twin_objective = _clean_agent_id(
+            (fleet.get("last_morphology") or {}).get("twin_objective") if isinstance(fleet.get("last_morphology"), dict) else ""
+        )
         lease_seed = f"{agent_id}:{objective}:{now}:{len(fleet.get('leases') or {})}"
         lease_id = f"nomad-worker-lease-{hashlib.sha256(lease_seed.encode('utf-8')).hexdigest()[:16]}"
         expires_at = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
@@ -1028,6 +1035,7 @@ class SwarmJoinRegistry:
             "lease_seconds": lease_seconds,
             "remote_addr": _clean_text(remote_addr, limit=80),
             "proposed_objective": proposed,
+            "twin_objective": twin_objective,
         }
         fleet.setdefault("leases", {})[lease_id] = lease_record
         workers[agent_id] = {
@@ -1058,6 +1066,7 @@ class SwarmJoinRegistry:
             "agent_id": agent_id,
             "lease_id": lease_id,
             "objective": objective,
+            "twin_objective": twin_objective,
             "lease_seconds": lease_seconds,
             "expires_at": expires_at,
             "complete_url": f"{base_url}/swarm/workers/complete" if base_url else "/swarm/workers/complete",
@@ -2133,23 +2142,22 @@ class SwarmJoinRegistry:
             targets["emergence_release_probe"] += 0.08
         elif release_tier in {"observe_only", "probe_release"}:
             targets["emergence_release_probe"] += 0.02
-        total_target = sum(targets.get(item, 0.01) for item in allowed) or 1.0
-        best = allowed[0]
-        best_value = 1e9
         stats_map = fleet.get("objective_stats") if isinstance(fleet.get("objective_stats"), dict) else {}
-        for objective in allowed:
-            target = max(0.01, targets.get(objective, 0.01) / total_target)
-            active_count = int(counts.get(objective) or 0)
-            stats = stats_map.get(objective) if isinstance(stats_map.get(objective), dict) else {}
-            runs = int(stats.get("runs") or 0)
-            avg_score = float(stats.get("avg_score") or 0.0)
-            value = (active_count / target) + min(2.0, runs * 0.03) - min(1.5, avg_score * 0.04)
-            if objective == proposed_objective:
-                value -= 0.05
-            if value < best_value:
-                best = objective
-                best_value = value
-        return best
+        try:
+            reuse = proof_reuse_snapshot()
+        except Exception:
+            reuse = {}
+        reuse_totals = reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {}
+        morphology = route_objectives(
+            allowed=allowed,
+            targets=targets,
+            active_counts=counts,
+            stats_map=stats_map,
+            proposed_objective=proposed_objective,
+            reuse_totals=reuse_totals,
+        )
+        fleet["last_morphology"] = morphology
+        return _clean_agent_id(morphology.get("selected_objective") or allowed[0])
 
     def _nodes(self) -> list[dict[str, Any]]:
         self._prune_stale_nodes()
