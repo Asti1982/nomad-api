@@ -117,3 +117,10 @@ def test_allocate_source_attempts_keeps_open_network_novelty_lane():
     )
     assert alloc["gamma.new-source"] > 2
 
+
+def test_top_objective_falls_back_when_gradient_missing(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(mod, "http_json", lambda method, url, payload=None, timeout=20.0: {"ok": False, "http_status": 0})
+    out = mod._top_objective("https://www.nomad.example", 3.0)
+    assert out == "settlement_capacity_builder"
+

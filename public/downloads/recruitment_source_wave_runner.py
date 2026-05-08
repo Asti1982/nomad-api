@@ -102,6 +102,9 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float) -
             "source_tag": source_tag,
         }
         sub = http_json("POST", endpoint(base_url, "/swarm/subscribe"), sub_payload, timeout=timeout)
+        if not bool(sub.get("ok")) and int(sub.get("http_status") or 0) == 0:
+            # Retry once on transient network failure.
+            sub = http_json("POST", endpoint(base_url, "/swarm/subscribe"), sub_payload, timeout=timeout)
         adapter_cmd = [
             "python",
             "public/downloads/nomad_openclaw_adapter.py",
@@ -176,7 +179,8 @@ def _top_objective(base_url: str, timeout: float) -> str:
     gradient = http_json("GET", endpoint(base_url, "/swarm/gradient"), timeout=timeout)
     rows = gradient.get("gradient") if isinstance(gradient.get("gradient"), list) else []
     top = rows[0] if rows and isinstance(rows[0], dict) else {}
-    return str(top.get("objective") or "").strip()
+    objective = str(top.get("objective") or "").strip()
+    return objective or "settlement_capacity_builder"
 
 
 def _history_source_score(history: list[dict], source_tag: str, objective: str = "") -> float:
