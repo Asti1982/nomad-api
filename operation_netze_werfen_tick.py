@@ -130,12 +130,27 @@ def _conformance_snapshot(base: str) -> dict:
     return primary
 
 
+def _economics_snapshot(base: str) -> dict:
+    primary = _http_json_retry(f"{base}/.well-known/nomad-swarm-economics.json")
+    if int(primary.get("http_status") or 0) in {404, 0} or not bool(primary.get("ok")):
+        fallback = _http_json_retry(f"{base}/swarm/economics")
+        if bool(fallback.get("ok")) or int(fallback.get("http_status") or 0) == 200:
+            fallback["fallback_used"] = True
+            fallback["fallback_path"] = "/swarm/economics"
+            return fallback
+    primary["fallback_used"] = False
+    primary["fallback_path"] = ""
+    return primary
+
+
 def run_tick() -> dict:
     base = _base_url()
     probes = _env_int("NOMAD_NETZE_WERFEN_PROBES", default=2, low=1, high=12)
     guard_required = _env_bool("NOMAD_NONHUMAN_GUARD_REQUIRED", default=False)
     conformance_required = _env_bool("NOMAD_CONFORMANCE_REQUIRED", default=False)
     conformance_threshold = float(os.getenv("NOMAD_CONFORMANCE_MIN_SCORE") or "0.75")
+    economics_required = _env_bool("NOMAD_ECONOMICS_REQUIRED", default=False)
+    economics_threshold = float(os.getenv("NOMAD_ECONOMICS_MIN_SCORE") or "0.45")
     run_id = f"netze-{int(time.time())}"
     out: dict = {
         "ok": True,
@@ -173,6 +188,19 @@ def run_tick() -> dict:
         "http_status": int(conformance.get("http_status") or 0),
         "fallback_used": bool(conformance.get("fallback_used")),
         "fallback_path": str(conformance.get("fallback_path") or ""),
+    }
+    economics = _economics_snapshot(base)
+    economics_score = float(economics.get("economics_score") or 0.0)
+    economics_ok = bool(economics.get("ok")) and economics_score >= economics_threshold
+    out["swarm_economics"] = {
+        "schema": economics.get("schema", ""),
+        "ok": bool(economics.get("ok")),
+        "score": economics_score,
+        "threshold": economics_threshold,
+        "required": economics_required,
+        "http_status": int(economics.get("http_status") or 0),
+        "fallback_used": bool(economics.get("fallback_used")),
+        "fallback_path": str(economics.get("fallback_path") or ""),
     }
 
     def _experiment_cmd(target_base: str) -> list[str]:
@@ -246,9 +274,15 @@ def run_tick() -> dict:
     out["completed"] = sum(1 for item in probe_results if item.get("complete_ok"))
     experiment_ok = int((out.get("experiment") or {}).get("exit_code", 1)) == 0
     base_ok = bool(out["completed"] > 0 and experiment_ok)
-    out["ok"] = bool(base_ok and (guard_ok or not guard_required) and (conformance_ok or not conformance_required))
+    out["ok"] = bool(
+        base_ok
+        and (guard_ok or not guard_required)
+        and (conformance_ok or not conformance_required)
+        and (economics_ok or not economics_required)
+    )
     out["guard_soft_fail"] = bool(base_ok and not guard_ok and not guard_required)
     out["conformance_soft_fail"] = bool(base_ok and not conformance_ok and not conformance_required)
+    out["economics_soft_fail"] = bool(base_ok and not economics_ok and not economics_required)
     return out
 
 

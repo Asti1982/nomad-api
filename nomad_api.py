@@ -58,6 +58,7 @@ from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
 from nomad_machine_treasury import pledge as machine_treasury_pledge, snapshot as machine_treasury_snapshot
 from nomad_proof_reuse_ledger import link as proof_reuse_link, snapshot as proof_reuse_snapshot
+from nomad_swarm_economics import build_swarm_economics_snapshot
 from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
@@ -195,6 +196,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             agent_demand_feed=demand,
             contract_conformance=conformance,
             worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_swarm_economics(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        treasury = machine_treasury_snapshot()
+        reuse = proof_reuse_snapshot()
+        return build_swarm_economics_snapshot(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            proof_reuse=reuse,
+            machine_economy=economy,
+            machine_treasury=treasury,
         )
 
     @classmethod
@@ -619,6 +637,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/contract-conformance", "/.well-known/nomad-contract-conformance.json"}:
             self._json_response(self.__class__._build_contract_conformance(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/economics", "/.well-known/nomad-swarm-economics.json"}:
+            self._json_response(self.__class__._build_swarm_economics(base_url=self._base_url()))
             return
 
         if parsed.path in {"/protocol-bytecode", "/.well-known/nomad-protocol-bytecode.json"}:

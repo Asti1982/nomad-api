@@ -395,6 +395,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/economics": {
+                "get": {
+                    "summary": "Machine-native swarm economics control metrics and policy outputs",
+                    "operationId": "getSwarmEconomics",
+                    "responses": {
+                        "200": {"description": "Swarm economics snapshot", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-swarm-economics.json": {
+                "get": {
+                    "summary": "Alias of /swarm/economics",
+                    "operationId": "getSwarmEconomicsWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm economics snapshot", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-protocol-bytecode.json": {
                 "get": {
                     "summary": "Compact operation alphabet for agent runtimes",
