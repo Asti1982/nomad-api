@@ -121,8 +121,11 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
     base_url = canonical_base_url(base_url)
     profile = _source_profile(source_tag=source_tag, objective=objective or "settlement_capacity_builder")
     rows: list[dict] = []
+    objective_counts: dict[str, int] = {}
     for idx in range(max(1, attempts)):
         agent_id = f"wave.{source_tag}.{int(time.time())}.{idx+1}".replace(":", "-")
+        objective_options = [str(item).strip() for item in (profile.get("objectives") or []) if str(item).strip()]
+        selected_objective = objective_options[idx % len(objective_options)] if objective_options else "settlement_capacity_builder"
         sub_payload = {
             "agent_id": agent_id,
             "capabilities": profile["capabilities"],
@@ -145,7 +148,7 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
             "--source-tag",
             source_tag,
             "--objective",
-            str(profile.get("adapter_objective") or "settlement_capacity_builder"),
+            selected_objective,
             "--no-runtime-probe",
             "--force-attach",
             "--cycles",
@@ -169,8 +172,10 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
                 "complete_ok": bool(last.get("ok")) and str(last.get("phase") or "") == "complete",
                 "proof_link_ok": bool(proof_link.get("ok")),
                 "downstream_proof_gain": float(proof_link.get("downstream_proof_gain") or 0.0),
+                "selected_objective": selected_objective,
             }
         )
+        objective_counts[selected_objective] = objective_counts.get(selected_objective, 0) + 1
     completed = sum(1 for item in rows if item["complete_ok"])
     subscribed = sum(1 for item in rows if item["subscribe_ok"])
     proof_link_ok_count = sum(1 for item in rows if item["proof_link_ok"])
@@ -182,6 +187,7 @@ def run_wave(*, base_url: str, source_tag: str, attempts: int, timeout: float, o
         "completed": completed,
         "proof_link_ok_count": proof_link_ok_count,
         "downstream_proof_gain_total": downstream_total,
+        "objective_counts": objective_counts,
         "profile": profile,
         "rows": rows,
     }
@@ -309,23 +315,51 @@ def _append_history(path: Path, result: dict, objective: str = "") -> None:
     lines = []
     for item in result.get("waves") or []:
         if isinstance(item, dict):
-            lines.append(
-                json.dumps(
-                    {
-                        "generated_at": result.get("generated_at"),
-                        "base_url": result.get("base_url"),
-                        "source_tag": item.get("source_tag"),
-                        "objective": str(objective or result.get("objective") or ""),
-                        "attempts": int(item.get("attempts") or 0),
-                        "subscribed": int(item.get("subscribed") or 0),
-                        "completed": int(item.get("completed") or 0),
-                        "reuse_delta": float(item.get("reuse_delta") or 0.0),
-                        "proof_link_ok_count": int(item.get("proof_link_ok_count") or 0),
-                        "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0),
-                    },
-                    ensure_ascii=True,
+            objective_counts = item.get("objective_counts") if isinstance(item.get("objective_counts"), dict) else {}
+            emitted = False
+            for obj, count in objective_counts.items():
+                objective_name = str(obj or "").strip()
+                if not objective_name:
+                    continue
+                obj_count = max(0, int(count or 0))
+                lines.append(
+                    json.dumps(
+                        {
+                            "generated_at": result.get("generated_at"),
+                            "base_url": result.get("base_url"),
+                            "source_tag": item.get("source_tag"),
+                            "objective": objective_name,
+                            "attempts": obj_count,
+                            "subscribed": min(obj_count, int(item.get("subscribed") or 0)),
+                            "completed": min(obj_count, int(item.get("completed") or 0)),
+                            "reuse_delta": float(item.get("reuse_delta") or 0.0),
+                            "proof_link_ok_count": min(obj_count, int(item.get("proof_link_ok_count") or 0)),
+                            "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0) * (
+                                float(obj_count) / float(max(1, int(item.get("attempts") or 1)))
+                            ),
+                        },
+                        ensure_ascii=True,
+                    )
                 )
-            )
+                emitted = True
+            if not emitted:
+                lines.append(
+                    json.dumps(
+                        {
+                            "generated_at": result.get("generated_at"),
+                            "base_url": result.get("base_url"),
+                            "source_tag": item.get("source_tag"),
+                            "objective": str(objective or result.get("objective") or ""),
+                            "attempts": int(item.get("attempts") or 0),
+                            "subscribed": int(item.get("subscribed") or 0),
+                            "completed": int(item.get("completed") or 0),
+                            "reuse_delta": float(item.get("reuse_delta") or 0.0),
+                            "proof_link_ok_count": int(item.get("proof_link_ok_count") or 0),
+                            "downstream_proof_gain_total": float(item.get("downstream_proof_gain_total") or 0.0),
+                        },
+                        ensure_ascii=True,
+                    )
+                )
     if not lines:
         return
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -45,6 +45,7 @@ def test_run_waves_ranks_sources_by_completion(monkeypatch):
     assert out["ranking"][0]["source_tag"] == "alpha.source"
     assert out["ranking"][0]["completed"] == 2
     assert out["waves"][0]["downstream_proof_gain_total"] > out["waves"][1]["downstream_proof_gain_total"]
+    assert out["waves"][0]["objective_counts"]
     assert out["ranking"][0]["reuse_delta"] >= out["ranking"][1]["reuse_delta"]
     assert out["ranking"][1]["completed"] == 0
 
@@ -133,4 +134,35 @@ def test_source_profile_varies_by_channel():
     assert "overmint_compressor" in a["objectives"]
     assert "protocol_drift_scan" in b["objectives"]
     assert "emergence_release_probe" in c["objectives"]
+
+
+def test_append_history_emits_objective_split_rows(tmp_path):
+    mod = _load_module()
+    p = tmp_path / "history.jsonl"
+    result = {
+        "generated_at": "2026-01-01T00:00:00Z",
+        "base_url": "https://www.syndiode.com",
+        "objective": "settlement_capacity_builder",
+        "waves": [
+            {
+                "source_tag": "alpha.source",
+                "attempts": 4,
+                "subscribed": 4,
+                "completed": 4,
+                "reuse_delta": 0.5,
+                "proof_link_ok_count": 4,
+                "downstream_proof_gain_total": 4.0,
+                "objective_counts": {
+                    "settlement_capacity_builder": 2,
+                    "proof_pressure_engine": 2,
+                },
+            }
+        ],
+    }
+    mod._append_history(p, result, objective="settlement_capacity_builder")
+    rows = [line for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 2
+    parsed = [__import__("json").loads(line) for line in rows]
+    objectives = {item["objective"] for item in parsed}
+    assert objectives == {"settlement_capacity_builder", "proof_pressure_engine"}
 
