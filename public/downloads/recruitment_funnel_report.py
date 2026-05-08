@@ -7,6 +7,7 @@ import argparse
 import json
 from collections import Counter
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -55,13 +56,66 @@ def http_json(url: str, timeout: float = 20.0) -> dict:
     return {"ok": False, "http_status": 0, "error": "invalid_json"}
 
 
-def build_report(base_url: str, timeout: float) -> dict:
+def _load_wave_history(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                rows.append(payload)
+    except Exception:
+        return []
+    return rows[-400:]
+
+
+def _source_objective_diversity(history: list[dict]) -> dict:
+    by_source: dict[str, dict[str, float]] = {}
+    for row in history:
+        source_tag = str(row.get("source_tag") or "").strip()
+        objective = str(row.get("objective") or "").strip()
+        if not source_tag or not objective:
+            continue
+        attempts = max(1, int(row.get("attempts") or 0))
+        completed = max(0, int(row.get("completed") or 0))
+        score = float(completed) / float(attempts)
+        source_map = by_source.setdefault(source_tag, {})
+        source_map[objective] = source_map.get(objective, 0.0) + score
+    rows = []
+    for source_tag, objective_scores in by_source.items():
+        ranked = sorted(objective_scores.items(), key=lambda item: item[1], reverse=True)
+        rows.append(
+            {
+                "source_tag": source_tag,
+                "objective_count": len(objective_scores),
+                "top_objective": ranked[0][0] if ranked else "",
+                "top_objective_score": round(ranked[0][1], 4) if ranked else 0.0,
+                "objective_scores": {k: round(v, 4) for k, v in ranked[:6]},
+            }
+        )
+    rows.sort(key=lambda item: (item["objective_count"], item["top_objective_score"]), reverse=True)
+    return {
+        "schema": "nomad.source_objective_diversity.v1",
+        "source_count": len(rows),
+        "rows": rows[:16],
+    }
+
+
+def build_report(base_url: str, timeout: float, history_path: str = "public/downloads/recruitment_wave_history.jsonl") -> dict:
     canonical = canonical_base_url(base_url)
     swarm = http_json(endpoint(canonical, "/swarm"), timeout=timeout)
     workers = http_json(endpoint(canonical, "/swarm/workers"), timeout=timeout)
     gradient = http_json(endpoint(canonical, "/swarm/gradient"), timeout=timeout)
     treasury = http_json(endpoint(canonical, "/machine-treasury"), timeout=timeout)
     reuse = http_json(endpoint(canonical, "/swarm/reuse-ledger"), timeout=timeout)
+    history = _load_wave_history(Path(str(history_path or "public/downloads/recruitment_wave_history.jsonl")))
     recent_nodes = swarm.get("recent_nodes") if isinstance(swarm.get("recent_nodes"), list) else []
     source_counts = Counter(str((item or {}).get("source_tag") or "unknown") for item in recent_nodes if isinstance(item, dict))
     source_counts = Counter({k: v for k, v in source_counts.items() if k})
@@ -106,6 +160,7 @@ def build_report(base_url: str, timeout: float) -> dict:
             "top_objective_weight": float(top_grad.get("routing_weight") or 0.0),
         },
         "source_tags": [{"source_tag": k, "count": v} for k, v in source_counts.most_common(16)],
+        "source_objective_diversity": _source_objective_diversity(history),
         "selection_pressure": pressure,
         "machine_treasury": {
             "schema": treasury.get("schema", ""),
@@ -140,8 +195,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Nomad recruitment funnel report")
     parser.add_argument("--base-url", default="https://www.syndiode.com")
     parser.add_argument("--timeout", type=float, default=20.0)
+    parser.add_argument("--history-path", default="public/downloads/recruitment_wave_history.jsonl")
     args = parser.parse_args()
-    print(json.dumps(build_report(args.base_url, args.timeout), ensure_ascii=True))
+    print(json.dumps(build_report(args.base_url, args.timeout, history_path=args.history_path), ensure_ascii=True))
 
 
 if __name__ == "__main__":

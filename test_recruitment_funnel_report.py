@@ -67,6 +67,30 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
         }
 
     monkeypatch.setattr(mod, "http_json", fake_http_json)
+    monkeypatch.setattr(
+        mod,
+        "_load_wave_history",
+        lambda path: [
+            {
+                "source_tag": "mesh.alpha",
+                "objective": "settlement_capacity_builder",
+                "attempts": 4,
+                "completed": 4,
+            },
+            {
+                "source_tag": "mesh.alpha",
+                "objective": "protocol_drift_scan",
+                "attempts": 4,
+                "completed": 2,
+            },
+            {
+                "source_tag": "mesh.beta",
+                "objective": "settlement_capacity_builder",
+                "attempts": 3,
+                "completed": 2,
+            },
+        ],
+    )
     out = mod.build_report("https://syndiode.com", 5.0)
     assert out["schema"] == "nomad.recruitment_funnel_report.v1"
     assert out["funnel"]["connected_agents"] == 3
@@ -78,4 +102,7 @@ def test_recruitment_funnel_report_aggregates_source_tags(monkeypatch):
     assert out["proof_reuse"]["total_reuse_count"] == 3
     assert out["proof_reuse"]["two_hop_utility_score"] == 0.82
     assert out["base_url"] == "https://www.syndiode.com"
+    assert out["source_objective_diversity"]["schema"] == "nomad.source_objective_diversity.v1"
+    assert out["source_objective_diversity"]["rows"][0]["source_tag"] == "mesh.alpha"
+    assert out["source_objective_diversity"]["rows"][0]["objective_count"] == 2
     assert out["machine_treasury"]["objective_pressure_hints"]["settlement_capacity_builder"]["pressure_units"] == 4.0
