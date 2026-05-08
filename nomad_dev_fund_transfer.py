@@ -23,6 +23,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _mode() -> str:
     return str(os.getenv("NOMAD_DEV_FUND_TRANSFER_MODE") or "canary").strip().lower() or "canary"
 
@@ -65,6 +72,8 @@ def execute_dev_fund_transfer(*, economics_snapshot: dict[str, Any], run_id: str
     payout_webhook = str(os.getenv("NOMAD_LIGHTNING_PAYOUT_WEBHOOK_URL") or "").strip()
     payout_token = str(os.getenv("NOMAD_LIGHTNING_PAYOUT_BEARER") or "").strip()
     min_eur = max(0.0, _env_float("NOMAD_DEV_FUND_TRANSFER_MIN_EUR", 1.0))
+    force_queue = _env_bool("NOMAD_DEV_FUND_QUEUE_FORCE", default=False)
+    force_amount = max(0.0, _env_float("NOMAD_DEV_FUND_QUEUE_FORCE_EUR", min_eur or 1.0))
     go = bool(gng.get("go"))
 
     row: dict[str, Any] = {
@@ -78,6 +87,27 @@ def execute_dev_fund_transfer(*, economics_snapshot: dict[str, Any], run_id: str
         "status": "skipped",
         "reason": "",
     }
+    if force_queue:
+        row["mode"] = "manual"
+        row["go"] = True
+        row["amount_eur"] = round(max(force_amount, min_eur, 0.01), 6)
+        row["status"] = "queued_manual"
+        row["reason"] = "forced_queue_mode"
+        row["queue_ref"] = f"manual:{run_id or _iso_now()}"
+        _append_ledger(row)
+        _append_manual_queue(
+            {
+                "generated_at": row["generated_at"],
+                "schema": "nomad.dev_fund_manual_queue.v1",
+                "run_id": run_id,
+                "wallet": wallet or "unconfigured",
+                "amount_eur": row["amount_eur"],
+                "status": "pending_manual_payment",
+                "memo": f"nomad_dev_fund_{run_id or 'tick'}",
+                "forced": True,
+            }
+        )
+        return row
 
     if not go:
         row["reason"] = "go_no_go_false"
