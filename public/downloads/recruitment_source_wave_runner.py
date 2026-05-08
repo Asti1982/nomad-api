@@ -338,6 +338,7 @@ def _economics_policy(base_url: str, timeout: float) -> dict:
             "novelty_blend": 0.35,
         }
     actions = [str((item or {}).get("action") or "") for item in (snap.get("control_actions") or []) if isinstance(item, dict)]
+    economics_score = float(snap.get("economics_score") or 0.0)
     attempts_mult = 1.0
     ttl_mult = 1.0
     novelty = 0.35
@@ -351,10 +352,18 @@ def _economics_policy(base_url: str, timeout: float) -> dict:
     if "expand_external_source_attempts" in actions:
         attempts_mult *= 1.15
         novelty = max(novelty, 0.45)
+    # Recovery mode: if score drops near/below hard gate, bias toward low-cost,
+    # high-reuse passes so the next cycles restore sustainability quickly.
+    recovery_mode = economics_score < 0.5
+    if recovery_mode:
+        attempts_mult *= 0.85
+        ttl_mult *= 0.8
+        novelty = max(novelty, 0.55)
     return {
         "schema": "nomad.recruitment_economics_policy.v1",
         "enabled": True,
-        "economics_score": float(snap.get("economics_score") or 0.0),
+        "economics_score": economics_score,
+        "recovery_mode": recovery_mode,
         "actions": actions,
         "attempts_multiplier": round(max(0.6, min(1.6, attempts_mult)), 4),
         "ttl_multiplier": round(max(0.7, min(1.5, ttl_mult)), 4),

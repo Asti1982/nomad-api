@@ -189,3 +189,21 @@ def test_economics_policy_maps_control_actions(monkeypatch):
     assert out["ttl_multiplier"] < 1.0
     assert out["novelty_blend"] > 0.35
 
+
+def test_economics_policy_enters_recovery_mode_on_low_score(monkeypatch):
+    mod = _load_module()
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        return {
+            "ok": True,
+            "economics_score": 0.41,
+            "control_actions": [{"action": "increase_reuse_coupled_sources"}],
+            "http_status": 200,
+        }
+
+    monkeypatch.setattr(mod, "http_json", fake_http_json)
+    out = mod._economics_policy("https://www.syndiode.com", 5.0)
+    assert out["recovery_mode"] is True
+    assert out["attempts_multiplier"] <= 1.0
+    assert out["ttl_multiplier"] < 1.0
+

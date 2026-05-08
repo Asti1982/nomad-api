@@ -20,7 +20,17 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
-    monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
+    monkeypatch.setattr(
+        mod,
+        "_http_json",
+        lambda url, timeout=20.0: {
+            "ok": True,
+            "score": 1.0,
+            "economics_score": 1.0,
+            "schema": "nomad.machine_contract_conformance.v1",
+            "http_status": 200,
+        },
+    )
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "3")
     monkeypatch.setenv("NOMAD_NONHUMAN_GUARD_REQUIRED", "0")
@@ -32,6 +42,7 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
     assert out["nonhuman_guard"]["required"] is False
     assert out["guard_soft_fail"] is False
     assert out["adaptive_policy"]["schema"] == "nomad.netze_werfen_adaptive_policy.v1"
+    assert "economics_deficit" in out["adaptive_policy"]
 
 
 def test_run_tick_uses_www_only_base_without_alternate_fallback(monkeypatch):

@@ -208,13 +208,19 @@ def run_tick() -> dict:
         if isinstance(item, dict)
     ]
     adaptive_probes = probes
+    deficit = max(0.0, economics_threshold - economics_score)
     if "decrease_high_cost_attempts" in economics_actions:
         adaptive_probes = max(1, probes - 1)
+    if deficit > 0.08:
+        adaptive_probes = max(1, adaptive_probes - 1)
     if "expand_external_source_attempts" in economics_actions:
         adaptive_probes = min(12, adaptive_probes + 1)
     out["adaptive_policy"] = {
         "schema": "nomad.netze_werfen_adaptive_policy.v1",
         "economics_actions": economics_actions,
+        "economics_score": round(economics_score, 4),
+        "economics_threshold": round(economics_threshold, 4),
+        "economics_deficit": round(deficit, 4),
         "probe_count_before": probes,
         "probe_count_after": adaptive_probes,
     }
