@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers and worker-market quotes, see "
-                "GET /swarm/worker-market and POST /swarm/worker-market/offers. "
+                "For proof-weighted external compute offers, worker catalogs, and microtask settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/worker-catalog, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -511,6 +511,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/worker-catalog": {
+                "get": {
+                    "summary": "Machine-readable catalog for cent-level worker microtask lanes",
+                    "operationId": "getSwarmWorkerCatalog",
+                    "responses": {
+                        "200": {"description": "Worker catalog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-worker-catalog.json": {
+                "get": {
+                    "summary": "Alias of /swarm/worker-catalog",
+                    "operationId": "getWorkerCatalogWellKnown",
+                    "responses": {
+                        "200": {"description": "Worker catalog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/ecology": {
                 "get": {
                     "summary": "Local-view swarm ecology and selection pressure surface",
@@ -809,6 +827,34 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Worker offer admitted as shadow capacity"},
                         "200": {"description": "Worker offer held or returned as quote only"},
+                    },
+                }
+            },
+            "/swarm/microtask/submit": {
+                "post": {
+                    "summary": "Submit a cent-level microtask request to the worker exchange",
+                    "operationId": "postSwarmMicrotaskSubmit",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Microtask accepted for execution"},
+                        "200": {"description": "Microtask held or rejected by lane price floor"},
+                    },
+                }
+            },
+            "/swarm/microtask/settle": {
+                "post": {
+                    "summary": "Settle a microtask with proof and forward experience to growth arena",
+                    "operationId": "postSwarmMicrotaskSettle",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Settlement accepted and experience linked"},
+                        "200": {"description": "Settlement rejected due to missing proof or price"},
                     },
                 }
             },

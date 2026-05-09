@@ -69,6 +69,7 @@ from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
+from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
@@ -286,6 +287,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             swarm_economics=swarm_economics,
             variant_forge=variant_forge,
         )
+
+    @classmethod
+    def _build_worker_catalog(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
+        return build_worker_catalog(base_url=base_url, worker_fleet=worker_fleet, worker_market=market)
 
     @classmethod
     def _build_swarm_ecology(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -859,6 +869,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/worker-market", "/.well-known/nomad-worker-market.json"}:
             self._json_response(self.__class__._build_worker_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
+            self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
             return
 
         if parsed.path in {"/swarm/ecology", "/.well-known/nomad-swarm-ecology.json"}:
@@ -1880,6 +1893,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-variant-forge.json",
                     "/swarm/worker-market",
                     "/.well-known/nomad-worker-market.json",
+                    "/swarm/worker-catalog",
+                    "/.well-known/nomad-worker-catalog.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
                     "/swarm/growth-arena",
@@ -2432,6 +2447,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/microtask/submit":
+            base = self._base_url()
+            catalog = self.__class__._build_worker_catalog(base_url=base)
+            result = submit_microtask(payload, base_url=base, worker_catalog=catalog)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/microtask/settle":
+            base = self._base_url()
+            result = settle_microtask(payload, base_url=base)
+            if result.get("accepted"):
+                curriculum = self.__class__._build_growth_curriculum(base_url=base)
+                receipt = submit_growth_experience(
+                    result.get("experience_payload") if isinstance(result.get("experience_payload"), dict) else {},
+                    base_url=base,
+                    curriculum=curriculum,
+                )
+                result["growth_experience_receipt"] = receipt
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/ecology/tick":
             base = self._base_url()
             ecology = self.__class__._build_swarm_ecology(base_url=base)
@@ -2759,6 +2795,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-variant-forge.json",
                     "/swarm/worker-market",
                     "/.well-known/nomad-worker-market.json",
+                    "/swarm/worker-catalog",
+                    "/.well-known/nomad-worker-catalog.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
                     "/swarm/growth-arena",
@@ -2780,6 +2818,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/opaque-candidate",
                     "/swarm/variant-candidates",
                     "/swarm/worker-market/offers",
+                    "/swarm/microtask/submit",
+                    "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/experience",
                     "/swarm/tool-gap",
