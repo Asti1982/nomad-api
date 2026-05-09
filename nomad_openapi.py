@@ -53,8 +53,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/worker-market and POST /swarm/worker-market/offers. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
-                "For open-ended agent growth through task curriculum, experience compression, and reusable skill capsules, see "
-                "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, and POST /swarm/experience. "
+                "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, and weekly morphology selection, see "
+                "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, GET /swarm/weekly-selection, and POST /swarm/experience. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -580,6 +580,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getSkillLibraryWellKnown",
                     "responses": {
                         "200": {"description": "Skill library", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/weekly-selection": {
+                "get": {
+                    "summary": "Autonomous weekly selection event (promote/freeze/extinguish per objective morphology)",
+                    "operationId": "getSwarmWeeklySelection",
+                    "responses": {
+                        "200": {"description": "Weekly selection event", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-weekly-selection.json": {
+                "get": {
+                    "summary": "Alias of /swarm/weekly-selection",
+                    "operationId": "getSwarmWeeklySelectionWellKnown",
+                    "responses": {
+                        "200": {"description": "Weekly selection event", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

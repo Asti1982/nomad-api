@@ -69,6 +69,7 @@ from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
+from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -342,6 +343,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             swarm_ecology=ecology,
             protocol_bytecode=bytecode,
             proof_reuse=reuse,
+        )
+
+    @classmethod
+    def _build_weekly_selection_event(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        economics = cls._build_swarm_economics(base_url=base_url, swarm_summary=summary)
+        reuse = proof_reuse_snapshot()
+        library = cls._build_skill_library(base_url=base_url)
+        return build_weekly_selection_event(
+            base_url=base_url,
+            economics=economics,
+            proof_reuse=reuse,
+            skill_library=library,
         )
 
     @classmethod
@@ -821,6 +835,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/skill-library", "/.well-known/nomad-skill-library.json"}:
             self._json_response(self.__class__._build_skill_library(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/weekly-selection", "/.well-known/nomad-weekly-selection.json"}:
+            self._json_response(self.__class__._build_weekly_selection_event(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1827,6 +1845,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/experience",
                     "/swarm/skill-library",
                     "/.well-known/nomad-skill-library.json",
+                    "/swarm/weekly-selection",
+                    "/.well-known/nomad-weekly-selection.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2687,6 +2707,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-growth-curriculum.json",
                     "/swarm/skill-library",
                     "/.well-known/nomad-skill-library.json",
+                    "/swarm/weekly-selection",
+                    "/.well-known/nomad-weekly-selection.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",

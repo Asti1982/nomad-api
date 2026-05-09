@@ -63,6 +63,7 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/worker-market/offers" in text
     assert "/swarm/ecology" in text
     assert "/swarm/ecology/tick" in text
+    assert "/swarm/weekly-selection" in text
     assert "/swarm/tool-gap" in text
     assert "/swarm/topology-plan" in text
     assert "/machine-economy" in text
@@ -244,6 +245,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/experience" in doc["paths"]
     assert "/swarm/skill-library" in doc["paths"]
     assert "/.well-known/nomad-skill-library.json" in doc["paths"]
+    assert "/swarm/weekly-selection" in doc["paths"]
+    assert "/.well-known/nomad-weekly-selection.json" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]

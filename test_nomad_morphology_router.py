@@ -59,3 +59,24 @@ def test_morphology_router_entropy_quota_forces_exploration_lane():
     assert out["selected_objective"] in {"overmint_compressor", "protocol_drift_scan"}
     assert out["selected_objective"] != "settlement_capacity_builder"
 
+
+def test_morphology_router_policy_amnesia_suspends_dominant(monkeypatch):
+    monkeypatch.setenv("NOMAD_MODE_POLICY_AMNESIA_WINDOW", "1")
+    monkeypatch.setenv("NOMAD_POLICY_AMNESIA_INTERVAL", "3")
+    out = route_objectives(
+        allowed=["settlement_capacity_builder", "overmint_compressor"],
+        targets={"settlement_capacity_builder": 0.5, "overmint_compressor": 0.5},
+        active_counts={"settlement_capacity_builder": 1, "overmint_compressor": 1},
+        stats_map={
+            "settlement_capacity_builder": {"runs": 8, "avg_score": 3.8, "avg_proof_yield": 1.2},
+            "overmint_compressor": {"runs": 8, "avg_score": 3.8, "avg_proof_yield": 1.2},
+        },
+        proposed_objective="settlement_capacity_builder",
+        reuse_totals={},
+        dominant_objective="settlement_capacity_builder",
+        dominant_streak=7,
+        lease_index=3,
+    )
+    assert out["policy_amnesia_window"]["active"] is True
+    assert out["selected_objective"] == "overmint_compressor"
+

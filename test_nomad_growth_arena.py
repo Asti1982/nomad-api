@@ -94,6 +94,26 @@ def test_growth_curriculum_applies_multi_hop_bonus(tmp_path):
     assert (task.get("evidence") or {}).get("multi_hop_bonus", 0.0) > 0.0
 
 
+def test_growth_curriculum_hard_multi_hop_gate_prioritizes_bonus_tasks(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_CURRICULUM_HARD_MULTI_HOP_GATE", "1")
+    out = build_growth_curriculum(
+        base_url="https://nomad.example",
+        agent_demand_feed=_demand(),
+        variant_forge=_forge(),
+        worker_market=_market(),
+        proof_reuse={
+            "objective_totals": {
+                "settlement_capacity_builder": {"two_hop_utility_score": 1.7, "three_hop_utility_score": 1.1}
+            }
+        },
+        ledger_path=tmp_path / "growth.jsonl",
+    )
+    assert out["curriculum_state"]["hard_multi_hop_gate"] is True
+    assert out["curriculum_state"]["replicated_capsule_count"] >= 0
+    top = out["tasks"][0]
+    assert (top.get("evidence") or {}).get("multi_hop_bonus", 0.0) >= 0.0
+
+
 def test_growth_experience_promotes_skill_capsule(tmp_path):
     ledger = tmp_path / "growth.jsonl"
     receipt = submit_growth_experience(

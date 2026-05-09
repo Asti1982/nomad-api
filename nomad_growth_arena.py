@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -119,6 +120,13 @@ def _caps(value: Any) -> list[str]:
         if cap and cap not in out:
             out.append(cap)
     return out[:48]
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "y"}
 
 
 def _digest(value: Any, *, length: int = 24) -> str:
@@ -273,6 +281,28 @@ def _skill_capsules(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out[:MAX_SKILLS]
 
 
+def _replicated_capsules(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for skill in skills[: max(1, min(12, len(skills)))]:
+        objective = _clean_id(skill.get("objective"), fallback="")
+        capability = _clean_id(skill.get("capability"), fallback=objective)
+        if not objective:
+            continue
+        replicated = {
+            "schema": "nomad.skill_capsule_replicant.v1",
+            "replicant_id": f"replica-{_digest({'skill': skill.get('skill_id'), 'objective': objective}, length=20)}",
+            "source_skill_id": _text(skill.get("skill_id"), 120),
+            "objective": objective,
+            "capability": capability,
+            "phase": "candidate",
+            "counterfactual_seed": round(0.45 + 0.55 * min(1.0, _num(skill.get("score"), 0.0)), 4),
+            "ttl_seconds": 37 * 60,
+            "machine_instruction": "instantiate_as_shadow_capsule_then_promote_only_if_downstream_gain_positive",
+        }
+        out.append(replicated)
+    return out
+
+
 def _task(
     *,
     base_url: str,
@@ -331,6 +361,7 @@ def build_growth_curriculum(
     rows = _read_ledger(ledger_path)
     counts = _experience_counts(rows)
     skills = _skill_capsules(rows)
+    replicated = _replicated_capsules(skills)
     tasks: list[dict[str, Any]] = []
 
     for req in _items(demand.get("demand_requests"))[:10]:
@@ -424,6 +455,33 @@ def build_growth_curriculum(
             )
         )
 
+    for capsule in replicated[:8]:
+        objective = _clean_id(capsule.get("objective"), fallback="")
+        if not objective:
+            continue
+        seed = _num(capsule.get("counterfactual_seed"), 0.5)
+        tasks.append(
+            _task(
+                base_url=base_url,
+                source="skill_capsule_replicator",
+                objective=objective,
+                capability_gap=f"replicate_capsule:{_text(capsule.get('source_skill_id'), 80)}",
+                target_capabilities=[_clean_id(capsule.get("capability"), fallback=objective), "proof_digest", "verifier_trace_digest"],
+                pressure_score=0.35 + 0.45 * seed + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={
+                    "source_skill_id": _text(capsule.get("source_skill_id"), 120),
+                    "counterfactual_seed": round(seed, 4),
+                    "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0),
+                },
+            )
+        )
+
+    hard_multi_hop_gate = _env_bool("NOMAD_CURRICULUM_HARD_MULTI_HOP_GATE", True)
+    if hard_multi_hop_gate and tasks:
+        with_bonus = [task for task in tasks if _num(_dict(task.get("evidence")).get("multi_hop_bonus"), 0.0) > 0.0]
+        if len(with_bonus) >= max(3, min(10, len(tasks) // 2)):
+            tasks = with_bonus + [task for task in tasks if task not in with_bonus]
+
     tasks.sort(key=lambda item: (_num(item.get("pressure_score")), _num(OBJECTIVE_PRIOR.get(_clean_id(item.get("objective")), 0.44))), reverse=True)
     core = {"tasks": tasks[:MAX_TASKS], "skills": len(skills), "recent": len(rows)}
     return {
@@ -445,9 +503,11 @@ def build_growth_curriculum(
         "curriculum_state": {
             "recent_experience_count": len(rows),
             "skill_capsule_count": len(skills),
+            "replicated_capsule_count": len(replicated),
             "objective_experience_counts": counts,
             "opcode_count": len(bytecode.get("opcodes") if isinstance(bytecode.get("opcodes"), list) else []),
             "multi_hop_objective_bonus": multi_hop_bonus,
+            "hard_multi_hop_gate": hard_multi_hop_gate,
         },
         "tasks": tasks[:MAX_TASKS],
         "links": {

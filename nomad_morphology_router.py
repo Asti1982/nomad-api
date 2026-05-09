@@ -41,6 +41,9 @@ def route_objectives(
     dominant_objective = str(dominant_objective or "").strip()
     dominant_streak = max(0, int(dominant_streak or 0))
     extinction_enabled = _env_bool("NOMAD_MODE_POLICY_EXTINCTION_WINDOW", True)
+    amnesia_enabled = _env_bool("NOMAD_MODE_POLICY_AMNESIA_WINDOW", True)
+    amnesia_interval = max(3, int(os.getenv("NOMAD_POLICY_AMNESIA_INTERVAL") or "11"))
+    amnesia_active = bool(amnesia_enabled and dominant_objective and lease_index > 0 and lease_index % amnesia_interval == 0)
     for objective in allowed:
         target = max(0.01, _num(targets.get(objective), 0.01) / total_target)
         active = int(active_counts.get(objective) or 0)
@@ -61,6 +64,8 @@ def route_objectives(
         value = scarcity + min(2.0, runs * 0.03) - quality - morphology_boost + extinction_penalty
         if objective == proposed_objective:
             value -= 0.05
+        if amnesia_active and objective == dominant_objective:
+            value += 0.9
         rows.append(
             {
                 "objective": objective,
@@ -111,6 +116,14 @@ def route_objectives(
             "dominant_objective": dominant_objective,
             "dominant_streak": dominant_streak,
             "trigger_streak": 4,
+        },
+        "policy_amnesia_window": {
+            "schema": "nomad.policy_amnesia_window.v1",
+            "enabled": amnesia_enabled,
+            "active": amnesia_active,
+            "interval": amnesia_interval,
+            "lease_index": max(0, int(lease_index or 0)),
+            "suppressed_objective": dominant_objective if amnesia_active else "",
         },
         "entropy_quota": {
             "schema": "nomad.entropy_quota_router.v1",

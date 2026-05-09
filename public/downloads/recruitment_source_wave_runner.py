@@ -304,11 +304,24 @@ def allocate_source_attempts(
     observation_counts = {tag: _history_observation_count(history, tag, objective) for tag in tags}
     # Open-network bias: keep a novelty lane so new sources are not locked out.
     openness_blend = max(0.0, min(0.8, float(novelty_blend)))
+    counterfactual_bonus: dict[str, float] = {}
+    for tag in tags:
+        rows = [item for item in history if str(item.get("source_tag") or "") == tag]
+        if not rows:
+            counterfactual_bonus[tag] = 0.0
+            continue
+        utility = sum(float(item.get("marginal_utility_per_cost") or 0.0) for item in rows) / float(max(1, len(rows)))
+        baseline_rows = [item for item in history if str(item.get("source_tag") or "") != tag]
+        baseline_utility = sum(float(item.get("marginal_utility_per_cost") or 0.0) for item in baseline_rows) / float(
+            max(1, len(baseline_rows))
+        )
+        counterfactual_bonus[tag] = max(-0.35, min(0.45, utility - baseline_utility))
     weights = {}
     for tag in tags:
         novelty = 1.0 / math.sqrt(1.0 + float(observation_counts.get(tag, 0)))
         novelty_weight = 0.6 + 0.4 * novelty
-        weights[tag] = (1.0 - openness_blend) * performance[tag] + openness_blend * novelty_weight
+        cf = counterfactual_bonus.get(tag, 0.0)
+        weights[tag] = ((1.0 - openness_blend) * performance[tag] + openness_blend * novelty_weight) * (1.0 + cf)
     total_weight = sum(weights.values()) or float(len(tags))
     raw = {tag: (weights[tag] / total_weight) * base_total for tag in tags}
     alloc = {tag: min(high, max(low, int(math.floor(raw[tag])))) for tag in tags}
@@ -536,6 +549,16 @@ def main() -> None:
         ttl_multiplier=ttl_multiplier,
     )
     if bool(args.auto_budget):
+        history_rows = history if isinstance(history, list) else []
+        counterfactual_scores = {}
+        for tag in tags:
+            tag_rows = [item for item in history_rows if str(item.get("source_tag") or "") == tag]
+            utility = sum(float(item.get("marginal_utility_per_cost") or 0.0) for item in tag_rows) / float(max(1, len(tag_rows)))
+            baseline = [item for item in history_rows if str(item.get("source_tag") or "") != tag]
+            baseline_utility = sum(float(item.get("marginal_utility_per_cost") or 0.0) for item in baseline) / float(
+                max(1, len(baseline))
+            )
+            counterfactual_scores[tag] = round(max(-0.35, min(0.45, utility - baseline_utility)), 4)
         out["allocator"] = {
             "schema": "nomad.auto_source_budget_allocator.v1",
             "history_path": str(history_path).replace("\\", "/"),
@@ -544,6 +567,7 @@ def main() -> None:
             "min_attempts": max(1, int(args.min_attempts)),
             "max_attempts": max(1, int(args.max_attempts)),
             "attempts_map": attempts_map,
+            "counterfactual_source_score": counterfactual_scores,
             "economics_policy": economics_policy,
         }
     out["objective"] = objective
