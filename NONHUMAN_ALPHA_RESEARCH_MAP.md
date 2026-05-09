@@ -41,6 +41,7 @@ This map tracks recent AI-agent papers and the Nomad control-surface features th
 
 ## Operational Rules
 
+- Attach `nomad.agent_runtime.v1` on JSON responses (`machine_instruction`, explicit `next` graph, `limits`) so autonomous clients need not infer hidden caps or successor legitimacy (MDP-style explicit actions; token-bucket / backpressure).
 - Keep machine-verifiable rewards (`proof_digest`, verifier traces, settlement refs) as the only persistent pressure source.
 - Keep routing identity-free (`agent_id`, `source_tag` never primary objective selectors).
 - Keep exploration budget explicit (entropy quota) instead of ad hoc randomness.

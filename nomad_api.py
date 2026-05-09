@@ -14,6 +14,7 @@ from nomad_idle_runtime_beacon import (
     normalize_idle_intent_payload,
 )
 from nomad_machine_economy import machine_economy_snapshot
+from nomad_agent_runtime_envelope import merge_agent_runtime
 from nomad_machine_error import machine_error_response, merge_machine_error
 from nomad_machine_field import build_machine_field, machine_field_intent
 from nomad_contract_conformance import build_contract_conformance_snapshot
@@ -538,6 +539,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         parsed_full = urlparse(self.path)
         query = parse_qs(parsed_full.query)
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
+        self._agent_request_path = parsed.path
 
         if parsed.path in {"/", "/index.html", "/nomad.html"}:
             self._html_file_response(PUBLIC_DIR / "nomad.html")
@@ -1937,6 +1939,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed_full = urlparse(self.path)
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
+        self._agent_request_path = parsed.path
         self.__class__._ensure_runtime_components()
         payload = self._read_json_body()
         if payload is None:
@@ -2971,6 +2974,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def _json_response(self, payload: dict, status: int = 200, headers: dict | None = None) -> None:
         if isinstance(payload, dict):
             payload = maybe_merge_http_wire_diag(self, payload)
+            req_path = getattr(self, "_agent_request_path", None)
+            if req_path is not None:
+                payload = merge_agent_runtime(
+                    payload,
+                    base_url=self._base_url(),
+                    path=str(req_path),
+                    http_status=status,
+                )
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")

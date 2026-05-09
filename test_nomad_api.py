@@ -325,8 +325,12 @@ def test_machine_error_helpers():
     err = machine_error_response(error="e1", message="m1", hints=["h1"])
     assert err["ok"] is False
     assert err["schema"] == "nomad.machine_error.v1"
+    assert err["agent_error"]["schema"] == "nomad.agent_error.v1"
+    assert err["agent_error"]["error"] == "e1"
+    assert "safe_retry" in err["agent_error"]
     merged = merge_machine_error({"ok": False, "error": "e1"}, error="e1", hints=["h2"])
     assert merged["machine_error"]["hints"] == ["h2"]
+    assert merged["machine_error"]["agent_error"]["schema"] == "nomad.agent_error.v1"
 
 
 def test_nomad_api_exposes_first_agent_readiness(tmp_path):
