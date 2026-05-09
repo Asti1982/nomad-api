@@ -5,7 +5,7 @@ Grounding (machine-native control, not human UX):
 - Backpressure and rate limits are standard for stable multi-tenant systems (token-bucket / leaky-bucket).
 - Idempotent retries are the HTTP/agent analogue of safe replay in distributed systems.
 
-Agents should never infer hidden caps; surfaces advertise limits and legitimate successors.
+Agents should never infer hidden caps; surfaces advertise limits and explicit successor actions (URLs + verbs).
 """
 
 from __future__ import annotations
