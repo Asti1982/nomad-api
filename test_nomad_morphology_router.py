@@ -18,6 +18,7 @@ def test_morphology_router_returns_selected_and_twin():
     assert out["selected_objective"] in {"overmint_compressor", "protocol_drift_scan"}
     assert out["twin_objective"] in {"settlement_capacity_builder", "overmint_compressor", "protocol_drift_scan"}
     assert out["anti_identity"] == "agent_id_and_source_tag_not_used_for_objective_routing"
+    assert out["nonhuman_modes"]["schema"] == "nomad.morphology_router_modes.v1"
 
 
 def test_morphology_router_extinction_window_suppresses_dominant_policy():

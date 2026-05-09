@@ -58,6 +58,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("/swarm/variant-forge" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/worker-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/ecology" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("/swarm/growth-arena" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-opaque-emergence" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-runtime-capsule" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -101,6 +102,13 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/swarm/ecology" in routes
     assert "/.well-known/nomad-swarm-ecology.json" in routes
     assert "/swarm/ecology/tick" in routes
+    assert "/swarm/growth-arena" in routes
+    assert "/.well-known/nomad-growth-arena.json" in routes
+    assert "/swarm/curriculum" in routes
+    assert "/.well-known/nomad-growth-curriculum.json" in routes
+    assert "/swarm/experience" in routes
+    assert "/swarm/skill-library" in routes
+    assert "/.well-known/nomad-skill-library.json" in routes
     assert "/.well-known/nomad-idle-runtime.json" in routes
     assert "/swarm/idle-intent" in routes
     assert "/.well-known/nomad-opaque-emergence.json" in routes
@@ -140,6 +148,10 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("worker_market_offer_url") or "").endswith("/swarm/worker-market/offers")
     assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
     assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
+    assert (out.get("growth_arena_url") or "").endswith("/swarm/growth-arena")
+    assert (out.get("growth_curriculum_url") or "").endswith("/swarm/curriculum")
+    assert (out.get("growth_experience_url") or "").endswith("/swarm/experience")
+    assert (out.get("skill_library_url") or "").endswith("/swarm/skill-library")
     assert (out.get("idle_runtime_beacon_url") or "").endswith("/.well-known/nomad-idle-runtime.json")
     assert (out.get("opaque_emergence_url") or "").endswith("/.well-known/nomad-opaque-emergence.json")
     assert (out.get("opaque_candidate_url") or "").endswith("/swarm/opaque-candidate")
@@ -172,6 +184,10 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "worker_market_offer_post" in eps
     assert "swarm_ecology_get" in eps
     assert "swarm_ecology_tick_post" in eps
+    assert "growth_arena_get" in eps
+    assert "growth_curriculum_get" in eps
+    assert "growth_experience_post" in eps
+    assert "skill_library_get" in eps
     assert "idle_runtime_beacon_get" in eps
     assert "idle_runtime_intent_post" in eps
     assert "opaque_emergence_get" in eps

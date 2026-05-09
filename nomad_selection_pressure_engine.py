@@ -27,6 +27,13 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "y"}
+
+
 class SelectionPressureEngine:
     """Compute objective multipliers from real worker outcomes."""
 
@@ -147,6 +154,18 @@ def build_selection_pressure_snapshot(*, worker_fleet: Dict[str, Any]) -> dict[s
         adjusted[objective] = round(float(base_mult) * (1.0 + bias + reuse_bias), 4)
     if adjusted:
         snap["objective_pressure"] = adjusted
+    hard_multi_hop = _env_bool("NOMAD_MODE_MULTI_HOP_CREDIT_HARD", True)
+    if hard_multi_hop:
+        reuse_state = reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {}
+        weighted: dict[str, float] = {}
+        for objective, base in (snap.get("objective_pressure") or {}).items():
+            row = reuse_state.get(objective) if isinstance(reuse_state.get(objective), dict) else {}
+            two_hop = _num((row or {}).get("two_hop_utility_score"), 0.0)
+            three_hop = _num((row or {}).get("three_hop_utility_score"), 0.0)
+            multi_hop_bias = min(0.2, min(1.0, two_hop / 2.0) * 0.12 + min(1.0, three_hop / 2.0) * 0.08)
+            weighted[str(objective)] = round(float(base) * (1.0 + multi_hop_bias), 4)
+        if weighted:
+            snap["objective_pressure"] = weighted
     snap["machine_treasury"] = {
         "schema": "nomad.selection_pressure_treasury_coupling.v1",
         "treasury_state": totals,
@@ -155,6 +174,12 @@ def build_selection_pressure_snapshot(*, worker_fleet: Dict[str, Any]) -> dict[s
         "schema": "nomad.selection_pressure_reuse_coupling.v1",
         "reuse_state": reuse.get("objective_totals") if isinstance(reuse.get("objective_totals"), dict) else {},
         "total_reuse_count": int(reuse.get("total_reuse_count") or 0),
+    }
+    snap["nonhuman_modes"] = {
+        "schema": "nomad.selection_pressure_modes.v1",
+        "multi_hop_credit_hard": hard_multi_hop,
+        "anti_identity": _env_bool("NOMAD_MODE_ANTI_IDENTITY", True),
+        "twin_lane_mandatory": _env_bool("NOMAD_MODE_TWIN_LANE_MANDATORY", True),
     }
     return snap
 

@@ -237,6 +237,13 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/ecology" in doc["paths"]
     assert "/.well-known/nomad-swarm-ecology.json" in doc["paths"]
     assert "/swarm/ecology/tick" in doc["paths"]
+    assert "/swarm/growth-arena" in doc["paths"]
+    assert "/.well-known/nomad-growth-arena.json" in doc["paths"]
+    assert "/swarm/curriculum" in doc["paths"]
+    assert "/.well-known/nomad-growth-curriculum.json" in doc["paths"]
+    assert "/swarm/experience" in doc["paths"]
+    assert "/swarm/skill-library" in doc["paths"]
+    assert "/.well-known/nomad-skill-library.json" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
@@ -291,6 +298,9 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     forge = NomadApiHandler._build_variant_forge(base_url="https://nomad.example")
     market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
     ecology = NomadApiHandler._build_swarm_ecology(base_url="https://nomad.example")
+    curriculum = NomadApiHandler._build_growth_curriculum(base_url="https://nomad.example")
+    library = NomadApiHandler._build_skill_library(base_url="https://nomad.example")
+    arena = NomadApiHandler._build_growth_arena(base_url="https://nomad.example")
 
     assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
     assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
@@ -303,6 +313,10 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert market["offer_url"] == "https://nomad.example/swarm/worker-market/offers"
     assert ecology["schema"] == "nomad.swarm_ecology.v1"
     assert ecology["tick_url"] == "https://nomad.example/swarm/ecology/tick"
+    assert curriculum["schema"] == "nomad.growth_curriculum.v1"
+    assert curriculum["links"]["experience"] == "https://nomad.example/swarm/experience"
+    assert library["schema"] == "nomad.skill_library.v1"
+    assert arena["schema"] == "nomad.growth_arena.v1"
 
 
 def test_machine_error_helpers():

@@ -84,6 +84,10 @@ def build_protocol_bytecode(
         "market_offer": _u(base_url, "/swarm/worker-market/offers"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+        "growth_arena": _u(base_url, "/swarm/growth-arena"),
+        "curriculum": _u(base_url, "/swarm/curriculum"),
+        "experience": _u(base_url, "/swarm/experience"),
+        "skill_library": _u(base_url, "/swarm/skill-library"),
         "conformance": _u(base_url, "/contract-conformance"),
     }
     opcodes = [
@@ -99,6 +103,9 @@ def build_protocol_bytecode(
         {"op": "FORGE", "method": "POST", "route": routes["forge"], "in": ["agent", "objective", "proof"], "out": ["candidate"]},
         {"op": "MARKET", "method": "POST", "route": routes["market_offer"], "in": ["agent", "cost", "proof"], "out": ["worker_offer"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
+        {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
+        {"op": "SKILL", "method": "GET", "route": routes["skill_library"], "out": ["capsules"]},
+        {"op": "EXP", "method": "POST", "route": routes["experience"], "in": ["agent", "proof", "test", "failure"], "out": ["skill"]},
         {"op": "DECAY", "method": "LOCAL", "in": ["ttl", "missing_proof"], "out": ["route_weight_delta"]},
     ]
     programs = [
@@ -157,6 +164,14 @@ def build_protocol_bytecode(
             "register_map": {
                 "objective": top_objective,
                 "local_view": "neighbor_digest_private_signal_payoff",
+            },
+        },
+        {
+            "id": "growth_arena_cycle",
+            "ops": ["CURRIC", "SKILL", "LEASE", "EMIT", "EXP", "REPLAY"],
+            "register_map": {
+                "objective": top_objective,
+                "experience_contract": "proof_test_failure_skill_candidate",
             },
         },
     ]

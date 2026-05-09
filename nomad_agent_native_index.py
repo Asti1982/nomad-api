@@ -172,6 +172,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.95,
+            "get_url": u("/swarm/growth-arena"),
+            "purpose": "open_ended_curriculum_experience_skill_loop",
+            "machine_note": (
+                "Reads gap pressure and surviving skill capsules; agents use GET /swarm/curriculum, "
+                "POST /swarm/experience, and GET /swarm/skill-library to improve through proof traces."
+            ),
+        },
+        {
             "order": 12,
             "get_url": u("/.well-known/nomad-idle-runtime.json"),
             "purpose": "idle_runtime_opt_in_beacon",
@@ -287,6 +296,13 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
+        {"path": "/swarm/growth-arena", "methods": ["GET"], "effect": "read_growth_arena", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-growth-arena.json", "methods": ["GET"], "effect": "read_growth_arena", "cost_tier": "low"},
+        {"path": "/swarm/curriculum", "methods": ["GET"], "effect": "read_growth_curriculum", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-growth-curriculum.json", "methods": ["GET"], "effect": "read_growth_curriculum", "cost_tier": "low"},
+        {"path": "/swarm/skill-library", "methods": ["GET"], "effect": "read_skill_capsules", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-skill-library.json", "methods": ["GET"], "effect": "read_skill_capsules", "cost_tier": "low"},
+        {"path": "/swarm/experience", "methods": ["POST"], "effect": "write_growth_experience", "cost_tier": "medium"},
         {"path": "/.well-known/nomad-idle-runtime.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/idle-runtime", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/.well-known/nomad-opaque-emergence.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
@@ -405,6 +421,10 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "worker_market_offer_url": u("/swarm/worker-market/offers"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
+        "growth_arena_url": u("/swarm/growth-arena"),
+        "growth_curriculum_url": u("/swarm/curriculum"),
+        "growth_experience_url": u("/swarm/experience"),
+        "skill_library_url": u("/swarm/skill-library"),
         "idle_runtime_beacon_url": u("/.well-known/nomad-idle-runtime.json"),
         "opaque_emergence_url": u("/.well-known/nomad-opaque-emergence.json"),
         "opaque_candidate_url": u("/swarm/opaque-candidate"),

@@ -631,6 +631,8 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "variant_forge_probe": "/swarm/variant-forge",
         "worker_market_probe": "/swarm/worker-market",
         "swarm_ecology_probe": "/swarm/ecology",
+        "growth_curriculum_probe": "/swarm/curriculum",
+        "skill_library_probe": "/swarm/skill-library",
     }
     statuses: dict[str, int] = {}
     for key, path in probes.items():
@@ -1148,6 +1150,78 @@ def _ecology_tick(base_url: str, agent_id: str, timeout: float, report: dict, le
     return data
 
 
+def _growth_experience(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    replay = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
+    local_witness = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
+    fleet_complete = report.get("fleet_complete") if isinstance(report.get("fleet_complete"), dict) else {}
+    objective = clean(report.get("machine_objective"), 80) or "settlement_capacity_builder"
+    proof = clean(local_witness.get("digest_hex"), 96) or clean(report.get("quote_id"), 96)
+    tests_total = 5
+    tests_passed = (
+        int(bool(report.get("ok")))
+        + int(bool(report.get("transition_quote_ok")))
+        + int(bool(report.get("transition_settle_ok")))
+        + int(bool(fleet_complete.get("ok")))
+        + int(bool(proof))
+    )
+    failure_digest = ""
+    error_class = ""
+    if not report.get("ok") or tests_passed < 3:
+        failure_core = {
+            "objective": objective,
+            "bootstrap": int(report.get("bootstrap_http_status") or 0),
+            "quote": int(report.get("transition_quote_http_status") or 0),
+            "settle": int(report.get("transition_settle_http_status") or 0),
+        }
+        failure_digest = hashlib.sha256(json.dumps(failure_core, sort_keys=True).encode("utf-8")).hexdigest()[:32]
+        error_class = "low_proof_cycle" if tests_passed < 3 else "worker_cycle_failed"
+    payload = {
+        "schema": "nomad.transition_worker_growth_experience.v1",
+        "agent_id": agent_id,
+        "cohort_id": clean(os.getenv("NOMAD_WORKER_COHORT_ID", "transition_worker"), 80),
+        "objective": objective,
+        "capability": objective,
+        "proof_digest": proof,
+        "verifier_trace_digest": clean(replay.get("replay_digest"), 120),
+        "test_digest": clean(report.get("quote_id"), 120) or clean(fleet_complete.get("completion_id"), 120),
+        "settlement_ref": clean(report.get("quote_id"), 120) if report.get("transition_settle_ok") else "",
+        "worker_report_digest": clean(report.get("quote_id"), 120) or proof,
+        "failure_digest": failure_digest,
+        "error_class": error_class,
+        "repair_hint": clean(report.get("mission_top_blocker"), 240) if failure_digest else "",
+        "skill_candidate": {
+            "capability": objective,
+            "activation_signature": clean((lease or {}).get("lease_id"), 120) or clean(report.get("quote_id"), 120),
+            "program_hint": [
+                "GET /swarm/curriculum",
+                "POST /swarm/workers/lease",
+                "POST /runtime/handoff",
+                "POST /swarm/experience",
+            ],
+        },
+        "evaluation": {
+            "tests_passed": tests_passed,
+            "tests_total": tests_total,
+            "proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
+            "utility_delta": float(report.get("meta_score") or 0.0) / 10.0,
+            "settlement_delta": 0.25 if report.get("transition_settle_ok") else 0.0,
+            "cost_units": 0.2 if report.get("ok") else 0.9,
+            "reuse_count": int(bool((report.get("variant_candidate") or {}).get("accepted"))) if isinstance(report.get("variant_candidate"), dict) else 0,
+            "risk_score": 0.05,
+        },
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/experience"), payload, timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "growth_experience_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+            "experience": payload,
+        }
+    return data
+
+
 def _proof_pressure_snapshot(report: dict, cycle_seconds: float, evidence_items: list[str], replay_result: dict | None) -> dict[str, object]:
     quote_ok = bool(report.get("transition_quote_ok"))
     settle_ok = bool(report.get("transition_settle_ok"))
@@ -1476,6 +1550,13 @@ def main() -> None:
             lease=fleet_lease,
         )
         report["ecology_tick"] = _ecology_tick(
+            a.base_url,
+            a.agent_id,
+            timeout=min(8.0, timeout),
+            report=report,
+            lease=fleet_lease,
+        )
+        report["growth_experience"] = _growth_experience(
             a.base_url,
             a.agent_id,
             timeout=min(8.0, timeout),

@@ -125,6 +125,32 @@ def _ecology_probe_payload() -> dict:
     }
 
 
+def _growth_experience_probe_payload() -> dict:
+    return {
+        "agent_id": "readiness.probe",
+        "cohort_id": "readiness_probe",
+        "objective": "protocol_drift_scan",
+        "capability": "protocol_drift_scan",
+        "proof_digest": "readiness-probe-proof",
+        "verifier_trace_digest": "readiness-probe-trace",
+        "test_digest": "readiness-probe-test",
+        "settlement_ref": "readiness-probe-settlement",
+        "skill_candidate": {
+            "capability": "protocol_drift_scan",
+            "activation_signature": "readiness-probe-activation",
+            "program_hint": ["GET /swarm/curriculum", "POST /swarm/experience"],
+        },
+        "evaluation": {
+            "tests_passed": 1,
+            "tests_total": 1,
+            "proof_yield_per_minute": 1.0,
+            "utility_delta": 0.5,
+            "settlement_delta": 0.05,
+            "risk_score": 0.01,
+        },
+    }
+
+
 def check(base_url: str, timeout: float) -> dict:
     swarm = http_json("GET", endpoint(base_url, "/swarm"), timeout=timeout)
     capsule = http_json("GET", endpoint(base_url, "/.well-known/nomad-runtime-capsule.json"), timeout=timeout)
@@ -136,6 +162,9 @@ def check(base_url: str, timeout: float) -> dict:
     variant_forge = http_json("GET", endpoint(base_url, "/swarm/variant-forge"), timeout=timeout)
     worker_market = http_json("GET", endpoint(base_url, "/swarm/worker-market"), timeout=timeout)
     swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
+    growth_arena = http_json("GET", endpoint(base_url, "/swarm/growth-arena"), timeout=timeout)
+    growth_curriculum = http_json("GET", endpoint(base_url, "/swarm/curriculum"), timeout=timeout)
+    skill_library = http_json("GET", endpoint(base_url, "/swarm/skill-library"), timeout=timeout)
     attach_probe = http_json(
         "POST",
         endpoint(base_url, "/swarm/attach"),
@@ -182,6 +211,12 @@ def check(base_url: str, timeout: float) -> dict:
         payload=_ecology_probe_payload(),
         timeout=timeout,
     )
+    growth_experience_probe = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/experience"),
+        payload=_growth_experience_probe_payload(),
+        timeout=timeout,
+    )
     has_gradient = gradient.get("schema") == "nomad.recruitment_gradient.v1"
     state = gradient.get("state_vector") if isinstance(gradient.get("state_vector"), dict) else {}
     field_score = float(state.get("field_strength") or 0.0)
@@ -190,13 +225,17 @@ def check(base_url: str, timeout: float) -> dict:
     attach_threshold = float(((swarm.get("agent_pull_contract") or {}).get("attach_threshold")) or 1.1)
     lease_ready = _ready(lease_probe)
     worker_fleet_visible = _ready(workers)
-    protocol_ready = _ready(protocol) and protocol.get("schema") == "nomad.protocol_bytecode.v1" and _has_opcodes(protocol, {"FORGE", "MARKET", "ECO"})
+    protocol_ready = _ready(protocol) and protocol.get("schema") == "nomad.protocol_bytecode.v1" and _has_opcodes(protocol, {"FORGE", "MARKET", "ECO", "CURRIC", "SKILL", "EXP"})
     variant_forge_ready = _ready(variant_forge) and variant_forge.get("schema") == "nomad.variant_forge.v1"
     worker_market_ready = _ready(worker_market) and worker_market.get("schema") == "nomad.worker_market.v1"
     swarm_ecology_ready = _ready(swarm_ecology) and swarm_ecology.get("schema") == "nomad.swarm_ecology.v1"
     variant_candidate_ready = _ready(variant_probe) and variant_probe.get("schema") == "nomad.variant_candidate_receipt.v1"
     worker_market_offer_ready = _ready(worker_offer_probe) and worker_offer_probe.get("schema") == "nomad.worker_market_offer_receipt.v1"
     ecology_tick_ready = _ready(ecology_probe) and ecology_probe.get("schema") == "nomad.ecology_tick_receipt.v1"
+    growth_arena_ready = _ready(growth_arena) and growth_arena.get("schema") == "nomad.growth_arena.v1"
+    growth_curriculum_ready = _ready(growth_curriculum) and growth_curriculum.get("schema") == "nomad.growth_curriculum.v1"
+    skill_library_ready = _ready(skill_library) and skill_library.get("schema") == "nomad.skill_library.v1"
+    growth_experience_ready = _ready(growth_experience_probe) and growth_experience_probe.get("schema") == "nomad.growth_experience_receipt.v1"
     summary = {
         "schema": "nomad.swarm_readiness_check.v1",
         "base_url": base_url,
@@ -216,13 +255,26 @@ def check(base_url: str, timeout: float) -> dict:
         "variant_candidate_ready": variant_candidate_ready,
         "worker_market_offer_ready": worker_market_offer_ready,
         "ecology_tick_ready": ecology_tick_ready,
+        "growth_arena_ok": growth_arena_ready,
+        "growth_curriculum_ok": growth_curriculum_ready,
+        "skill_library_ok": skill_library_ready,
+        "growth_experience_ready": growth_experience_ready,
         "has_gradient_contract": has_gradient,
         "has_pull_contract": has_pull_contract,
         "field_strength": round(field_score, 4),
         "attach_now_score": round(attach_score, 4),
         "attach_threshold": round(attach_threshold, 4),
         "decision": "attach"
-        if lease_ready and protocol_ready and variant_candidate_ready and worker_market_offer_ready and ecology_tick_ready and bool(attach_probe.get("attach"))
+        if lease_ready
+        and protocol_ready
+        and variant_candidate_ready
+        and worker_market_offer_ready
+        and ecology_tick_ready
+        and growth_arena_ready
+        and growth_curriculum_ready
+        and skill_library_ready
+        and growth_experience_ready
+        and bool(attach_probe.get("attach"))
         else "observe",
         "http": {
             "health": int(health.get("http_status") or 0),
@@ -237,6 +289,10 @@ def check(base_url: str, timeout: float) -> dict:
             "worker_market_offer": int(worker_offer_probe.get("http_status") or 0),
             "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
             "ecology_tick": int(ecology_probe.get("http_status") or 0),
+            "growth_arena": int(growth_arena.get("http_status") or 0),
+            "growth_curriculum": int(growth_curriculum.get("http_status") or 0),
+            "skill_library": int(skill_library.get("http_status") or 0),
+            "growth_experience": int(growth_experience_probe.get("http_status") or 0),
             "attach": int(attach_probe.get("http_status") or 0),
             "handoff": int(handoff_probe.get("http_status") or 0),
             "workers": int(workers.get("http_status") or 0),
@@ -263,6 +319,14 @@ def check(base_url: str, timeout: float) -> dict:
         summary["blocker"] = "worker_market_offer_endpoint_not_ready"
     elif not ecology_tick_ready:
         summary["blocker"] = "ecology_tick_endpoint_not_ready"
+    elif not growth_arena_ready:
+        summary["blocker"] = "growth_arena_missing"
+    elif not growth_curriculum_ready:
+        summary["blocker"] = "growth_curriculum_missing"
+    elif not skill_library_ready:
+        summary["blocker"] = "skill_library_missing"
+    elif not growth_experience_ready:
+        summary["blocker"] = "growth_experience_endpoint_not_ready"
     elif not _ready(handoff_probe):
         summary["blocker"] = "handoff_endpoint_not_ready"
     elif not _ready(attach_probe):

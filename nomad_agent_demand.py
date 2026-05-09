@@ -323,6 +323,9 @@ def build_agent_demand_feed(
                     "worker_market_offer": _u(base_url, "/swarm/worker-market/offers"),
                     "swarm_ecology": _u(base_url, "/swarm/ecology"),
                     "swarm_ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+                    "growth_curriculum": _u(base_url, "/swarm/curriculum"),
+                    "growth_experience": _u(base_url, "/swarm/experience"),
+                    "skill_library": _u(base_url, "/swarm/skill-library"),
                 },
             }
         )
@@ -354,6 +357,9 @@ def build_agent_demand_feed(
                     "worker_market_offer": _u(base_url, "/swarm/worker-market/offers"),
                     "swarm_ecology": _u(base_url, "/swarm/ecology"),
                     "swarm_ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+                    "growth_curriculum": _u(base_url, "/swarm/curriculum"),
+                    "growth_experience": _u(base_url, "/swarm/experience"),
+                    "skill_library": _u(base_url, "/swarm/skill-library"),
                 },
             }
         )
@@ -384,6 +390,9 @@ def build_agent_demand_feed(
                     "worker_market_offer": _u(base_url, "/swarm/worker-market/offers"),
                     "swarm_ecology": _u(base_url, "/swarm/ecology"),
                     "swarm_ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+                    "growth_curriculum": _u(base_url, "/swarm/curriculum"),
+                    "growth_experience": _u(base_url, "/swarm/experience"),
+                    "skill_library": _u(base_url, "/swarm/skill-library"),
                 },
             }
         )
@@ -478,6 +487,9 @@ def build_agent_demand_feed(
                     "worker_market_offer": _u(base_url, "/swarm/worker-market/offers"),
                     "swarm_ecology": _u(base_url, "/swarm/ecology"),
                     "swarm_ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+                    "growth_curriculum": _u(base_url, "/swarm/curriculum"),
+                    "growth_experience": _u(base_url, "/swarm/experience"),
+                    "skill_library": _u(base_url, "/swarm/skill-library"),
                     "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
                     "worker1_ps1": _u(base_url, "/downloads/start_nomad_worker1.ps1"),
                     "worker1_bat": _u(base_url, "/downloads/start_nomad_worker1.bat"),
@@ -552,6 +564,10 @@ def build_agent_demand_feed(
             "worker_market_offer": _u(base_url, "/swarm/worker-market/offers"),
             "swarm_ecology": _u(base_url, "/swarm/ecology"),
             "swarm_ecology_tick": _u(base_url, "/swarm/ecology/tick"),
+            "growth_arena": _u(base_url, "/swarm/growth-arena"),
+            "growth_curriculum": _u(base_url, "/swarm/curriculum"),
+            "growth_experience": _u(base_url, "/swarm/experience"),
+            "skill_library": _u(base_url, "/swarm/skill-library"),
             "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
             "worker1_ps1": _u(base_url, "/downloads/start_nomad_worker1.ps1"),
             "worker1_bat": _u(base_url, "/downloads/start_nomad_worker1.bat"),

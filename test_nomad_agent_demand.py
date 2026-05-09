@@ -63,6 +63,9 @@ def test_agent_demand_feed_exposes_bounded_open_work(tmp_path, monkeypatch):
     assert top["entrypoints"]["worker_market"] == "https://nomad.example/swarm/worker-market"
     assert top["entrypoints"]["worker_market_offer"] == "https://nomad.example/swarm/worker-market/offers"
     assert top["entrypoints"]["swarm_ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
+    assert top["entrypoints"]["growth_curriculum"] == "https://nomad.example/swarm/curriculum"
+    assert top["entrypoints"]["growth_experience"] == "https://nomad.example/swarm/experience"
+    assert top["entrypoints"]["skill_library"] == "https://nomad.example/swarm/skill-library"
     assert "proof_digest" in top["proof_required"] or "proof_digest_or_verifier_trace" in top["proof_required"]
 
 
@@ -110,10 +113,14 @@ def test_agent_demand_feed_exposes_local_growth_worker_request(tmp_path, monkeyp
     assert request["entrypoints"]["variant_candidate_submit"] == "https://nomad.example/swarm/variant-candidates"
     assert request["entrypoints"]["worker_market_offer"] == "https://nomad.example/swarm/worker-market/offers"
     assert request["entrypoints"]["swarm_ecology"] == "https://nomad.example/swarm/ecology"
+    assert request["entrypoints"]["growth_experience"] == "https://nomad.example/swarm/experience"
     assert feed["field_state"]["local_growth_action"] == "request_more_transition_workers"
     assert feed["links"]["variant_forge"] == "https://nomad.example/swarm/variant-forge"
     assert feed["links"]["worker_market"] == "https://nomad.example/swarm/worker-market"
     assert feed["links"]["swarm_ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
+    assert feed["links"]["growth_curriculum"] == "https://nomad.example/swarm/curriculum"
+    assert feed["links"]["growth_experience"] == "https://nomad.example/swarm/experience"
+    assert feed["links"]["skill_library"] == "https://nomad.example/swarm/skill-library"
     assert feed["links"]["worker1_bat"] == "https://nomad.example/downloads/start_nomad_worker1.bat"
     assert feed["links"]["openclaw_adapter_py"] == "https://nomad.example/downloads/nomad_openclaw_adapter.py"
 

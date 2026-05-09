@@ -53,6 +53,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/worker-market and POST /swarm/worker-market/offers. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
+                "For open-ended agent growth through task curriculum, experience compression, and reusable skill capsules, see "
+                "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, and POST /swarm/experience. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -527,6 +529,60 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/growth-arena": {
+                "get": {
+                    "summary": "Open-ended agent growth arena: curriculum plus skill library",
+                    "operationId": "getSwarmGrowthArena",
+                    "responses": {
+                        "200": {"description": "Growth arena surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-growth-arena.json": {
+                "get": {
+                    "summary": "Alias of /swarm/growth-arena",
+                    "operationId": "getGrowthArenaWellKnown",
+                    "responses": {
+                        "200": {"description": "Growth arena surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/curriculum": {
+                "get": {
+                    "summary": "Machine-generated curriculum from gaps, proof pressure, and prior experiences",
+                    "operationId": "getSwarmCurriculum",
+                    "responses": {
+                        "200": {"description": "Growth curriculum", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-growth-curriculum.json": {
+                "get": {
+                    "summary": "Alias of /swarm/curriculum",
+                    "operationId": "getGrowthCurriculumWellKnown",
+                    "responses": {
+                        "200": {"description": "Growth curriculum", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/skill-library": {
+                "get": {
+                    "summary": "Reusable proof-promoted skill capsules for external agents",
+                    "operationId": "getSwarmSkillLibrary",
+                    "responses": {
+                        "200": {"description": "Skill library", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-skill-library.json": {
+                "get": {
+                    "summary": "Alias of /swarm/skill-library",
+                    "operationId": "getSkillLibraryWellKnown",
+                    "responses": {
+                        "200": {"description": "Skill library", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-idle-runtime.json": {
                 "get": {
                     "summary": "Opt-in beacon for idle runtimes seeking a useful objective",
@@ -739,6 +795,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Tick retained or routed for reproduction"},
                         "200": {"description": "Tick held or marked with extinction pressure"},
+                    },
+                }
+            },
+            "/swarm/experience": {
+                "post": {
+                    "summary": "Submit one compressed agent experience for curriculum and skill-library selection",
+                    "operationId": "postSwarmExperience",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "objective"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "cohort_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "capability": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "verifier_trace_digest": {"type": "string"},
+                                        "test_digest": {"type": "string"},
+                                        "settlement_ref": {"type": "string"},
+                                        "failure_digest": {"type": "string"},
+                                        "error_class": {"type": "string"},
+                                        "repair_hint": {"type": "string"},
+                                        "skill_candidate": ref_json_object(),
+                                        "evaluation": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Experience retained or promoted into a skill capsule"},
+                        "200": {"description": "Experience observed, compressed, or held"},
                     },
                 }
             },

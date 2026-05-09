@@ -105,7 +105,14 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
             return {
                 "ok": True,
                 "schema": "nomad.protocol_bytecode.v1",
-                "opcodes": [{"op": "FORGE"}, {"op": "MARKET"}, {"op": "ECO"}],
+                "opcodes": [
+                    {"op": "FORGE"},
+                    {"op": "MARKET"},
+                    {"op": "ECO"},
+                    {"op": "CURRIC"},
+                    {"op": "SKILL"},
+                    {"op": "EXP"},
+                ],
                 "http_status": 200,
             }
         if url.endswith("/swarm/variant-forge"):
@@ -120,6 +127,14 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
             return {"ok": True, "schema": "nomad.swarm_ecology.v1", "http_status": 200}
         if url.endswith("/swarm/ecology/tick"):
             return {"ok": True, "schema": "nomad.ecology_tick_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/growth-arena"):
+            return {"ok": True, "schema": "nomad.growth_arena.v1", "http_status": 200}
+        if url.endswith("/swarm/curriculum"):
+            return {"ok": True, "schema": "nomad.growth_curriculum.v1", "http_status": 200}
+        if url.endswith("/swarm/skill-library"):
+            return {"ok": True, "schema": "nomad.skill_library.v1", "http_status": 200}
+        if url.endswith("/swarm/experience"):
+            return {"ok": True, "schema": "nomad.growth_experience_receipt.v1", "http_status": 202}
         if url.endswith("/swarm"):
             return {"ok": True, "agent_pull_contract": {}, "http_status": 200}
         return {"ok": False, "http_status": 404}
@@ -143,6 +158,8 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["variant_candidate_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["ecology_tick_ok"] is True
+    assert out["checks"]["growth_arena_ok"] is True
+    assert out["checks"]["growth_experience_ok"] is True
     assert out["checks"]["download_worker1_ps1_ok"] is True
     assert out["checks"]["download_worker1_bat_ok"] is True
 

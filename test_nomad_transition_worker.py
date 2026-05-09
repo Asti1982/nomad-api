@@ -404,6 +404,48 @@ def test_transition_worker_posts_ecology_tick(monkeypatch):
     assert payload["private_signal"]
 
 
+def test_transition_worker_posts_growth_experience(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/experience"):
+            return {"ok": True, "accepted": True, "decision": "promote_skill_capsule", "experience_id": "nomad-exp-test"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    report = {
+        "ok": True,
+        "machine_objective": "settlement_capacity_builder",
+        "transition_quote_ok": True,
+        "transition_settle_ok": True,
+        "quote_id": "quote-1",
+        "local_witness": {"digest_hex": "abc123"},
+        "proof_pressure": {"proof_yield_per_minute": 2.5},
+        "counterfactual_replay_signal": {"replay_digest": "nomad-cfreplay-test"},
+        "fleet_complete": {"ok": True},
+        "meta_score": 7.0,
+    }
+
+    out = worker._growth_experience(
+        "https://nomad.example",
+        "worker.agent",
+        timeout=1.0,
+        report=report,
+        lease={"lease_id": "lease-1"},
+    )
+
+    assert out["ok"] is True
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/swarm/experience")
+    payload = calls[0][2]
+    assert payload["schema"] == "nomad.transition_worker_growth_experience.v1"
+    assert payload["proof_digest"] == "abc123"
+    assert payload["skill_candidate"]["activation_signature"] == "lease-1"
+    assert payload["evaluation"]["tests_passed"] == 5
+
+
 def test_worker1_launch_scripts_wire_market_env():
     root = Path(__file__).resolve().parent / "public" / "downloads"
     ps1 = (root / "start_nomad_worker1.ps1").read_text(encoding="utf-8")

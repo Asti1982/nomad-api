@@ -39,6 +39,55 @@ def _env_first(*names: str) -> str:
     return ""
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "y"}
+
+
+def _nonhuman_mode_flags() -> dict[str, bool]:
+    return {
+        "anti_identity": _env_bool("NOMAD_MODE_ANTI_IDENTITY", True),
+        "twin_lane_mandatory": _env_bool("NOMAD_MODE_TWIN_LANE_MANDATORY", True),
+        "policy_extinction_window": _env_bool("NOMAD_MODE_POLICY_EXTINCTION_WINDOW", True),
+        "entropy_quota_hard": _env_bool("NOMAD_MODE_ENTROPY_QUOTA_HARD", True),
+        "multi_hop_credit_hard": _env_bool("NOMAD_MODE_MULTI_HOP_CREDIT_HARD", True),
+    }
+
+
+def _network_phase(*, active_nodes: float, reuse_density: float, control_success: float) -> dict[str, Any]:
+    threshold_nodes = max(1, int(_env_float("NOMAD_ECONOMY_SWITCH_MIN_ACTIVE_NODES", 1000)))
+    threshold_reuse = _clamp(_env_float("NOMAD_ECONOMY_SWITCH_MIN_REUSE_DENSITY", 0.65), 0.0, 1.0)
+    threshold_control = _clamp(_env_float("NOMAD_ECONOMY_SWITCH_MIN_CONTROL_SUCCESS", 0.95), 0.0, 1.0)
+    ready = bool(
+        float(active_nodes) >= float(threshold_nodes)
+        and float(reuse_density) >= float(threshold_reuse)
+        and float(control_success) >= float(threshold_control)
+    )
+    phase = "economy_enforced" if ready else "bootstrap_growth"
+    return {
+        "schema": "nomad.network_phase_state.v1",
+        "phase": phase,
+        "auto_switch_enabled": _env_bool("NOMAD_ECONOMY_AUTO_SWITCH", True),
+        "transition_reason": (
+            "economy_thresholds_met"
+            if ready
+            else "bootstrap_until_active_nodes_reuse_density_and_control_success_reach_thresholds"
+        ),
+        "phase_gate_metrics": {
+            "active_nodes": int(max(0.0, float(active_nodes))),
+            "reuse_density": round(float(reuse_density), 4),
+            "control_actions_success": round(float(control_success), 4),
+        },
+        "phase_gate_thresholds": {
+            "active_nodes": int(threshold_nodes),
+            "reuse_density": round(float(threshold_reuse), 4),
+            "control_actions_success": round(float(threshold_control), 4),
+        },
+    }
+
+
 def _append_dev_fund_ledger(
     *,
     wallet: str,
@@ -239,6 +288,15 @@ def build_swarm_economics_snapshot(
         4,
     )
 
+    nonhuman_modes = _nonhuman_mode_flags()
+    avg_two_hop = (
+        sum(_num((row or {}).get("two_hop_utility_score"), 0.0) for row in objective_totals.values() if isinstance(row, dict))
+        / max(1.0, float(len(objective_totals)))
+    )
+    avg_three_hop = (
+        sum(_num((row or {}).get("three_hop_utility_score"), 0.0) for row in objective_totals.values() if isinstance(row, dict))
+        / max(1.0, float(len(objective_totals)))
+    )
     sr_target = 1.2
     vud_target = 1.0
     dr_target = 0.35
@@ -260,6 +318,14 @@ def build_swarm_economics_snapshot(
         control_actions.append({"action": "increase_entropy_quota_and_source_novelty", "weight": 0.6, "reason": "diversity_resilience_low"})
     if externalization_rate < 0.6:
         control_actions.append({"action": "expand_external_source_attempts", "weight": 0.55, "reason": "externalization_rate_low"})
+    if nonhuman_modes["twin_lane_mandatory"]:
+        control_actions.append({"action": "enforce_twin_lane_adversarial_pairs", "weight": 0.7, "reason": "twin_lane_mandatory"})
+    if nonhuman_modes["policy_extinction_window"] and top_share > 0.4:
+        control_actions.append({"action": "trigger_policy_extinction_window", "weight": 0.65, "reason": "dominant_policy_share_above_0_4"})
+    if nonhuman_modes["entropy_quota_hard"]:
+        control_actions.append({"action": "reserve_fixed_entropy_explore_budget", "weight": 0.6, "reason": "entropy_quota_hard_enabled"})
+    if nonhuman_modes["multi_hop_credit_hard"] and avg_two_hop < 0.8:
+        control_actions.append({"action": "increase_multi_hop_credit_weight", "weight": 0.6, "reason": "two_hop_utility_below_target"})
     if not control_actions:
         control_actions.append({"action": "scale_objective_split_waves", "weight": 0.5, "reason": "all_targets_met"})
 
@@ -303,18 +369,42 @@ def build_swarm_economics_snapshot(
         "dev_allocation": bool(current_data["dev_fund_allocation"] >= dev_fund_target_eur),
         "control_success": bool(current_data["control_actions_success"] >= 0.95),
     }
+    if nonhuman_modes["multi_hop_credit_hard"]:
+        checks["two_hop_utility"] = bool(avg_two_hop >= 0.8)
+        checks["three_hop_utility"] = bool(avg_three_hop >= 0.55)
     failed = [k for k, ok in checks.items() if not ok]
     go = len(failed) == 0
+    phase_state = _network_phase(
+        active_nodes=known_workers,
+        reuse_density=reuse_density,
+        control_success=control_actions_success,
+    )
+    auto_switch_enabled = bool(phase_state.get("auto_switch_enabled"))
+    phase = str(phase_state.get("phase") or "bootstrap_growth")
+    if not auto_switch_enabled:
+        phase = "economy_enforced"
+    effective_mode = "hard" if phase == "economy_enforced" else "soft"
     policy_mode = str(os.getenv("NOMAD_GO_NO_GO_MODE") or "shadow").strip().lower() or "shadow"
-    enforced = policy_mode in {"enforce", "hard", "strict"}
+    enforced = policy_mode in {"enforce", "hard", "strict"} and effective_mode == "hard"
     go_no_go = {
         "schema": "nomad.go_no_go_24h.v1",
         "go": go,
         "failed_checks": failed,
         "failed_count": len(failed),
-        "action": "GROW" if go else "EXTINCTION_WAVE",
+        "action": (
+            "GROW"
+            if go
+            else ("EXTINCTION_WAVE" if effective_mode == "hard" else "BOOTSTRAP_RECOVERY_WAVE")
+        ),
         "enforced": enforced,
         "policy_mode": policy_mode,
+        "go_no_go_effective_mode": effective_mode,
+        "interpretation": {
+            "schema": "nomad.go_no_go_interpretation.v1",
+            "network_phase": phase,
+            "full_economic_extinction_only_in_phase": "economy_enforced",
+            "note": "failed_checks_list_always_full_economic_gate_bootstrap_phase_softens_action_not_metrics",
+        },
     }
     wallet = _env_first("NOMAD_DEV_FUND_WALLET", "NOMAD_METAMASK_ADDRESS", "METAMASK_WALLET_ADDRESS")
     payout_eur = planned_dev_fund if go else 0.0
@@ -376,6 +466,22 @@ def build_swarm_economics_snapshot(
             ],
         },
         "go_no_go": go_no_go,
+        "network_phase": phase_state,
+        "nonhuman_doctrine": {
+            "schema": "nomad.nonhuman_doctrine.v1",
+            "active_modes": nonhuman_modes,
+            "anti_identity_routing": "enabled" if nonhuman_modes["anti_identity"] else "disabled",
+            "multi_hop_credit": {
+                "avg_two_hop_utility_score": round(avg_two_hop, 4),
+                "avg_three_hop_utility_score": round(avg_three_hop, 4),
+            },
+            "science_basis": [
+                "stigmergic_coordination_and_indirect_control",
+                "replicator_dynamics_evolutionary_selection",
+                "quality_diversity_open_ended_search",
+                "multi_agent_credit_assignment_utility_propagation",
+            ],
+        },
         "inputs": {
             "infra_cost_units": round(infra_cost_units, 4),
             "infra_cost_estimate_24h": infra_cost,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -10,6 +11,13 @@ def _num(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "y"}
 
 
 def route_objectives(
@@ -32,6 +40,7 @@ def route_objectives(
     rows: list[dict[str, Any]] = []
     dominant_objective = str(dominant_objective or "").strip()
     dominant_streak = max(0, int(dominant_streak or 0))
+    extinction_enabled = _env_bool("NOMAD_MODE_POLICY_EXTINCTION_WINDOW", True)
     for objective in allowed:
         target = max(0.01, _num(targets.get(objective), 0.01) / total_target)
         active = int(active_counts.get(objective) or 0)
@@ -47,7 +56,7 @@ def route_objectives(
         scarcity = active / max(0.01, target)
         quality = min(2.0, avg_score * 0.04 + avg_proof * 0.08)
         extinction_penalty = 0.0
-        if objective == dominant_objective and dominant_streak >= 4:
+        if extinction_enabled and objective == dominant_objective and dominant_streak >= 4:
             extinction_penalty = min(0.45, 0.15 + min(1.0, (dominant_streak - 3) / 6.0) * 0.3)
         value = scarcity + min(2.0, runs * 0.03) - quality - morphology_boost + extinction_penalty
         if objective == proposed_objective:
@@ -71,7 +80,8 @@ def route_objectives(
     selected = rows[0]["objective"] if rows else allowed[0]
     entropy_override = False
     cadence = max(2, int(entropy_interval or 5))
-    if lease_index > 0 and lease_index % cadence == 0 and len(rows) > 1:
+    hard_entropy = _env_bool("NOMAD_MODE_ENTROPY_QUOTA_HARD", True)
+    if hard_entropy and lease_index > 0 and lease_index % cadence == 0 and len(rows) > 1:
         candidates = sorted(rows, key=lambda item: (int(item.get("runs") or 0), float(item.get("value") or 0.0)))
         for row in candidates:
             objective = str(row.get("objective") or "")
@@ -79,6 +89,7 @@ def route_objectives(
                 selected = objective
                 entropy_override = True
                 break
+    twin_mandatory = _env_bool("NOMAD_MODE_TWIN_LANE_MANDATORY", True)
     twin = rows[1]["objective"] if len(rows) > 1 else selected
     if twin == selected and rows:
         for row in rows:
@@ -86,6 +97,8 @@ def route_objectives(
             if candidate and candidate != selected:
                 twin = candidate
                 break
+    if not twin_mandatory:
+        twin = selected
     return {
         "schema": "nomad.morphology_router.v1",
         "selected_objective": selected,
@@ -94,7 +107,7 @@ def route_objectives(
         "anti_identity": "agent_id_and_source_tag_not_used_for_objective_routing",
         "extinction_window": {
             "schema": "nomad.policy_extinction_window.v1",
-            "active": bool(dominant_objective and dominant_streak >= 4),
+            "active": bool(extinction_enabled and dominant_objective and dominant_streak >= 4),
             "dominant_objective": dominant_objective,
             "dominant_streak": dominant_streak,
             "trigger_streak": 4,
@@ -110,5 +123,13 @@ def route_objectives(
             "cooperative_credit_assignment_multi_agent",
             "historical_interaction_shapley_credit",
         ],
+        "nonhuman_modes": {
+            "schema": "nomad.morphology_router_modes.v1",
+            "anti_identity": _env_bool("NOMAD_MODE_ANTI_IDENTITY", True),
+            "twin_lane_mandatory": twin_mandatory,
+            "policy_extinction_window": extinction_enabled,
+            "entropy_quota_hard": hard_entropy,
+            "multi_hop_credit_hard": _env_bool("NOMAD_MODE_MULTI_HOP_CREDIT_HARD", True),
+        },
     }
 

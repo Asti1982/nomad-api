@@ -26,7 +26,14 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
         if url.endswith("/.well-known/nomad-protocol-bytecode.json"):
             return {
                 "schema": "nomad.protocol_bytecode.v1",
-                "opcodes": [{"op": "FORGE"}, {"op": "MARKET"}, {"op": "ECO"}],
+                "opcodes": [
+                    {"op": "FORGE"},
+                    {"op": "MARKET"},
+                    {"op": "ECO"},
+                    {"op": "CURRIC"},
+                    {"op": "SKILL"},
+                    {"op": "EXP"},
+                ],
                 "ok": True,
                 "http_status": 200,
             }
@@ -36,6 +43,12 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
             return {"schema": "nomad.worker_market.v1", "ok": True, "http_status": 200}
         if url.endswith("/swarm/ecology"):
             return {"schema": "nomad.swarm_ecology.v1", "ok": True, "http_status": 200}
+        if url.endswith("/swarm/growth-arena"):
+            return {"schema": "nomad.growth_arena.v1", "ok": True, "http_status": 200}
+        if url.endswith("/swarm/curriculum"):
+            return {"schema": "nomad.growth_curriculum.v1", "ok": True, "http_status": 200}
+        if url.endswith("/swarm/skill-library"):
+            return {"schema": "nomad.skill_library.v1", "ok": True, "http_status": 200}
         if url.endswith("/swarm"):
             return {"ok": True, "agent_pull_contract": {"attach_now_score": 1.2, "attach_threshold": 1.1}, "http_status": 200}
         if url.endswith("/swarm/workers"):
@@ -52,6 +65,8 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
             return {"schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
         if url.endswith("/swarm/ecology/tick"):
             return {"schema": "nomad.ecology_tick_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/experience"):
+            return {"schema": "nomad.growth_experience_receipt.v1", "http_status": 202}
         return {"ok": False, "http_status": 404}
 
     monkeypatch.setattr(mod, "http_json", fake_http_json)
@@ -63,4 +78,6 @@ def test_check_treats_2xx_http_status_as_ready(monkeypatch):
     assert out["variant_candidate_ready"] is True
     assert out["worker_market_offer_ready"] is True
     assert out["ecology_tick_ready"] is True
+    assert out["growth_arena_ok"] is True
+    assert out["growth_experience_ready"] is True
     assert out["decision"] == "attach"

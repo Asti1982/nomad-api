@@ -24,6 +24,7 @@ def test_build_selection_pressure_snapshot_handles_missing_stats(tmp_path: Path,
     snap = build_selection_pressure_snapshot(worker_fleet={"objective_stats": {}})
     assert snap["schema"] == "nomad.selection_pressure_snapshot.v1"
     assert isinstance(snap.get("objective_pressure"), dict)
+    assert snap["nonhuman_modes"]["schema"] == "nomad.selection_pressure_modes.v1"
 
 
 def test_selection_pressure_couples_with_machine_treasury(tmp_path: Path, monkeypatch):
@@ -75,4 +76,5 @@ def test_selection_pressure_couples_with_proof_reuse(tmp_path: Path, monkeypatch
     assert "settlement_capacity_builder" in snap["objective_pressure"]
     reuse_state = snap["proof_reuse"]["reuse_state"]["settlement_capacity_builder"]
     assert reuse_state["two_hop_utility_score"] > 0.0
+    assert snap["nonhuman_modes"]["multi_hop_credit_hard"] is True
 

@@ -67,6 +67,7 @@ from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
+from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -298,6 +299,44 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             machine_economy=economy,
             variant_forge=variant_forge,
             worker_market=worker_market,
+        )
+
+    @classmethod
+    def _build_growth_curriculum(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        demand = cls._build_agent_demand_feed(base_url=base_url, swarm_summary=summary)
+        forge = cls._build_variant_forge(base_url=base_url, swarm_summary=summary)
+        market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
+        ecology = cls._build_swarm_ecology(base_url=base_url, swarm_summary=summary)
+        bytecode = cls._build_protocol_bytecode(base_url=base_url, swarm_summary=summary)
+        return build_growth_curriculum(
+            base_url=base_url,
+            agent_demand_feed=demand,
+            variant_forge=forge,
+            worker_market=market,
+            swarm_ecology=ecology,
+            protocol_bytecode=bytecode,
+        )
+
+    @classmethod
+    def _build_skill_library(cls, *, base_url: str) -> dict:
+        return build_skill_library(base_url=base_url)
+
+    @classmethod
+    def _build_growth_arena(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        demand = cls._build_agent_demand_feed(base_url=base_url, swarm_summary=summary)
+        forge = cls._build_variant_forge(base_url=base_url, swarm_summary=summary)
+        market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
+        ecology = cls._build_swarm_ecology(base_url=base_url, swarm_summary=summary)
+        bytecode = cls._build_protocol_bytecode(base_url=base_url, swarm_summary=summary)
+        return build_growth_arena(
+            base_url=base_url,
+            agent_demand_feed=demand,
+            variant_forge=forge,
+            worker_market=market,
+            swarm_ecology=ecology,
+            protocol_bytecode=bytecode,
         )
 
     @classmethod
@@ -564,6 +603,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
+                    "growth_arena": f"{b}/swarm/growth-arena",
+                    "growth_curriculum": f"{b}/swarm/curriculum",
+                    "growth_experience": f"{b}/swarm/experience",
+                    "skill_library": f"{b}/swarm/skill-library",
                     "nonhuman_science": f"{b}/nonhuman-science",
                     "operational_release": f"{b}/operational-release",
                     "runtime_capsule": f"{b}/.well-known/nomad-runtime-capsule.json",
@@ -760,6 +803,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/ecology", "/.well-known/nomad-swarm-ecology.json"}:
             self._json_response(self.__class__._build_swarm_ecology(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/growth-arena", "/.well-known/nomad-growth-arena.json"}:
+            self._json_response(self.__class__._build_growth_arena(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/curriculum", "/.well-known/nomad-growth-curriculum.json"}:
+            self._json_response(self.__class__._build_growth_curriculum(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/skill-library", "/.well-known/nomad-skill-library.json"}:
+            self._json_response(self.__class__._build_skill_library(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1759,6 +1814,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
+                    "/swarm/growth-arena",
+                    "/.well-known/nomad-growth-arena.json",
+                    "/swarm/curriculum",
+                    "/.well-known/nomad-growth-curriculum.json",
+                    "/swarm/experience",
+                    "/swarm/skill-library",
+                    "/.well-known/nomad-skill-library.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2303,6 +2365,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/experience":
+            base = self._base_url()
+            curriculum = self.__class__._build_growth_curriculum(base_url=base)
+            result = submit_growth_experience(payload, base_url=base, curriculum=curriculum)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/tool-gap":
             base = self._base_url()
             surface = self.__class__._build_opaque_emergence_surface(base_url=base)
@@ -2605,6 +2674,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
+                    "/swarm/growth-arena",
+                    "/.well-known/nomad-growth-arena.json",
+                    "/swarm/curriculum",
+                    "/.well-known/nomad-growth-curriculum.json",
+                    "/swarm/skill-library",
+                    "/.well-known/nomad-skill-library.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2614,6 +2689,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/variant-candidates",
                     "/swarm/worker-market/offers",
                     "/swarm/ecology/tick",
+                    "/swarm/experience",
                     "/swarm/tool-gap",
                     "/swarm/topology-plan",
                     "/runtime-capsule",

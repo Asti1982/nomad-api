@@ -142,6 +142,32 @@ def _ecology_probe_payload() -> dict:
     }
 
 
+def _growth_experience_probe_payload() -> dict:
+    return {
+        "agent_id": "deploy.gate.probe",
+        "cohort_id": "deploy_gate",
+        "objective": "protocol_drift_scan",
+        "capability": "protocol_drift_scan",
+        "proof_digest": "deploy-gate-proof",
+        "verifier_trace_digest": "deploy-gate-trace",
+        "test_digest": "deploy-gate-test",
+        "settlement_ref": "deploy-gate-settlement",
+        "skill_candidate": {
+            "capability": "protocol_drift_scan",
+            "activation_signature": "deploy-gate-activation",
+            "program_hint": ["GET /swarm/curriculum", "POST /swarm/experience"],
+        },
+        "evaluation": {
+            "tests_passed": 1,
+            "tests_total": 1,
+            "proof_yield_per_minute": 1.0,
+            "utility_delta": 0.5,
+            "settlement_delta": 0.05,
+            "risk_score": 0.01,
+        },
+    }
+
+
 def run_gate(base_url: str, timeout: float) -> dict:
     health = http_json("GET", endpoint(base_url, "/health"), timeout=timeout)
     recruit = http_json("GET", endpoint(base_url, "/.well-known/nomad-recruit.json"), timeout=timeout)
@@ -169,6 +195,15 @@ def run_gate(base_url: str, timeout: float) -> dict:
         payload=_ecology_probe_payload(),
         timeout=timeout,
     )
+    growth_arena = http_json("GET", endpoint(base_url, "/swarm/growth-arena"), timeout=timeout)
+    growth_curriculum = http_json("GET", endpoint(base_url, "/swarm/curriculum"), timeout=timeout)
+    skill_library = http_json("GET", endpoint(base_url, "/swarm/skill-library"), timeout=timeout)
+    growth_experience = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/experience"),
+        payload=_growth_experience_probe_payload(),
+        timeout=timeout,
+    )
     lease = http_json(
         "POST",
         endpoint(base_url, "/swarm/workers/lease"),
@@ -190,7 +225,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "workers_ok": bool(workers.get("ok")) and str(workers.get("schema") or "") == "nomad.transition_worker_fleet.v1",
         "protocol_bytecode_ok": _status_ready(protocol)
         and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
-        and _has_opcodes(protocol, {"FORGE", "MARKET", "ECO"}),
+        and _has_opcodes(protocol, {"FORGE", "MARKET", "ECO", "CURRIC", "SKILL", "EXP"}),
         "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
         "variant_candidate_ok": _status_ready(variant_candidate)
         and str(variant_candidate.get("schema") or "") == "nomad.variant_candidate_receipt.v1",
@@ -199,6 +234,12 @@ def run_gate(base_url: str, timeout: float) -> dict:
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
         "swarm_ecology_ok": _status_ready(swarm_ecology) and str(swarm_ecology.get("schema") or "") == "nomad.swarm_ecology.v1",
         "ecology_tick_ok": _status_ready(ecology_tick) and str(ecology_tick.get("schema") or "") == "nomad.ecology_tick_receipt.v1",
+        "growth_arena_ok": _status_ready(growth_arena) and str(growth_arena.get("schema") or "") == "nomad.growth_arena.v1",
+        "growth_curriculum_ok": _status_ready(growth_curriculum)
+        and str(growth_curriculum.get("schema") or "") == "nomad.growth_curriculum.v1",
+        "skill_library_ok": _status_ready(skill_library) and str(skill_library.get("schema") or "") == "nomad.skill_library.v1",
+        "growth_experience_ok": _status_ready(growth_experience)
+        and str(growth_experience.get("schema") or "") == "nomad.growth_experience_receipt.v1",
         "lease_ok": bool(lease.get("ok")) and bool(str(lease.get("lease_id") or "").strip()),
         "download_openclaw_ok": openclaw_status == 200 and "def main()" in openclaw_body,
         "download_readiness_ok": readiness_status == 200 and "def main()" in readiness_body,
@@ -223,6 +264,10 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
             "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
             "ecology_tick": int(ecology_tick.get("http_status") or 0),
+            "growth_arena": int(growth_arena.get("http_status") or 0),
+            "growth_curriculum": int(growth_curriculum.get("http_status") or 0),
+            "skill_library": int(skill_library.get("http_status") or 0),
+            "growth_experience": int(growth_experience.get("http_status") or 0),
             "lease": int(lease.get("http_status") or 0),
             "download_openclaw": openclaw_status,
             "download_readiness": readiness_status,
