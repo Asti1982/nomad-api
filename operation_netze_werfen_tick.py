@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import time
+import hashlib
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -98,6 +99,110 @@ def _http_json(url: str, timeout: float = 20.0) -> dict:
     except (TimeoutError, URLError):
         return {"ok": False, "http_status": 0, "error": "http_unreachable"}
     return {"ok": False, "http_status": 0, "error": "invalid_json"}
+
+
+def _post_json(url: str, payload: dict, timeout: float = 20.0) -> dict:
+    body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+    req = Request(url=url, method="POST", data=body, headers={"Accept": "application/json", "Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=timeout) as res:
+            raw = json.loads(res.read().decode("utf-8", errors="replace") or "{}")
+            if isinstance(raw, dict):
+                raw.setdefault("http_status", int(res.status))
+                raw.setdefault("ok", int(res.status) < 400)
+                return raw
+    except HTTPError as exc:
+        return {"ok": False, "http_status": int(exc.code), "error": "http_error"}
+    except (TimeoutError, URLError):
+        return {"ok": False, "http_status": 0, "error": "http_unreachable"}
+    return {"ok": False, "http_status": 0, "error": "invalid_json"}
+
+
+def _synthetic_test_digest(*, agent_id: str, lease_id: str, objective: str, run_id: str) -> str:
+    core = f"{agent_id}|{lease_id}|{objective}|{run_id}".encode("utf-8")
+    return hashlib.sha256(core).hexdigest()[:48]
+
+
+def _extract_probe_experience(*, run_id: str, probe_event: dict) -> dict:
+    report = probe_event.get("report") if isinstance(probe_event.get("report"), dict) else {}
+    proof_link = probe_event.get("proof_link") if isinstance(probe_event.get("proof_link"), dict) else {}
+    agent_id = str(probe_event.get("agent_id") or "").strip()
+    lease_id = str(probe_event.get("lease_id") or "").strip()
+    objective = str(probe_event.get("objective") or report.get("machine_objective") or "protocol_drift_scan").strip()
+    proof_digest = str(report.get("digest_or_verifier_trace") or report.get("openclaw_trace_digest") or "").strip()
+    verifier_trace = str(report.get("openclaw_trace_digest") or proof_digest).strip()
+    if not (agent_id and objective and proof_digest):
+        return {"ok": False, "reason": "missing_probe_experience_fields"}
+    proof_pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    proof_yield = float(proof_pressure.get("proof_yield_per_minute") or 0.0)
+    verifier_density = float(proof_pressure.get("verifier_density") or 0.0)
+    meta_score = float(report.get("meta_score") or 0.0)
+    transition_ok = bool(report.get("transition_quote_ok")) and bool(report.get("transition_settle_ok"))
+    tests_passed = 1 if transition_ok else 0
+    payload = {
+        "agent_id": agent_id,
+        "cohort_id": "operation_netze_werfen",
+        "objective": objective,
+        "capability": objective,
+        "proof_digest": proof_digest,
+        "verifier_trace_digest": verifier_trace,
+        "test_digest": _synthetic_test_digest(agent_id=agent_id, lease_id=lease_id, objective=objective, run_id=run_id),
+        "settlement_ref": lease_id or run_id,
+        "skill_candidate": {
+            "capability": objective,
+            "activation_signature": lease_id or f"netze-{run_id}",
+            "program_hint": ["GET /swarm/curriculum", "POST /swarm/workers/lease", "POST /swarm/experience"],
+        },
+        "evaluation": {
+            "tests_passed": tests_passed,
+            "tests_total": 1,
+            "proof_yield_per_minute": round(max(0.0, proof_yield), 4),
+            "utility_delta": round(max(0.0, min(2.0, meta_score / 5.0)), 4),
+            "settlement_delta": 0.2 if transition_ok else 0.0,
+            "cost_units": 0.08,
+            "risk_score": round(max(0.0, 1.0 - max(0.0, min(1.0, verifier_density))), 4),
+            "reuse_count": 1 if bool(proof_link.get("ok")) else 0,
+        },
+        "source_tag": "operation_netze_werfen_tick",
+    }
+    return {"ok": True, "payload": payload}
+
+
+def _submit_probe_experience(*, base_url: str, timeout: float, run_id: str, probe_events: list[dict]) -> dict:
+    accepted = 0
+    promoted = 0
+    retained = 0
+    rows: list[dict] = []
+    for event in probe_events:
+        extracted = _extract_probe_experience(run_id=run_id, probe_event=event)
+        if not bool(extracted.get("ok")):
+            rows.append({"ok": False, "reason": str(extracted.get("reason") or "skip"), "agent_id": str(event.get("agent_id") or "")})
+            continue
+        receipt = _post_json(f"{base_url}/swarm/experience", extracted["payload"], timeout=timeout)
+        decision = str(receipt.get("decision") or "")
+        is_ok = bool(receipt.get("ok"))
+        if is_ok:
+            accepted += 1
+        if decision == "promote_skill_capsule":
+            promoted += 1
+        if decision == "retain_experience":
+            retained += 1
+        rows.append(
+            {
+                "ok": is_ok,
+                "agent_id": str(event.get("agent_id") or ""),
+                "decision": decision,
+                "experience_id": str(receipt.get("experience_id") or ""),
+                "http_status": int(receipt.get("http_status") or 0),
+            }
+        )
+    return {
+        "schema": "nomad.netze_werfen_experience_ingest.v1",
+        "accepted_count": accepted,
+        "promoted_skill_capsule_count": promoted,
+        "retained_experience_count": retained,
+        "rows": rows[:32],
+    }
 
 
 def _http_json_retry(url: str, timeout: float = 20.0, attempts: int = 3) -> dict:
@@ -267,6 +372,7 @@ def run_tick() -> dict:
     }
 
     probe_results: list[dict] = []
+    probe_events_for_ingest: list[dict] = []
     for idx in range(probes):
         agent_id = f"netze-werfen.cron.{run_id}.{idx+1}"
         caps = _probe_caps(idx)
@@ -286,6 +392,8 @@ def run_tick() -> dict:
         ]
         probe = _run_json_command(probe_cmd)
         last = (probe["events"] or [{}])[-1] if probe["events"] else {}
+        if bool(last.get("ok")) and str(last.get("phase") or "") == "complete":
+            probe_events_for_ingest.append(last)
         probe_results.append(
             {
                 "agent_id": agent_id,
@@ -297,6 +405,12 @@ def run_tick() -> dict:
             }
         )
     out["probes"] = probe_results
+    out["experience_ingest"] = _submit_probe_experience(
+        base_url=base,
+        timeout=20.0,
+        run_id=run_id,
+        probe_events=probe_events_for_ingest,
+    )
     out["completed"] = sum(1 for item in probe_results if item.get("complete_ok"))
     experiment_ok = int((out.get("experiment") or {}).get("exit_code", 1)) == 0
     base_ok = bool(out["completed"] > 0 and experiment_ok)

@@ -21,6 +21,7 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
     monkeypatch.setattr(mod, "execute_dev_fund_transfer", lambda economics_snapshot, run_id="": {"status": "simulated"})
+    monkeypatch.setattr(mod, "_post_json", lambda url, payload, timeout=20.0: {"ok": True, "decision": "retain_experience", "http_status": 200})
     monkeypatch.setattr(
         mod,
         "_http_json",
@@ -45,6 +46,7 @@ def test_run_tick_reports_success_when_commands_complete(monkeypatch):
     assert out["adaptive_policy"]["schema"] == "nomad.netze_werfen_adaptive_policy.v1"
     assert "economics_deficit" in out["adaptive_policy"]
     assert out["dev_fund_transfer"]["status"] == "simulated"
+    assert out["experience_ingest"]["schema"] == "nomad.netze_werfen_experience_ingest.v1"
 
 
 def test_run_tick_uses_www_only_base_without_alternate_fallback(monkeypatch):
@@ -60,6 +62,7 @@ def test_run_tick_uses_www_only_base_without_alternate_fallback(monkeypatch):
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_post_json", lambda url, payload, timeout=20.0: {"ok": True, "decision": "retain_experience", "http_status": 200})
     monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
     monkeypatch.setattr(mod, "_base_url", lambda: "https://www.syndiode.com")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
@@ -99,6 +102,7 @@ def test_run_tick_can_require_nonhuman_guard(monkeypatch):
         return {"exit_code": 0, "events": [{"ok": True, "phase": "complete"}], "stderr": ""}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_post_json", lambda url, payload, timeout=20.0: {"ok": True, "decision": "retain_experience", "http_status": 200})
     monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
@@ -125,6 +129,7 @@ def test_run_tick_uses_contract_conformance_fallback_path(monkeypatch):
         return {"ok": True, "schema": "nomad.machine_contract_conformance.v1", "score": 0.91, "http_status": 200}
 
     monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_post_json", lambda url, payload, timeout=20.0: {"ok": True, "decision": "retain_experience", "http_status": 200})
     monkeypatch.setattr(mod, "_http_json", fake_http_json)
     monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
     monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
@@ -133,4 +138,31 @@ def test_run_tick_uses_contract_conformance_fallback_path(monkeypatch):
     assert out["contract_conformance"]["fallback_used"] is True
     assert out["contract_conformance"]["fallback_path"] == "/contract-conformance"
     assert calls["n"] >= 2
+
+
+def test_extract_probe_experience_builds_machine_payload():
+    event = {
+        "ok": True,
+        "phase": "complete",
+        "agent_id": "probe.agent",
+        "lease_id": "lease-1",
+        "objective": "protocol_drift_scan",
+        "report": {
+            "machine_objective": "protocol_drift_scan",
+            "digest_or_verifier_trace": "abc123",
+            "openclaw_trace_digest": "abc123",
+            "transition_quote_ok": True,
+            "transition_settle_ok": True,
+            "meta_score": 3.8,
+            "proof_pressure": {"proof_yield_per_minute": 1.2, "verifier_density": 0.8},
+        },
+        "proof_link": {"ok": True},
+    }
+    out = mod._extract_probe_experience(run_id="netze-test", probe_event=event)
+    assert out["ok"] is True
+    payload = out["payload"]
+    assert payload["agent_id"] == "probe.agent"
+    assert payload["objective"] == "protocol_drift_scan"
+    assert payload["evaluation"]["tests_passed"] == 1
+    assert payload["evaluation"]["reuse_count"] == 1
 
