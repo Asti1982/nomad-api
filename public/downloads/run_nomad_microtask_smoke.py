@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import UTC, datetime
 from urllib.parse import urljoin
@@ -44,15 +45,17 @@ def run_cycle(*, base_url: str, lane_id: str, objective: str, price_eur: float, 
     submit = _post_json(_u(base_url, "/swarm/microtask/submit"), submit_payload, timeout)
     settle = {}
     if bool(submit.get("accepted")) and str(submit.get("task_id") or "").strip():
+        digest_seed = f"{submit.get('task_id')}:{worker}:{objective}"
+        digest = hashlib.sha256(digest_seed.encode("utf-8")).hexdigest()[:24]
         settle_payload = {
             "task_id": submit.get("task_id"),
             "worker_agent_id": worker,
             "objective": objective,
             "settled_price_eur": float(price_eur),
-            "proof_digest": f"proof-{submit.get('task_id')}",
-            "verifier_trace_digest": f"trace-{submit.get('task_id')}",
-            "test_digest": f"test-{submit.get('task_id')}",
-            "settlement_ref": f"smoke-{submit.get('task_id')}",
+            "proof_digest": f"proof_{digest}",
+            "verifier_trace_digest": f"trace_{digest}",
+            "test_digest": f"test_{digest}",
+            "settlement_ref": f"smoke_{digest}",
             "utility_delta": 0.01,
             "reuse_count": 1,
             "risk_score": 0.0,

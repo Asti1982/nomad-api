@@ -44,4 +44,5 @@ def test_submit_and_settle_microtask_roundtrip():
     assert settle["schema"] == "nomad.microtask_settlement_receipt.v1"
     assert settle["accepted"] is True
     assert settle["experience_payload"]["agent_id"] == "worker.agent"
+    assert "sk-" not in settle["experience_payload"]["skill_candidate"]["activation_signature"]
 

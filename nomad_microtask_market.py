@@ -198,7 +198,7 @@ def settle_microtask(payload: dict[str, Any], *, base_url: str, persist: bool = 
             },
             "skill_candidate": {
                 "capability": _clean_id(body.get("capability"), fallback=objective),
-                "activation_signature": f"mtask-{_digest({'task_id': task_id, 'worker': worker}, length=16)}",
+                "activation_signature": f"mtask_{_digest({'task_id': task_id, 'worker': worker}, length=16)}",
                 "program_hint": ["POST /swarm/microtask/submit", "POST /swarm/microtask/settle", "POST /swarm/experience"],
             },
         },
