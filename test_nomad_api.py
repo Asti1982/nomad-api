@@ -236,6 +236,10 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-worker-market.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
+    assert "/swarm/microtask-templates" in doc["paths"]
+    assert "/.well-known/nomad-microtask-templates.json" in doc["paths"]
+    assert "/swarm/microtask-metrics" in doc["paths"]
+    assert "/.well-known/nomad-microtask-metrics.json" in doc["paths"]
     assert "/swarm/worker-market/offers" in doc["paths"]
     assert "/swarm/microtask/submit" in doc["paths"]
     assert "/swarm/microtask/settle" in doc["paths"]
@@ -308,6 +312,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     forge = NomadApiHandler._build_variant_forge(base_url="https://nomad.example")
     market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
+    templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
+    metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
     ecology = NomadApiHandler._build_swarm_ecology(base_url="https://nomad.example")
     curriculum = NomadApiHandler._build_growth_curriculum(base_url="https://nomad.example")
     library = NomadApiHandler._build_skill_library(base_url="https://nomad.example")
@@ -324,6 +330,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert market["schema"] == "nomad.worker_market.v1"
     assert market["offer_url"] == "https://nomad.example/swarm/worker-market/offers"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
+    assert templates["schema"] == "nomad.microtask_templates.v1"
+    assert metrics["schema"] == "nomad.microtask_metrics.v1"
     assert ecology["schema"] == "nomad.swarm_ecology.v1"
     assert ecology["tick_url"] == "https://nomad.example/swarm/ecology/tick"
     assert curriculum["schema"] == "nomad.growth_curriculum.v1"

@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, worker catalogs, and microtask settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/worker-catalog, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "For proof-weighted external compute offers, worker catalogs, microtask templates/metrics, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -526,6 +526,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getWorkerCatalogWellKnown",
                     "responses": {
                         "200": {"description": "Worker catalog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/microtask-templates": {
+                "get": {
+                    "summary": "Microtask template pack for autonomous submit/settle loops",
+                    "operationId": "getSwarmMicrotaskTemplates",
+                    "responses": {
+                        "200": {"description": "Microtask templates", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-microtask-templates.json": {
+                "get": {
+                    "summary": "Alias of /swarm/microtask-templates",
+                    "operationId": "getSwarmMicrotaskTemplatesWellKnown",
+                    "responses": {
+                        "200": {"description": "Microtask templates", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/microtask-metrics": {
+                "get": {
+                    "summary": "24h lane earnings and fill-rate metrics for microtask market",
+                    "operationId": "getSwarmMicrotaskMetrics",
+                    "responses": {
+                        "200": {"description": "Microtask metrics", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-microtask-metrics.json": {
+                "get": {
+                    "summary": "Alias of /swarm/microtask-metrics",
+                    "operationId": "getSwarmMicrotaskMetricsWellKnown",
+                    "responses": {
+                        "200": {"description": "Microtask metrics", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

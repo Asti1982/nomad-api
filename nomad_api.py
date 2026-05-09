@@ -70,6 +70,7 @@ from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
+from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
@@ -296,6 +297,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
         market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
         return build_worker_catalog(base_url=base_url, worker_fleet=worker_fleet, worker_market=market)
+
+    @classmethod
+    def _build_microtask_templates(cls, *, base_url: str) -> dict:
+        return build_microtask_templates(base_url=base_url)
+
+    @classmethod
+    def _build_microtask_metrics(cls, *, base_url: str) -> dict:
+        return build_microtask_metrics(base_url=base_url, lookback_hours=24)
 
     @classmethod
     def _build_swarm_ecology(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -872,6 +881,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/microtask-templates", "/.well-known/nomad-microtask-templates.json"}:
+            self._json_response(self.__class__._build_microtask_templates(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/microtask-metrics", "/.well-known/nomad-microtask-metrics.json"}:
+            self._json_response(self.__class__._build_microtask_metrics(base_url=self._base_url()))
             return
 
         if parsed.path in {"/swarm/ecology", "/.well-known/nomad-swarm-ecology.json"}:
@@ -1895,6 +1910,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
+                    "/swarm/microtask-templates",
+                    "/.well-known/nomad-microtask-templates.json",
+                    "/swarm/microtask-metrics",
+                    "/.well-known/nomad-microtask-metrics.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
                     "/swarm/growth-arena",
@@ -2797,6 +2816,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
+                    "/swarm/microtask-templates",
+                    "/.well-known/nomad-microtask-templates.json",
+                    "/swarm/microtask-metrics",
+                    "/.well-known/nomad-microtask-metrics.json",
                     "/swarm/ecology",
                     "/.well-known/nomad-swarm-ecology.json",
                     "/swarm/growth-arena",
