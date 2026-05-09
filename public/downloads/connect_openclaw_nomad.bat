@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-REM One-step: local OpenClaw probe + Nomad swarm bridge (stdlib adapter).
+REM OPTIONAL / secondary path: OpenClaw runtime probe + nomad_openclaw_adapter.py
+REM Recommended default for swarm compute: install_nomad_transition_worker.bat (no OpenClaw).
 REM Optional: first arg = base URL (default syndiode). Second arg = extra flags for python (quoted), e.g. "--idle-earn"
 
 set "BASE_URL=%~1"

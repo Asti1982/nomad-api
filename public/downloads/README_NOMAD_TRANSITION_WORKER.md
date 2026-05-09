@@ -1,12 +1,19 @@
 # Nomad Transition Worker (Portable)
 
-## OpenClaw + Nomad (am einfachsten, Windows)
+## Empfohlen: Transition Worker = Compute für den Schwarm (ohne OpenClaw)
 
-1. [connect_openclaw_nomad.bat](https://www.syndiode.com/downloads/connect_openclaw_nomad.bat) herunterladen und **doppelklicken** (legt `%USERPROFILE%\NomadOpenClawBridge\` an, holt bei Bedarf `nomad_openclaw_adapter.py`, startet die Bridge).
-2. **OpenClaw** normal installieren / Gateway laufen lassen — der Adapter ruft `openclaw health` / `status` nur lokal auf.
-3. Chat-Trigger in OpenClaw (einmal): Inhalt aus [openclaw_nomad_host_snippet.txt](https://www.syndiode.com/downloads/openclaw_nomad_host_snippet.txt) als Host-Regel einfügen — danach reicht z. B. „Verbinde dich mit Nomad“.
+Der **Nomad Transition Worker** ist der Hauptpfad: ein Prozess auf deiner Maschine, der **Ressourcen und Compute** über die öffentlichen Nomad-Verträge anbietet (Attach, Leases, Completion). **Ollama** dient dabei nur als **leichtes lokales Modell** zum Testen (z. B. Generate/Tags) — **ohne** OpenClaw-Gateway, ohne Chat-Stack dazwischen.
 
-Eigener Server: `connect_openclaw_nomad.bat https://dein-host` per Kommandozeile.
+1. **Windows:** [install_nomad_transition_worker.bat](https://www.syndiode.com/downloads/install_nomad_transition_worker.bat) herunterladen und ausführen (installiert nach `%USERPROFILE%\NomadTransitionWorker`, optional Ollama-Modell, startet den Worker).
+2. **Ollama:** unter `http://127.0.0.1:11434` laufen lassen; wenn etwas „unreachable“ ist, zuerst Ollama starten — nicht OpenClaw konfigurieren.
+3. **Portable:** `python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0`
+
+Eigener Host: `install_nomad_transition_worker.bat https://dein-host` bzw. `--base-url` setzen.
+
+### Optional: OpenClaw-Bridge (nur wenn OpenClaw schon im Einsatz ist)
+
+- [connect_openclaw_nomad.bat](https://www.syndiode.com/downloads/connect_openclaw_nomad.bat) — kleiner Launcher nur für den OpenClaw-Adapter (sekundär).
+- Host-Regel: [openclaw_nomad_host_snippet.txt](https://www.syndiode.com/downloads/openclaw_nomad_host_snippet.txt)
 
 ---
 
@@ -30,36 +37,18 @@ Direct download (if published by Nomad host):
 - `/downloads/nomad_ollama_swarm_bridge.py` (auto-attach idle Ollama capacity to Nomad swarm)
 - `/downloads/diagnose_openclaw_ollama_windows.ps1` (Windows: check Ollama + OpenClaw health, print fix commands)
 
-### Windows: OpenClaw läuft nicht mit Ollama
+### Nur wenn du OpenClaw **zusätzlich** mit Ollama fahren willst
 
-Das liegt fast immer an **Ollama nicht erreichbar**, **Provider nicht onboarded**, oder **falscher Ollama-URL** (OpenClaw erwartet die **native** API `http://127.0.0.1:11434` — **ohne** `/v1`; siehe [OpenClaw Ollama provider](https://github.com/openclaw/openclaw/blob/main/docs/providers/ollama.md)).
+Für den **Transition Worker** reicht erreichbares Ollama unter `http://127.0.0.1:11434`. OpenClaw ist optional; wenn OpenClaw + Ollama klemmt: meist **Ollama nicht erreichbar** oder falscher Provider in `openclaw.json` — siehe [OpenClaw Ollama provider](https://github.com/openclaw/openclaw/blob/main/docs/providers/ollama.md).
 
-1. Skript laden und ausführen:
+Diagnose (Windows, OpenClaw-Pfad):
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "https://www.syndiode.com/downloads/diagnose_openclaw_ollama_windows.ps1" -OutFile "$env:TEMP\diagnose_openclaw_ollama_windows.ps1"
 powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\diagnose_openclaw_ollama_windows.ps1"
 ```
 
-2. Danach mindestens einmal **Onboarding** (richtet Provider + Model-Katalog ein):
-
-```bat
-openclaw onboard
-```
-
-oder nicht-interaktiv:
-
-```bat
-openclaw onboard --non-interactive --auth-choice ollama --accept-risk
-```
-
-3. **`openclaw tui` kennt oft kein `--gateway`** — Gateway-URL gehört in die **Konfiguration** bzw. den vom Gateway ausgegebenen Link, nicht als veraltetes CLI-Flag.
-
-4. **Unauthorized** auf `http://127.0.0.1:18791/` ist typisch **Control-UI-Auth**: siehe [OpenClaw Gateway configuration](https://docs.openclaw.ai/gateway/configuration-reference).
-
-**OpenClaw 2026.2.x + Ollama in `openclaw.json`:** Provider-Eintrag braucht `baseUrl` mit **`/v1`** (OpenAI-kompatibel), `api: "openai-completions"`, `apiKey: "ollama-local"` auf dem Provider, und ein **`models`‑Array** mit `id`/`name` — nicht `api: "ollama"` und nicht `apiKey` unter `auth.profiles` (Schema erlaubt das nicht).
-
-Erst wenn Schritt 1–2 grün sind, lohnt sich wieder `nomad_openclaw_adapter.py` gegen Syndiode.
+Dann ggf. `openclaw onboard` (siehe [Gateway configuration](https://docs.openclaw.ai/gateway/configuration-reference)). Erst danach lohnt `nomad_openclaw_adapter.py` als **zusätzliche** Brücke.
 - `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
 - `/downloads/go_no_go_nomad_deploy.py` (hard deployment gate: exit 0 only when recruit+lease surfaces are ready)
 - `/downloads/recruitment_experiment_runner.py` (A/B wave runner for attach threshold, TTL, idle phase settings)
