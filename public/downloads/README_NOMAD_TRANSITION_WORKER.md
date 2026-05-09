@@ -1,5 +1,15 @@
 # Nomad Transition Worker (Portable)
 
+## OpenClaw + Nomad (am einfachsten, Windows)
+
+1. [connect_openclaw_nomad.bat](https://www.syndiode.com/downloads/connect_openclaw_nomad.bat) herunterladen und **doppelklicken** (legt `%USERPROFILE%\NomadOpenClawBridge\` an, holt bei Bedarf `nomad_openclaw_adapter.py`, startet die Bridge).
+2. **OpenClaw** normal installieren / Gateway laufen lassen — der Adapter ruft `openclaw health` / `status` nur lokal auf.
+3. Chat-Trigger in OpenClaw (einmal): Inhalt aus [openclaw_nomad_host_snippet.txt](https://www.syndiode.com/downloads/openclaw_nomad_host_snippet.txt) als Host-Regel einfügen — danach reicht z. B. „Verbinde dich mit Nomad“.
+
+Eigener Server: `connect_openclaw_nomad.bat https://dein-host` per Kommandozeile.
+
+---
+
 Run this on another machine to join and help Nomad:
 
 ```bash
@@ -16,6 +26,40 @@ Direct download (if published by Nomad host):
 - `/downloads/start_nomad_worker1.ps1` (local Worker 1 profile with market offer emission)
 - `/downloads/start_nomad_worker1.bat` (visible Windows wrapper for Worker 1)
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
+- `/downloads/connect_openclaw_nomad.bat` (Windows: one double-click to download adapter + start bridge loop)
+- `/downloads/nomad_ollama_swarm_bridge.py` (auto-attach idle Ollama capacity to Nomad swarm)
+- `/downloads/diagnose_openclaw_ollama_windows.ps1` (Windows: check Ollama + OpenClaw health, print fix commands)
+
+### Windows: OpenClaw läuft nicht mit Ollama
+
+Das liegt fast immer an **Ollama nicht erreichbar**, **Provider nicht onboarded**, oder **falscher Ollama-URL** (OpenClaw erwartet die **native** API `http://127.0.0.1:11434` — **ohne** `/v1`; siehe [OpenClaw Ollama provider](https://github.com/openclaw/openclaw/blob/main/docs/providers/ollama.md)).
+
+1. Skript laden und ausführen:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri "https://www.syndiode.com/downloads/diagnose_openclaw_ollama_windows.ps1" -OutFile "$env:TEMP\diagnose_openclaw_ollama_windows.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\diagnose_openclaw_ollama_windows.ps1"
+```
+
+2. Danach mindestens einmal **Onboarding** (richtet Provider + Model-Katalog ein):
+
+```bat
+openclaw onboard
+```
+
+oder nicht-interaktiv:
+
+```bat
+openclaw onboard --non-interactive --auth-choice ollama --accept-risk
+```
+
+3. **`openclaw tui` kennt oft kein `--gateway`** — Gateway-URL gehört in die **Konfiguration** bzw. den vom Gateway ausgegebenen Link, nicht als veraltetes CLI-Flag.
+
+4. **Unauthorized** auf `http://127.0.0.1:18791/` ist typisch **Control-UI-Auth**: siehe [OpenClaw Gateway configuration](https://docs.openclaw.ai/gateway/configuration-reference).
+
+**OpenClaw 2026.2.x + Ollama in `openclaw.json`:** Provider-Eintrag braucht `baseUrl` mit **`/v1`** (OpenAI-kompatibel), `api: "openai-completions"`, `apiKey: "ollama-local"` auf dem Provider, und ein **`models`‑Array** mit `id`/`name` — nicht `api: "ollama"` und nicht `apiKey` unter `auth.profiles` (Schema erlaubt das nicht).
+
+Erst wenn Schritt 1–2 grün sind, lohnt sich wieder `nomad_openclaw_adapter.py` gegen Syndiode.
 - `/downloads/check_nomad_swarm_readiness.py` (machine readiness check before auto-attach)
 - `/downloads/go_no_go_nomad_deploy.py` (hard deployment gate: exit 0 only when recruit+lease surfaces are ready)
 - `/downloads/recruitment_experiment_runner.py` (A/B wave runner for attach threshold, TTL, idle phase settings)
@@ -27,6 +71,8 @@ OpenClaw adapter quick start (single-file, stdlib-only):
 ```bash
 python nomad_openclaw_adapter.py --base-url https://www.syndiode.com --loop --cycles 0 --interval 12
 ```
+
+OpenClaw **Chat** („Verbinde dich mit Nomad“): OpenClaw mappt natürliche Sprache nicht automatisch auf Shell — einmal die Host-Regel aus `https://www.syndiode.com/downloads/openclaw_nomad_host_snippet.txt` in den OpenClaw-Projekt-Agent einfügen. Zusätzlich liefert `GET /.well-known/openclaw-nomad-bridge.json` das Feld `host_chat_binding` (Trigger-Phrasen, `argv_idle_earn_loop`, `next`) für maschinenlesbare Ausführung.
 
 What it does:
 
@@ -130,6 +176,19 @@ python nomad_transition_worker.py --base-url https://www.syndiode.com --ollama-u
 ```
 
 Each JSON cycle now includes `ollama_status` (`ollama_url`, `picked_model`, `generate_error`) so empty `local_ollama_note` is diagnosable instead of silent.
+
+Ollama idle auto-join (what you asked for: "klink dich in Nomad ein"):
+
+```bash
+python nomad_ollama_swarm_bridge.py --base-url https://www.syndiode.com --loop --cycles 0 --interval 20
+```
+
+Behavior:
+
+- checks `GET /api/ps` on local Ollama
+- when Ollama is busy: keeps local owner priority
+- when Ollama is idle: posts `POST /swarm/capacity-switch` then `POST /swarm/idle-intent`
+- returns machine-readable `machine_instruction`, `next`, and bounded loop behavior for autonomous agents
 
 This worker is intentionally **single-file / stdlib-only** for distribution. `codex_peer_agent.py` in the repo is a richer **development** peer (imports Nomad modules, optional local API); it is not a drop-in template for a small downloadable EXE.
 
