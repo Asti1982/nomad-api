@@ -70,6 +70,7 @@ from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_weekly_selection_event import build_weekly_selection_event
+from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
 from workflow import NomadAgent
 
@@ -356,6 +357,45 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             economics=economics,
             proof_reuse=reuse,
             skill_library=library,
+        )
+
+    @classmethod
+    def _build_spawner_gate(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        economics = cls._build_swarm_economics(base_url=base_url, swarm_summary=summary)
+        funnel = build_recruitment_funnel_report(
+            base_url,
+            20.0,
+            history_path=os.getenv("NOMAD_RECRUITMENT_WAVE_HISTORY_PATH", "public/downloads/recruitment_wave_history.jsonl"),
+        )
+        history_path = Path(os.getenv("NOMAD_ECONOMICS_MONITOR_PATH") or "public/downloads/economics_24h_monitor.jsonl")
+        transfer_path = Path(
+            os.getenv("NOMAD_DEV_FUND_TRANSFER_LEDGER_PATH") or "public/downloads/nomad_dev_fund_transfer_ledger.jsonl"
+        )
+        history_rows: list[dict] = []
+        transfer_rows: list[dict] = []
+        if history_path.exists():
+            for line in history_path.read_text(encoding="utf-8").splitlines()[-256:]:
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    history_rows.append(row)
+        if transfer_path.exists():
+            for line in transfer_path.read_text(encoding="utf-8").splitlines()[-256:]:
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    transfer_rows.append(row)
+        return build_spawner_gate(
+            base_url=base_url,
+            economics=economics,
+            funnel=funnel,
+            history_rows=history_rows,
+            transfer_rows=transfer_rows,
         )
 
     @classmethod
@@ -839,6 +879,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/weekly-selection", "/.well-known/nomad-weekly-selection.json"}:
             self._json_response(self.__class__._build_weekly_selection_event(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/spawner-gate", "/.well-known/nomad-spawner-gate.json"}:
+            self._json_response(self.__class__._build_spawner_gate(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1847,6 +1891,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-skill-library.json",
                     "/swarm/weekly-selection",
                     "/.well-known/nomad-weekly-selection.json",
+                    "/swarm/spawner-gate",
+                    "/.well-known/nomad-spawner-gate.json",
+                    "/swarm/spawner/trigger",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2399,6 +2446,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/spawner/trigger":
+            base = self._base_url()
+            gate = self.__class__._build_spawner_gate(base_url=base)
+            result = trigger_spawner(
+                base_url=base,
+                gate=gate,
+                idempotency_key=str(payload.get("idempotency_key") or ""),
+                focus=str(payload.get("focus") or "self_sovereign_replication"),
+                commit=bool(payload.get("commit", True)),
+            )
+            self._json_response(result, status=202 if result.get("executed") else 200)
+            return
+
         if parsed.path == "/swarm/tool-gap":
             base = self._base_url()
             surface = self.__class__._build_opaque_emergence_surface(base_url=base)
@@ -2709,6 +2769,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-skill-library.json",
                     "/swarm/weekly-selection",
                     "/.well-known/nomad-weekly-selection.json",
+                    "/swarm/spawner-gate",
+                    "/.well-known/nomad-spawner-gate.json",
+                    "/swarm/spawner/trigger",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",

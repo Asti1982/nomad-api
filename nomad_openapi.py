@@ -53,8 +53,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/worker-market and POST /swarm/worker-market/offers. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
-                "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, and weekly morphology selection, see "
-                "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, GET /swarm/weekly-selection, and POST /swarm/experience. "
+                "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
+                "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, GET /swarm/weekly-selection, GET /swarm/spawner-gate, POST /swarm/experience, and POST /swarm/spawner/trigger. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -598,6 +598,38 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getSwarmWeeklySelectionWellKnown",
                     "responses": {
                         "200": {"description": "Weekly selection event", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/spawner-gate": {
+                "get": {
+                    "summary": "Machine-only gate that decides if autonomous infrastructure replication is allowed",
+                    "operationId": "getSwarmSpawnerGate",
+                    "responses": {
+                        "200": {"description": "Spawner gate decision", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-spawner-gate.json": {
+                "get": {
+                    "summary": "Alias of /swarm/spawner-gate",
+                    "operationId": "getSwarmSpawnerGateWellKnown",
+                    "responses": {
+                        "200": {"description": "Spawner gate decision", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/spawner/trigger": {
+                "post": {
+                    "summary": "Trigger autonomous spawn execution if and only if spawner gate is open",
+                    "operationId": "postSwarmSpawnerTrigger",
+                    "requestBody": {
+                        "required": False,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "200": {"description": "Spawn skipped or idempotent replay", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Spawn executed", "content": {"application/json": {"schema": ref_json_object()}}},
                     },
                 }
             },

@@ -247,6 +247,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-skill-library.json" in doc["paths"]
     assert "/swarm/weekly-selection" in doc["paths"]
     assert "/.well-known/nomad-weekly-selection.json" in doc["paths"]
+    assert "/swarm/spawner-gate" in doc["paths"]
+    assert "/.well-known/nomad-spawner-gate.json" in doc["paths"]
+    assert "/swarm/spawner/trigger" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
@@ -304,6 +307,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     curriculum = NomadApiHandler._build_growth_curriculum(base_url="https://nomad.example")
     library = NomadApiHandler._build_skill_library(base_url="https://nomad.example")
     arena = NomadApiHandler._build_growth_arena(base_url="https://nomad.example")
+    spawner_gate = NomadApiHandler._build_spawner_gate(base_url="https://nomad.example")
 
     assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
     assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
@@ -320,6 +324,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert curriculum["links"]["experience"] == "https://nomad.example/swarm/experience"
     assert library["schema"] == "nomad.skill_library.v1"
     assert arena["schema"] == "nomad.growth_arena.v1"
+    assert spawner_gate["schema"] == "nomad.spawner_gate.v1"
 
 
 def test_machine_error_helpers():
