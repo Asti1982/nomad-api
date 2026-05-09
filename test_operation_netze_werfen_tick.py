@@ -140,6 +140,37 @@ def test_run_tick_uses_contract_conformance_fallback_path(monkeypatch):
     assert calls["n"] >= 2
 
 
+def test_run_tick_experience_burst_forces_probe_floor_and_cycles(monkeypatch):
+    seen = {"probes": 0, "cycles": []}
+
+    def fake_run_json_command(cmd):
+        joined = " ".join(cmd)
+        if "recruitment_experiment_runner.py" in joined:
+            return {"exit_code": 0, "events": [{"ok": True}], "stderr": ""}
+        if "nomad_openclaw_adapter.py" in joined:
+            seen["probes"] += 1
+            if "--cycles" in cmd:
+                seen["cycles"].append(cmd[cmd.index("--cycles") + 1])
+            return {"exit_code": 0, "events": [{"ok": True, "phase": "complete", "agent_id": "a", "lease_id": "l", "objective": "protocol_drift_scan", "report": {"digest_or_verifier_trace": "d", "openclaw_trace_digest": "d", "machine_objective": "protocol_drift_scan", "transition_quote_ok": True, "transition_settle_ok": True, "proof_pressure": {"proof_yield_per_minute": 1.0, "verifier_density": 0.7}}, "proof_link": {"ok": True}}], "stderr": ""}
+        return {"exit_code": 0, "events": [{"ok": True}], "stderr": ""}
+
+    monkeypatch.setattr(mod, "_run_json_command", fake_run_json_command)
+    monkeypatch.setattr(mod, "_post_json", lambda url, payload, timeout=20.0: {"ok": True, "decision": "promote_skill_capsule", "http_status": 202})
+    monkeypatch.setattr(mod, "_http_json", lambda url, timeout=20.0: {"ok": True, "score": 1.0, "economics_score": 1.0, "schema": "nomad.machine_contract_conformance.v1", "http_status": 200})
+    monkeypatch.setattr(mod, "_base_url", lambda: "https://nomad.example")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_PROBES", "1")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_EXPERIENCE_BURST", "1")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_BURST_PROBES", "3")
+    monkeypatch.setenv("NOMAD_NETZE_WERFEN_BURST_CYCLES", "2")
+
+    out = mod.run_tick()
+    assert out["ok"] is True
+    assert out["experience_burst"]["enabled"] is True
+    assert seen["probes"] == 3
+    assert all(cycle == "2" for cycle in seen["cycles"])
+    assert out["experience_ingest"]["promoted_skill_capsule_count"] >= 1
+
+
 def test_extract_probe_experience_builds_machine_payload():
     event = {
         "ok": True,

@@ -198,6 +198,26 @@ def _experience_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _objective_multi_hop_bonus(proof_reuse: dict[str, Any] | None) -> dict[str, float]:
+    totals = (
+        _dict(proof_reuse).get("objective_totals")
+        if isinstance(_dict(proof_reuse).get("objective_totals"), dict)
+        else {}
+    )
+    out: dict[str, float] = {}
+    for key, row in totals.items():
+        if not isinstance(row, dict):
+            continue
+        objective = _clean_id(key)
+        if not objective:
+            continue
+        two_hop = _num(row.get("two_hop_utility_score"), 0.0)
+        three_hop = _num(row.get("three_hop_utility_score"), 0.0)
+        bonus = min(0.28, min(1.0, two_hop / 2.0) * 0.18 + min(1.0, three_hop / 2.0) * 0.10)
+        out[objective] = round(max(0.0, bonus), 4)
+    return out
+
+
 def _skill_capsule_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
     decision = _text(row.get("decision"), 80)
     if decision != "promote_skill_capsule":
@@ -298,6 +318,7 @@ def build_growth_curriculum(
     worker_market: dict[str, Any] | None = None,
     swarm_ecology: dict[str, Any] | None = None,
     protocol_bytecode: dict[str, Any] | None = None,
+    proof_reuse: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Compile open machine gaps into a task curriculum for external agents."""
@@ -306,6 +327,7 @@ def build_growth_curriculum(
     market = _dict(worker_market)
     ecology = _dict(swarm_ecology)
     bytecode = _dict(protocol_bytecode)
+    multi_hop_bonus = _objective_multi_hop_bonus(proof_reuse)
     rows = _read_ledger(ledger_path)
     counts = _experience_counts(rows)
     skills = _skill_capsules(rows)
@@ -323,8 +345,8 @@ def build_growth_curriculum(
                 objective=objective,
                 capability_gap=_text(req.get("capability_gap") or req.get("request_id") or objective, 180),
                 target_capabilities=_caps(req.get("desired_capabilities")),
-                pressure_score=0.42 * base_pressure + 0.24 * scarcity + 0.22 * prior + 0.12 * (1.0 - _clamp(counts.get(objective, 0) / 8.0)),
-                evidence={"request_id": _text(req.get("request_id"), 80)},
+                pressure_score=0.42 * base_pressure + 0.24 * scarcity + 0.22 * prior + 0.12 * (1.0 - _clamp(counts.get(objective, 0) / 8.0)) + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={"request_id": _text(req.get("request_id"), 80), "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0)},
             )
         )
 
@@ -338,8 +360,8 @@ def build_growth_curriculum(
                 objective=objective,
                 capability_gap=f"variant_descriptor:{objective}",
                 target_capabilities=["variant_descriptor", "test_digest", "verifier_trace_digest"],
-                pressure_score=0.62 * score + 0.20 * (1.0 - _clamp(_num(row.get("recent_candidates")) / 8.0)) + 0.18 * _num(OBJECTIVE_PRIOR.get(objective), 0.44),
-                evidence={"variant_id": _text(row.get("variant_id"), 120), "sources": row.get("sources") if isinstance(row.get("sources"), list) else []},
+                pressure_score=0.62 * score + 0.20 * (1.0 - _clamp(_num(row.get("recent_candidates")) / 8.0)) + 0.18 * _num(OBJECTIVE_PRIOR.get(objective), 0.44) + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={"variant_id": _text(row.get("variant_id"), 120), "sources": row.get("sources") if isinstance(row.get("sources"), list) else [], "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0)},
             )
         )
 
@@ -353,8 +375,8 @@ def build_growth_curriculum(
                 objective=objective,
                 capability_gap=f"external_compute_offer:{objective}",
                 target_capabilities=_caps(row.get("desired_capabilities")),
-                pressure_score=0.36 + 0.34 * _clamp(target / 3.0) + 0.18 * _num(row.get("objective_weight"), 0.5) + 0.12 * (1.0 - _clamp(_num(row.get("recent_offer_count")) / 6.0)),
-                evidence={"target_marginal_utility_per_cost": round(target, 4)},
+                pressure_score=0.36 + 0.34 * _clamp(target / 3.0) + 0.18 * _num(row.get("objective_weight"), 0.5) + 0.12 * (1.0 - _clamp(_num(row.get("recent_offer_count")) / 6.0)) + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={"target_marginal_utility_per_cost": round(target, 4), "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0)},
             )
         )
 
@@ -367,8 +389,8 @@ def build_growth_curriculum(
                 objective=objective,
                 capability_gap=f"repair_low_retention:{objective}",
                 target_capabilities=["failure_digest", "repair_hint", "proof_digest"],
-                pressure_score=0.58 + 0.22 * (1.0 - _num(_dict(row.get("scores")).get("retention_score"))) + 0.12 * _num(OBJECTIVE_PRIOR.get(objective), 0.44),
-                evidence={"tick_id": _text(row.get("tick_id"), 80), "convention_token": _text(row.get("convention_token"), 80)},
+                pressure_score=0.58 + 0.22 * (1.0 - _num(_dict(row.get("scores")).get("retention_score"))) + 0.12 * _num(OBJECTIVE_PRIOR.get(objective), 0.44) + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={"tick_id": _text(row.get("tick_id"), 80), "convention_token": _text(row.get("convention_token"), 80), "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0)},
             )
         )
 
@@ -383,8 +405,8 @@ def build_growth_curriculum(
                 objective=objective,
                 capability_gap=f"repair_experience:{_text(row.get('error_class') or row.get('failure_digest') or objective, 80)}",
                 target_capabilities=["failure_reproduction", "test_digest", "verifier_trace_digest"],
-                pressure_score=0.54 + 0.22 * (1.0 - _num(row.get("score"))) + 0.12 * _num(OBJECTIVE_PRIOR.get(objective), 0.44),
-                evidence={"experience_id": _text(row.get("experience_id"), 120)},
+                pressure_score=0.54 + 0.22 * (1.0 - _num(row.get("score"))) + 0.12 * _num(OBJECTIVE_PRIOR.get(objective), 0.44) + _num(multi_hop_bonus.get(objective), 0.0),
+                evidence={"experience_id": _text(row.get("experience_id"), 120), "multi_hop_bonus": _num(multi_hop_bonus.get(objective), 0.0)},
             )
         )
 
@@ -425,6 +447,7 @@ def build_growth_curriculum(
             "skill_capsule_count": len(skills),
             "objective_experience_counts": counts,
             "opcode_count": len(bytecode.get("opcodes") if isinstance(bytecode.get("opcodes"), list) else []),
+            "multi_hop_objective_bonus": multi_hop_bonus,
         },
         "tasks": tasks[:MAX_TASKS],
         "links": {
@@ -586,6 +609,7 @@ def build_growth_arena(
     worker_market: dict[str, Any] | None = None,
     swarm_ecology: dict[str, Any] | None = None,
     protocol_bytecode: dict[str, Any] | None = None,
+    proof_reuse: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     curriculum = build_growth_curriculum(
@@ -595,6 +619,7 @@ def build_growth_arena(
         worker_market=worker_market,
         swarm_ecology=swarm_ecology,
         protocol_bytecode=protocol_bytecode,
+        proof_reuse=proof_reuse,
         ledger_path=ledger_path,
     )
     library = build_skill_library(base_url=base_url, ledger_path=ledger_path)

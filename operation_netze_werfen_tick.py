@@ -252,6 +252,9 @@ def _economics_snapshot(base: str) -> dict:
 def run_tick() -> dict:
     base = _base_url()
     probes = _env_int("NOMAD_NETZE_WERFEN_PROBES", default=2, low=1, high=12)
+    burst_mode = _env_bool("NOMAD_NETZE_WERFEN_EXPERIENCE_BURST", default=False)
+    burst_probe_floor = _env_int("NOMAD_NETZE_WERFEN_BURST_PROBES", default=4, low=1, high=12)
+    burst_cycles = _env_int("NOMAD_NETZE_WERFEN_BURST_CYCLES", default=2, low=1, high=4)
     guard_required = _env_bool("NOMAD_NONHUMAN_GUARD_REQUIRED", default=False)
     conformance_required = _env_bool("NOMAD_CONFORMANCE_REQUIRED", default=False)
     conformance_threshold = float(os.getenv("NOMAD_CONFORMANCE_MIN_SCORE") or "0.75")
@@ -266,6 +269,14 @@ def run_tick() -> dict:
         "probe_count": probes,
         "run_id": run_id,
     }
+    if burst_mode:
+        probes = max(probes, burst_probe_floor)
+        out["experience_burst"] = {
+            "schema": "nomad.netze_werfen_experience_burst.v1",
+            "enabled": True,
+            "probe_floor": burst_probe_floor,
+            "cycles_per_probe": burst_cycles,
+        }
 
     guard_cmd = [
         "python",
@@ -330,8 +341,11 @@ def run_tick() -> dict:
         "economics_deficit": round(deficit, 4),
         "probe_count_before": probes,
         "probe_count_after": adaptive_probes,
+        "experience_burst_enabled": burst_mode,
     }
     probes = adaptive_probes
+    if burst_mode:
+        probes = max(probes, burst_probe_floor)
 
     def _experiment_cmd(target_base: str) -> list[str]:
         repeat = 1 if "decrease_high_cost_attempts" not in economics_actions else 1
@@ -386,7 +400,7 @@ def run_tick() -> dict:
             "--no-runtime-probe",
             "--force-attach",
             "--cycles",
-            "1",
+            str(burst_cycles if burst_mode else 1),
             "--capabilities",
             ",".join(caps),
         ]

@@ -310,6 +310,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
         ecology = cls._build_swarm_ecology(base_url=base_url, swarm_summary=summary)
         bytecode = cls._build_protocol_bytecode(base_url=base_url, swarm_summary=summary)
+        reuse = proof_reuse_snapshot()
         return build_growth_curriculum(
             base_url=base_url,
             agent_demand_feed=demand,
@@ -317,6 +318,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_market=market,
             swarm_ecology=ecology,
             protocol_bytecode=bytecode,
+            proof_reuse=reuse,
         )
 
     @classmethod
@@ -331,6 +333,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
         ecology = cls._build_swarm_ecology(base_url=base_url, swarm_summary=summary)
         bytecode = cls._build_protocol_bytecode(base_url=base_url, swarm_summary=summary)
+        reuse = proof_reuse_snapshot()
         return build_growth_arena(
             base_url=base_url,
             agent_demand_feed=demand,
@@ -338,6 +341,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_market=market,
             swarm_ecology=ecology,
             protocol_bytecode=bytecode,
+            proof_reuse=reuse,
         )
 
     @classmethod

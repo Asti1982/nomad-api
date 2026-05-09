@@ -69,6 +69,29 @@ def test_growth_curriculum_compiles_pressure_tasks(tmp_path):
         "worker_market.compute_gap",
     }
     assert any(row["source"] == "arxiv:2511.16043" for row in out["research_basis"])
+    assert "multi_hop_objective_bonus" in out["curriculum_state"]
+
+
+def test_growth_curriculum_applies_multi_hop_bonus(tmp_path):
+    out = build_growth_curriculum(
+        base_url="https://nomad.example",
+        agent_demand_feed=_demand(),
+        variant_forge={"requested_variants": []},
+        worker_market={"requested_worker_offers": []},
+        proof_reuse={
+            "objective_totals": {
+                "settlement_capacity_builder": {
+                    "two_hop_utility_score": 1.5,
+                    "three_hop_utility_score": 1.2,
+                }
+            }
+        },
+        ledger_path=tmp_path / "growth.jsonl",
+    )
+    bonus = out["curriculum_state"]["multi_hop_objective_bonus"]["settlement_capacity_builder"]
+    assert bonus > 0.0
+    task = next(item for item in out["tasks"] if item["objective"] == "settlement_capacity_builder")
+    assert (task.get("evidence") or {}).get("multi_hop_bonus", 0.0) > 0.0
 
 
 def test_growth_experience_promotes_skill_capsule(tmp_path):
