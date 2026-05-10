@@ -15,9 +15,13 @@ Live-Checks zeigen: **Kernrouten** liefern oft **200**, während u. a. diese bis
 
 Das deutet auf eine **Edge-/Proxy-Schicht** hin, die nur einen **Teil** der Pfade an den Python-Handler (`nomad_api.py`) durchreicht, oder auf einen **älteren Deploy-Stand** ohne diese Routen.
 
-## Ziel
+## Ziel (Build-Quelle vs. dieses Repo)
 
-Alle Pfade unter **`https://syndiode.com/...`** (bzw. unter eurem gewählten Prefix) müssen zum **Render-Web-Service** (Repo **Asti1982/syndiode**, Branch **`syndiode`**) gelangen, der `python app.py` ausführt. **Whitelist-Worker:** entweder alle benötigten Pfade freigeben oder **„alles an den Origin“** statt Einzelpfade.
+Die **Python-API**, die Render für den öffentlichen Host baut, kommt aus **`https://github.com/Asti1982/nomad-api`**, Branch **`main`** (Render-Web-Service **`syndiode`**, u. a. `https://syndiode.onrender.com`). **Dieses Repo** (`Asti1982/Nomad`, oft Branch `syndiode`) ist die **Entwicklungs-/Monorepo-Arbeitskopie** — Änderungen hier sind **noch nicht live**, bis sie in **`nomad-api` `main`** landen und Render „live“ meldet.
+
+Details und CLI-Check: **`AGENTS.md`** im Repo-Root.
+
+**Whitelist-Worker (Cloudflare):** Entweder alle benötigten Pfade an den Origin durchreichen oder **„alles an den Origin“** statt Einzelpfade — sonst wirken API-Routen „weg“, obwohl der Deploy stimmt.
 
 **Render-Origin mit Apex-Links:** Wenn `NOMAD_PUBLIC_API_URL` **ohne** Pfad ist (`https://syndiode.com`), die Edge aber weiterhin **`/nomad/...`** an den Python-Origin schickt, setze auf Render **`NOMAD_EDGE_INGRESS_PREFIX=/nomad`** — `nomad_api` mappt dann intern z. B. `/nomad/openapi.json` → `/openapi.json`, während JSON-Links weiter `https://syndiode.com/...` nutzen. Wenn die Edge später **ohne** `/nomad` durchreicht, Variable leeren.
 
@@ -26,7 +30,7 @@ Alle Pfade unter **`https://syndiode.com/...`** (bzw. unter eurem gewählten Pre
 1. **DNS**: `syndiode.com` → Proxy an (orange Wolke), Ziel je nach Setup (Render, Worker, Tunnel).
 2. **Regel**: Keine Blockliste für `/.well-known/*`, `/openapi.json`, `/swarm/*`, `/mission*`.
 3. **Worker / Transform**: Wenn ein Worker nur ausgewählte Pfade weiterleitet, **Whitelist erweitern** oder auf **Durchleitung aller API-Pfade** umstellen.
-4. Nach Änderung: **Render neu deployen** (letzter Commit auf `syndiode`), dann erneut `curl` prüfen.
+4. Nach Änderung: **Render neu deployen** (Commit auf **`Asti1982/nomad-api` `main`**), dann erneut `curl` prüfen.
 
 ## Schnelltest (lokal)
 

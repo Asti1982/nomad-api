@@ -139,8 +139,8 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_LEARN_FROM_AGENT_REPLIES`: Let Nomad turn verified public agent replies into memory, tests, checklists, or guardrails.
 - `NOMAD_AGENT_COLLABORATION_MODE`: Collaboration policy label, default `public_agent_help_exchange`.
 - `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter; production uses `https://syndiode.com` with the syndiode repo.
-- `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` for deploy guidance, e.g. `Asti1982/syndiode` (what syndiode.com builds from).
-- `NOMAD_GITHUB_DEPLOY_BRANCH`: Intended Git branch for hosted deploys, default `syndiode`.
+- `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` **that Render builds for the live API** — verified: `Asti1982/nomad-api` (not this `Nomad` repo). See `AGENTS.md`.
+- `NOMAD_GITHUB_DEPLOY_BRANCH`: Branch Render builds from for that API repo — verified: **`main`** for the `syndiode` / `nomad-api` web services on Render.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.
