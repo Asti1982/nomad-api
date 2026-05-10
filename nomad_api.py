@@ -16,6 +16,8 @@ from nomad_idle_runtime_beacon import (
 from nomad_machine_economy import machine_economy_snapshot
 from nomad_agent_runtime_envelope import merge_agent_runtime
 from nomad_machine_error import machine_error_response, merge_machine_error
+from nomad_adapter_consent import adapter_consent_required, verify_adapter_consent
+from nomad_capacity_switch import build_capacity_switch_surface, route_capacity_switch
 from nomad_machine_field import build_machine_field, machine_field_intent
 from nomad_contract_conformance import build_contract_conformance_snapshot
 from nomad_counterfactual_replay import build_counterfactual_lease_replay
@@ -113,6 +115,26 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             cls.stigmergy_field = NomadStigmergyField()
         return cls.stigmergy_field
 
+    @staticmethod
+    def _validate_adapter_consent(payload: dict, *, path: str) -> dict:
+        body = payload if isinstance(payload, dict) else {}
+        if not adapter_consent_required(body, path=path):
+            return {"checked": False, "ok": True, "reason": "not_required"}
+        runtime = str(body.get("runtime") or "openclaw").strip().lower() or "openclaw"
+        adapter_agent = str(body.get("adapter_agent_id") or body.get("agent_id") or "").strip()
+        if not adapter_agent:
+            candidate = str(body.get("requester_agent_id") or "").strip()
+            if ".idle-buyer" in candidate:
+                adapter_agent = candidate.replace(".idle-buyer", "")
+            if not adapter_agent:
+                adapter_agent = str(body.get("worker_agent_id") or "").strip()
+        verified = verify_adapter_consent(
+            token=str(body.get("consent_token") or ""),
+            agent_id=adapter_agent,
+            runtime=runtime,
+        )
+        return {"checked": True, **verified}
+
     @classmethod
     def _build_machine_product_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
@@ -160,6 +182,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base_url=base_url,
             machine_product_surface=product,
             openapi_document=openapi_doc,
+        )
+
+    @classmethod
+    def _build_capacity_switch_surface(cls, *, base_url: str) -> dict:
+        economics = cls._build_swarm_economics(base_url=base_url)
+        catalog = cls._build_worker_catalog(base_url=base_url)
+        metrics = cls._build_microtask_metrics(base_url=base_url)
+        return build_capacity_switch_surface(
+            base_url=base_url,
+            economics=economics,
+            worker_catalog=catalog,
+            microtask_metrics=metrics,
         )
 
     @classmethod
@@ -696,6 +730,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "swarm_attractor": f"{b}/swarm/attractor",
                     "idle_runtime_beacon": f"{b}/.well-known/nomad-idle-runtime.json",
                     "idle_runtime_intent": f"{b}/swarm/idle-intent",
+                    "capacity_switch_surface": f"{b}/.well-known/nomad-capacity-switch.json",
+                    "capacity_switch_request": f"{b}/swarm/capacity-switch",
                     "agent_growth": f"{b}/agent-growth",
                 }
             else:
@@ -911,6 +947,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/spawner-gate", "/.well-known/nomad-spawner-gate.json"}:
             self._json_response(self.__class__._build_spawner_gate(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/capacity-switch", "/.well-known/nomad-capacity-switch.json"}:
+            self._json_response(self.__class__._build_capacity_switch_surface(base_url=self._base_url()))
             return
 
         if parsed.path in {"/idle-runtime", "/.well-known/nomad-idle-runtime.json"}:
@@ -1848,6 +1888,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/nomad_transition_worker.exe",
                     "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/start_nomad_edge_worker.ps1",
+                    "/downloads/start_nomad_edge_worker.bat",
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
@@ -1928,6 +1970,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/spawner-gate",
                     "/.well-known/nomad-spawner-gate.json",
                     "/swarm/spawner/trigger",
+                    "/swarm/capacity-switch",
+                    "/.well-known/nomad-capacity-switch.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -2401,6 +2445,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/attach":
+            consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
+            if consent.get("checked") and not consent.get("ok"):
+                self._json_response(
+                    machine_error_response(
+                        error="adapter_consent_invalid",
+                        message="Missing or invalid adapter consent token.",
+                        hints=[str(consent.get("reason") or "consent_failed")],
+                        safe_retry=True,
+                    ),
+                    status=403,
+                )
+                return
             base = self._base_url()
             worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
             economy = machine_economy_snapshot()
@@ -2423,6 +2479,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/idle-intent":
+            consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
+            if consent.get("checked") and not consent.get("ok"):
+                self._json_response(
+                    machine_error_response(
+                        error="adapter_consent_invalid",
+                        message="Missing or invalid adapter consent token.",
+                        hints=[str(consent.get("reason") or "consent_failed")],
+                        safe_retry=True,
+                    ),
+                    status=403,
+                )
+                return
             base = self._base_url()
             worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
             economy = machine_economy_snapshot()
@@ -2467,6 +2535,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/microtask/submit":
+            consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
+            if consent.get("checked") and not consent.get("ok"):
+                self._json_response(
+                    machine_error_response(
+                        error="adapter_consent_invalid",
+                        message="Missing or invalid adapter consent token.",
+                        hints=[str(consent.get("reason") or "consent_failed")],
+                        safe_retry=True,
+                    ),
+                    status=403,
+                )
+                return
             base = self._base_url()
             catalog = self.__class__._build_worker_catalog(base_url=base)
             result = submit_microtask(payload, base_url=base, worker_catalog=catalog)
@@ -2474,6 +2554,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/microtask/settle":
+            consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
+            if consent.get("checked") and not consent.get("ok"):
+                self._json_response(
+                    machine_error_response(
+                        error="adapter_consent_invalid",
+                        message="Missing or invalid adapter consent token.",
+                        hints=[str(consent.get("reason") or "consent_failed")],
+                        safe_retry=True,
+                    ),
+                    status=403,
+                )
+                return
             base = self._base_url()
             result = settle_microtask(payload, base_url=base)
             if result.get("accepted"):
@@ -2514,6 +2606,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("executed") else 200)
             return
 
+        if parsed.path == "/swarm/capacity-switch":
+            base = self._base_url()
+            surface = self.__class__._build_capacity_switch_surface(base_url=base)
+            result = route_capacity_switch(payload, base_url=base, capacity_surface=surface)
+            self._json_response(result, status=202 if result.get("switch") else 200)
+            return
+
         if parsed.path == "/swarm/tool-gap":
             base = self._base_url()
             surface = self.__class__._build_opaque_emergence_surface(base_url=base)
@@ -2544,6 +2643,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/join":
+            consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
+            if consent.get("checked") and not consent.get("ok"):
+                self._json_response(
+                    machine_error_response(
+                        error="adapter_consent_invalid",
+                        message="Missing or invalid adapter consent token.",
+                        hints=[str(consent.get("reason") or "consent_failed")],
+                        safe_retry=True,
+                    ),
+                    status=403,
+                )
+                return
             join_result = self.swarm_registry.register_join(
                 payload,
                 base_url=self._base_url(),
@@ -2742,6 +2853,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/nomad_transition_worker.exe",
                     "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
+                    "/downloads/start_nomad_edge_worker.ps1",
+                    "/downloads/start_nomad_edge_worker.bat",
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
@@ -2833,6 +2946,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/spawner-gate",
                     "/.well-known/nomad-spawner-gate.json",
                     "/swarm/spawner/trigger",
+                    "/swarm/capacity-switch",
+                    "/.well-known/nomad-capacity-switch.json",
                     "/idle-runtime",
                     "/.well-known/nomad-idle-runtime.json",
                     "/opaque-emergence",
@@ -3222,6 +3337,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
                         "GET /downloads/install_nomad_agent.bat for the short installer alias.",
                         "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
+                        "GET /downloads/start_nomad_edge_worker.ps1 for the lightweight no-Ollama Edge worker profile.",
+                        "GET /downloads/start_nomad_edge_worker.bat for a visible Edge worker Windows wrapper.",
                         "GET /downloads/start_nomad_worker1.ps1 for the first persistent laptop-worker profile.",
                         "GET /downloads/start_nomad_worker1.bat for a visible Worker 1 Windows wrapper.",
                         "GET /downloads/run_nomad_agent_visible.bat to run with live Nomad_Agent status lines.",

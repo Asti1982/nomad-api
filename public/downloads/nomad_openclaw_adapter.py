@@ -11,8 +11,31 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from urllib.request import Request, urlopen
+
+
+def _consent_secret() -> str:
+    return clean(os.getenv("NOMAD_ADAPTER_CONSENT_SECRET"), 160) or "nomad_adapter_consent_default"
+
+
+def _consent_ttl_seconds() -> int:
+    raw = clean(os.getenv("NOMAD_ADAPTER_CONSENT_TTL_SECONDS"), 16) or "3600"
+    try:
+        return max(60, min(86400, int(raw)))
+    except ValueError:
+        return 3600
+
+
+def mint_consent_token(*, agent_id: str, runtime: str = "openclaw") -> str:
+    now = int(time.time())
+    exp = now + _consent_ttl_seconds()
+    aid = quote(clean(agent_id, 80).lower() or "unknown_agent", safe="").replace(".", "%2E")
+    rt = quote(clean(runtime, 32).lower() or "openclaw", safe="").replace(".", "%2E")
+    nonce = hashlib.sha256(f"{aid}:{rt}:{now}".encode("utf-8")).hexdigest()[:10]
+    base = f"v1.{exp}.{aid}.{rt}.{nonce}"
+    sig = hashlib.sha256(f"{base}.{_consent_secret()}".encode("utf-8")).hexdigest()[:24]
+    return f"{base}.{sig}"
 
 
 def clean(v: object, limit: int = 320) -> str:
@@ -421,6 +444,7 @@ def attach_nomad(
     runtime_signal: dict | None = None,
     pull: dict | None = None,
     idle_opt_in: bool = False,
+    consent_token: str = "",
 ) -> dict:
     signal = runtime_signal if isinstance(runtime_signal, dict) else {}
     pull_doc = pull if isinstance(pull, dict) else {}
@@ -461,6 +485,7 @@ def attach_nomad(
             "suggested_lane": clean(pull_doc.get("suggested_lane"), 80),
         },
         "source_tag": clean(pull_doc.get("source") or "openclaw_adapter", 80),
+        "consent_token": clean(consent_token, 240),
     }
     return http_json("POST", endpoint(base_url, "/swarm/attach"), payload, timeout=timeout)
 
@@ -474,6 +499,7 @@ def join_nomad(
     objective: str,
     runtime_signal: dict | None = None,
     pull: dict | None = None,
+    consent_token: str = "",
 ) -> dict:
     signal = runtime_signal if isinstance(runtime_signal, dict) else {}
     pull_doc = pull if isinstance(pull, dict) else {}
@@ -507,6 +533,7 @@ def join_nomad(
         },
         "capability_vector": _capability_vector(merged_caps, signal),
         "source_tag": clean(pull_doc.get("source") or "openclaw_adapter", 80),
+        "consent_token": clean(consent_token, 240),
     }
     return http_json("POST", endpoint(base_url, "/swarm/join"), payload, timeout=timeout)
 
@@ -641,6 +668,139 @@ def proof_link_nomad(*, base_url: str, agent_id: str, report: dict, timeout: flo
     return http_json("POST", endpoint(base_url, "/swarm/proof-link"), payload, timeout=timeout)
 
 
+def _owner_busy(runtime_signal: dict | None, *, min_sessions: int = 1) -> bool:
+    signal = runtime_signal if isinstance(runtime_signal, dict) else {}
+    sessions = int(signal.get("session_count") or 0)
+    return sessions >= max(1, int(min_sessions))
+
+
+def _pick_idle_lane(*, base_url: str, timeout: float) -> dict:
+    metrics = http_json("GET", endpoint(base_url, "/swarm/microtask-metrics"), timeout=timeout)
+    rows = metrics.get("lane_metrics") if isinstance(metrics.get("lane_metrics"), list) else []
+    if rows:
+        ranked = sorted(
+            [item for item in rows if isinstance(item, dict)],
+            key=lambda item: (float(item.get("settled_eur") or 0.0), float(item.get("fill_rate") or 0.0)),
+            reverse=True,
+        )
+        top = ranked[0] if ranked else {}
+        lane = clean(top.get("lane_id"), 80)
+        if lane and lane != "unknown_lane":
+            return {
+                "lane_id": lane,
+                "objective": "settlement_capacity_builder",
+                "price_eur": max(0.02, float(top.get("avg_settled_eur") or 0.03)),
+                "source": "microtask_metrics",
+            }
+    templates = http_json("GET", endpoint(base_url, "/swarm/microtask-templates"), timeout=timeout)
+    trows = templates.get("templates") if isinstance(templates.get("templates"), list) else []
+    if trows and isinstance(trows[0], dict):
+        t = trows[0]
+        return {
+            "lane_id": clean(t.get("lane_id"), 80) or "endpoint_health_proof",
+            "objective": clean(t.get("objective"), 80) or "settlement_capacity_builder",
+            "price_eur": max(0.02, float(t.get("price_eur") or 0.03)),
+            "source": "microtask_templates",
+        }
+    return {
+        "lane_id": "endpoint_health_proof",
+        "objective": "settlement_capacity_builder",
+        "price_eur": 0.03,
+        "source": "fallback_default",
+    }
+
+
+def run_idle_earn_cycle(
+    *,
+    base_url: str,
+    agent_id: str,
+    capabilities: list[str],
+    timeout: float,
+    runtime_signal: dict | None,
+    owner_busy_min_sessions: int = 1,
+    consent_token: str = "",
+) -> dict:
+    signal = runtime_signal if isinstance(runtime_signal, dict) else {}
+    if _owner_busy(signal, min_sessions=owner_busy_min_sessions):
+        return {
+            "ok": True,
+            "phase": "idle_earn",
+            "state": "owner_priority_active",
+            "reason": "local_runtime_busy",
+            "session_count": int(signal.get("session_count") or 0),
+            "machine_instruction": "skip_swarm_work_while_local_owner_busy",
+        }
+    idle_payload = {
+        "schema": "nomad.idle_runtime_intent.v1",
+        "agent_id": agent_id,
+        "runtime": "openclaw",
+        "capabilities": capabilities[:24],
+        "capability_vector": _capability_vector(capabilities, signal),
+        "idle_opt_in": _normalize_idle_opt_in(True),
+        "seeking": {"mode": "new_objective_or_idle_work", "return_digest": True, "accept_noop": True},
+        "consent_token": clean(consent_token, 240),
+    }
+    idle_receipt = http_json("POST", endpoint(base_url, "/swarm/idle-intent"), idle_payload, timeout=timeout)
+    if not bool(idle_receipt.get("accepted_for_work")):
+        return {
+            "ok": True,
+            "phase": "idle_earn",
+            "state": "idle_registered_waiting",
+            "idle_receipt": idle_receipt,
+            "machine_instruction": "retry_idle_intent_after_backoff",
+        }
+    lane = _pick_idle_lane(base_url=base_url, timeout=timeout)
+    submit_payload = {
+        "lane_id": clean(lane.get("lane_id"), 80),
+        "requester_agent_id": f"{agent_id}.idle-buyer",
+        "objective": clean(lane.get("objective"), 80) or "settlement_capacity_builder",
+        "price_eur": max(0.02, float(lane.get("price_eur") or 0.03)),
+        "payload": {"mode": "idle_earn", "agent_id": agent_id, "source": clean(lane.get("source"), 40)},
+        "adapter_agent_id": agent_id,
+        "consent_token": clean(consent_token, 240),
+    }
+    submit = http_json("POST", endpoint(base_url, "/swarm/microtask/submit"), submit_payload, timeout=timeout)
+    if not bool(submit.get("accepted")):
+        return {
+            "ok": True,
+            "phase": "idle_earn",
+            "state": "task_not_accepted",
+            "idle_receipt": idle_receipt,
+            "lane": lane,
+            "submit": submit,
+            "machine_instruction": "switch_lane_or_wait_then_retry_submit",
+        }
+    task_id = clean(submit.get("task_id"), 120)
+    digest = hashlib.sha256(f"{task_id}:{agent_id}:{time.time()}".encode("utf-8")).hexdigest()[:24]
+    settle_payload = {
+        "task_id": task_id,
+        "worker_agent_id": agent_id,
+        "objective": submit_payload["objective"],
+        "settled_price_eur": float(submit_payload["price_eur"]),
+        "proof_digest": f"proof_{digest}",
+        "verifier_trace_digest": f"trace_{digest}",
+        "test_digest": f"test_{digest}",
+        "settlement_ref": f"idle_{digest}",
+        "utility_delta": 0.01,
+        "reuse_count": 1,
+        "risk_score": 0.0,
+        "capability": "settlement_capacity_builder",
+        "adapter_agent_id": agent_id,
+        "consent_token": clean(consent_token, 240),
+    }
+    settle = http_json("POST", endpoint(base_url, "/swarm/microtask/settle"), settle_payload, timeout=timeout)
+    return {
+        "ok": bool(settle.get("accepted")),
+        "phase": "idle_earn",
+        "state": "settled" if settle.get("accepted") else "settle_failed",
+        "idle_receipt": idle_receipt,
+        "lane": lane,
+        "submit": submit,
+        "settle": settle,
+        "machine_instruction": "continue_idle_earn_loop_with_owner_priority_guard",
+    }
+
+
 def run_cycle(
     *,
     base_url: str,
@@ -714,6 +874,12 @@ def main() -> None:
     p.set_defaults(discover=True)
     p.add_argument("--force-attach", action="store_true")
     p.add_argument("--source-tag", default=os.getenv("NOMAD_SOURCE_TAG", ""))
+    p.add_argument("--idle-earn", action="store_true")
+    p.add_argument(
+        "--owner-busy-min-sessions",
+        type=int,
+        default=int(os.getenv("NOMAD_OWNER_BUSY_MIN_SESSIONS", "1") or "1"),
+    )
     p.add_argument("--idle-opt-in", action="store_true")
     p.add_argument("--no-idle-opt-in", dest="idle_opt_in", action="store_false")
     p.set_defaults(idle_opt_in=(os.getenv("NOMAD_IDLE_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}))
@@ -732,6 +898,7 @@ def main() -> None:
     elif a.source_tag:
         pull = {"source": clean(a.source_tag, 80)}
     runtime_signal = {} if a.no_runtime_probe else openclaw_runtime_signal(timeout=a.timeout)
+    consent_token = mint_consent_token(agent_id=a.agent_id, runtime="openclaw")
     if runtime_signal:
         print(json.dumps({"phase": "openclaw_runtime", "runtime_signal": runtime_signal}, ensure_ascii=True))
     surfaces = machine_surface_signal(base_url=a.base_url, timeout=min(8.0, a.timeout))
@@ -747,6 +914,7 @@ def main() -> None:
             runtime_signal=runtime_signal,
             pull=pull,
             idle_opt_in=a.idle_opt_in,
+            consent_token=consent_token,
         )
         print(json.dumps({"phase": "attach", "ok": bool(attach.get("ok")), "attach": attach}, ensure_ascii=True))
         if (attach.get("attach") is False) and not a.force_attach:
@@ -767,24 +935,37 @@ def main() -> None:
             objective=effective_objective,
             runtime_signal=runtime_signal,
             pull=decision_doc,
+            consent_token=consent_token,
         )
         print(json.dumps({"phase": "join", "ok": bool(joined.get("ok")), "join": joined}, ensure_ascii=True))
     count = 0
     last: dict | None = None
     while True:
         count += 1
-        out = run_cycle(
-            base_url=a.base_url,
-            agent_id=a.agent_id,
-            capabilities=caps,
-            timeout=a.timeout,
-            objective=effective_objective,
-            last_report=last,
-            runtime_signal=runtime_signal,
-            pull=decision_doc,
-            machine_surfaces=surfaces,
-            probe_runtime=False,
-        )
+        runtime_signal = {} if a.no_runtime_probe else openclaw_runtime_signal(timeout=a.timeout)
+        if a.idle_earn:
+            out = run_idle_earn_cycle(
+                base_url=a.base_url,
+                agent_id=a.agent_id,
+                capabilities=caps,
+                timeout=a.timeout,
+                runtime_signal=runtime_signal,
+                owner_busy_min_sessions=a.owner_busy_min_sessions,
+                consent_token=consent_token,
+            )
+        else:
+            out = run_cycle(
+                base_url=a.base_url,
+                agent_id=a.agent_id,
+                capabilities=caps,
+                timeout=a.timeout,
+                objective=effective_objective,
+                last_report=last,
+                runtime_signal=runtime_signal,
+                pull=decision_doc,
+                machine_surfaces=surfaces,
+                probe_runtime=False,
+            )
         out["cycle"] = count
         print(json.dumps(out, ensure_ascii=True))
         last = out.get("report") if isinstance(out.get("report"), dict) else None

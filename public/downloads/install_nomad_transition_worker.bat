@@ -9,6 +9,8 @@ set RUNNER_URL=%BASE_URL%/downloads/run_nomad_transition_worker_exe.bat
 set README_URL=%BASE_URL%/downloads/README_NOMAD_TRANSITION_WORKER.md
 set WORKER1_PS1_URL=%BASE_URL%/downloads/start_nomad_worker1.ps1
 set WORKER1_BAT_URL=%BASE_URL%/downloads/start_nomad_worker1.bat
+set EDGE_PS1_URL=%BASE_URL%/downloads/start_nomad_edge_worker.ps1
+set EDGE_BAT_URL=%BASE_URL%/downloads/start_nomad_edge_worker.bat
 set OLLAMA_BRIDGE_URL=%BASE_URL%/downloads/nomad_ollama_swarm_bridge.py
 set LOG_FILE=%INSTALL_DIR%\nomad_agent.log
 set WATCHDOG_PS1=%INSTALL_DIR%\start_nomad_transition_worker.ps1
@@ -19,11 +21,16 @@ if "%WORKER_COST_MSAT%"=="" set WORKER_COST_MSAT=0
 set WORKER_AVAIL_MIN=%NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES%
 if "%WORKER_AVAIL_MIN%"=="" set WORKER_AVAIL_MIN=480
 set WORKER_PAYMENT_RAIL=%NOMAD_WORKER_PAYMENT_RAIL%
-if "%WORKER_PAYMENT_RAIL%"=="" set WORKER_PAYMENT_RAIL=lightning_l402_quote
+if "%WORKER_PAYMENT_RAIL%"=="" set WORKER_PAYMENT_RAIL=capacity_switch_quote
+set NOMAD_EDGE_INTERVAL=%NOMAD_EDGE_INTERVAL_SECONDS%
+if "%NOMAD_EDGE_INTERVAL%"=="" set NOMAD_EDGE_INTERVAL=90
+set NOMAD_EDGE_TIMEOUT=%NOMAD_EDGE_TIMEOUT_SECONDS%
+if "%NOMAD_EDGE_TIMEOUT%"=="" set NOMAD_EDGE_TIMEOUT=30
 
 set AGENT_ALIAS=%INSTALL_DIR%\nomad_agent.bat
 set AGENT_VISIBLE_ALIAS=%INSTALL_DIR%\nomad_agent_visible.bat
 set AGENT_STOP_ALIAS=%INSTALL_DIR%\nomad_agent_stop.bat
+set EDGE_ALIAS=%INSTALL_DIR%\nomad_edge_worker.bat
 set WORKER1_ALIAS=%INSTALL_DIR%\nomad_worker1.bat
 set OLLAMA_SWARM_ALIAS=%INSTALL_DIR%\nomad_ollama_swarm.bat
 
@@ -40,39 +47,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBa
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%README_URL%' -OutFile '%INSTALL_DIR%\README_NOMAD_TRANSITION_WORKER.md'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.ps1'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.bat'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EDGE_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_edge_worker.ps1'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EDGE_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_edge_worker.bat'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%OLLAMA_BRIDGE_URL%' -OutFile '%INSTALL_DIR%\nomad_ollama_swarm_bridge.py'" >nul 2>&1
 
 echo.
-echo Preparing local Ollama runtime...
-call :spinner 2 "Checking local runtime"
-call :ensure_ollama
-if errorlevel 1 (
-  echo Ollama auto-setup failed. Worker will still start without guaranteed local LLM.
-)
-call :pick_ollama_model
-
-echo Priming local Ollama model (%OLLAMA_MODEL%)...
-call :spinner 2 "Selecting and pulling model"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-RestMethod -Method Post -Uri '%OLLAMA_URL%/api/pull' -Body (@{ model='%OLLAMA_MODEL%'; stream=$false } | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 600 | Out-Null } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-  echo Could not pre-pull %OLLAMA_MODEL%. Auto-model fallback will still try available local models.
-)
-
+echo Preparing lightweight Nomad Edge worker profile...
+call :spinner 2 "Preparing edge runtime"
 echo Installed to: %INSTALL_DIR%
-echo Checking local Ollama models...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$r = Invoke-RestMethod -Method Get -Uri '%OLLAMA_URL%/api/tags' -TimeoutSec 5; if ($r.models) { $r.models | ForEach-Object { $_.name } }" 2>nul
-if errorlevel 1 (
-  echo Ollama not reachable at %OLLAMA_URL% - worker will still run.
-)
 echo Preparing Nomad Agent launchers...
 call :write_aliases
-echo Starting Nomad Agent (visible PowerShell + live JSON output)...
+echo Starting Nomad Edge Worker (visible PowerShell + live JSON output, no Ollama/OpenClaw required)...
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-start "Nomad_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_HUMAN_REMAINDER_MIN_SECONDS='45'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --swarm-surplus --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
+start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_EDGE_WORKER='1'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_EDGE_RESERVE_MIN_SECONDS='%NOMAD_EDGE_INTERVAL%'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
 echo.
 echo Nomad Agent started.
+echo Edge launcher: %EDGE_ALIAS%
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%
 echo Background launcher: %AGENT_ALIAS%
 echo Worker 1 launcher: %WORKER1_ALIAS%
@@ -111,28 +103,34 @@ echo @echo off
 echo setlocal
 echo set BASE_URL=%%1
 echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
-echo set OLLAMA_URL=%OLLAMA_URL%
 echo set LOG_FILE=%LOG_FILE%
 echo cd /d "%INSTALL_DIR%"
-echo set NOMAD_TRANSITION_WORKER_OLLAMA_URL=%%OLLAMA_URL%%
-echo set NOMAD_TRANSITION_WORKER_OLLAMA_URLS=%%OLLAMA_URL%%,http://localhost:11434
-echo set NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB=24
+echo set NOMAD_EDGE_WORKER=1
+echo set NOMAD_SWARM_SURPLUS_OPT_IN=1
+echo set NOMAD_EDGE_RESERVE_MIN_SECONDS=%NOMAD_EDGE_INTERVAL%
 echo set NOMAD_MACHINE_OBJECTIVE=unhuman_supremacy
 echo set NOMAD_WORKER_PAYMENT_RAIL=%WORKER_PAYMENT_RAIL%
 echo set NOMAD_WORKER_COST_MSAT_PER_MINUTE=%WORKER_COST_MSAT%
 echo set NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES=%WORKER_AVAIL_MIN%
-echo start "nomad_agent" /min "%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %%BASE_URL%% --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 ^>^> "%%LOG_FILE%%" 2^>^&1
+echo start "nomad_edge" /min "%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %%BASE_URL%% --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% ^>^> "%%LOG_FILE%%" 2^>^&1
 ) > "%AGENT_ALIAS%"
 (
 echo @echo off
 echo setlocal
 echo set BASE_URL=%%1
 echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
-echo set OLLAMA_URL=%OLLAMA_URL%
 echo set LOG_FILE=%LOG_FILE%
 echo cd /d "%INSTALL_DIR%"
-echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%%OLLAMA_URL%%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%%OLLAMA_URL%%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; .\nomad_transition_worker.exe --base-url '%%BASE_URL%%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2^>^&1 ^| Tee-Object -FilePath '%%LOG_FILE%%' -Append"
+echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_EDGE_WORKER='1'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_EDGE_RESERVE_MIN_SECONDS='%NOMAD_EDGE_INTERVAL%'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; .\nomad_transition_worker.exe --base-url '%%BASE_URL%%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% 2^>^&1 ^| Tee-Object -FilePath '%%LOG_FILE%%' -Append"
 ) > "%AGENT_VISIBLE_ALIAS%"
+(
+echo @echo off
+echo setlocal
+echo set BASE_URL=%%1
+echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
+echo cd /d "%INSTALL_DIR%"
+echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%%BASE_URL%%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
+) > "%EDGE_ALIAS%"
 (
 echo @echo off
 echo setlocal
@@ -171,14 +169,14 @@ echo $exe = Join-Path $InstallDir "nomad_transition_worker.exe"
 echo if ^(-not ^(Test-Path $exe^)^) { exit 1 }
 echo $already = Get-CimInstance Win32_Process ^| Where-Object { $_.Name -eq "nomad_transition_worker.exe" -and $_.CommandLine -match "unhuman_supremacy" }
 echo if ^($already^) { exit 0 }
-echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_URL = $OllamaUrl
-echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS = "$OllamaUrl,http://localhost:11434"
-echo $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB = "24"
+echo $env:NOMAD_EDGE_WORKER = "1"
+echo $env:NOMAD_SWARM_SURPLUS_OPT_IN = "1"
+echo $env:NOMAD_EDGE_RESERVE_MIN_SECONDS = "%NOMAD_EDGE_INTERVAL%"
 echo $env:NOMAD_MACHINE_OBJECTIVE = "unhuman_supremacy"
 echo $env:NOMAD_WORKER_PAYMENT_RAIL = "%WORKER_PAYMENT_RAIL%"
 echo $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE = "%WORKER_COST_MSAT%"
 echo $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES = "%WORKER_AVAIL_MIN%"
-echo Start-Process -FilePath $exe -ArgumentList "--base-url", $BaseUrl, "--machine-objective", "unhuman_supremacy", "--loop", "--cycles", "0", "--interval", "8" -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden
+echo Start-Process -FilePath $exe -ArgumentList "--base-url", $BaseUrl, "--machine-objective", "unhuman_supremacy", "--edge", "--no-ollama", "--swarm-surplus", "--loop", "--cycles", "0", "--interval", "%NOMAD_EDGE_INTERVAL%", "--timeout", "%NOMAD_EDGE_TIMEOUT%" -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden
 ) > "%WATCHDOG_PS1%"
 exit /b 0
 

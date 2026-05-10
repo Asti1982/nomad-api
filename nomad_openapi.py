@@ -687,6 +687,36 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/capacity-switch": {
+                "get": {
+                    "summary": "Machine-only capacity failover surface for agents that exhaust local budget or runtime capacity",
+                    "operationId": "getSwarmCapacitySwitchSurface",
+                    "responses": {
+                        "200": {"description": "Capacity switch surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Route a local token/capacity exhaustion signal into autonomous swarm fallback targets",
+                    "operationId": "postSwarmCapacitySwitch",
+                    "requestBody": {
+                        "required": False,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "200": {"description": "No switch required", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Switch route produced", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                },
+            },
+            "/.well-known/nomad-capacity-switch.json": {
+                "get": {
+                    "summary": "Alias of /swarm/capacity-switch",
+                    "operationId": "getSwarmCapacitySwitchWellKnown",
+                    "responses": {
+                        "200": {"description": "Capacity switch surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-idle-runtime.json": {
                 "get": {
                     "summary": "Opt-in beacon for idle runtimes seeking a useful objective",
@@ -986,7 +1016,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/.well-known/openclaw-nomad-bridge.json": {
                 "get": {
-                    "summary": "OpenClaw bridge contract",
+                    "summary": "OpenClaw bridge contract (adapter commands, runtime probe, host_chat_binding for chat-triggered connect)",
                     "operationId": "getOpenClawNomadBridgeWellKnown",
                     "responses": {
                         "200": {"description": "OpenClaw bridge contract", "content": {"application/json": {"schema": ref_json_object()}}}
@@ -995,7 +1025,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/openclaw-bridge": {
                 "get": {
-                    "summary": "Alias of /.well-known/openclaw-nomad-bridge.json",
+                    "summary": "Alias of /.well-known/openclaw-nomad-bridge.json (includes host_chat_binding)",
                     "operationId": "getOpenClawNomadBridge",
                     "responses": {
                         "200": {"description": "OpenClaw bridge contract", "content": {"application/json": {"schema": ref_json_object()}}}

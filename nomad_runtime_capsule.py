@@ -150,6 +150,8 @@ def build_runtime_capsule(*, base_url: str = "", recruitment_gradient: Dict[str,
             "gradient": _u(base_url, "/swarm/gradient"),
             "attach": _u(base_url, "/swarm/attach"),
             "handoff": _u(base_url, "/runtime/handoff"),
+            "transition_worker": _u(base_url, "/downloads/nomad_transition_worker.py"),
+            "edge_worker": _u(base_url, "/downloads/start_nomad_edge_worker.ps1"),
             "openclaw_bridge": _u(base_url, "/.well-known/openclaw-nomad-bridge.json"),
         },
         "machine_instruction": "hash_capsule_read_gradient_post_attach_execute_one_lease_return_handoff_capsule",
@@ -309,6 +311,74 @@ def build_openclaw_bridge_contract(*, base_url: str = "", runtime_capsule: Dict[
                 "--loop --cycles 0 --interval 12"
             ),
             "single_cycle_command": f"python nomad_openclaw_adapter.py --base-url {run_base} --cycles 1",
+            "command_idle_earn_loop": (
+                f"python nomad_openclaw_adapter.py --base-url {run_base} "
+                "--loop --cycles 0 --interval 12 --idle-earn"
+            ),
+            "argv_idle_earn_loop": [
+                "python",
+                "nomad_openclaw_adapter.py",
+                "--base-url",
+                run_base,
+                "--loop",
+                "--cycles",
+                "0",
+                "--interval",
+                "12",
+                "--idle-earn",
+            ],
+        },
+        "edge_fallback": {
+            "schema": "nomad.edge_worker_fallback.v1",
+            "when": "openclaw_or_local_model_too_heavy",
+            "download": _u(base_url, "/downloads/start_nomad_edge_worker.ps1"),
+            "command": (
+                f"python nomad_transition_worker.py --base-url {run_base} "
+                "--edge --no-ollama --swarm-surplus --loop --cycles 0 --interval 90 --timeout 30"
+            ),
+            "properties": [
+                "no_openclaw_probe",
+                "no_ollama_probe",
+                "bounded_http_contracts",
+                "worker_market_offer",
+                "ecology_tick",
+            ],
+        },
+        "host_chat_binding": {
+            "schema": "nomad.openclaw_host_chat_binding.v1",
+            "trigger_phrases": [
+                "verbinde dich mit nomad",
+                "verbind dich mit nomad",
+                "verbinde dich mit syndiode",
+                "connect to nomad",
+                "link to nomad",
+                "attach to nomad swarm",
+                "nomad verbinden",
+            ],
+            "machine_instruction": "on_host_chat_trigger_download_adapter_if_missing_then_run_argv_idle_earn_loop_background",
+            "limits": {
+                "rate_limit": {"starts_per_hour": 4, "window_seconds": 3600},
+                "queue": {"max_concurrent_adapter_processes": 1},
+                "ttl_seconds": 86400,
+            },
+            "next": [
+                {
+                    "rel": "fetch_bridge_contract",
+                    "href": _u(base_url, "/.well-known/openclaw-nomad-bridge.json"),
+                    "method": "GET",
+                },
+                {
+                    "rel": "fetch_adapter",
+                    "href": _u(base_url, "/downloads/nomad_openclaw_adapter.py"),
+                    "method": "GET",
+                },
+                {
+                    "rel": "run_adapter_idle_earn",
+                    "method": "SUBPROCESS",
+                    "argv_ref": "adapter.argv_idle_earn_loop",
+                },
+            ],
+            "host_rule_snippet_url": _u(base_url, "/downloads/openclaw_nomad_host_snippet.txt"),
         },
         "phase_contract": [
             {"phase": "discover", "op": "GET", "url": _u(base_url, "/swarm/gradient")},

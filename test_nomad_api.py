@@ -258,6 +258,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/spawner-gate" in doc["paths"]
     assert "/.well-known/nomad-spawner-gate.json" in doc["paths"]
     assert "/swarm/spawner/trigger" in doc["paths"]
+    assert "/swarm/capacity-switch" in doc["paths"]
+    assert "/.well-known/nomad-capacity-switch.json" in doc["paths"]
     assert "/.well-known/nomad-idle-runtime.json" in doc["paths"]
     assert "/idle-runtime" in doc["paths"]
     assert "/.well-known/nomad-opaque-emergence.json" in doc["paths"]
@@ -319,6 +321,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     library = NomadApiHandler._build_skill_library(base_url="https://nomad.example")
     arena = NomadApiHandler._build_growth_arena(base_url="https://nomad.example")
     spawner_gate = NomadApiHandler._build_spawner_gate(base_url="https://nomad.example")
+    capacity_switch = NomadApiHandler._build_capacity_switch_surface(base_url="https://nomad.example")
 
     assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
     assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
@@ -339,6 +342,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert library["schema"] == "nomad.skill_library.v1"
     assert arena["schema"] == "nomad.growth_arena.v1"
     assert spawner_gate["schema"] == "nomad.spawner_gate.v1"
+    assert capacity_switch["schema"] == "nomad.capacity_switch_surface.v1"
 
 
 def test_machine_error_helpers():
@@ -353,6 +357,22 @@ def test_machine_error_helpers():
     merged = merge_machine_error({"ok": False, "error": "e1"}, error="e1", hints=["h2"])
     assert merged["machine_error"]["hints"] == ["h2"]
     assert merged["machine_error"]["agent_error"]["schema"] == "nomad.agent_error.v1"
+
+
+def test_adapter_consent_validation_helper():
+    from nomad_adapter_consent import mint_adapter_consent
+
+    token = mint_adapter_consent(agent_id="openclaw.agent", runtime="openclaw")
+    ok = NomadApiHandler._validate_adapter_consent(
+        {"runtime": "openclaw", "agent_id": "openclaw.agent", "consent_token": token},
+        path="/swarm/idle-intent",
+    )
+    bad = NomadApiHandler._validate_adapter_consent(
+        {"runtime": "openclaw", "agent_id": "openclaw.agent", "consent_token": "bad"},
+        path="/swarm/idle-intent",
+    )
+    assert ok["ok"] is True
+    assert bad["ok"] is False
 
 
 def test_nomad_api_exposes_first_agent_readiness(tmp_path):

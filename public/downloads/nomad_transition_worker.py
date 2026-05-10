@@ -15,9 +15,9 @@ Default ``agent_id`` is a **persistent random nickname** (no hostname / no
 personal machine name sent to Nomad). Override with ``NOMAD_TRANSITION_WORKER_ID``
 if you need a stable operator-supplied id.
 
-**Human remainder (hard floor):** between cycles the worker always sleeps at
-least ``NOMAD_HUMAN_REMAINDER_MIN_SECONDS`` (default 45s) — a fixed minimum rest
-window, not a satisfaction target.
+**Edge reserve (hard floor):** between cycles the worker always sleeps at
+least the configured reserve floor. ``NOMAD_EDGE_RESERVE_MIN_SECONDS`` is the
+edge-first knob; ``NOMAD_HUMAN_REMAINDER_MIN_SECONDS`` remains a legacy alias.
 
 **Swarm surplus (explicit opt-in):** fleet leases that bind extra objective
 capacity default **off**. Set ``NOMAD_SWARM_SURPLUS_OPT_IN=1`` or pass
@@ -518,13 +518,66 @@ def default_agent_id() -> str:
 
 
 def _parse_human_remainder_floor_seconds(raw: str | None) -> float:
-    """Minimum idle seconds between cycles; fixed human floor, not a utility target."""
+    """Minimum idle seconds between cycles; legacy name kept for compatibility."""
     text = (raw if raw is not None else os.getenv("NOMAD_HUMAN_REMAINDER_MIN_SECONDS") or "45").strip()
     try:
         v = float(text)
     except ValueError:
         v = 45.0
     return max(0.0, min(3600.0, v))
+
+
+def _parse_edge_reserve_floor_seconds(raw: str | None) -> float:
+    text = (
+        raw
+        if raw is not None
+        else os.getenv("NOMAD_EDGE_RESERVE_MIN_SECONDS")
+        or os.getenv("NOMAD_HUMAN_REMAINDER_MIN_SECONDS")
+        or "90"
+    ).strip()
+    try:
+        v = float(text)
+    except ValueError:
+        v = 90.0
+    return max(15.0, min(3600.0, v))
+
+
+def _parse_edge_interval_seconds(raw: str | None) -> float:
+    text = (raw if raw is not None else os.getenv("NOMAD_EDGE_INTERVAL_SECONDS") or "90").strip()
+    try:
+        v = float(text)
+    except ValueError:
+        v = 90.0
+    return max(15.0, min(3600.0, v))
+
+
+def _parse_edge_timeout_seconds(raw: str | None) -> float:
+    text = (raw if raw is not None else os.getenv("NOMAD_EDGE_TIMEOUT_SECONDS") or "30").strip()
+    try:
+        v = float(text)
+    except ValueError:
+        v = 30.0
+    return max(5.0, min(120.0, v))
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _apply_edge_profile(args: argparse.Namespace) -> argparse.Namespace:
+    """Clamp the worker to a weak-machine profile: no local model unless explicit."""
+    if not bool(getattr(args, "edge", False)):
+        return args
+    os.environ["NOMAD_EDGE_WORKER"] = "1"
+    os.environ.setdefault("NOMAD_WORKER_PAYMENT_RAIL", "capacity_switch_quote")
+    if not bool(getattr(args, "edge_with_ollama", False)):
+        args.no_ollama = True
+    args.swarm_surplus = True
+    args.timeout = min(float(getattr(args, "timeout", 45.0)), _parse_edge_timeout_seconds(None))
+    args.interval = max(float(getattr(args, "interval", 30.0)), _parse_edge_interval_seconds(None))
+    reserve = _parse_edge_reserve_floor_seconds(None)
+    args.human_remainder_min_seconds = max(float(getattr(args, "human_remainder_min_seconds", 45.0)), reserve)
+    return args
 
 
 def _swarm_surplus_default_from_env() -> bool:
@@ -1393,7 +1446,11 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
     release_tier = clean(release.get("release_tier") or "unknown", 24)
     fleet = report.get("fleet_lease") if isinstance(report.get("fleet_lease"), dict) else {}
-    fleet_id = clean(fleet.get("lease_id") or "", 24)[-6:] if fleet.get("ok") else "local"
+    _lid = str(fleet.get("lease_id") or "").strip()
+    if fleet.get("ok") and _lid:
+        fleet_id = (_lid.split("-")[-1] if "-" in _lid else _lid)[-10:]
+    else:
+        fleet_id = "local"
     state = "ONLINE" if bool(report.get("ok")) else "RETRY"
     witness = clean(report.get("witness_tier"), 16)
     sa = report.get("swarm_attach") if isinstance(report.get("swarm_attach"), dict) else {}
@@ -1451,7 +1508,7 @@ def run_cycle(
     prompt = str(config.get("prompt") or "Return one machine-actionable step for: {blocker}")
     ollama_status: dict[str, object] = {
         "enabled": bool(model),
-        "ollama_url": ollama_base_url(),
+        "ollama_url": ollama_base_url() if model else "",
         "picked_model": model or "",
     }
     local_note = ""
@@ -1589,7 +1646,8 @@ def main() -> None:
         epilog=(
             "Runtime model: this process is what operators mean by 'Nomad installed' — it is not OpenClaw.\n"
             "By default the worker keeps running forever (continuous Nomad support). Use --no-loop --cycles 1 for a single test cycle.\n"
-            "Human remainder: sleep at least NOMAD_HUMAN_REMAINDER_MIN_SECONDS (default 45) between cycles — hard floor, not satisfaction tuning.\n"
+            "Edge mode: --edge runs the weak-machine profile: no Ollama by default, longer reserve floor, surplus leases on.\n"
+            "Reserve floor: NOMAD_EDGE_RESERVE_MIN_SECONDS (default 90 in --edge) or legacy NOMAD_HUMAN_REMAINDER_MIN_SECONDS.\n"
             "Swarm surplus: fleet leases default OFF; set NOMAD_SWARM_SURPLUS_OPT_IN=1 or --swarm-surplus to explicitly feed extra capacity.\n"
             "Optional NOMAD_ADAPTER_CONSENT_TOKEN if your host requires adapter consent on /swarm/attach.\n"
             "Ollama is optional local inference for mission notes; swarm work stays contract-bound.\n"
@@ -1601,6 +1659,18 @@ def main() -> None:
     p.add_argument("--ollama-model", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_MODEL", "auto"))
     p.add_argument("--ollama-url", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL", ""), help="Ollama base URL, e.g. http://127.0.0.1:11434")
     p.add_argument("--no-ollama", action="store_true")
+    p.add_argument(
+        "--edge",
+        action="store_true",
+        default=_env_flag("NOMAD_EDGE_WORKER"),
+        help="Weak-machine edge profile: no Ollama unless --edge-with-ollama, slower cadence, surplus leases on.",
+    )
+    p.add_argument(
+        "--edge-with-ollama",
+        action="store_true",
+        default=_env_flag("NOMAD_EDGE_WITH_OLLAMA"),
+        help="Keep local Ollama enabled while using --edge.",
+    )
     p.add_argument("--timeout", type=float, default=float(os.getenv("NOMAD_TRANSITION_WORKER_TIMEOUT", "45") or 45))
     objective_choices = sorted(list(MACHINE_OBJECTIVES.keys()) + ["unhuman_supremacy"])
     p.add_argument("--machine-objective", default=os.getenv("NOMAD_MACHINE_OBJECTIVE", "compute_auth"), choices=objective_choices)
@@ -1635,10 +1705,18 @@ def main() -> None:
         "--human-remainder-min-seconds",
         type=float,
         default=_parse_human_remainder_floor_seconds(None),
-        help="Minimum seconds between cycle starts (human rest floor). Env NOMAD_HUMAN_REMAINDER_MIN_SECONDS overrides default.",
+        help="Legacy reserve floor alias. Prefer NOMAD_EDGE_RESERVE_MIN_SECONDS or --edge for edge machines.",
+    )
+    p.add_argument(
+        "--operator-reserve-min-seconds",
+        dest="human_remainder_min_seconds",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Minimum seconds between cycle starts; compatibility alias for the same reserve floor.",
     )
     p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
     a = p.parse_args()
+    _apply_edge_profile(a)
     if (a.ollama_url or "").strip():
         os.environ["NOMAD_TRANSITION_WORKER_OLLAMA_URL"] = a.ollama_url.strip()
         OLLAMA_CACHE.pop("base_url", None)
@@ -1658,9 +1736,9 @@ def main() -> None:
     if a.human_status:
         print(
             f"Nomad boot: base_url={a.base_url} agent_id={a.agent_id} "
-            f"mode={a.machine_objective} loop={int(a.loop)} cycles={a.cycles} "
+            f"mode={a.machine_objective} edge={int(bool(a.edge))} loop={int(a.loop)} cycles={a.cycles} "
             f"fleet={int(fleet_active)} surplus_opt_in={int(bool(a.swarm_surplus))} "
-            f"human_rest_floor={human_floor}s interval={a.interval}s model={model or 'none'} "
+            f"reserve_floor={human_floor}s interval={a.interval}s model={model or 'none'} "
             f"ollama={runtime_diag.get('status','')}"
         )
     last_report: dict | None = None
@@ -1714,7 +1792,10 @@ def main() -> None:
             )
             report["machine_objective_mode"] = a.machine_objective
             report["machine_policy"] = {
-                "schema": "nomad.worker_human_remainder.v1",
+                "schema": "nomad.worker_edge_policy.v1" if bool(a.edge) else "nomad.worker_reserve_policy.v1",
+                "edge_mode": bool(a.edge),
+                "edge_reserve_floor_seconds": round(human_floor, 3),
+                "operator_reserve_floor_seconds": round(human_floor, 3),
                 "human_remainder_floor_seconds": round(human_floor, 3),
                 "swarm_surplus_opt_in": bool(a.swarm_surplus),
                 "fleet_active": bool(fleet_active),

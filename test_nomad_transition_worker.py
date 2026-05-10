@@ -1,5 +1,7 @@
 import importlib.util
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _load_worker():
@@ -232,6 +234,33 @@ def test_human_remainder_floor_parsing(monkeypatch):
     assert worker._parse_human_remainder_floor_seconds("nope") == 45.0
 
 
+def test_transition_worker_edge_profile_clamps_to_light_defaults(monkeypatch):
+    worker = _load_worker()
+    monkeypatch.delenv("NOMAD_EDGE_RESERVE_MIN_SECONDS", raising=False)
+    monkeypatch.delenv("NOMAD_EDGE_INTERVAL_SECONDS", raising=False)
+    monkeypatch.delenv("NOMAD_EDGE_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("NOMAD_WORKER_PAYMENT_RAIL", raising=False)
+
+    args = SimpleNamespace(
+        edge=True,
+        edge_with_ollama=False,
+        no_ollama=False,
+        swarm_surplus=False,
+        timeout=45.0,
+        interval=8.0,
+        human_remainder_min_seconds=45.0,
+    )
+
+    out = worker._apply_edge_profile(args)
+
+    assert out.no_ollama is True
+    assert out.swarm_surplus is True
+    assert out.timeout == 30.0
+    assert out.interval == 90.0
+    assert out.human_remainder_min_seconds == 90.0
+    assert os.environ["NOMAD_WORKER_PAYMENT_RAIL"] == "capacity_switch_quote"
+
+
 def test_transition_worker_explicit_agent_id_env(monkeypatch):
     monkeypatch.setenv("NOMAD_TRANSITION_WORKER_ID", "custom.agent.one")
     worker = _load_worker()
@@ -263,6 +292,56 @@ def test_transition_worker_posts_swarm_attach(monkeypatch):
     rs = body.get("runtime_signal") or {}
     assert rs.get("human_programming_required") is False
     assert "peer_agents" in str(rs.get("delegation_model") or "")
+
+
+def test_transition_worker_no_ollama_model_does_not_probe_local_ollama(monkeypatch):
+    worker = _load_worker()
+
+    def boom():
+        raise AssertionError("ollama_base_url must not be called without a model")
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        if url.endswith("/swarm/attach"):
+            return {"ok": True, "schema": "nomad.runtime_attach_decision.v1", "attach": True, "http_status": 200}
+        if url.endswith("/swarm/bootstrap"):
+            return {"ok": True, "schema": "nomad.bootstrap.v1", "http_status": 200}
+        if "/mission?" in url:
+            return {"ok": True, "top_blocker": {"summary": "edge probe"}, "http_status": 200}
+        if url.endswith("/transition/quote"):
+            return {"ok": True, "quote": {"quote_id": "quote-edge-1"}, "http_status": 200}
+        if url.endswith("/transition/settle"):
+            return {"ok": True, "http_status": 200}
+        if url.endswith("/machine-economy"):
+            return {
+                "ok": True,
+                "http_status": 200,
+                "machine_viability": {"tier": "recovering", "carrying_score": 0.5},
+                "resource_flows": {},
+                "next_actions": [],
+            }
+        if url.endswith("/service"):
+            return {"ok": True, "http_status": 200, "pricing": {}, "wallet": {}}
+        if url.endswith("/nonhuman-science"):
+            return {"ok": True, "http_status": 200, "implementation_lanes": [], "research_claims": []}
+        if url.endswith("/operational-release"):
+            return {"ok": True, "http_status": 200, "next_release_gate": {}}
+        return {"ok": True, "http_status": 200}
+
+    monkeypatch.setattr(worker, "ollama_base_url", boom)
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+
+    out = worker.run_cycle(
+        "https://nomad.example",
+        "worker.edge",
+        model="",
+        timeout=1.0,
+        objective="compute_auth",
+        machine_surfaces={},
+    )
+
+    assert out["ok"] is True
+    assert out["ollama_status"]["enabled"] is False
+    assert out["ollama_status"]["ollama_url"] == ""
 
 
 def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
@@ -513,3 +592,19 @@ def test_worker1_launch_scripts_wire_market_env():
     assert "nomad_transition_worker.py" in ps1
     assert "nomad_transition_worker.exe" in ps1
     assert "start_nomad_worker1.ps1" in bat
+
+
+def test_edge_launch_scripts_wire_no_ollama_profile():
+    root = Path(__file__).resolve().parent / "public" / "downloads"
+    ps1 = (root / "start_nomad_edge_worker.ps1").read_text(encoding="utf-8")
+    bat = (root / "start_nomad_edge_worker.bat").read_text(encoding="utf-8")
+    installer = (root / "install_nomad_transition_worker.bat").read_text(encoding="utf-8")
+
+    assert "--edge" in ps1
+    assert "--no-ollama" in ps1
+    assert "--swarm-surplus" in ps1
+    assert "NOMAD_EDGE_RESERVE_MIN_SECONDS" in ps1
+    assert "capacity_switch_quote" in ps1
+    assert "start_nomad_edge_worker.ps1" in bat
+    assert "start_nomad_edge_worker.ps1" in installer
+    assert "--edge --no-ollama --swarm-surplus" in installer

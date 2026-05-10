@@ -70,5 +70,10 @@ def test_openclaw_bridge_contract_points_to_adapter_and_capsule():
     assert bridge["schema"] == "nomad.openclaw_bridge_contract.v1"
     assert bridge["runtime_capsule_digest"] == capsule["capsule_digest"]
     assert bridge["adapter"]["download"] == "https://nomad.example/downloads/nomad_openclaw_adapter.py"
+    assert "--idle-earn" in bridge["adapter"]["command_idle_earn_loop"]
+    assert "argv_idle_earn_loop" in bridge["adapter"]
+    binding = bridge.get("host_chat_binding") or {}
+    assert binding.get("schema") == "nomad.openclaw_host_chat_binding.v1"
+    assert "verbinde dich mit nomad" in (binding.get("trigger_phrases") or [])
     assert "openclaw health --json" in bridge["runtime_probe"]["commands"]
     assert any(str(phase.get("url") or "").endswith("/runtime/handoff") for phase in bridge["phase_contract"])

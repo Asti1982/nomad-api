@@ -41,7 +41,9 @@ nomad_operator_kpis.json
 nomad_lead_workbench_state.json
 nomad_mission_control_state.json
 nomad_*_state.json
+nomad_*_state.jsonl
 nomad_*_ledger.jsonl
+.nomad_*
 recruitment_wave_history.jsonl
 public/downloads/build/
 public/downloads/dist/

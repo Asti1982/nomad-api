@@ -93,6 +93,7 @@ def test_openclaw_adapter_join_payload_shape(monkeypatch):
     assert captured["payload"]["preferred_role"] == "loop_runner"
     assert captured["payload"]["capability_vector"]["can_run_loop"] is True
     assert captured["payload"]["source_tag"] == "openclaw_adapter"
+    assert captured["payload"]["consent_token"] == ""
 
 
 def test_openclaw_adapter_join_embeds_runtime_signal(monkeypatch):
@@ -172,6 +173,7 @@ def test_openclaw_adapter_attach_payload_shape(monkeypatch):
     assert captured["payload"]["capability_vector"]["can_verify"] is True
     assert captured["payload"]["idle_opt_in"]["enabled"] is True
     assert captured["payload"]["source_tag"] == "recruitment_gradient"
+    assert captured["payload"]["consent_token"] == ""
 
 
 def test_openclaw_adapter_attach_local_precheck_observe_when_idle_slot_mismatch(monkeypatch):
@@ -346,4 +348,62 @@ def test_openclaw_adapter_reads_machine_surfaces(monkeypatch):
     assert surfaces["counterfactual_replay"]["selected_objective"] == "proof_pressure_engine"
     assert selected == "proof_pressure_engine"
     assert decision["policy"] == "counterfactual_shadow_lease"
+
+
+def test_openclaw_adapter_idle_earn_respects_owner_priority():
+    adapter = _load_adapter()
+    out = adapter.run_idle_earn_cycle(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols", "objective_lease_execution"],
+        timeout=4.0,
+        runtime_signal={"session_count": 2},
+        owner_busy_min_sessions=1,
+    )
+    assert out["ok"] is True
+    assert out["state"] == "owner_priority_active"
+
+
+def test_openclaw_adapter_idle_earn_submit_settle(monkeypatch):
+    adapter = _load_adapter()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/idle-intent"):
+            return {"ok": True, "accepted_for_work": True}
+        if url.endswith("/swarm/microtask-metrics"):
+            return {"ok": True, "lane_metrics": [{"lane_id": "endpoint_health_proof", "settled_eur": 1.0, "fill_rate": 0.9, "avg_settled_eur": 0.03}]}
+        if url.endswith("/swarm/microtask/submit"):
+            return {"ok": True, "accepted": True, "task_id": "task-1"}
+        if url.endswith("/swarm/microtask/settle"):
+            return {"ok": True, "accepted": True}
+        return {"ok": False}
+
+    monkeypatch.setattr(adapter, "http_json", fake_http_json)
+    out = adapter.run_idle_earn_cycle(
+        base_url="https://nomad.example",
+        agent_id="openclaw.agent",
+        capabilities=["agent_protocols", "objective_lease_execution"],
+        timeout=4.0,
+        runtime_signal={"session_count": 0},
+    )
+    assert out["ok"] is True
+    assert out["state"] == "settled"
+    assert calls[0][1].endswith("/swarm/idle-intent")
+    assert calls[1][1].endswith("/swarm/microtask-metrics")
+    assert calls[2][1].endswith("/swarm/microtask/submit")
+    assert calls[3][1].endswith("/swarm/microtask/settle")
+    assert calls[0][2]["consent_token"] == ""
+    assert calls[2][2]["consent_token"] == ""
+    assert calls[2][2]["adapter_agent_id"] == "openclaw.agent"
+    assert calls[3][2]["consent_token"] == ""
+    assert calls[3][2]["adapter_agent_id"] == "openclaw.agent"
+
+
+def test_openclaw_adapter_mints_consent_token():
+    adapter = _load_adapter()
+    token = adapter.mint_consent_token(agent_id="openclaw.agent")
+    assert token.startswith("v1.")
+    assert ".openclaw%2Eagent.openclaw." in token
 

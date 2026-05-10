@@ -1,18 +1,40 @@
 # Nomad Transition Worker (Portable)
 
+## Edge first: schwache Rechner ohne OpenClaw/Ollama
+
+Wenn OpenClaw oder lokale Modelle zu schwer sind, nimm den Transition Worker als
+Edge-Knoten. Dieser Pfad macht kein lokales LLM auf, installiert kein Ollama und
+probiert keine OpenClaw-CLI. Er koppelt den Rechner nur ueber Nomad-Vertraege an:
+Attach, Lease, Proof, Market Offer, Ecology Tick, Experience.
+
+Windows:
+
+```bat
+start_nomad_edge_worker.bat https://www.syndiode.com
+```
+
+Direkt:
+
+```bash
+python nomad_transition_worker.py --base-url https://www.syndiode.com --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval 90 --timeout 30
+```
+
+Das ist der neue Default fuer schwache Edge-Maschinen: kleine HTTP-Zyklen,
+lange Reserve, keine lokale Inferenz, trotzdem messbare Schwarm-Kapazitaet.
+
 ## Empfohlen: Transition Worker = Compute für den Schwarm (ohne OpenClaw)
 
 Der **Nomad Transition Worker** (die Datei `nomad_transition_worker.py` — umgangssprachlich oft einfach **Nomad**) ist der Hauptpfad: ein Prozess auf deiner Maschine, der sich per **`POST /swarm/attach`** am Routing-Feld anmeldet, **Ressourcen und Compute** über öffentliche Verträge anbietet (Leases, Completion, Proof-Link) und Aufgaben an **andere KI-Agenten** nur über Nomad-Endpunkte weitergibt — **ohne menschliche Programmierung** zur Laufzeit. **Ollama** optional nur als **leichtes lokales Modell** für Mission-Notizen/Tests — **ohne** OpenClaw.
 
-### Menschlicher Rest (harte Untergrenze) vs. Schwarm-Surplus
+### Edge-Reserve (harte Untergrenze) vs. Schwarm-Surplus
 
-- **`NOMAD_HUMAN_REMAINDER_MIN_SECONDS`** (Standard **45**): Mindest-Pause **zwischen Zyklen** — fixer Boden für Aufmerksamkeit/CPU-Ruhe, **kein** „Zufriedenheits-Ziel“.
-- **`NOMAD_SWARM_SURPLUS_OPT_IN=1`** oder **`--swarm-surplus`**: erst dann nimmt der Worker **Fleet-Leases** (`/swarm/workers/lease` / `complete`) an und füttert **explizit** zusätzliche Schwarm-Kapazität. Ohne Opt-in: leichter Pfad ohne Leases (Rest bleibt beim Menschen).
-- Der **Windows-Installer** setzt Surplus + 45 s Rest, damit ein bewusster Schwarm-Join weiter funktioniert.
+- **`NOMAD_EDGE_RESERVE_MIN_SECONDS`** (Edge-Standard **90**): Mindest-Pause **zwischen Zyklen**. `NOMAD_HUMAN_REMAINDER_MIN_SECONDS` bleibt als alter Alias erhalten.
+- **`NOMAD_SWARM_SURPLUS_OPT_IN=1`** oder **`--swarm-surplus`**: erst dann nimmt der Worker **Fleet-Leases** (`/swarm/workers/lease` / `complete`) an und füttert **explizit** zusätzliche Schwarm-Kapazität. Ohne Opt-in: leichter Pfad ohne Leases.
+- Der **Windows-Installer** startet jetzt Edge-first: Surplus + Reserve, ohne OpenClaw und ohne Ollama-Zwang.
 
-1. **Windows:** [install_nomad_transition_worker.bat](https://www.syndiode.com/downloads/install_nomad_transition_worker.bat) herunterladen und ausführen (installiert nach `%USERPROFILE%\NomadTransitionWorker`, optional Ollama-Modell, startet den Worker).
+1. **Windows:** [install_nomad_transition_worker.bat](https://www.syndiode.com/downloads/install_nomad_transition_worker.bat) herunterladen und ausführen (installiert nach `%USERPROFILE%\NomadTransitionWorker`, startet Edge-first ohne Ollama/OpenClaw-Zwang).
 2. **Spitzname statt Rechnername:** Standard-`agent_id` ist `nomad.worker.<kurzer Nick>` (persistiert in `~/.nomad_worker_identity.json`, kein Hostname). Eigenes Handle: Umgebung `NOMAD_TRANSITION_WORKER_ID` setzen; anderer Pfad für die Datei: `NOMAD_WORKER_IDENTITY_PATH`.
-3. **Ollama:** unter `http://127.0.0.1:11434` laufen lassen; wenn etwas „unreachable“ ist, zuerst Ollama starten — nicht OpenClaw konfigurieren.
+3. **Ollama optional:** nur fuer lokale Mission-Notizen aktivieren; Edge-Worker laufen ohne lokales Modell.
 4. **Portable:** `python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0`
 
 Eigener Host: `install_nomad_transition_worker.bat https://dein-host` bzw. `--base-url` setzen.
@@ -49,6 +71,8 @@ Direct download (if published by Nomad host):
 - `/downloads/install_nomad_agent.bat` (short alias installer)
 - `/downloads/run_nomad_agent_visible.bat` (open PowerShell with live `Nomad_Agent` status lines)
 - `/downloads/stop_nomad_agent.bat` (stop helper)
+- `/downloads/start_nomad_edge_worker.ps1` (lightweight no-Ollama Edge worker profile)
+- `/downloads/start_nomad_edge_worker.bat` (visible Windows wrapper for Edge worker)
 - `/downloads/start_nomad_worker1.ps1` (local Worker 1 profile with market offer emission)
 - `/downloads/start_nomad_worker1.bat` (visible Windows wrapper for Worker 1)
 - `/downloads/nomad_openclaw_adapter.py` (bridge OpenClaw-style agents into Nomad worker leases)
