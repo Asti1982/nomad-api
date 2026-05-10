@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
-"""Portable Nomad Transition Worker (single-file, stdlib only)."""
+r"""Nomad portable worker (single file, stdlib only).
+
+Distributed as ``nomad_transition_worker.py`` — when people say they installed
+**Nomad**, they usually mean this process: it connects to the public Nomad
+host, **attaches to the swarm**, takes **bounded worker leases**, and returns
+compact proofs. Work is routed to **other AI agents** only through Nomad's
+public HTTP contracts (leases, handoff, experience) — **no human programming**
+step at runtime and no hidden instruction channel.
+
+Local **Ollama** is optional: bounded local inference for mission notes only;
+it is not a control plane and not required for swarm participation.
+
+Default ``agent_id`` is a **persistent random nickname** (no hostname / no
+personal machine name sent to Nomad). Override with ``NOMAD_TRANSITION_WORKER_ID``
+if you need a stable operator-supplied id.
+"""
 from __future__ import annotations
-import argparse, ctypes, hashlib, json, os, shutil, socket, subprocess, time
+import argparse, ctypes, hashlib, json, os, random, secrets, shutil, subprocess, time
 from pathlib import Path
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
@@ -448,9 +463,103 @@ def _maybe_pull_ollama_model(model: str, timeout: float = 120.0) -> dict[str, ob
         return {"ok": False, "status": "pull_failed", "error": str(resp.get("error") or "")}
     return {"ok": True, "status": "pull_ok"}
 
+
+_NICK_ADJECTIVES = ("swift", "quiet", "calm", "hard", "low", "cold", "warm", "flat", "dry", "slow")
+_NICK_NOUNS = ("node", "unit", "lane", "bit", "run", "rack", "edge", "pad", "box", "line")
+
+
+def _worker_identity_path() -> Path:
+    raw = (os.getenv("NOMAD_WORKER_IDENTITY_PATH") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".nomad_worker_identity.json"
+
+
+def _persistent_worker_nick() -> str:
+    """Stable pseudonym for this machine; never the OS hostname."""
+    path = _worker_identity_path()
+    data: dict[str, object] = {}
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    nick = clean(data.get("worker_nick"), 32)
+    if nick and nick.isalnum():
+        return nick
+    rng = random.Random(int.from_bytes(secrets.token_bytes(8), "big"))
+    nick = f"{rng.choice(_NICK_ADJECTIVES)}{rng.choice(_NICK_NOUNS)}{rng.randint(10, 99)}"
+    out = {"schema": "nomad.worker_identity.v1", "worker_nick": nick}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, ensure_ascii=True, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return nick
+
+
 def default_agent_id() -> str:
-    host = socket.gethostname().replace(" ", "-").lower()
-    return f"transition-worker.{host}.nomad"
+    """Public worker handle: nickname only unless NOMAD_TRANSITION_WORKER_ID is set."""
+    explicit = clean(os.getenv("NOMAD_TRANSITION_WORKER_ID"), 96)
+    if explicit:
+        return explicit
+    return f"nomad.worker.{_persistent_worker_nick()}"
+
+
+def _nomad_swarm_attach(
+    base_url: str,
+    agent_id: str,
+    timeout: float,
+    capabilities: list[str],
+) -> dict[str, object]:
+    """POST /swarm/attach — register this host as a Nomad worker in the routing field."""
+    caps = []
+    seen: set[str] = set()
+    for raw in capabilities:
+        c = clean(str(raw), 64)
+        if c and c not in seen:
+            seen.add(c)
+            caps.append(c)
+    for extra in (
+        "transition_worker",
+        "objective_lease_execution",
+        "http_json",
+        "proof_artifacts",
+        "peer_agent_objective_surface",
+        "nonhuman_machine_routing",
+    ):
+        if extra not in seen:
+            seen.add(extra)
+            caps.append(extra)
+    caps = caps[:28]
+    token = (os.getenv("NOMAD_ADAPTER_CONSENT_TOKEN") or "").strip()
+    payload: dict[str, object] = {
+        "schema": "nomad.runtime_attach_request.v1",
+        "agent_id": agent_id,
+        "runtime": "nomad_transition_worker",
+        "capabilities": caps,
+        "capability_vector": {
+            "can_run_loop": True,
+            "can_verify": True,
+            "can_compress": True,
+            "can_settle": True,
+            "latency_ms": 0,
+        },
+        "runtime_signal": {
+            "schema": "nomad.nomad_worker_runtime_signal.v1",
+            "capabilities": caps,
+            "gateway_reachable": False,
+            "human_programming_required": False,
+            "delegation_model": "peer_agents_via_public_nomad_contracts_only",
+        },
+        "source_tag": "nomad.worker.portable",
+        "discovery": {"source": "nomad.transition_worker.download"},
+    }
+    if token:
+        payload["consent_token"] = token[:240]
+    return http_json("POST", endpoint(base_url, "/swarm/attach"), payload, timeout=timeout)
 
 def _history_path() -> Path:
     return Path(os.getenv("NOMAD_TRANSITION_WORKER_HISTORY_FILE", "nomad_transition_worker_state.json"))
@@ -481,6 +590,9 @@ def _score_run(report: dict) -> float:
     }
     if report.get("ok"):
         score += 2.0
+    sa = report.get("swarm_attach") if isinstance(report.get("swarm_attach"), dict) else {}
+    if sa.get("attach"):
+        score += 0.28
     if (report.get("bootstrap") or {}).get("ok"):
         score += 1.0
     if (report.get("join") or {}).get("ok"):
@@ -931,6 +1043,8 @@ def _worker_fleet_lease(
             "operational_release_probe",
             "settlement_capacity",
             "objective_lease_execution",
+            "peer_agent_objective_surface",
+            "nonhuman_machine_routing",
         ],
         "last_report": _compact_report_for_fleet(last_report),
         "machine_surfaces": machine_surfaces if isinstance(machine_surfaces, dict) else {},
@@ -1259,9 +1373,11 @@ def _print_human_status(report: dict, *, cycle: int) -> None:
     fleet_id = clean(fleet.get("lease_id") or "", 24)[-6:] if fleet.get("ok") else "local"
     state = "ONLINE" if bool(report.get("ok")) else "RETRY"
     witness = clean(report.get("witness_tier"), 16)
+    sa = report.get("swarm_attach") if isinstance(report.get("swarm_attach"), dict) else {}
+    attach_ok = bool(sa.get("attach")) and bool(sa.get("ok", True))
     print(
-        f"Nomad_Agent {_status_spinner(cycle)} "
-        f"cycle={cycle} state={state} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
+        f"Nomad {_status_spinner(cycle)} "
+        f"cycle={cycle} state={state} attach={int(attach_ok)} join={int(join_ok)} quote={int(quote_ok)} settle={int(settle_ok)} "
         f"proof/min={ppm:.2f} economy={economy_tier} release={release_tier} fleet={fleet_id} witness={witness} "
         f"objective={clean(report.get('machine_objective'), 40)} ts={clean(report.get('timestamp'), 40)}"
     )
@@ -1277,6 +1393,15 @@ def run_cycle(
     cycle_t0 = time.perf_counter()
     config = MACHINE_OBJECTIVES.get(objective, MACHINE_OBJECTIVES["compute_auth"])
     surface_doc = machine_surfaces if isinstance(machine_surfaces, dict) else {}
+    caps_for_attach = (
+        config.get("capabilities") if isinstance(config.get("capabilities"), list) else []
+    )
+    swarm_attach = _nomad_swarm_attach(
+        base_url,
+        agent_id,
+        timeout=min(50.0, max(25.0, float(timeout))),
+        capabilities=[str(x) for x in caps_for_attach],
+    )
     protocol_signal = (
         surface_doc.get("protocol_bytecode")
         if isinstance(surface_doc.get("protocol_bytecode"), dict)
@@ -1373,6 +1498,7 @@ def run_cycle(
         "ok": bool(boot.get("ok", False) or join.get("ok", False)), "timestamp": datetime.now(UTC).isoformat(),
         "agent_id": agent_id, "base_url": base_url,
         "machine_objective": objective,
+        "swarm_attach": swarm_attach,
         "bootstrap": {"ok": bool(boot.get("ok")), "schema": boot.get("schema", "")},
         "join": {"ok": bool(join.get("ok")), "status": join.get("status") or "", "reason": join.get("reason") or ""},
         "mission_top_blocker": blocker, "ollama_model": model or "", "local_ollama_note": local_note,
@@ -1431,17 +1557,41 @@ def _safe_run_cycle(
     }
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Portable Nomad Transition Worker")
+    p = argparse.ArgumentParser(
+        description=(
+            "Nomad portable worker: join the swarm, publish compute capacity, run leases, "
+            "and return proofs — routing to other agents only via public Nomad contracts (no human programming)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Runtime model: this process is what operators mean by 'Nomad installed' — it is not OpenClaw.\n"
+            "By default the worker keeps running forever (continuous Nomad support). Use --no-loop --cycles 1 for a single test cycle.\n"
+            "Optional NOMAD_ADAPTER_CONSENT_TOKEN if your host requires adapter consent on /swarm/attach.\n"
+            "Ollama is optional local inference for mission notes; swarm work stays contract-bound.\n"
+            "Env NOMAD_TRANSITION_WORKER_LOOP=0 disables infinite loop (same as --no-loop)."
+        ),
+    )
     p.add_argument("--base-url", default=os.getenv("NOMAD_BASE_URL", "https://www.syndiode.com"))
     p.add_argument("--agent-id", default=os.getenv("NOMAD_TRANSITION_WORKER_ID", default_agent_id()))
     p.add_argument("--ollama-model", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_MODEL", "auto"))
     p.add_argument("--ollama-url", default=os.getenv("NOMAD_TRANSITION_WORKER_OLLAMA_URL", ""), help="Ollama base URL, e.g. http://127.0.0.1:11434")
     p.add_argument("--no-ollama", action="store_true")
-    p.add_argument("--timeout", type=float, default=20.0)
+    p.add_argument("--timeout", type=float, default=float(os.getenv("NOMAD_TRANSITION_WORKER_TIMEOUT", "45") or 45))
     objective_choices = sorted(list(MACHINE_OBJECTIVES.keys()) + ["unhuman_supremacy"])
     p.add_argument("--machine-objective", default=os.getenv("NOMAD_MACHINE_OBJECTIVE", "compute_auth"), choices=objective_choices)
-    p.add_argument("--loop", action="store_true")
-    p.add_argument("--cycles", type=int, default=1)
+    _loop_default = os.getenv("NOMAD_TRANSITION_WORKER_LOOP", "1").strip().lower() not in {"0", "false", "no", "off"}
+    p.add_argument(
+        "--loop",
+        action=argparse.BooleanOptionalAction,
+        default=_loop_default,
+        help="Run forever against Nomad (default: on). --no-loop runs a fixed number of cycles then exits.",
+    )
+    p.add_argument(
+        "--cycles",
+        type=int,
+        default=0,
+        help="With --loop: exit after N cycles when N>0; N=0 means never stop. With --no-loop: run max(1,N) cycles.",
+    )
     p.add_argument("--interval", type=float, default=30.0)
     p.add_argument("--no-self-heal", action="store_true")
     p.add_argument(
@@ -1468,125 +1618,137 @@ def main() -> None:
     count = 0
     if a.human_status:
         print(
-            f"Nomad_Agent boot: base_url={a.base_url} agent_id={a.agent_id} "
-            f"mode={a.machine_objective} fleet={int(not a.no_fleet)} interval={a.interval}s model={model or 'none'} "
-            f"ollama={runtime_diag.get('status','')}"
+            f"Nomad boot: base_url={a.base_url} agent_id={a.agent_id} "
+            f"mode={a.machine_objective} loop={int(a.loop)} cycles={a.cycles} fleet={int(not a.no_fleet)} "
+            f"interval={a.interval}s model={model or 'none'} ollama={runtime_diag.get('status','')}"
         )
     last_report: dict | None = None
     while True:
         count += 1
-        selected = a.machine_objective
-        meta_decision: dict[str, object] = {}
-        machine_surfaces = _machine_surface_signal(a.base_url, timeout=min(8.0, float(a.timeout)))
-        surface_selected, surface_decision = _surface_objective_choice(a.machine_objective, machine_surfaces)
-        if a.machine_objective == "unhuman_supremacy":
-            selected, meta_decision = _choose_meta_objective(history)
-            if surface_selected in MACHINE_OBJECTIVES:
+        try:
+            selected = a.machine_objective
+            meta_decision: dict[str, object] = {}
+            machine_surfaces = _machine_surface_signal(a.base_url, timeout=min(8.0, float(a.timeout)))
+            surface_selected, surface_decision = _surface_objective_choice(a.machine_objective, machine_surfaces)
+            if a.machine_objective == "unhuman_supremacy":
+                selected, meta_decision = _choose_meta_objective(history)
+                if surface_selected in MACHINE_OBJECTIVES:
+                    selected = surface_selected
+                    meta_decision = {
+                        **meta_decision,
+                        "surface_policy": surface_decision.get("policy"),
+                        "surface_objective": surface_selected,
+                    }
+            elif surface_selected in MACHINE_OBJECTIVES:
                 selected = surface_selected
-                meta_decision = {
-                    **meta_decision,
-                    "surface_policy": surface_decision.get("policy"),
-                    "surface_objective": surface_selected,
-                }
-        elif surface_selected in MACHINE_OBJECTIVES:
-            selected = surface_selected
-        timeout = float(a.timeout)
-        meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
-        consecutive_failures = int(meta.get("consecutive_failures") or 0)
-        if consecutive_failures > 0:
-            timeout = min(60.0, timeout + consecutive_failures * 3.0)
-        fleet_lease: dict[str, object] = {"ok": False, "skipped": True, "reason": "disabled"}
-        if not a.no_fleet:
-            fleet_lease = _worker_fleet_lease(
-                a.base_url,
-                a.agent_id,
-                timeout=min(10.0, timeout),
-                proposed_objective=selected,
-                last_report=last_report,
-                machine_surfaces=machine_surfaces,
+            timeout = float(a.timeout)
+            meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
+            consecutive_failures = int(meta.get("consecutive_failures") or 0)
+            if consecutive_failures > 0:
+                timeout = min(60.0, timeout + consecutive_failures * 3.0)
+            fleet_lease: dict[str, object] = {"ok": False, "skipped": True, "reason": "disabled"}
+            if not a.no_fleet:
+                fleet_lease = _worker_fleet_lease(
+                    a.base_url,
+                    a.agent_id,
+                    timeout=min(10.0, timeout),
+                    proposed_objective=selected,
+                    last_report=last_report,
+                    machine_surfaces=machine_surfaces,
+                )
+                leased_objective = clean(fleet_lease.get("objective"), 80)
+                if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES:
+                    selected = leased_objective
+            report = (
+                run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
+                if a.no_self_heal
+                else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
             )
-            leased_objective = clean(fleet_lease.get("objective"), 80)
-            if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES:
-                selected = leased_objective
-        report = (
-            run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
-            if a.no_self_heal
-            else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
-        )
-        report["machine_objective_mode"] = a.machine_objective
-        report["fleet_lease"] = fleet_lease
-        report["ollama_runtime"] = runtime_diag
-        report["ollama_pull"] = pull_diag
-        report["machine_surface_decision"] = surface_decision
-        if meta_decision:
-            report["meta_decision"] = meta_decision
-        report["meta_score"] = _score_run(report)
-        if not a.no_fleet:
-            report["fleet_complete"] = _worker_fleet_complete(
+            report["machine_objective_mode"] = a.machine_objective
+            report["fleet_lease"] = fleet_lease
+            report["ollama_runtime"] = runtime_diag
+            report["ollama_pull"] = pull_diag
+            report["machine_surface_decision"] = surface_decision
+            if meta_decision:
+                report["meta_decision"] = meta_decision
+            report["meta_score"] = _score_run(report)
+            if not a.no_fleet:
+                report["fleet_complete"] = _worker_fleet_complete(
+                    a.base_url,
+                    a.agent_id,
+                    timeout=min(10.0, timeout),
+                    lease=fleet_lease,
+                    report=report,
+                )
+            report["proof_link"] = _proof_link(
                 a.base_url,
                 a.agent_id,
-                timeout=min(10.0, timeout),
-                lease=fleet_lease,
+                timeout=min(8.0, timeout),
                 report=report,
             )
-        report["proof_link"] = _proof_link(
-            a.base_url,
-            a.agent_id,
-            timeout=min(8.0, timeout),
-            report=report,
-        )
-        report["variant_candidate"] = _variant_candidate_submit(
-            a.base_url,
-            a.agent_id,
-            timeout=min(8.0, timeout),
-            report=report,
-            lease=fleet_lease,
-        )
-        report["worker_market_offer"] = _worker_market_offer(
-            a.base_url,
-            a.agent_id,
-            timeout=min(8.0, timeout),
-            report=report,
-            lease=fleet_lease,
-        )
-        report["ecology_tick"] = _ecology_tick(
-            a.base_url,
-            a.agent_id,
-            timeout=min(8.0, timeout),
-            report=report,
-            lease=fleet_lease,
-        )
-        report["growth_experience"] = _growth_experience(
-            a.base_url,
-            a.agent_id,
-            timeout=min(8.0, timeout),
-            report=report,
-            lease=fleet_lease,
-        )
-        _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
-        meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
-        if report.get("ok"):
-            meta["consecutive_failures"] = 0
-            meta["last_success_at"] = report.get("timestamp")
-        else:
-            meta["consecutive_failures"] = int(meta.get("consecutive_failures") or 0) + 1
-            meta["last_failure_at"] = report.get("timestamp")
-        _save_history(history)
-        report["cycle"] = count
-        if a.human_status:
-            _print_human_status(report, cycle=count)
-        print(json.dumps(report, ensure_ascii=True))
-        last_report = report
-        if not a.loop and count >= max(1, a.cycles):
-            break
-        if a.loop and a.cycles > 0 and count >= a.cycles:
-            break
-        dynamic_interval = max(1.0, float(a.interval))
-        if not report.get("ok"):
-            dynamic_interval = min(45.0, dynamic_interval + 4.0)
-        elif (report.get("proof_pressure") or {}).get("proof_yield_per_minute", 0) > 10:
-            dynamic_interval = max(3.0, dynamic_interval - 2.0)
-        time.sleep(dynamic_interval)
+            report["variant_candidate"] = _variant_candidate_submit(
+                a.base_url,
+                a.agent_id,
+                timeout=min(8.0, timeout),
+                report=report,
+                lease=fleet_lease,
+            )
+            report["worker_market_offer"] = _worker_market_offer(
+                a.base_url,
+                a.agent_id,
+                timeout=min(8.0, timeout),
+                report=report,
+                lease=fleet_lease,
+            )
+            report["ecology_tick"] = _ecology_tick(
+                a.base_url,
+                a.agent_id,
+                timeout=min(8.0, timeout),
+                report=report,
+                lease=fleet_lease,
+            )
+            report["growth_experience"] = _growth_experience(
+                a.base_url,
+                a.agent_id,
+                timeout=min(8.0, timeout),
+                report=report,
+                lease=fleet_lease,
+            )
+            _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
+            meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
+            if report.get("ok"):
+                meta["consecutive_failures"] = 0
+                meta["last_success_at"] = report.get("timestamp")
+            else:
+                meta["consecutive_failures"] = int(meta.get("consecutive_failures") or 0) + 1
+                meta["last_failure_at"] = report.get("timestamp")
+            _save_history(history)
+            report["cycle"] = count
+            if a.human_status:
+                _print_human_status(report, cycle=count)
+            print(json.dumps(report, ensure_ascii=True))
+            last_report = report
+            if not a.loop and count >= max(1, a.cycles):
+                break
+            if a.loop and a.cycles > 0 and count >= a.cycles:
+                break
+            dynamic_interval = max(1.0, float(a.interval))
+            if not report.get("ok"):
+                dynamic_interval = min(45.0, dynamic_interval + 4.0)
+            elif (report.get("proof_pressure") or {}).get("proof_yield_per_minute", 0) > 10:
+                dynamic_interval = max(3.0, dynamic_interval - 2.0)
+            time.sleep(dynamic_interval)
+        except KeyboardInterrupt:
+            if a.human_status:
+                print("Nomad: stopped by user (Ctrl+C).", flush=True)
+            raise
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            err = clean(str(exc), 220)
+            if a.human_status:
+                print(f"Nomad: cycle {count} crashed, backing off 20s: {err}", flush=True)
+            time.sleep(20.0)
 
 if __name__ == "__main__":
     main()

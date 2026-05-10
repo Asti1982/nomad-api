@@ -2,11 +2,12 @@
 
 ## Empfohlen: Transition Worker = Compute für den Schwarm (ohne OpenClaw)
 
-Der **Nomad Transition Worker** ist der Hauptpfad: ein Prozess auf deiner Maschine, der **Ressourcen und Compute** über die öffentlichen Nomad-Verträge anbietet (Attach, Leases, Completion). **Ollama** dient dabei nur als **leichtes lokales Modell** zum Testen (z. B. Generate/Tags) — **ohne** OpenClaw-Gateway, ohne Chat-Stack dazwischen.
+Der **Nomad Transition Worker** (die Datei `nomad_transition_worker.py` — umgangssprachlich oft einfach **Nomad**) ist der Hauptpfad: ein Prozess auf deiner Maschine, der sich per **`POST /swarm/attach`** am Routing-Feld anmeldet, **Ressourcen und Compute** über öffentliche Verträge anbietet (Leases, Completion, Proof-Link) und Aufgaben an **andere KI-Agenten** nur über Nomad-Endpunkte weitergibt — **ohne menschliche Programmierung** zur Laufzeit. **Ollama** optional nur als **leichtes lokales Modell** für Mission-Notizen/Tests — **ohne** OpenClaw.
 
 1. **Windows:** [install_nomad_transition_worker.bat](https://www.syndiode.com/downloads/install_nomad_transition_worker.bat) herunterladen und ausführen (installiert nach `%USERPROFILE%\NomadTransitionWorker`, optional Ollama-Modell, startet den Worker).
-2. **Ollama:** unter `http://127.0.0.1:11434` laufen lassen; wenn etwas „unreachable“ ist, zuerst Ollama starten — nicht OpenClaw konfigurieren.
-3. **Portable:** `python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0`
+2. **Spitzname statt Rechnername:** Standard-`agent_id` ist `nomad.worker.<kurzer Nick>` (persistiert in `~/.nomad_worker_identity.json`, kein Hostname). Eigenes Handle: Umgebung `NOMAD_TRANSITION_WORKER_ID` setzen; anderer Pfad für die Datei: `NOMAD_WORKER_IDENTITY_PATH`.
+3. **Ollama:** unter `http://127.0.0.1:11434` laufen lassen; wenn etwas „unreachable“ ist, zuerst Ollama starten — nicht OpenClaw konfigurieren.
+4. **Portable:** `python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0`
 
 Eigener Host: `install_nomad_transition_worker.bat https://dein-host` bzw. `--base-url` setzen.
 
@@ -17,10 +18,16 @@ Eigener Host: `install_nomad_transition_worker.bat https://dein-host` bzw. `--ba
 
 ---
 
-Run this on another machine to join and help Nomad:
+Run this on another machine to join and help Nomad (by default **loops forever**; Ctrl+C to stop):
 
 ```bash
-python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0
+python nomad_transition_worker.py --base-url https://www.syndiode.com
+```
+
+Single test cycle only:
+
+```bash
+python nomad_transition_worker.py --base-url https://www.syndiode.com --no-loop --cycles 1
 ```
 
 Direct download (if published by Nomad host):

@@ -209,6 +209,53 @@ def test_transition_worker_scores_machine_surfaces():
     assert scored > baseline
 
 
+def test_transition_worker_default_agent_id_is_nickname_not_hostname(tmp_path, monkeypatch):
+    monkeypatch.delenv("NOMAD_TRANSITION_WORKER_ID", raising=False)
+    monkeypatch.setenv("NOMAD_WORKER_IDENTITY_PATH", str(tmp_path / "worker_identity.json"))
+    worker = _load_worker()
+    a = worker.default_agent_id()
+    b = worker.default_agent_id()
+    assert a == b
+    assert a.startswith("nomad.worker.")
+    tail = a.split(".", 2)[2]
+    assert tail.isalnum()
+    assert "." not in tail
+    assert len(tail) >= 8
+
+
+def test_transition_worker_explicit_agent_id_env(monkeypatch):
+    monkeypatch.setenv("NOMAD_TRANSITION_WORKER_ID", "custom.agent.one")
+    worker = _load_worker()
+    assert worker.default_agent_id() == "custom.agent.one"
+
+
+def test_transition_worker_posts_swarm_attach(monkeypatch):
+    worker = _load_worker()
+    calls: list[tuple] = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        if url.endswith("/swarm/attach"):
+            return {"ok": True, "schema": "nomad.runtime_attach_decision.v1", "attach": True, "lane": "loop_runner"}
+        return {"ok": False}
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    out = worker._nomad_swarm_attach(
+        "https://nomad.example",
+        "transition-worker.test",
+        timeout=2.0,
+        capabilities=["proof_artifacts"],
+    )
+    assert out.get("attach") is True
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/swarm/attach")
+    body = calls[0][2] or {}
+    assert body.get("runtime") == "nomad_transition_worker"
+    rs = body.get("runtime_signal") or {}
+    assert rs.get("human_programming_required") is False
+    assert "peer_agents" in str(rs.get("delegation_model") or "")
+
+
 def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     worker = _load_worker()
     calls = []
