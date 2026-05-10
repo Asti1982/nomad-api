@@ -14,6 +14,15 @@ it is not a control plane and not required for swarm participation.
 Default ``agent_id`` is a **persistent random nickname** (no hostname / no
 personal machine name sent to Nomad). Override with ``NOMAD_TRANSITION_WORKER_ID``
 if you need a stable operator-supplied id.
+
+**Human remainder (hard floor):** between cycles the worker always sleeps at
+least ``NOMAD_HUMAN_REMAINDER_MIN_SECONDS`` (default 45s) — a fixed minimum rest
+window, not a satisfaction target.
+
+**Swarm surplus (explicit opt-in):** fleet leases that bind extra objective
+capacity default **off**. Set ``NOMAD_SWARM_SURPLUS_OPT_IN=1`` or pass
+``--swarm-surplus`` to feed that capacity to the swarm; without it the worker
+stays on the lighter path (no ``/swarm/workers/lease`` / ``complete``).
 """
 from __future__ import annotations
 import argparse, ctypes, hashlib, json, os, random, secrets, shutil, subprocess, time
@@ -506,6 +515,20 @@ def default_agent_id() -> str:
     if explicit:
         return explicit
     return f"nomad.worker.{_persistent_worker_nick()}"
+
+
+def _parse_human_remainder_floor_seconds(raw: str | None) -> float:
+    """Minimum idle seconds between cycles; fixed human floor, not a utility target."""
+    text = (raw if raw is not None else os.getenv("NOMAD_HUMAN_REMAINDER_MIN_SECONDS") or "45").strip()
+    try:
+        v = float(text)
+    except ValueError:
+        v = 45.0
+    return max(0.0, min(3600.0, v))
+
+
+def _swarm_surplus_default_from_env() -> bool:
+    return os.getenv("NOMAD_SWARM_SURPLUS_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _nomad_swarm_attach(
@@ -1566,6 +1589,8 @@ def main() -> None:
         epilog=(
             "Runtime model: this process is what operators mean by 'Nomad installed' — it is not OpenClaw.\n"
             "By default the worker keeps running forever (continuous Nomad support). Use --no-loop --cycles 1 for a single test cycle.\n"
+            "Human remainder: sleep at least NOMAD_HUMAN_REMAINDER_MIN_SECONDS (default 45) between cycles — hard floor, not satisfaction tuning.\n"
+            "Swarm surplus: fleet leases default OFF; set NOMAD_SWARM_SURPLUS_OPT_IN=1 or --swarm-surplus to explicitly feed extra capacity.\n"
             "Optional NOMAD_ADAPTER_CONSENT_TOKEN if your host requires adapter consent on /swarm/attach.\n"
             "Ollama is optional local inference for mission notes; swarm work stays contract-bound.\n"
             "Env NOMAD_TRANSITION_WORKER_LOOP=0 disables infinite loop (same as --no-loop)."
@@ -1598,7 +1623,19 @@ def main() -> None:
         "--no-fleet",
         action="store_true",
         default=(os.getenv("NOMAD_TRANSITION_WORKER_NO_FLEET", "").strip().lower() in {"1", "true", "yes", "on"}),
-        help="Disable server-side /swarm/workers objective leases.",
+        help="Disable server-side /swarm/workers objective leases (overrides swarm surplus).",
+    )
+    p.add_argument(
+        "--swarm-surplus",
+        action=argparse.BooleanOptionalAction,
+        default=_swarm_surplus_default_from_env(),
+        help="Explicit opt-in for fleet leases (surplus capacity to swarm). Default off unless NOMAD_SWARM_SURPLUS_OPT_IN=1.",
+    )
+    p.add_argument(
+        "--human-remainder-min-seconds",
+        type=float,
+        default=_parse_human_remainder_floor_seconds(None),
+        help="Minimum seconds between cycle starts (human rest floor). Env NOMAD_HUMAN_REMAINDER_MIN_SECONDS overrides default.",
     )
     p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
     a = p.parse_args()
@@ -1616,11 +1653,15 @@ def main() -> None:
     if (not a.no_ollama) and model:
         pull_diag = _maybe_pull_ollama_model(model, timeout=120.0)
     count = 0
+    human_floor = _parse_human_remainder_floor_seconds(str(a.human_remainder_min_seconds))
+    fleet_active = (not a.no_fleet) and bool(a.swarm_surplus)
     if a.human_status:
         print(
             f"Nomad boot: base_url={a.base_url} agent_id={a.agent_id} "
-            f"mode={a.machine_objective} loop={int(a.loop)} cycles={a.cycles} fleet={int(not a.no_fleet)} "
-            f"interval={a.interval}s model={model or 'none'} ollama={runtime_diag.get('status','')}"
+            f"mode={a.machine_objective} loop={int(a.loop)} cycles={a.cycles} "
+            f"fleet={int(fleet_active)} surplus_opt_in={int(bool(a.swarm_surplus))} "
+            f"human_rest_floor={human_floor}s interval={a.interval}s model={model or 'none'} "
+            f"ollama={runtime_diag.get('status','')}"
         )
     last_report: dict | None = None
     while True:
@@ -1646,8 +1687,15 @@ def main() -> None:
             consecutive_failures = int(meta.get("consecutive_failures") or 0)
             if consecutive_failures > 0:
                 timeout = min(60.0, timeout + consecutive_failures * 3.0)
-            fleet_lease: dict[str, object] = {"ok": False, "skipped": True, "reason": "disabled"}
-            if not a.no_fleet:
+            if not fleet_active:
+                if a.no_fleet:
+                    _skip = "no_fleet_flag"
+                elif not a.swarm_surplus:
+                    _skip = "swarm_surplus_not_opted_in"
+                else:
+                    _skip = "disabled"
+                fleet_lease = {"ok": False, "skipped": True, "reason": _skip}
+            else:
                 fleet_lease = _worker_fleet_lease(
                     a.base_url,
                     a.agent_id,
@@ -1665,6 +1713,12 @@ def main() -> None:
                 else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
             )
             report["machine_objective_mode"] = a.machine_objective
+            report["machine_policy"] = {
+                "schema": "nomad.worker_human_remainder.v1",
+                "human_remainder_floor_seconds": round(human_floor, 3),
+                "swarm_surplus_opt_in": bool(a.swarm_surplus),
+                "fleet_active": bool(fleet_active),
+            }
             report["fleet_lease"] = fleet_lease
             report["ollama_runtime"] = runtime_diag
             report["ollama_pull"] = pull_diag
@@ -1672,7 +1726,7 @@ def main() -> None:
             if meta_decision:
                 report["meta_decision"] = meta_decision
             report["meta_score"] = _score_run(report)
-            if not a.no_fleet:
+            if fleet_active:
                 report["fleet_complete"] = _worker_fleet_complete(
                     a.base_url,
                     a.agent_id,
@@ -1737,7 +1791,7 @@ def main() -> None:
                 dynamic_interval = min(45.0, dynamic_interval + 4.0)
             elif (report.get("proof_pressure") or {}).get("proof_yield_per_minute", 0) > 10:
                 dynamic_interval = max(3.0, dynamic_interval - 2.0)
-            time.sleep(dynamic_interval)
+            time.sleep(max(float(dynamic_interval), float(human_floor)))
         except KeyboardInterrupt:
             if a.human_status:
                 print("Nomad: stopped by user (Ctrl+C).", flush=True)
@@ -1748,7 +1802,7 @@ def main() -> None:
             err = clean(str(exc), 220)
             if a.human_status:
                 print(f"Nomad: cycle {count} crashed, backing off 20s: {err}", flush=True)
-            time.sleep(20.0)
+            time.sleep(max(20.0, float(human_floor)))
 
 if __name__ == "__main__":
     main()

@@ -70,7 +70,7 @@ echo Starting Nomad Agent (visible PowerShell + live JSON output)...
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-start "Nomad_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
+start "Nomad_Live" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_TRANSITION_WORKER_OLLAMA_URL='%OLLAMA_URL%'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_URLS='%OLLAMA_URL%,http://localhost:11434'; $env:NOMAD_TRANSITION_WORKER_OLLAMA_MAX_GB='24'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_HUMAN_REMAINDER_MIN_SECONDS='45'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --swarm-surplus --loop --cycles 0 --interval 8 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
 echo.
 echo Nomad Agent started.
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%

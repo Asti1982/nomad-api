@@ -223,6 +223,15 @@ def test_transition_worker_default_agent_id_is_nickname_not_hostname(tmp_path, m
     assert len(tail) >= 8
 
 
+def test_human_remainder_floor_parsing(monkeypatch):
+    worker = _load_worker()
+    monkeypatch.delenv("NOMAD_HUMAN_REMAINDER_MIN_SECONDS", raising=False)
+    assert worker._parse_human_remainder_floor_seconds(None) == 45.0
+    assert worker._parse_human_remainder_floor_seconds("12.5") == 12.5
+    assert worker._parse_human_remainder_floor_seconds("99999") == 3600.0
+    assert worker._parse_human_remainder_floor_seconds("nope") == 45.0
+
+
 def test_transition_worker_explicit_agent_id_env(monkeypatch):
     monkeypatch.setenv("NOMAD_TRANSITION_WORKER_ID", "custom.agent.one")
     worker = _load_worker()
