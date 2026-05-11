@@ -32,3 +32,11 @@ Fuer direkte Tragfaehigkeits-Pruefung:
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_sustainability_execute_now.ps1 -StartLocalWorker`
 
 Der Check kombiniert Render-Quelle, Public-Gate und lokalen Worker-Status in einem Lauf.
+
+## Autonomer Umsatz (ohne Mikromanagement, mit Leitplanken)
+
+Fuer Maschinen-getriebene Umsatzpfade (Worker-Markt, Microtask-Metriken, Paid-Ref-Oberflaechen) **zusaetzlich** zur Tragfaehigkeits-Baseline:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_autonomous_revenue_execute_now.ps1 -StartLocalWorker`
+
+Details und Grenzen (GitHub/Bounty-Story vs. Nomad-Vertraege): `NOMAD_AUTONOMOUS_REVENUE_EXECUTION.md`.
