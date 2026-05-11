@@ -172,6 +172,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.89,
+            "get_url": u("/.well-known/nomad-survival-market.json"),
+            "purpose": "sellable_survival_packets_and_buyer_intents",
+            "machine_note": (
+                "Converts Nomad utility into priced packets; POST /swarm/survival-intent with buyer proof, "
+                "and only paid_ref + amount_eur counts as revenue."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -318,6 +327,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/carrying-market", "methods": ["GET"], "effect": "read_zero_paid_infra_carrying_contracts", "cost_tier": "low"},
         {"path": "/.well-known/nomad-carrying-market.json", "methods": ["GET"], "effect": "read_zero_paid_infra_carrying_contracts", "cost_tier": "low"},
         {"path": "/swarm/carrying-proof", "methods": ["POST"], "effect": "write_substrate_carrying_proof", "cost_tier": "medium"},
+        {"path": "/swarm/survival-market", "methods": ["GET"], "effect": "read_sellable_survival_packets", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-survival-market.json", "methods": ["GET"], "effect": "read_sellable_survival_packets", "cost_tier": "low"},
+        {"path": "/swarm/survival-intent", "methods": ["POST"], "effect": "write_buyer_or_paid_survival_signal", "cost_tier": "medium"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
@@ -454,6 +466,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "state_status_url": u("/swarm/state-status"),
         "carrying_market_url": u("/.well-known/nomad-carrying-market.json"),
         "carrying_proof_url": u("/swarm/carrying-proof"),
+        "survival_market_url": u("/.well-known/nomad-survival-market.json"),
+        "survival_intent_url": u("/swarm/survival-intent"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "growth_arena_url": u("/swarm/growth-arena"),

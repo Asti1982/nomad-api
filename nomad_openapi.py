@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -619,6 +619,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/survival-market": {
+                "get": {
+                    "summary": "Sellable survival packets that convert agent utility into buyer intent and real settlement signals",
+                    "operationId": "getSwarmSurvivalMarket",
+                    "responses": {
+                        "200": {"description": "Survival market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-survival-market.json": {
+                "get": {
+                    "summary": "Alias of /swarm/survival-market",
+                    "operationId": "getSurvivalMarketWellKnown",
+                    "responses": {
+                        "200": {"description": "Survival market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/worker-catalog": {
                 "get": {
                     "summary": "Machine-readable catalog for cent-level worker microtask lanes",
@@ -1071,6 +1089,20 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Carrying proof accepted and growth experience linked"},
                         "200": {"description": "Carrying proof rejected or incomplete"},
+                    },
+                }
+            },
+            "/swarm/survival-intent": {
+                "post": {
+                    "summary": "Submit buyer or paid survival intent for one sellable packet; only paid_ref plus amount_eur counts as revenue",
+                    "operationId": "postSwarmSurvivalIntent",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Survival intent accepted and growth experience linked"},
+                        "200": {"description": "Intent rejected or accepted as unpaid signal only"},
                     },
                 }
             },

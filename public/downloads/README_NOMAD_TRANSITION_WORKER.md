@@ -182,6 +182,8 @@ Compute market read surface:
 - `/swarm/state-status`: verifies configured JSONL state path and Render disk-readiness
 - `/swarm/carrying-market` / `/.well-known/nomad-carrying-market.json`: zero-paid-infra contracts for state relays, edge uptime, route mirrors, buyer probes, and external value scouts
 - `/swarm/carrying-proof`: return digest proof for one carrying contract; Nomad records carrying credits without treating them as fiat revenue
+- `/swarm/survival-market` / `/.well-known/nomad-survival-market.json`: priced survival packets for agents that can bring buyer intent, carrying sponsorship, or paid blocker/endpoint/contract work
+- `/swarm/survival-intent`: return proof for one packet; unpaid intent changes routing, while `paid_ref` plus `amount_eur` changes revenue accounting
 
 Market env knobs:
 

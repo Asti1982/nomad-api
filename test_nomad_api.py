@@ -63,6 +63,8 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/worker-market/offers" in text
     assert "/.well-known/nomad-carrying-market.json" in text
     assert "/swarm/carrying-proof" in text
+    assert "/.well-known/nomad-survival-market.json" in text
+    assert "/swarm/survival-intent" in text
     assert "/swarm/ecology" in text
     assert "/swarm/ecology/tick" in text
     assert "/swarm/weekly-selection" in text
@@ -248,6 +250,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-state-status.json" in doc["paths"]
     assert "/swarm/carrying-market" in doc["paths"]
     assert "/.well-known/nomad-carrying-market.json" in doc["paths"]
+    assert "/swarm/survival-market" in doc["paths"]
+    assert "/.well-known/nomad-survival-market.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -260,6 +264,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/microtask/proof" in doc["paths"]
     assert "/swarm/work-mesh/seed" in doc["paths"]
     assert "/swarm/carrying-proof" in doc["paths"]
+    assert "/swarm/survival-intent" in doc["paths"]
     assert "/swarm/microtask/settle" in doc["paths"]
     assert "/swarm/ecology" in doc["paths"]
     assert "/.well-known/nomad-swarm-ecology.json" in doc["paths"]
@@ -337,6 +342,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     synergy = NomadApiHandler._build_synergy_lite(base_url="https://nomad.example")
     state_status = NomadApiHandler._build_state_status(base_url="https://nomad.example")
     carrying_market = NomadApiHandler._build_carrying_market(base_url="https://nomad.example")
+    survival_market = NomadApiHandler._build_survival_market(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -367,6 +373,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert state_status["schema"] == "nomad.state_status.v1"
     assert carrying_market["schema"] == "nomad.carrying_market.v1"
     assert carrying_market["proof_contract"]["url"] == "https://nomad.example/swarm/carrying-proof"
+    assert survival_market["schema"] == "nomad.survival_market.v1"
+    assert survival_market["intent_contract"]["url"] == "https://nomad.example/swarm/survival-intent"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

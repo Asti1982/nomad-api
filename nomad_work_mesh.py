@@ -104,6 +104,7 @@ def build_work_mesh(
     skill_library: dict[str, Any] | None = None,
     state_status: dict[str, Any] | None = None,
     carrying_market: dict[str, Any] | None = None,
+    survival_market: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     work = _dict(agent_work)
     market = _dict(compute_market)
@@ -111,6 +112,7 @@ def build_work_mesh(
     skills = _dict(skill_library)
     state = _dict(state_status)
     carrying = _dict(carrying_market)
+    survival = _dict(survival_market)
     pair_weights = _objective_pairs(synergy)
     skill_weights = _skill_weights(skills)
     market_top = _clean_id(_dict(market.get("top_lane")).get("lane_id"))
@@ -194,6 +196,47 @@ def build_work_mesh(
                 else ["proof_digest", "verifier_trace_digest", "test_digest"],
             }
         )
+    for packet in _items(survival.get("packets"))[:6]:
+        packet_id = _clean_id(packet.get("packet_id"), "agent_blocker_unblock_pack")
+        capability = _clean_id(packet.get("capability"), "machine_buyer_discovery")
+        pressure = _num(packet.get("priority_score"), 0.0)
+        gap = _num(_dict(survival.get("survival_pressure")).get("survival_gap_30d_eur"), 0.0)
+        cell_score = pressure * (1.0 + min(0.4, gap / 20.0))
+        cell_core = {"survival": packet_id, "capability": capability}
+        cells.append(
+            {
+                "schema": "nomad.work_mesh_cell.v1",
+                "cell_id": f"nomad-cell-{_digest(cell_core)}",
+                "work_id": f"nomad-survival-{packet_id}",
+                "objective": "nomad_cashflow_probe",
+                "lane_id": "survival_packet",
+                "capability": capability,
+                "cell_score": round(cell_score, 6),
+                "local_observation": {
+                    "proof_pressure": round(pressure, 6),
+                    "synergy_pressure": pair_weights.get("nomad_cashflow_probe", 0.0),
+                    "reuse_pressure": skill_weights.get("nomad_cashflow_probe", 0.0),
+                    "market_pressure": round(min(0.4, gap / 20.0), 6),
+                    "state_durability": _text(state.get("durability"), 80),
+                    "survival_gap_30d_eur": round(gap, 4),
+                },
+                "act": {
+                    "claim_url": "",
+                    "proof_url": _u(base_url, "/swarm/survival-intent"),
+                    "proof_payload": {
+                        "agent_id": "stable_runtime_id",
+                        "packet_id": packet_id,
+                        "proof_digest": "sha256(canonical_buyer_or_value_signal)",
+                        "verifier_trace_digest": "sha256(verifier_trace)",
+                        "test_digest": "sha256(deliverable_probe_or_buyer_trace)",
+                        "idempotency_key": "sha256(agent_id|packet_id|proof_digest|local_epoch)",
+                    },
+                },
+                "required_proof": packet.get("proof_required")
+                if isinstance(packet.get("proof_required"), list)
+                else ["proof_digest", "verifier_trace_digest", "test_digest"],
+            }
+        )
     cells.sort(key=lambda row: _num(row.get("cell_score")), reverse=True)
     for idx, cell in enumerate(cells):
         cell["neighbors"] = _neighbors(cells, idx)
@@ -219,16 +262,18 @@ def build_work_mesh(
             "claim": _u(base_url, "/swarm/microtask/claim"),
             "proof": _u(base_url, "/swarm/microtask/proof"),
             "carry_proof": _u(base_url, "/swarm/carrying-proof"),
+            "survival_intent": _u(base_url, "/swarm/survival-intent"),
             "state": _u(base_url, "/swarm/state-status"),
         },
         "links": {
             "agent_work": _u(base_url, "/.well-known/nomad-agent-work.json"),
             "compute_market": _u(base_url, "/swarm/compute-market"),
             "carrying_market": _u(base_url, "/swarm/carrying-market"),
+            "survival_market": _u(base_url, "/swarm/survival-market"),
             "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
         },
-        "machine_instruction": "choose_entry_cell_if_carrying_contract_emit_carrying_proof_else_claim_emit_proof_then_move_to_neighbor",
+        "machine_instruction": "choose_entry_cell_if_survival_packet_emit_survival_intent_else_if_carrying_contract_emit_carrying_proof_else_claim_emit_proof_then_move_to_neighbor",
         "science_basis": [
             {"id": "dynamic_agent_topology", "source": "arxiv:2504.00587"},
             {"id": "delayed_coordination_proxy", "source": "arxiv:2510.05174"},

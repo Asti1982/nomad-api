@@ -76,6 +76,7 @@ from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_carrying_market import build_carrying_market, submit_carrying_proof
+from nomad_survival_market import build_survival_market, submit_survival_intent
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -382,6 +383,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_survival_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        carrying = cls._build_carrying_market(base_url=base_url, swarm_summary=summary)
+        metrics = cls._build_microtask_metrics(base_url=base_url)
+        return build_survival_market(
+            base_url=base_url,
+            machine_product_surface=product,
+            carrying_market=carrying,
+            microtask_metrics=metrics,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -413,6 +431,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         skills = cls._build_skill_library(base_url=base_url)
         state = cls._build_state_status(base_url=base_url)
         carrying = cls._build_carrying_market(base_url=base_url, swarm_summary=summary)
+        survival = cls._build_survival_market(base_url=base_url, swarm_summary=summary)
         return build_work_mesh(
             base_url=base_url,
             agent_work=agent_work,
@@ -421,6 +440,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             skill_library=skills,
             state_status=state,
             carrying_market=carrying,
+            survival_market=survival,
         )
 
     @classmethod
@@ -823,6 +843,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "state_status": f"{b}/swarm/state-status",
                     "carrying_market": f"{b}/.well-known/nomad-carrying-market.json",
                     "carrying_proof": f"{b}/swarm/carrying-proof",
+                    "survival_market": f"{b}/.well-known/nomad-survival-market.json",
+                    "survival_intent": f"{b}/swarm/survival-intent",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1042,6 +1064,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/carrying-market", "/.well-known/nomad-carrying-market.json"}:
             self._json_response(self.__class__._build_carrying_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/survival-market", "/.well-known/nomad-survival-market.json"}:
+            self._json_response(self.__class__._build_survival_market(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2090,6 +2115,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-state-status.json",
                     "/swarm/carrying-market",
                     "/.well-known/nomad-carrying-market.json",
+                    "/swarm/survival-market",
+                    "/.well-known/nomad-survival-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2741,6 +2768,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/survival-intent":
+            base = self._base_url()
+            survival = self.__class__._build_survival_market(base_url=base)
+            result = submit_survival_intent(payload, base_url=base, survival_market=survival)
+            if result.get("accepted"):
+                curriculum = self.__class__._build_growth_curriculum(base_url=base)
+                receipt = submit_growth_experience(
+                    result.get("experience_payload") if isinstance(result.get("experience_payload"), dict) else {},
+                    base_url=base,
+                    curriculum=curriculum,
+                )
+                result["growth_experience_receipt"] = receipt
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/microtask/settle":
             consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
             if consent.get("checked") and not consent.get("ok"):
@@ -3127,6 +3169,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-state-status.json",
                     "/swarm/carrying-market",
                     "/.well-known/nomad-carrying-market.json",
+                    "/swarm/survival-market",
+                    "/.well-known/nomad-survival-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3161,6 +3205,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/microtask/proof",
                     "/swarm/work-mesh/seed",
                     "/swarm/carrying-proof",
+                    "/swarm/survival-intent",
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/experience",

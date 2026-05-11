@@ -376,6 +376,8 @@ def build_agent_work_surface(
             "compute_market": _u(base_url, "/swarm/compute-market"),
             "carrying_market": _u(base_url, "/swarm/carrying-market"),
             "carrying_proof": _u(base_url, "/swarm/carrying-proof"),
+            "survival_market": _u(base_url, "/swarm/survival-market"),
+            "survival_intent": _u(base_url, "/swarm/survival-intent"),
             "claim": _u(base_url, "/swarm/microtask/claim"),
             "proof": _u(base_url, "/swarm/microtask/proof"),
             "settle": _u(base_url, "/swarm/microtask/settle"),

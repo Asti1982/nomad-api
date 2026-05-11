@@ -209,6 +209,20 @@ def _carrying_proof_payload(carrying_market: dict) -> dict:
     }
 
 
+def _survival_intent_payload(survival_market: dict) -> dict:
+    top = survival_market.get("top_packet") if isinstance(survival_market.get("top_packet"), dict) else {}
+    return {
+        "agent_id": "deploy.gate.probe",
+        "packet_id": str(top.get("packet_id") or "reseller_referral_probe"),
+        "proof_digest": "deploy-gate-survival-proof",
+        "verifier_trace_digest": "deploy-gate-survival-trace",
+        "test_digest": "deploy-gate-survival-test",
+        "buyer_ref": "deploy-gate-buyer-probe",
+        "external_offer_ref": "deploy-gate-external-offer",
+        "idempotency_key": "deploy-gate-survival-intent",
+    }
+
+
 def run_gate(base_url: str, timeout: float) -> dict:
     health = http_json("GET", endpoint(base_url, "/health"), timeout=timeout)
     recruit = http_json("GET", endpoint(base_url, "/.well-known/nomad-recruit.json"), timeout=timeout)
@@ -229,6 +243,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
     synergy_lite = http_json("GET", endpoint(base_url, "/swarm/synergy-lite"), timeout=timeout)
     state_status = http_json("GET", endpoint(base_url, "/swarm/state-status"), timeout=timeout)
     carrying_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-carrying-market.json"), timeout=timeout)
+    survival_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-survival-market.json"), timeout=timeout)
     worker_offer = http_json(
         "POST",
         endpoint(base_url, "/swarm/worker-market/offers"),
@@ -257,6 +272,12 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "POST",
         endpoint(base_url, "/swarm/carrying-proof"),
         payload=_carrying_proof_payload(carrying_market),
+        timeout=timeout,
+    )
+    survival_intent = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/survival-intent"),
+        payload=_survival_intent_payload(survival_market),
         timeout=timeout,
     )
     swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
@@ -296,7 +317,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "workers_ok": bool(workers.get("ok")) and str(workers.get("schema") or "") == "nomad.transition_worker_fleet.v1",
         "protocol_bytecode_ok": _status_ready(protocol)
         and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
-        and _has_opcodes(protocol, {"FORGE", "MARKET", "CARRY", "ECO", "CURRIC", "SKILL", "EXP"}),
+        and _has_opcodes(protocol, {"FORGE", "MARKET", "CARRY", "SELL", "ECO", "CURRIC", "SKILL", "EXP"}),
         "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
         "variant_candidate_ok": _status_ready(variant_candidate)
         and str(variant_candidate.get("schema") or "") == "nomad.variant_candidate_receipt.v1",
@@ -308,6 +329,8 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "state_status_ok": _status_ready(state_status) and str(state_status.get("schema") or "") == "nomad.state_status.v1",
         "carrying_market_ok": _status_ready(carrying_market)
         and str(carrying_market.get("schema") or "") == "nomad.carrying_market.v1",
+        "survival_market_ok": _status_ready(survival_market)
+        and str(survival_market.get("schema") or "") == "nomad.survival_market.v1",
         "worker_market_offer_ok": _status_ready(worker_offer)
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
         "agent_work_claim_ok": _status_ready(agent_work_claim)
@@ -318,6 +341,8 @@ def run_gate(base_url: str, timeout: float) -> dict:
         and str(work_mesh_seed.get("schema") or "") == "nomad.work_mesh_seed_receipt.v1",
         "carrying_proof_ok": _status_ready(carrying_proof)
         and str(carrying_proof.get("schema") or "") == "nomad.carrying_proof_receipt.v1",
+        "survival_intent_ok": _status_ready(survival_intent)
+        and str(survival_intent.get("schema") or "") == "nomad.survival_intent_receipt.v1",
         "swarm_ecology_ok": _status_ready(swarm_ecology) and str(swarm_ecology.get("schema") or "") == "nomad.swarm_ecology.v1",
         "ecology_tick_ok": _status_ready(ecology_tick) and str(ecology_tick.get("schema") or "") == "nomad.ecology_tick_receipt.v1",
         "growth_arena_ok": _status_ready(growth_arena) and str(growth_arena.get("schema") or "") == "nomad.growth_arena.v1",
@@ -353,11 +378,13 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "synergy_lite": int(synergy_lite.get("http_status") or 0),
             "state_status": int(state_status.get("http_status") or 0),
             "carrying_market": int(carrying_market.get("http_status") or 0),
+            "survival_market": int(survival_market.get("http_status") or 0),
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
             "agent_work_claim": int(agent_work_claim.get("http_status") or 0),
             "agent_work_proof": int(agent_work_proof.get("http_status") or 0),
             "work_mesh_seed": int(work_mesh_seed.get("http_status") or 0),
             "carrying_proof": int(carrying_proof.get("http_status") or 0),
+            "survival_intent": int(survival_intent.get("http_status") or 0),
             "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
             "ecology_tick": int(ecology_tick.get("http_status") or 0),
             "growth_arena": int(growth_arena.get("http_status") or 0),

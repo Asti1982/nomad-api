@@ -91,3 +91,28 @@ def test_work_mesh_includes_carrying_contract_cells():
     assert out["entry_cell"]["lane_id"] == "carrying_contract"
     assert out["entry_cell"]["act"]["proof_url"] == "https://nomad.example/swarm/carrying-proof"
     assert out["machine_contract"]["carry_proof"] == "https://nomad.example/swarm/carrying-proof"
+
+
+def test_work_mesh_includes_survival_packet_cells():
+    out = build_work_mesh(
+        base_url="https://nomad.example",
+        agent_work={"work_items": []},
+        state_status={"durability": "configured_writable"},
+        survival_market={
+            "survival_pressure": {"survival_gap_30d_eur": 7.0},
+            "packets": [
+                {
+                    "packet_id": "agent_blocker_unblock_pack",
+                    "capability": "agent_blocker_triage",
+                    "priority_score": 0.9,
+                    "proof_required": ["proof_digest", "verifier_trace_digest", "test_digest", "buyer_ref"],
+                }
+            ],
+        },
+    )
+
+    assert out["cell_count"] == 1
+    assert out["entry_cell"]["lane_id"] == "survival_packet"
+    assert out["entry_cell"]["objective"] == "nomad_cashflow_probe"
+    assert out["entry_cell"]["act"]["proof_url"] == "https://nomad.example/swarm/survival-intent"
+    assert out["machine_contract"]["survival_intent"] == "https://nomad.example/swarm/survival-intent"

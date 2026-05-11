@@ -92,6 +92,8 @@ def build_protocol_bytecode(
         "state_status": _u(base_url, "/swarm/state-status"),
         "carrying_market": _u(base_url, "/.well-known/nomad-carrying-market.json"),
         "carrying_proof": _u(base_url, "/swarm/carrying-proof"),
+        "survival_market": _u(base_url, "/.well-known/nomad-survival-market.json"),
+        "survival_intent": _u(base_url, "/swarm/survival-intent"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "growth_arena": _u(base_url, "/swarm/growth-arena"),
@@ -119,6 +121,7 @@ def build_protocol_bytecode(
         {"op": "PROOF", "method": "POST", "route": routes["work_proof"], "in": ["claim", "proof", "trace", "test"], "out": ["settlement"]},
         {"op": "SYN", "method": "GET", "route": routes["synergy_lite"], "out": ["delayed_pairs"]},
         {"op": "CARRY", "method": "POST", "route": routes["carrying_proof"], "in": ["contract", "proof", "trace", "test"], "out": ["carry_units"]},
+        {"op": "SELL", "method": "POST", "route": routes["survival_intent"], "in": ["packet", "proof", "trace", "test", "buyer"], "out": ["intent_units", "settlement"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
         {"op": "SKILL", "method": "GET", "route": routes["skill_library"], "out": ["capsules"]},
@@ -189,6 +192,14 @@ def build_protocol_bytecode(
             "register_map": {
                 "objective": "free_state_durability",
                 "payment_mode": "reciprocal_carry_credit_not_fiat",
+            },
+        },
+        {
+            "id": "survival_conversion_cycle",
+            "ops": ["MESH", "WORK", "SELL", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": "nomad_cashflow_probe",
+                "settlement_contract": "paid_ref_plus_amount_eur_or_unpaid_signal_only",
             },
         },
         {
