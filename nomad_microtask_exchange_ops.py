@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from nomad_state_paths import state_file
 
 
 SUBMIT_LEDGER_PATH = Path("nomad_microtask_ledger.jsonl")
@@ -18,13 +19,7 @@ def _iso_now() -> str:
 
 
 def _default_path(env_name: str, default: Path) -> Path:
-    explicit = str(os.getenv(env_name) or "").strip()
-    if explicit:
-        return Path(explicit)
-    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
-    if state_dir:
-        return Path(state_dir) / default.name
-    return default
+    return state_file(default, env_name=env_name)
 
 
 def _u(base_url: str, path: str) -> str:

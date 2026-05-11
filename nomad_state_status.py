@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_state_paths import configured_state_dir, fallback_state_dir, state_root
+
 
 STATE_FILES = [
     "nomad_worker_market_ledger.jsonl",
@@ -26,10 +28,6 @@ def _u(base_url: str, path: str) -> str:
     root = (base_url or "").strip().rstrip("/")
     p = path if path.startswith("/") else f"/{path}"
     return f"{root}{p}" if root else p
-
-
-def configured_state_dir() -> str:
-    return str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
 
 
 def _line_count(path: Path) -> int:
@@ -54,11 +52,13 @@ def _probe_writable(path: Path) -> tuple[bool, str]:
 
 def build_state_status(*, base_url: str = "") -> dict[str, Any]:
     configured = configured_state_dir()
-    state_root = Path(configured) if configured else Path.cwd()
-    writable, error = _probe_writable(state_root)
+    preferred = Path(configured) if configured else Path.cwd()
+    preferred_writable, preferred_error = _probe_writable(preferred)
+    effective_root = state_root()
+    writable, error = _probe_writable(effective_root)
     files: list[dict[str, Any]] = []
     for name in STATE_FILES:
-        path = state_root / name
+        path = effective_root / name
         files.append(
             {
                 "name": name,
@@ -70,11 +70,13 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
     render_runtime = (os.getenv("RENDER") or "").strip().lower() == "true"
     disk_configured = bool(configured)
     durability = "configured_writable" if disk_configured and writable else "ephemeral_default"
-    render_disk_path = str(state_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage"))
+    render_disk_path = str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage"))
     if render_runtime and disk_configured and render_disk_path and writable:
         durability = "render_disk_path_configured_writable"
-    if render_runtime and configured and not str(state_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage")):
+    if render_runtime and configured and not str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage")):
         durability = "render_path_may_not_be_disk"
+    if configured and not preferred_writable and writable:
+        durability = "fallback_writable_configured_path_unwritable"
     if not writable:
         durability = "not_writable"
     return {
@@ -83,7 +85,12 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
         "generated_at": _iso_now(),
         "public_base_url": (base_url or "").strip().rstrip("/"),
         "state_dir_configured": disk_configured,
-        "state_dir": str(state_root),
+        "state_dir": str(effective_root),
+        "configured_state_dir": configured,
+        "configured_state_dir_writable": preferred_writable,
+        "configured_state_dir_error": preferred_error,
+        "fallback_state_dir": str(fallback_state_dir()),
+        "using_fallback": bool(configured and str(effective_root) != str(preferred)),
         "render_runtime": render_runtime,
         "durability": durability,
         "writable": writable,

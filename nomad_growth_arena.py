@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_state_paths import state_file
+
 
 DEFAULT_LEDGER_PATH = Path("nomad_growth_arena_ledger.jsonl")
 MAX_RECENT = 160
@@ -69,13 +71,7 @@ def _iso_now() -> str:
 
 
 def _default_ledger_path() -> Path:
-    explicit = str(os.getenv("NOMAD_GROWTH_ARENA_LEDGER_PATH") or "").strip()
-    if explicit:
-        return Path(explicit)
-    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
-    if state_dir:
-        return Path(state_dir) / DEFAULT_LEDGER_PATH.name
-    return DEFAULT_LEDGER_PATH
+    return state_file(DEFAULT_LEDGER_PATH, env_name="NOMAD_GROWTH_ARENA_LEDGER_PATH")
 
 
 def _u(base_url: str, path: str) -> str:

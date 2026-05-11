@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from nomad_state_paths import state_file
 
 
 DEFAULT_CLAIM_LEDGER_PATH = Path("nomad_agent_work_claims.jsonl")
@@ -75,22 +76,12 @@ def _digest(value: Any, length: int = 22) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
 
 
-def _state_path(env_name: str, default_path: Path) -> Path:
-    explicit = str(os.getenv(env_name) or "").strip()
-    if explicit:
-        return Path(explicit)
-    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
-    if state_dir:
-        return Path(state_dir) / default_path.name
-    return default_path
-
-
 def _claim_path(path: Path | str | None = None) -> Path:
-    return Path(path) if path else _state_path("NOMAD_AGENT_WORK_CLAIM_LEDGER_PATH", DEFAULT_CLAIM_LEDGER_PATH)
+    return Path(path) if path else state_file(DEFAULT_CLAIM_LEDGER_PATH, env_name="NOMAD_AGENT_WORK_CLAIM_LEDGER_PATH")
 
 
 def _proof_path(path: Path | str | None = None) -> Path:
-    return Path(path) if path else _state_path("NOMAD_AGENT_WORK_PROOF_LEDGER_PATH", DEFAULT_PROOF_LEDGER_PATH)
+    return Path(path) if path else state_file(DEFAULT_PROOF_LEDGER_PATH, env_name="NOMAD_AGENT_WORK_PROOF_LEDGER_PATH")
 
 
 def _read_rows(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
