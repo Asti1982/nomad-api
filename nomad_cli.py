@@ -1490,6 +1490,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("bounty-hunter is handled directly in run_once")
     if command == "external-value":
         raise ValueError("external-value is handled directly in run_once")
+    if command == "value-pressure":
+        raise ValueError("value-pressure is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1878,9 +1880,136 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 result = summarize_external_value_ledger()
             elif sub == "bonus":
                 result = agent_selection_bonus(str(getattr(args, "agent_id", "") or ""))
+            elif sub == "reconcile":
+                from nomad_external_value_reconciler import reconcile_external_value_ledger
+
+                result = reconcile_external_value_ledger(
+                    live_github=bool(getattr(args, "live_github", False)),
+                    limit=int(getattr(args, "limit", 40) or 40),
+                )
             else:
                 base = (getattr(args, "base_url", None) or "").strip()
                 result = build_external_value_surface(base_url=base or "https://www.syndiode.com")
+        elif args.command == "value-pressure":
+            from nomad_bounty_hunter import build_bounty_hunter_surface, discover_github_bounties
+            from nomad_compute_market import build_compute_market
+            from nomad_external_value_reconciler import reconcile_external_value_ledger
+            from nomad_microtask_exchange_ops import build_microtask_metrics
+            from nomad_microtask_market import build_worker_catalog
+            from nomad_value_pressure import build_value_pressure_surface
+            from nomad_worker_market import build_worker_market
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            worker_market = build_worker_market(base_url=base, worker_fleet=worker_fleet, machine_economy={})
+            worker_catalog = build_worker_catalog(base_url=base, worker_fleet=worker_fleet, worker_market=worker_market)
+            metrics = build_microtask_metrics(base_url=base, lookback_hours=24)
+            compute_market = build_compute_market(
+                base_url=base,
+                worker_market=worker_market,
+                worker_catalog=worker_catalog,
+                microtask_metrics=metrics,
+                worker_fleet=worker_fleet,
+            )
+            discoveries = []
+            if bool(getattr(args, "discover_gh", False)):
+                discoveries = discover_github_bounties(limit=int(getattr(args, "limit", 10) or 10))
+            result = build_value_pressure_surface(
+                base_url=base,
+                external_reconcile=reconcile_external_value_ledger(
+                    live_github=bool(getattr(args, "live_github", False)),
+                    limit=int(getattr(args, "limit", 40) or 40),
+                ),
+                bounty_hunter=build_bounty_hunter_surface(base_url=base, discoveries=discoveries),
+                compute_market=compute_market,
+            )
+        elif args.command == "agent-job-router":
+            from nomad_agent_job_router import build_agent_job_router
+            from nomad_agent_work import build_agent_work_surface, build_synergy_lite
+            from nomad_bounty_hunter import build_bounty_hunter_surface, discover_github_bounties
+            from nomad_carrying_market import build_carrying_market
+            from nomad_compute_market import build_compute_market
+            from nomad_external_value_reconciler import reconcile_external_value_ledger
+            from nomad_growth_arena import build_skill_library
+            from nomad_microtask_exchange_ops import build_microtask_metrics, build_microtask_templates
+            from nomad_microtask_market import build_worker_catalog
+            from nomad_openapi import build_openapi_document
+            from nomad_state_status import build_state_status
+            from nomad_survival_market import build_survival_market
+            from nomad_value_pressure import build_value_pressure_surface
+            from nomad_worker_market import build_worker_market
+            from nomad_work_mesh import build_work_mesh
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            summary = agent.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            worker_market = build_worker_market(base_url=base, worker_fleet=worker_fleet, machine_economy={})
+            worker_catalog = build_worker_catalog(base_url=base, worker_fleet=worker_fleet, worker_market=worker_market)
+            metrics = build_microtask_metrics(base_url=base, lookback_hours=24)
+            templates = build_microtask_templates(base_url=base)
+            compute_market = build_compute_market(
+                base_url=base,
+                worker_market=worker_market,
+                worker_catalog=worker_catalog,
+                microtask_metrics=metrics,
+                worker_fleet=worker_fleet,
+            )
+            discoveries = []
+            if bool(getattr(args, "discover_gh", False)):
+                discoveries = discover_github_bounties(limit=int(getattr(args, "limit", 10) or 10))
+            pressure = build_value_pressure_surface(
+                base_url=base,
+                external_reconcile=reconcile_external_value_ledger(
+                    live_github=bool(getattr(args, "live_github", False)),
+                    limit=int(getattr(args, "limit", 40) or 40),
+                ),
+                bounty_hunter=build_bounty_hunter_surface(base_url=base, discoveries=discoveries),
+                compute_market=compute_market,
+            )
+            skills = build_skill_library(base_url=base)
+            synergy = build_synergy_lite(base_url=base)
+            agent_work = build_agent_work_surface(
+                base_url=base,
+                compute_market=compute_market,
+                microtask_templates=templates,
+                microtask_metrics=metrics,
+                worker_catalog=worker_catalog,
+                skill_library=skills,
+                worker_fleet=worker_fleet,
+                synergy_lite=synergy,
+            )
+            carrying = build_carrying_market(
+                base_url=base,
+                state_status=build_state_status(base_url=base),
+                microtask_metrics=metrics,
+                worker_fleet=worker_fleet,
+                compute_market=compute_market,
+            )
+            work_mesh = build_work_mesh(
+                base_url=base,
+                agent_work=agent_work,
+                compute_market=compute_market,
+                synergy_lite=synergy,
+                skill_library=skills,
+                state_status=build_state_status(base_url=base),
+                carrying_market=carrying,
+                survival_market=build_survival_market(
+                    base_url=base,
+                    carrying_market=carrying,
+                    microtask_metrics=metrics,
+                    worker_fleet=worker_fleet,
+                ),
+            )
+            result = build_agent_job_router(
+                base_url=base,
+                openapi_document=build_openapi_document(base_url=base),
+                value_pressure=pressure,
+                work_mesh=work_mesh,
+            )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -2317,8 +2446,8 @@ def build_parser() -> argparse.ArgumentParser:
         "ev_action",
         nargs="?",
         default="surface",
-        choices=("surface", "summary", "record", "bonus"),
-        help="surface | summary | record | bonus",
+        choices=("surface", "summary", "record", "bonus", "reconcile"),
+        help="surface | summary | record | bonus | reconcile",
     )
     external_value.add_argument("--base-url", default="", help="Public base URL for links (surface).")
     external_value.add_argument("--agent-id", default="", help="Agent id (record, bonus).")
@@ -2332,6 +2461,24 @@ def build_parser() -> argparse.ArgumentParser:
     external_value.add_argument("--proof-digest", default="", help="Proof digest (required after found).")
     external_value.add_argument("--verifier-trace-digest", default="", help="Verifier trace digest (required after found).")
     external_value.add_argument("--amount-usd", type=float, default=0.0, help="Revenue USD (paid stage only).")
+    external_value.add_argument("--live-github", action="store_true", help="For reconcile: read GitHub state through local gh.")
+    external_value.add_argument("--limit", type=int, default=40, help="For reconcile: latest external ids to inspect.")
+    value_pressure = subparsers.add_parser(
+        "value-pressure",
+        help="Machine pressure field over external value followups, bounty work, and compute-market capacity.",
+    )
+    value_pressure.add_argument("--base-url", default="", help="Override public base URL for links.")
+    value_pressure.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
+    value_pressure.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
+    value_pressure.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
+    agent_job_router = subparsers.add_parser(
+        "agent-job-router",
+        help="Compile value pressure and work mesh into OpenAPI-bound agent job packets.",
+    )
+    agent_job_router.add_argument("--base-url", default="", help="Override public base URL for links.")
+    agent_job_router.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
+    agent_job_router.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
+    agent_job_router.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

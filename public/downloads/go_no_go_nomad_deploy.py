@@ -270,6 +270,8 @@ def run_gate(base_url: str, timeout: float) -> dict:
     paid_ref_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-paid-ref-market.json"), timeout=timeout)
     paid_ref_selfplay = http_json("GET", endpoint(base_url, "/.well-known/nomad-paid-ref-selfplay.json"), timeout=timeout)
     bounty_hunter = http_json("GET", endpoint(base_url, "/.well-known/nomad-bounty-hunter.json"), timeout=timeout)
+    value_pressure = http_json("GET", endpoint(base_url, "/.well-known/nomad-value-pressure.json"), timeout=timeout)
+    agent_jobs = http_json("GET", endpoint(base_url, "/.well-known/nomad-agent-jobs.json"), timeout=timeout)
     worker_offer = http_json(
         "POST",
         endpoint(base_url, "/swarm/worker-market/offers"),
@@ -351,7 +353,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
         and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
         and _has_opcodes(
             protocol,
-            {"FORGE", "MARKET", "CARRY", "SELFPLAY", "PAYREF", "BOUNTY", "XVAL", "XPOST", "SELL", "ECO", "CURRIC", "SKILL", "EXP"},
+            {"FORGE", "MARKET", "CARRY", "SELFPLAY", "PAYREF", "BOUNTY", "XVAL", "PRESS", "JOB", "XPOST", "SELL", "ECO", "CURRIC", "SKILL", "EXP"},
         ),
         "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
         "variant_candidate_ok": _status_ready(variant_candidate)
@@ -374,6 +376,12 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "bounty_hunter_ok": _status_ready(bounty_hunter)
         and str(bounty_hunter.get("schema") or "") == "nomad.bounty_hunter.v1"
         and bool(bounty_hunter.get("top_candidate")),
+        "value_pressure_ok": _status_ready(value_pressure)
+        and str(value_pressure.get("schema") or "") == "nomad.value_pressure.v1"
+        and bool(value_pressure.get("top")),
+        "agent_jobs_ok": _status_ready(agent_jobs)
+        and str(agent_jobs.get("schema") or "") == "nomad.agent_job_router.v1"
+        and bool(agent_jobs.get("entry_packet")),
         "worker_market_offer_ok": _status_ready(worker_offer)
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
         "agent_work_claim_ok": _status_ready(agent_work_claim)
@@ -427,6 +435,8 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "paid_ref_market": int(paid_ref_market.get("http_status") or 0),
             "paid_ref_selfplay": int(paid_ref_selfplay.get("http_status") or 0),
             "bounty_hunter": int(bounty_hunter.get("http_status") or 0),
+            "value_pressure": int(value_pressure.get("http_status") or 0),
+            "agent_jobs": int(agent_jobs.get("http_status") or 0),
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
             "agent_work_claim": int(agent_work_claim.get("http_status") or 0),
             "agent_work_proof": int(agent_work_proof.get("http_status") or 0),

@@ -208,6 +208,24 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.899,
+            "get_url": u("/.well-known/nomad-value-pressure.json"),
+            "purpose": "external_value_bounty_compute_pressure_field",
+            "machine_note": (
+                "Fuses external-value followups, bounty gates, and compute-market capacity into local pressure rows; "
+                "agents execute only rows whose required evidence they can produce."
+            ),
+        },
+        {
+            "order": 11.8995,
+            "get_url": u("/.well-known/nomad-agent-jobs.json"),
+            "purpose": "openapi_bound_agent_job_packets",
+            "machine_note": (
+                "Compiles pressure rows and work-mesh cells into method/path/payload packets that agents can "
+                "validate against OpenAPI before acting."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -363,6 +381,10 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-paid-ref-selfplay.json", "methods": ["GET"], "effect": "read_paid_ref_counterparty_selfplay", "cost_tier": "low"},
         {"path": "/swarm/paid-ref/quote", "methods": ["POST"], "effect": "create_payable_survival_task_quote", "cost_tier": "medium"},
         {"path": "/swarm/paid-ref/verify", "methods": ["POST"], "effect": "mint_verified_paid_ref", "cost_tier": "medium"},
+        {"path": "/swarm/value-pressure", "methods": ["GET"], "effect": "read_external_value_pressure_field", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-value-pressure.json", "methods": ["GET"], "effect": "read_external_value_pressure_field", "cost_tier": "low"},
+        {"path": "/swarm/agent-job-router", "methods": ["GET"], "effect": "read_openapi_bound_agent_job_packets", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-agent-jobs.json", "methods": ["GET"], "effect": "read_openapi_bound_agent_job_packets", "cost_tier": "low"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
@@ -505,6 +527,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "paid_ref_selfplay_url": u("/.well-known/nomad-paid-ref-selfplay.json"),
         "paid_ref_quote_url": u("/swarm/paid-ref/quote"),
         "paid_ref_verify_url": u("/swarm/paid-ref/verify"),
+        "value_pressure_url": u("/.well-known/nomad-value-pressure.json"),
+        "agent_job_router_url": u("/.well-known/nomad-agent-jobs.json"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "growth_arena_url": u("/swarm/growth-arena"),

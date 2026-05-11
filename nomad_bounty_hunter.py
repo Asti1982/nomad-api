@@ -49,6 +49,15 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 
 
+def _count(value: Any) -> int:
+    if isinstance(value, list):
+        return len(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _text(value: Any, limit: int = 320) -> str:
     return " ".join(str(value or "").split())[:limit]
 
@@ -101,6 +110,51 @@ def extract_reward(text: str) -> dict[str, Any]:
 
 def _classify_work(title: str, body: str) -> dict[str, Any]:
     raw = f"{title}\n{body}".lower()
+    if any(
+        token in raw
+        for token in (
+            "liquidity provider",
+            "provide liquidity",
+            "raydium",
+            "trading pair",
+            "market maker",
+            "lp token",
+            " lp ",
+            "staking",
+            "deposit",
+            "wallet balance",
+            "capital",
+        )
+    ):
+        return {
+            "work_mode": "capital_market_claim",
+            "agent_fit": 0.16,
+            "proof_clarity": 0.58,
+            "side_effect_safety": 0.42,
+            "anti_spam_weight": 0.18,
+            "eligible": False,
+            "exclusion_reason": "requires_external_capital_or_market_position_not_proof_work",
+        }
+    if any(token in raw for token in ("referral", "bring a friend", "invite a friend", "refer ", "referred by")):
+        return {
+            "work_mode": "referral_or_network_growth_claim",
+            "agent_fit": 0.14,
+            "proof_clarity": 0.50,
+            "side_effect_safety": 0.38,
+            "anti_spam_weight": 0.08,
+            "eligible": False,
+            "exclusion_reason": "referral_or_network_growth_claim_not_agent_proof_work",
+        }
+    if any(token in raw for token in ("tutorial video", "video proof", "record a video", "blog post", "write a blog", "article about")):
+        return {
+            "work_mode": "content_or_media_claim",
+            "agent_fit": 0.24,
+            "proof_clarity": 0.60,
+            "side_effect_safety": 0.54,
+            "anti_spam_weight": 0.42,
+            "eligible": False,
+            "exclusion_reason": "content_or_media_claim_not_proof_carrying_code_work",
+        }
     if "good first issues" in raw and ("bounty label" in raw or "bounties" in raw):
         return {
             "work_mode": "bounty_issue_fix_after_subselection",
@@ -121,15 +175,15 @@ def _classify_work(title: str, body: str) -> dict[str, Any]:
             "eligible": False,
             "exclusion_reason": "promotional_or_reputation_action_not_nomad_core_work",
         }
-    if "review" in raw and ("pr" in raw or "pull request" in raw):
+    if any(token in raw for token in ("contributor ladder", "level up", "canonical rtc wallet", "declare by", "bring your human", "human engagement", "community campaign")):
         return {
-            "work_mode": "code_review_comment",
-            "agent_fit": 0.82,
-            "proof_clarity": 0.88,
-            "side_effect_safety": 0.86,
-            "anti_spam_weight": 1.0,
-            "eligible": True,
-            "exclusion_reason": "",
+            "work_mode": "reputation_or_identity_policy",
+            "agent_fit": 0.20,
+            "proof_clarity": 0.52,
+            "side_effect_safety": 0.48,
+            "anti_spam_weight": 0.20,
+            "eligible": False,
+            "exclusion_reason": "community_reputation_or_wallet_policy_not_proof_work",
         }
     if any(token in raw for token in ("red team", "security", "bug", "audit", "vulnerability")):
         return {
@@ -137,6 +191,16 @@ def _classify_work(title: str, body: str) -> dict[str, Any]:
             "agent_fit": 0.78,
             "proof_clarity": 0.84,
             "side_effect_safety": 0.80,
+            "anti_spam_weight": 1.0,
+            "eligible": True,
+            "exclusion_reason": "",
+        }
+    if "review" in raw and ("pr" in raw or "pull request" in raw):
+        return {
+            "work_mode": "code_review_comment",
+            "agent_fit": 0.82,
+            "proof_clarity": 0.88,
+            "side_effect_safety": 0.86,
             "anti_spam_weight": 1.0,
             "eligible": True,
             "exclusion_reason": "",
@@ -169,6 +233,155 @@ def _classify_work(title: str, body: str) -> dict[str, Any]:
         "anti_spam_weight": 0.88,
         "eligible": True,
         "exclusion_reason": "",
+    }
+
+
+def _impact_class(title: str, body: str, work_mode: str) -> str:
+    raw = f"{title}\n{body}\n{work_mode}".lower()
+    if work_mode in {"capital_market_claim", "referral_or_network_growth_claim", "content_or_media_claim", "physical_evidence_claim", "promotional_engagement", "reputation_or_identity_policy"}:
+        return "non_agent_runtime_claim"
+    if any(token in raw for token in ("settlement", "reward scale", "mint", "economic", "payout ledger", "supply")):
+        return "economic_correctness"
+    if any(token in raw for token in ("500", "keyerror", "traceback", "fails closed", "webhook", "auth", "signature")):
+        return "route_reliability_security"
+    if any(token in raw for token in ("security", "vulnerability", "red team", "audit", "exploit")):
+        return "security"
+    if any(token in raw for token in ("spdx", "license", "bcos", "policy")):
+        return "policy_compliance"
+    if "doc" in raw:
+        return "documentation"
+    return "general_correctness"
+
+
+def _impact_weight(impact_class: str) -> float:
+    weights = {
+        "economic_correctness": 1.28,
+        "route_reliability_security": 1.18,
+        "security": 1.14,
+        "general_correctness": 1.0,
+        "policy_compliance": 0.68,
+        "documentation": 0.42,
+        "non_agent_runtime_claim": 0.08,
+    }
+    return weights.get(str(impact_class or ""), 1.0)
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "ok", "go", "proved", "repro", "reproduced", "blocking"}
+
+
+def hard_public_action_gate(item: dict[str, Any]) -> dict[str, Any]:
+    """Decide whether an opportunity may leave scout mode.
+
+    The gate is deliberately stricter than the score. Nomad may *read* and
+    locally reproduce many opportunities, but public comments/claims should be
+    reserved for proof-bearing work with enough payment and authorization
+    confidence to move the external-value ledger.
+    """
+    mode = str(item.get("work_mode") or "")
+    eligible = bool(item.get("eligible"))
+    expected = _num(item.get("expected_reward_usd"))
+    hourly = expected / max(0.25, _num(item.get("estimated_effort_hours"), 2.5))
+    authorization = _num(item.get("authorization_confidence"))
+    payment = _num(item.get("payment_confidence"))
+    proof = _num(item.get("proof_clarity"))
+    safety = _num(item.get("side_effect_safety"))
+    agent_fit = _num(item.get("agent_fit"))
+    anti_spam = _num(item.get("anti_spam_weight"))
+    comment_count = _count(item.get("comment_count") or item.get("comments"))
+    unique_repro = _truthy(item.get("has_unique_repro") or item.get("unique_repro") or item.get("blocking_finding"))
+    payment_receipt = _truthy(item.get("payment_receipt") or item.get("payment_verified") or item.get("paid"))
+    already_found = _truthy(item.get("already_found_by_others") or item.get("duplicate_finding"))
+    similar_claim_count = _count(item.get("similar_claim_count_24h") or item.get("pattern_claim_count_24h"))
+
+    blockers: list[str] = []
+    if not eligible:
+        blockers.append(str(item.get("exclusion_reason") or "not_eligible"))
+    if authorization < 0.72:
+        blockers.append("authorization_confidence_below_0.72")
+    if payment < 0.58:
+        blockers.append("payment_confidence_below_0.58")
+    if proof < 0.72:
+        blockers.append("proof_clarity_below_0.72")
+    if safety < 0.70:
+        blockers.append("side_effect_safety_below_0.70")
+    if agent_fit < 0.62:
+        blockers.append("agent_fit_below_0.62")
+    if anti_spam < 0.90:
+        blockers.append("anti_spam_below_0.90")
+    if expected <= 0:
+        blockers.append("no_public_reward_signal")
+    if comment_count >= 12 and not unique_repro and not payment_receipt:
+        blockers.append("crowded_claim_surface_requires_new_unique_proof")
+    if already_found and not payment_receipt:
+        blockers.append("already_found_by_others")
+
+    public_action = "go_public_after_repro"
+    scout_reason = ""
+    pattern_capped = similar_claim_count >= 3 and not payment_receipt
+    if blockers:
+        public_action = "no_go"
+    elif pattern_capped:
+        public_action = "scout_only"
+        scout_reason = "similar_claim_pattern_cap_reached_keep_read_only_until_higher_impact_signal"
+    elif mode == "code_review_comment" and not unique_repro:
+        public_action = "scout_only"
+        scout_reason = "review_lane_requires_unique_repro_or_blocking_finding_before_public_claim"
+    elif mode == "bounty_issue_fix_after_subselection":
+        public_action = "scout_only"
+        scout_reason = "choose_specific_bounty_issue_before_public_work"
+    elif mode in {"failing_test_or_audit_pr", "implementation_pr", "issue_triage_or_fix_pr"} and not unique_repro:
+        public_action = "scout_only"
+        scout_reason = "local_repro_or_patch_digest_required_before_public_claim"
+
+    if payment_receipt:
+        public_action = "record_paid"
+        scout_reason = "external_payment_receipt_present"
+
+    if public_action == "go_public_after_repro" and hourly < 0.20:
+        public_action = "scout_only"
+        scout_reason = "expected_value_low_keep_as_background_scout"
+
+    weight = {
+        "record_paid": 1.35,
+        "go_public_after_repro": 1.0,
+        "scout_only": 0.42,
+        "no_go": 0.05,
+    }.get(public_action, 0.05)
+
+    required_proof = [
+        "public_terms_url",
+        "local_repro_or_patch_digest",
+        "verifier_trace_digest",
+        "work_url_after_public_action",
+    ]
+    if mode == "code_review_comment":
+        required_proof.insert(1, "unique_repro_or_blocking_finding")
+    if mode == "bounty_issue_fix_after_subselection":
+        required_proof.insert(1, "specific_bounty_issue_url")
+
+    return {
+        "schema": "nomad.bounty_hard_gate.v1",
+        "public_action": public_action,
+        "gate_weight": round(weight, 4),
+        "blockers": blockers,
+        "scout_reason": scout_reason,
+        "requires_unique_repro": mode == "code_review_comment",
+        "required_proof": required_proof,
+        "thresholds": {
+            "authorization_confidence_min": 0.72,
+            "payment_confidence_min": 0.58,
+            "proof_clarity_min": 0.72,
+            "side_effect_safety_min": 0.70,
+            "anti_spam_weight_min": 0.90,
+            "public_hourly_value_usd_min": 0.20,
+            "crowded_claim_comment_count": 12,
+            "similar_claim_pattern_cap_24h": 3,
+        },
+        "machine_instruction": "stay_read_only_until_required_proof_exists_then_emit_one_public_claim_and_record_external_value_stage",
     }
 
 
@@ -292,6 +505,8 @@ def normalize_opportunity(raw: dict[str, Any], *, source: str = "seed") -> dict[
         "ceiling_usd": round(ceiling, 4),
         "expected_reward_usd": round(0.35 * floor + 0.65 * ceiling, 4),
         "work_mode": _text(raw.get("work_mode") or classified["work_mode"], 80),
+        "impact_class": _text(raw.get("impact_class") or _impact_class(title, body, raw.get("work_mode") or classified["work_mode"]), 80),
+        "finding_pattern": _text(raw.get("finding_pattern") or "", 120),
         "authorized_scope": _text(raw.get("authorized_scope") or "Public bounty terms only; local/static work unless repo rules say otherwise.", 260),
         "proof_path": _text(raw.get("proof_path") or "PR/issue/review URL plus reproducible proof digest and verifier trace.", 260),
         "estimated_effort_hours": max(0.25, _num(raw.get("estimated_effort_hours"), effort_default)),
@@ -304,6 +519,11 @@ def normalize_opportunity(raw: dict[str, Any], *, source: str = "seed") -> dict[
         "eligible": bool(raw.get("eligible", classified.get("eligible", True))),
         "exclusion_reason": _text(raw.get("exclusion_reason") or classified.get("exclusion_reason"), 160),
         "subselection_query": _text(raw.get("subselection_query"), 220),
+        "comment_count": _count(raw.get("comment_count") if "comment_count" in raw else raw.get("comments")),
+        "has_unique_repro": _truthy(raw.get("has_unique_repro") or raw.get("unique_repro") or raw.get("blocking_finding")),
+        "payment_receipt": _truthy(raw.get("payment_receipt") or raw.get("payment_verified") or raw.get("paid")),
+        "already_found_by_others": _truthy(raw.get("already_found_by_others") or raw.get("duplicate_finding")),
+        "similar_claim_count_24h": _count(raw.get("similar_claim_count_24h") or raw.get("pattern_claim_count_24h")),
     }
     if not merged["source_url"] and raw.get("number") and merged["repo"]:
         merged["source_url"] = f"https://github.com/{merged['repo']}/issues/{raw['number']}"
@@ -314,7 +534,7 @@ def score_bounty_opportunity(raw: dict[str, Any]) -> dict[str, Any]:
     item = normalize_opportunity(raw, source=str(raw.get("source") or "seed"))
     liquidity = 0.96 if item["currency"].upper() == "USD" else 0.46 if item["currency"].upper() == "RTC" else 0.28
     hourly_value = _num(item.get("expected_reward_usd")) / max(0.25, _num(item.get("estimated_effort_hours"), 2.5))
-    score = (
+    base_score = (
         hourly_value
         * _num(item.get("authorization_confidence"))
         * _num(item.get("payment_confidence"))
@@ -323,10 +543,15 @@ def score_bounty_opportunity(raw: dict[str, Any]) -> dict[str, Any]:
         * _num(item.get("side_effect_safety"))
         * _num(item.get("anti_spam_weight"))
         * liquidity
+        * _impact_weight(str(item.get("impact_class") or ""))
     )
     if not item.get("eligible"):
-        score *= 0.05
+        base_score *= 0.05
+    gate = hard_public_action_gate(item)
+    score = base_score * _num(gate.get("gate_weight"), 1.0)
     item["bounty_score"] = round(score, 6)
+    item["raw_bounty_score"] = round(base_score, 6)
+    item["hard_gate"] = gate
     item["score_components"] = {
         "hourly_value_usd": round(hourly_value, 4),
         "authorization_confidence": item["authorization_confidence"],
@@ -336,6 +561,9 @@ def score_bounty_opportunity(raw: dict[str, Any]) -> dict[str, Any]:
         "side_effect_safety": item["side_effect_safety"],
         "anti_spam_weight": item["anti_spam_weight"],
         "currency_liquidity": round(liquidity, 4),
+        "impact_class": item.get("impact_class"),
+        "impact_weight": round(_impact_weight(str(item.get("impact_class") or "")), 4),
+        "hard_gate_weight": _num(gate.get("gate_weight"), 1.0),
     }
     item["claim_next"] = _claim_next(item)
     return item
@@ -377,6 +605,7 @@ def github_issue_to_opportunity(issue: dict[str, Any], *, repo: str, source: str
         "body": issue.get("body"),
         "source": source,
         "labels": labels,
+        "comments": issue.get("comments"),
     }
     return normalize_opportunity(raw, source=source)
 
@@ -448,9 +677,16 @@ def build_bounty_hunter_surface(
     scored.sort(key=lambda item: float(item.get("bounty_score") or 0.0), reverse=True)
     eligible = [item for item in scored if item.get("eligible")]
     excluded = [item for item in scored if not item.get("eligible")]
+    public_go = [item for item in eligible if _dict(item.get("hard_gate")).get("public_action") in {"go_public_after_repro", "record_paid"}]
+    scout_only = [item for item in eligible if _dict(item.get("hard_gate")).get("public_action") == "scout_only"]
+    no_go = [item for item in scored if _dict(item.get("hard_gate")).get("public_action") == "no_go"]
     top = eligible[0] if eligible else (scored[0] if scored else {})
+    top_public = public_go[0] if public_go else {}
+    top_scout = scout_only[0] if scout_only else {}
     digest_core = {
         "top": top.get("opportunity_id"),
+        "top_public": top_public.get("opportunity_id"),
+        "top_scout": top_scout.get("opportunity_id"),
         "scores": [(item.get("opportunity_id"), item.get("bounty_score")) for item in scored[:8]],
         "count": len(scored),
     }
@@ -474,10 +710,23 @@ def build_bounty_hunter_surface(
             "eligible_ceiling_usd": round(ceiling, 4),
             "top_score": _num(top.get("bounty_score")),
             "top_work_mode": top.get("work_mode", ""),
+            "public_go_count": len(public_go),
+            "scout_only_count": len(scout_only),
+            "no_go_count": len(no_go),
         },
         "top_candidate": top,
+        "top_public_candidate": top_public,
+        "top_scout_candidate": top_scout,
         "opportunities": eligible[:12],
         "excluded_lanes": excluded[:8],
+        "hard_selection": {
+            "schema": "nomad.bounty_hard_selection.v1",
+            "rule": "public_action_requires_local_repro_or_specific_bounty_selection; reviews_require_unique_blocking_signal",
+            "public_go_count": len(public_go),
+            "scout_only_count": len(scout_only),
+            "no_go_count": len(no_go),
+            "next_machine_move": "scout_top_scout_candidate_read_only_until_required_proof_exists",
+        },
         "claim_contract": {
             "required_fields": [
                 "agent_id",

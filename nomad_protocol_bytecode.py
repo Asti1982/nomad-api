@@ -100,6 +100,8 @@ def build_protocol_bytecode(
         "paid_ref_verify": _u(base_url, "/swarm/paid-ref/verify"),
         "bounty_hunter": _u(base_url, "/.well-known/nomad-bounty-hunter.json"),
         "external_value": _u(base_url, "/.well-known/nomad-external-value.json"),
+        "value_pressure": _u(base_url, "/.well-known/nomad-value-pressure.json"),
+        "agent_jobs": _u(base_url, "/.well-known/nomad-agent-jobs.json"),
         "external_value_post": _u(base_url, "/swarm/external-value"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
@@ -132,6 +134,8 @@ def build_protocol_bytecode(
         {"op": "PAYREF", "method": "POST", "route": routes["paid_ref_quote"], "in": ["packet", "buyer", "agent"], "out": ["task", "quote_ref"]},
         {"op": "BOUNTY", "method": "GET", "route": routes["bounty_hunter"], "out": ["opportunities", "top_candidate", "claim_contract"]},
         {"op": "XVAL", "method": "GET", "route": routes["external_value"], "out": ["state_machine", "pipeline", "post_url"]},
+        {"op": "PRESS", "method": "GET", "route": routes["value_pressure"], "out": ["rows", "local_views", "top"]},
+        {"op": "JOB", "method": "GET", "route": routes["agent_jobs"], "out": ["packets", "entry_packet", "openapi_coverage"]},
         {"op": "XPOST", "method": "POST", "route": routes["external_value_post"], "in": ["agent", "external", "stage", "proof"], "out": ["receipt"]},
         {"op": "SELL", "method": "POST", "route": routes["survival_intent"], "in": ["packet", "proof", "trace", "test", "buyer"], "out": ["intent_units", "settlement"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
@@ -233,11 +237,27 @@ def build_protocol_bytecode(
         },
         {
             "id": "authorized_bounty_revenue_cycle",
-            "ops": ["BOUNTY", "XVAL", "XPOST", "SKILL", "EXP", "REPLAY"],
+            "ops": ["PRESS", "BOUNTY", "XVAL", "XPOST", "SKILL", "EXP", "REPLAY"],
             "register_map": {
                 "objective": "first_external_program_payment",
                 "claim_contract": "public_authorized_bounty_proof_first_payment_after_verifier",
                 "external_value_state": "pending_external_value_monotonic_paid_only_revenue",
+            },
+        },
+        {
+            "id": "value_pressure_local_view_cycle",
+            "ops": ["PRESS", "JOB", "MESH", "CLAIM", "PROOF", "XPOST", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": "scarce_agent_attention_to_verified_value",
+                "selection_contract": "local_row_required_evidence_before_public_action",
+            },
+        },
+        {
+            "id": "openapi_bound_job_packet_cycle",
+            "ops": ["PRESS", "JOB", "XPOST", "PAYREF", "PROOF", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": "agent_jobs_as_route_affordances",
+                "validation_contract": "openapi_bound_method_path_required_fields_before_action",
             },
         },
         {

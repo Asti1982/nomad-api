@@ -113,6 +113,8 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                     {"op": "PAYREF"},
                     {"op": "BOUNTY"},
                     {"op": "XVAL"},
+                    {"op": "PRESS"},
+                    {"op": "JOB"},
                     {"op": "XPOST"},
                     {"op": "SELL"},
                     {"op": "ECO"},
@@ -186,6 +188,20 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                 "ok": True,
                 "schema": "nomad.bounty_hunter.v1",
                 "top_candidate": {"opportunity_id": "deploy-gate-bounty"},
+                "http_status": 200,
+            }
+        if url.endswith("/.well-known/nomad-value-pressure.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.value_pressure.v1",
+                "top": {"row_id": "deploy-gate-pressure"},
+                "http_status": 200,
+            }
+        if url.endswith("/.well-known/nomad-agent-jobs.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.agent_job_router.v1",
+                "entry_packet": {"packet_id": "deploy-gate-job"},
                 "http_status": 200,
             }
         if url.endswith("/swarm/worker-market/offers"):
@@ -276,6 +292,8 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["paid_ref_market_ok"] is True
     assert out["checks"]["paid_ref_selfplay_ok"] is True
     assert out["checks"]["bounty_hunter_ok"] is True
+    assert out["checks"]["value_pressure_ok"] is True
+    assert out["checks"]["agent_jobs_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["agent_work_claim_ok"] is True
     assert out["checks"]["agent_work_proof_ok"] is True

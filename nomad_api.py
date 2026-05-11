@@ -85,6 +85,9 @@ from nomad_external_value import (
     build_external_value_surface,
     summarize_external_value_ledger,
 )
+from nomad_external_value_reconciler import reconcile_external_value_ledger
+from nomad_value_pressure import build_value_pressure_surface
+from nomad_agent_job_router import build_agent_job_router
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -438,6 +441,26 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_external_value_surface(cls, *, base_url: str) -> dict:
         return build_external_value_surface(base_url=base_url)
+
+    @classmethod
+    def _build_value_pressure(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        return build_value_pressure_surface(
+            base_url=base_url,
+            external_reconcile=reconcile_external_value_ledger(live_github=False, limit=40),
+            bounty_hunter=cls._build_bounty_hunter(base_url=base_url),
+            compute_market=cls._build_compute_market(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
+    def _build_agent_job_router(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        return build_agent_job_router(
+            base_url=base_url,
+            openapi_document=build_openapi_document(base_url=base_url),
+            value_pressure=cls._build_value_pressure(base_url=base_url, swarm_summary=summary),
+            work_mesh=cls._build_work_mesh(base_url=base_url, swarm_summary=summary),
+        )
 
     @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -892,6 +915,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
+                    "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
+                    "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1140,6 +1165,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self._json_response(summarize_external_value_ledger())
             else:
                 self._json_response(self.__class__._build_external_value_surface(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/value-pressure", "/.well-known/nomad-value-pressure.json"}:
+            self._json_response(self.__class__._build_value_pressure(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agent-job-router", "/.well-known/nomad-agent-jobs.json"}:
+            self._json_response(self.__class__._build_agent_job_router(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2198,6 +2229,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/value-pressure",
+                    "/.well-known/nomad-value-pressure.json",
+                    "/swarm/agent-job-router",
+                    "/.well-known/nomad-agent-jobs.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3308,6 +3343,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/value-pressure",
+                    "/.well-known/nomad-value-pressure.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
