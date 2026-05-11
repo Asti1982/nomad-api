@@ -24,3 +24,11 @@ Es gibt zusätzlich den Service **`nomad-api`** (`srv-d7jc241kh4rs73fjmffg`), eb
 ## Edge / Cloudflare
 
 `syndiode.com` kann vor dem Origin noch **Cloudflare Worker / Pfad-Whitelist** haben. 404 auf einzelnen Pfaden heißt nicht zwingend „falscher Git-Branch“, sondern oft **Edge filtert** oder der Deploy ist noch alt. Zuerst Render-`commit_id` prüfen, dann Edge-Regeln.
+
+## Operativer Schnellcheck (Ausfuehrung statt Debatte)
+
+Fuer direkte Tragfaehigkeits-Pruefung:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_sustainability_execute_now.ps1 -StartLocalWorker`
+
+Der Check kombiniert Render-Quelle, Public-Gate und lokalen Worker-Status in einem Lauf.
