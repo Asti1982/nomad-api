@@ -351,7 +351,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
         and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
         and _has_opcodes(
             protocol,
-            {"FORGE", "MARKET", "CARRY", "SELFPLAY", "PAYREF", "BOUNTY", "SELL", "ECO", "CURRIC", "SKILL", "EXP"},
+            {"FORGE", "MARKET", "CARRY", "SELFPLAY", "PAYREF", "BOUNTY", "XVAL", "XPOST", "SELL", "ECO", "CURRIC", "SKILL", "EXP"},
         ),
         "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
         "variant_candidate_ok": _status_ready(variant_candidate)

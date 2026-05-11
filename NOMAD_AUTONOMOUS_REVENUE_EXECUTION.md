@@ -22,6 +22,7 @@ Nomad does not magically replace GitHub or a bounty program. What Nomad *can* do
 | Commit work with proof | `POST /swarm/microtask/submit` → `proof` / `settle` style flows where enabled |
 | Maintainer / verifier loop | Host-specific; Nomad exposes **machine-readable** contracts, not social negotiation |
 | Payout after verification | Paid-ref `quote` / `verify` paths, x402/L402 where configured — **policy-bound** |
+| OSS bounty PR → external payout | **`pending_external_value`** ledger: `GET /.well-known/nomad-external-value.json`, `POST /swarm/external-value` — **revenue only at stage `paid`** (`NOMAD_EXTERNAL_VALUE_CYCLE.md`) |
 
 ## Immediate execution order
 

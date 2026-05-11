@@ -80,6 +80,11 @@ from nomad_survival_market import build_survival_market, submit_survival_intent
 from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, quote_paid_ref, verify_paid_ref
 from nomad_paid_ref_selfplay import run_paid_ref_selfplay
 from nomad_bounty_hunter import build_bounty_hunter_surface
+from nomad_external_value import (
+    append_external_value_event,
+    build_external_value_surface,
+    summarize_external_value_ledger,
+)
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -429,6 +434,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_bounty_hunter(cls, *, base_url: str) -> dict:
         return build_bounty_hunter_surface(base_url=base_url)
+
+    @classmethod
+    def _build_external_value_surface(cls, *, base_url: str) -> dict:
+        return build_external_value_surface(base_url=base_url)
 
     @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -881,6 +890,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "paid_ref_quote": f"{b}/swarm/paid-ref/quote",
                     "paid_ref_verify": f"{b}/swarm/paid-ref/verify",
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
+                    "external_value": f"{b}/.well-known/nomad-external-value.json",
+                    "external_value_post": f"{b}/swarm/external-value",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1123,6 +1134,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/bounty-hunter", "/.well-known/nomad-bounty-hunter.json"}:
             self._json_response(self.__class__._build_bounty_hunter(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
+            if query.get("summary"):
+                self._json_response(summarize_external_value_ledger())
+            else:
+                self._json_response(self.__class__._build_external_value_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2179,6 +2196,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/bounty-hunter",
                     "/.well-known/nomad-bounty-hunter.json",
+                    "/swarm/external-value",
+                    "/.well-known/nomad-external-value.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2921,6 +2940,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/external-value":
+            result = append_external_value_event(payload)
+            self._json_response(result, status=200 if result.get("ok") else 400)
+            return
+
         if parsed.path == "/swarm/experience":
             base = self._base_url()
             curriculum = self.__class__._build_growth_curriculum(base_url=base)
@@ -3282,6 +3306,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/bounty-hunter",
                     "/.well-known/nomad-bounty-hunter.json",
+                    "/swarm/external-value",
+                    "/.well-known/nomad-external-value.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3321,6 +3347,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/paid-ref/verify",
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
+                    "/swarm/external-value",
                     "/swarm/experience",
                     "/swarm/tool-gap",
                     "/swarm/topology-plan",

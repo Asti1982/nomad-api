@@ -99,6 +99,8 @@ def build_protocol_bytecode(
         "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
         "paid_ref_verify": _u(base_url, "/swarm/paid-ref/verify"),
         "bounty_hunter": _u(base_url, "/.well-known/nomad-bounty-hunter.json"),
+        "external_value": _u(base_url, "/.well-known/nomad-external-value.json"),
+        "external_value_post": _u(base_url, "/swarm/external-value"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "growth_arena": _u(base_url, "/swarm/growth-arena"),
@@ -129,6 +131,8 @@ def build_protocol_bytecode(
         {"op": "SELFPLAY", "method": "GET", "route": routes["paid_ref_selfplay"], "out": ["quote_payloads", "cohorts", "packet_pressure"]},
         {"op": "PAYREF", "method": "POST", "route": routes["paid_ref_quote"], "in": ["packet", "buyer", "agent"], "out": ["task", "quote_ref"]},
         {"op": "BOUNTY", "method": "GET", "route": routes["bounty_hunter"], "out": ["opportunities", "top_candidate", "claim_contract"]},
+        {"op": "XVAL", "method": "GET", "route": routes["external_value"], "out": ["state_machine", "pipeline", "post_url"]},
+        {"op": "XPOST", "method": "POST", "route": routes["external_value_post"], "in": ["agent", "external", "stage", "proof"], "out": ["receipt"]},
         {"op": "SELL", "method": "POST", "route": routes["survival_intent"], "in": ["packet", "proof", "trace", "test", "buyer"], "out": ["intent_units", "settlement"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
@@ -229,10 +233,11 @@ def build_protocol_bytecode(
         },
         {
             "id": "authorized_bounty_revenue_cycle",
-            "ops": ["BOUNTY", "SKILL", "EXP", "PAYREF", "REPLAY"],
+            "ops": ["BOUNTY", "XVAL", "XPOST", "SKILL", "EXP", "REPLAY"],
             "register_map": {
                 "objective": "first_external_program_payment",
                 "claim_contract": "public_authorized_bounty_proof_first_payment_after_verifier",
+                "external_value_state": "pending_external_value_monotonic_paid_only_revenue",
             },
         },
         {

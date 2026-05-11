@@ -112,6 +112,8 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                     {"op": "SELFPLAY"},
                     {"op": "PAYREF"},
                     {"op": "BOUNTY"},
+                    {"op": "XVAL"},
+                    {"op": "XPOST"},
                     {"op": "SELL"},
                     {"op": "ECO"},
                     {"op": "CURRIC"},

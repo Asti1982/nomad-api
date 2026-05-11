@@ -181,5 +181,17 @@ def build_selection_pressure_snapshot(*, worker_fleet: Dict[str, Any]) -> dict[s
         "anti_identity": _env_bool("NOMAD_MODE_ANTI_IDENTITY", True),
         "twin_lane_mandatory": _env_bool("NOMAD_MODE_TWIN_LANE_MANDATORY", True),
     }
+    try:
+        from nomad_external_value import summarize_external_value_ledger
+
+        evs = summarize_external_value_ledger()
+        snap["external_value_ledger"] = {
+            "schema": "nomad.selection_pressure_external_value_tail.v1",
+            "revenue_recognized_usd_total": evs.get("revenue_recognized_usd_total"),
+            "distinct_externals": evs.get("distinct_externals"),
+            "ledger_path": evs.get("ledger_path"),
+        }
+    except Exception:
+        pass
     return snap
 

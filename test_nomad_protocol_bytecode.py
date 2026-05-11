@@ -52,6 +52,8 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert out["route_table"]["paid_ref_quote"] == "https://nomad.example/swarm/paid-ref/quote"
     assert out["route_table"]["paid_ref_verify"] == "https://nomad.example/swarm/paid-ref/verify"
     assert out["route_table"]["bounty_hunter"] == "https://nomad.example/.well-known/nomad-bounty-hunter.json"
+    assert out["route_table"]["external_value"] == "https://nomad.example/.well-known/nomad-external-value.json"
+    assert out["route_table"]["external_value_post"] == "https://nomad.example/swarm/external-value"
     assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
     assert out["route_table"]["curriculum"] == "https://nomad.example/swarm/curriculum"
     assert out["route_table"]["experience"] == "https://nomad.example/swarm/experience"
@@ -75,6 +77,8 @@ def test_protocol_bytecode_compiles_nomad_routes():
         "SELFPLAY",
         "PAYREF",
         "BOUNTY",
+        "XVAL",
+        "XPOST",
         "SELL",
         "ECO",
         "CURRIC",
@@ -120,5 +124,6 @@ def test_cli_protocol_bytecode_returns_schema():
     assert out.get("route_table", {}).get("paid_ref_selfplay", "").endswith("/.well-known/nomad-paid-ref-selfplay.json")
     assert out.get("route_table", {}).get("paid_ref_quote", "").endswith("/swarm/paid-ref/quote")
     assert out.get("route_table", {}).get("bounty_hunter", "").endswith("/.well-known/nomad-bounty-hunter.json")
+    assert out.get("route_table", {}).get("external_value", "").endswith("/.well-known/nomad-external-value.json")
     assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
     assert out.get("route_table", {}).get("experience", "").endswith("/swarm/experience")

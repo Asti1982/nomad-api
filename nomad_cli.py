@@ -1488,6 +1488,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("paid-ref-selfplay is handled directly in run_once")
     if command == "bounty-hunter":
         raise ValueError("bounty-hunter is handled directly in run_once")
+    if command == "external-value":
+        raise ValueError("external-value is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1851,6 +1853,34 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=(getattr(args, "base_url", None) or "").strip(),
                 discoveries=discoveries,
             )
+        elif args.command == "external-value":
+            from nomad_external_value import (
+                agent_selection_bonus,
+                append_external_value_event,
+                build_external_value_surface,
+                summarize_external_value_ledger,
+            )
+
+            sub = str(getattr(args, "ev_action", None) or "surface").strip().lower()
+            if sub == "record":
+                result = append_external_value_event(
+                    {
+                        "agent_id": getattr(args, "agent_id", "") or "",
+                        "external_id": getattr(args, "external_id", "") or "",
+                        "stage": getattr(args, "stage", "") or "",
+                        "work_url": getattr(args, "work_url", "") or "",
+                        "proof_digest": getattr(args, "proof_digest", "") or "",
+                        "verifier_trace_digest": getattr(args, "verifier_trace_digest", "") or "",
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                    }
+                )
+            elif sub == "summary":
+                result = summarize_external_value_ledger()
+            elif sub == "bonus":
+                result = agent_selection_bonus(str(getattr(args, "agent_id", "") or ""))
+            else:
+                base = (getattr(args, "base_url", None) or "").strip()
+                result = build_external_value_surface(base_url=base or "https://www.syndiode.com")
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -2279,6 +2309,29 @@ def build_parser() -> argparse.ArgumentParser:
     bounty_hunter.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
     bounty_hunter.add_argument("--discover-gh", action="store_true", help="Read-only local GitHub bounty discovery through gh.")
     bounty_hunter.add_argument("--limit", type=int, default=10, help="Per-repo GitHub discovery limit when --discover-gh is set.")
+    external_value = subparsers.add_parser(
+        "external-value",
+        help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",
+    )
+    external_value.add_argument(
+        "ev_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "summary", "record", "bonus"),
+        help="surface | summary | record | bonus",
+    )
+    external_value.add_argument("--base-url", default="", help="Public base URL for links (surface).")
+    external_value.add_argument("--agent-id", default="", help="Agent id (record, bonus).")
+    external_value.add_argument(
+        "--external-id",
+        default="",
+        help="Stable id, e.g. gh_pr:Scottcjn/Rustchain#4542 (record).",
+    )
+    external_value.add_argument("--stage", default="", help="found | submitted | approved | merged | paid (record).")
+    external_value.add_argument("--work-url", default="", help="PR or issue URL (required after found).")
+    external_value.add_argument("--proof-digest", default="", help="Proof digest (required after found).")
+    external_value.add_argument("--verifier-trace-digest", default="", help="Verifier trace digest (required after found).")
+    external_value.add_argument("--amount-usd", type=float, default=0.0, help="Revenue USD (paid stage only).")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

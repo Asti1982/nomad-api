@@ -40,3 +40,9 @@ Fuer Maschinen-getriebene Umsatzpfade (Worker-Markt, Microtask-Metriken, Paid-Re
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_autonomous_revenue_execute_now.ps1 -StartLocalWorker`
 
 Details und Grenzen (GitHub/Bounty-Story vs. Nomad-Vertraege): `NOMAD_AUTONOMOUS_REVENUE_EXECUTION.md`.
+
+## Externer Wertzyklus (Bounty -> PR -> Zahlung)
+
+Operativer Plan und Rollenaufteilung (PR #4542, Bounty #2819, Watchdog-Skript): **`NOMAD_EXTERNAL_VALUE_CYCLE.md`**.
+
+Maschinen-Ledger (nur **paid** = Umsatz): `GET /.well-known/nomad-external-value.json`, `POST /swarm/external-value`, CLI `python nomad_cli.py external-value …`.
