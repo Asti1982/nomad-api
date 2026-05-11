@@ -181,6 +181,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.895,
+            "get_url": u("/.well-known/nomad-paid-ref-market.json"),
+            "purpose": "paid_ref_quote_verify_accounting_forge",
+            "machine_note": (
+                "Quotes survival packets into payable tasks; POST /swarm/paid-ref/verify only mints a paid_ref "
+                "after task payment verification."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -330,6 +339,10 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/survival-market", "methods": ["GET"], "effect": "read_sellable_survival_packets", "cost_tier": "low"},
         {"path": "/.well-known/nomad-survival-market.json", "methods": ["GET"], "effect": "read_sellable_survival_packets", "cost_tier": "low"},
         {"path": "/swarm/survival-intent", "methods": ["POST"], "effect": "write_buyer_or_paid_survival_signal", "cost_tier": "medium"},
+        {"path": "/swarm/paid-ref-market", "methods": ["GET"], "effect": "read_paid_ref_forge", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-paid-ref-market.json", "methods": ["GET"], "effect": "read_paid_ref_forge", "cost_tier": "low"},
+        {"path": "/swarm/paid-ref/quote", "methods": ["POST"], "effect": "create_payable_survival_task_quote", "cost_tier": "medium"},
+        {"path": "/swarm/paid-ref/verify", "methods": ["POST"], "effect": "mint_verified_paid_ref", "cost_tier": "medium"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
@@ -468,6 +481,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "carrying_proof_url": u("/swarm/carrying-proof"),
         "survival_market_url": u("/.well-known/nomad-survival-market.json"),
         "survival_intent_url": u("/swarm/survival-intent"),
+        "paid_ref_market_url": u("/.well-known/nomad-paid-ref-market.json"),
+        "paid_ref_quote_url": u("/swarm/paid-ref/quote"),
+        "paid_ref_verify_url": u("/swarm/paid-ref/verify"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "growth_arena_url": u("/swarm/growth-arena"),

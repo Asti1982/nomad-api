@@ -17,7 +17,8 @@ def test_survival_market_exposes_priced_packets_and_gap(tmp_path, monkeypatch):
     assert out["intent_contract"]["url"] == "https://nomad.example/swarm/survival-intent"
     assert out["top_packet"]["packet_id"] == "agent_blocker_unblock_pack"
     assert out["survival_pressure"]["survival_gap_30d_eur"] == 7.0
-    assert out["intent_contract"]["revenue_rule"].startswith("counts_as_revenue_only")
+    assert "payment_verifier_digest" in out["intent_contract"]["optional"]
+    assert "payment_verifier_digest" in out["intent_contract"]["revenue_rule"]
 
 
 def test_survival_intent_separates_unpaid_signal_from_revenue(tmp_path):
@@ -57,6 +58,7 @@ def test_survival_intent_separates_unpaid_signal_from_revenue(tmp_path):
             "test_digest": "test-b",
             "buyer_ref": "buyer-b",
             "paid_ref": "ln-invoice-or-task-paid-b",
+            "payment_verifier_digest": "nomad-payver-b",
             "amount_eur": 9.0,
         },
         base_url="https://nomad.example",

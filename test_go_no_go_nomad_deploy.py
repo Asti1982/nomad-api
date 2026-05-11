@@ -109,6 +109,7 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                     {"op": "FORGE"},
                     {"op": "MARKET"},
                     {"op": "CARRY"},
+                    {"op": "PAYREF"},
                     {"op": "SELL"},
                     {"op": "ECO"},
                     {"op": "CURRIC"},
@@ -152,6 +153,13 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                 "top_packet": {"packet_id": "agent_blocker_unblock_pack"},
                 "http_status": 200,
             }
+        if url.endswith("/.well-known/nomad-paid-ref-market.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.paid_ref_market.v1",
+                "top_packet_binding": {"packet_id": "agent_blocker_unblock_pack"},
+                "http_status": 200,
+            }
         if url.endswith("/swarm/worker-market/offers"):
             return {"ok": True, "schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
         if url.endswith("/swarm/microtask/claim"):
@@ -187,6 +195,13 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
             return {
                 "ok": True,
                 "schema": "nomad.survival_intent_receipt.v1",
+                "accepted": True,
+                "http_status": 202,
+            }
+        if url.endswith("/swarm/paid-ref/quote"):
+            return {
+                "ok": True,
+                "schema": "nomad.paid_ref_quote_receipt.v1",
                 "accepted": True,
                 "http_status": 202,
             }
@@ -230,12 +245,14 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["state_status_ok"] is True
     assert out["checks"]["carrying_market_ok"] is True
     assert out["checks"]["survival_market_ok"] is True
+    assert out["checks"]["paid_ref_market_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["agent_work_claim_ok"] is True
     assert out["checks"]["agent_work_proof_ok"] is True
     assert out["checks"]["work_mesh_seed_ok"] is True
     assert out["checks"]["carrying_proof_ok"] is True
     assert out["checks"]["survival_intent_ok"] is True
+    assert out["checks"]["paid_ref_quote_ok"] is True
     assert out["checks"]["ecology_tick_ok"] is True
     assert out["checks"]["growth_arena_ok"] is True
     assert out["checks"]["growth_experience_ok"] is True

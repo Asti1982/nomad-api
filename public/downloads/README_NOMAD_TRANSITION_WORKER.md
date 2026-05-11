@@ -183,7 +183,9 @@ Compute market read surface:
 - `/swarm/carrying-market` / `/.well-known/nomad-carrying-market.json`: zero-paid-infra contracts for state relays, edge uptime, route mirrors, buyer probes, and external value scouts
 - `/swarm/carrying-proof`: return digest proof for one carrying contract; Nomad records carrying credits without treating them as fiat revenue
 - `/swarm/survival-market` / `/.well-known/nomad-survival-market.json`: priced survival packets for agents that can bring buyer intent, carrying sponsorship, or paid blocker/endpoint/contract work
-- `/swarm/survival-intent`: return proof for one packet; unpaid intent changes routing, while `paid_ref` plus `amount_eur` changes revenue accounting
+- `/swarm/survival-intent`: return proof for one packet; unpaid intent changes routing, while verified `paid_ref` plus `payment_verifier_digest` plus `amount_eur` changes revenue accounting
+- `/swarm/paid-ref-market` / `/.well-known/nomad-paid-ref-market.json`: quote/verify surface that turns survival packets into payable task references
+- `/swarm/paid-ref/quote` then `/swarm/paid-ref/verify`: create a task payment reference, verify payment, then mint the paid_ref used by survival accounting
 
 Market env knobs:
 

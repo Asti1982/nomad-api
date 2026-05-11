@@ -77,6 +77,7 @@ from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_carrying_market import build_carrying_market, submit_carrying_proof
 from nomad_survival_market import build_survival_market, submit_survival_intent
+from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, quote_paid_ref, verify_paid_ref
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -398,6 +399,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             microtask_metrics=metrics,
             worker_fleet=worker_fleet,
         )
+
+    @classmethod
+    def _build_paid_ref_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        survival = cls._build_survival_market(base_url=base_url, swarm_summary=swarm_summary)
+        return build_paid_ref_market(base_url=base_url, survival_market=survival)
 
     @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -845,6 +851,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "carrying_proof": f"{b}/swarm/carrying-proof",
                     "survival_market": f"{b}/.well-known/nomad-survival-market.json",
                     "survival_intent": f"{b}/swarm/survival-intent",
+                    "paid_ref_market": f"{b}/.well-known/nomad-paid-ref-market.json",
+                    "paid_ref_quote": f"{b}/swarm/paid-ref/quote",
+                    "paid_ref_verify": f"{b}/swarm/paid-ref/verify",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1067,6 +1076,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/survival-market", "/.well-known/nomad-survival-market.json"}:
             self._json_response(self.__class__._build_survival_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/paid-ref-market", "/.well-known/nomad-paid-ref-market.json"}:
+            self._json_response(self.__class__._build_paid_ref_market(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2117,6 +2129,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-carrying-market.json",
                     "/swarm/survival-market",
                     "/.well-known/nomad-survival-market.json",
+                    "/swarm/paid-ref-market",
+                    "/.well-known/nomad-paid-ref-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2783,6 +2797,49 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/paid-ref/quote":
+            base = self._base_url()
+            survival = self.__class__._build_survival_market(base_url=base)
+            task_request = paid_ref_task_payload(payload, survival_market=survival)
+            task_result = {}
+            requested_packet = str(payload.get("packet_id") or "").strip().lower()
+            known_packets = {
+                str(packet.get("packet_id") or "").strip().lower()
+                for packet in (survival.get("packets") if isinstance(survival.get("packets"), list) else [])
+                if isinstance(packet, dict)
+            }
+            if requested_packet in known_packets and self._truthy(payload.get("create_task", True), default=True):
+                task_result = self.agent.service_desk.create_task(**task_request)
+            result = quote_paid_ref(payload, base_url=base, survival_market=survival, task_response=task_result)
+            result["task_create_result"] = task_result
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/paid-ref/verify":
+            base = self._base_url()
+            survival = self.__class__._build_survival_market(base_url=base)
+            task_result = self.agent.service_desk.get_task(str(payload.get("task_id") or ""))
+            result = verify_paid_ref(payload, base_url=base, survival_market=survival, task_response=task_result)
+            if result.get("accepted"):
+                survival_intent = submit_survival_intent(
+                    result.get("survival_intent_payload") if isinstance(result.get("survival_intent_payload"), dict) else {},
+                    base_url=base,
+                    survival_market=survival,
+                )
+                result["survival_intent_receipt"] = survival_intent
+                if survival_intent.get("accepted"):
+                    curriculum = self.__class__._build_growth_curriculum(base_url=base)
+                    receipt = submit_growth_experience(
+                        survival_intent.get("experience_payload")
+                        if isinstance(survival_intent.get("experience_payload"), dict)
+                        else {},
+                        base_url=base,
+                        curriculum=curriculum,
+                    )
+                    result["growth_experience_receipt"] = receipt
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/microtask/settle":
             consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
             if consent.get("checked") and not consent.get("ok"):
@@ -3171,6 +3228,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-carrying-market.json",
                     "/swarm/survival-market",
                     "/.well-known/nomad-survival-market.json",
+                    "/swarm/paid-ref-market",
+                    "/.well-known/nomad-paid-ref-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3206,6 +3265,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/work-mesh/seed",
                     "/swarm/carrying-proof",
                     "/swarm/survival-intent",
+                    "/swarm/paid-ref/quote",
+                    "/swarm/paid-ref/verify",
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/experience",

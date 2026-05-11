@@ -269,10 +269,11 @@ def build_survival_market(
                 "contract_ref",
                 "external_offer_ref",
                 "paid_ref",
+                "payment_verifier_digest",
                 "amount_eur",
                 "idempotency_key",
             ],
-            "revenue_rule": "counts_as_revenue_only_if_paid_ref_and_amount_eur_are_present_with_required_proofs",
+            "revenue_rule": "counts_as_revenue_only_if_paid_ref_amount_eur_and_payment_verifier_digest_are_present_with_required_proofs",
         },
         "links": {
             "self": _u(base_url, "/swarm/survival-market"),
@@ -283,8 +284,8 @@ def build_survival_market(
             "x402": _u(base_url, "/x402/paid-help"),
             "carrying_market": _u(base_url, "/.well-known/nomad-carrying-market.json"),
         },
-        "selection_rule": "rank_packets_by_survival_gap_and_agent_verifiability_then_require_paid_ref_for_revenue",
-        "machine_instruction": "pick_top_packet_find_or_become_buyer_submit_survival_intent_with_proof_paid_ref_counts_as_revenue",
+        "selection_rule": "rank_packets_by_survival_gap_and_agent_verifiability_then_require_verified_paid_ref_for_revenue",
+        "machine_instruction": "pick_top_packet_quote_paid_ref_pay_or_bring_buyer_then_submit_survival_intent_with_payment_verifier_digest",
         "science_basis": [
             {"id": "machine_to_machine_settlement", "source": "arxiv:2602.14219"},
             {"id": "structured_agent_environment", "source": "openreview:FfsxgSZW0c"},
@@ -328,7 +329,13 @@ def submit_survival_intent(
     confidence = _proof_confidence(body, packet) if packet else 0.0
     amount = max(0.0, _num(body.get("amount_eur"), 0.0))
     paid_ref = _text(body.get("paid_ref"), 180)
-    counts_as_revenue = bool(packet and paid_ref and amount > 0 and confidence >= 0.62)
+    payment_verifier = _text(
+        body.get("payment_verifier_digest")
+        or body.get("paid_verifier_digest")
+        or body.get("settlement_verifier_digest"),
+        180,
+    )
+    counts_as_revenue = bool(packet and paid_ref and payment_verifier and amount > 0 and confidence >= 0.62)
     quote = _num(packet.get("quote_eur"), 0.0) if packet else 0.0
     intent_units = confidence * (1.0 + min(1.0, quote / 10.0)) * (1.0 + (1.0 if counts_as_revenue else 0.0))
     accepted = bool(agent_id and packet and confidence >= 0.62)
@@ -354,11 +361,12 @@ def submit_survival_intent(
         "counts_as_revenue": counts_as_revenue,
         "settlement_eur": round(amount if counts_as_revenue else 0.0, 4),
         "paid_ref": paid_ref,
+        "payment_verifier_digest": payment_verifier,
         "buyer_ref": _text(body.get("buyer_ref") or body.get("external_offer_ref"), 220),
         "proof_digest": _text(body.get("proof_digest"), 160),
         "verifier_trace_digest": _text(body.get("verifier_trace_digest"), 160),
         "test_digest": _text(body.get("test_digest"), 160),
-        "reason": "accepted_paid_survival_signal" if counts_as_revenue else ("accepted_unpaid_buyer_signal" if accepted else "unknown_packet_or_low_proof"),
+        "reason": "accepted_verified_paid_survival_signal" if counts_as_revenue else ("accepted_unpaid_buyer_signal" if accepted else "unknown_packet_or_low_proof"),
         "experience_payload": {
             "agent_id": agent_id,
             "objective": "nomad_cashflow_probe",

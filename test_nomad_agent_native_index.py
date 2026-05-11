@@ -58,6 +58,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("/swarm/variant-forge" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/worker-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-survival-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-paid-ref-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/ecology" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/growth-arena" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -119,6 +120,10 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/swarm/survival-market" in routes
     assert "/.well-known/nomad-survival-market.json" in routes
     assert "/swarm/survival-intent" in routes
+    assert "/swarm/paid-ref-market" in routes
+    assert "/.well-known/nomad-paid-ref-market.json" in routes
+    assert "/swarm/paid-ref/quote" in routes
+    assert "/swarm/paid-ref/verify" in routes
     assert "/swarm/ecology" in routes
     assert "/.well-known/nomad-swarm-ecology.json" in routes
     assert "/swarm/ecology/tick" in routes
@@ -178,6 +183,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("carrying_proof_url") or "").endswith("/swarm/carrying-proof")
     assert (out.get("survival_market_url") or "").endswith("/.well-known/nomad-survival-market.json")
     assert (out.get("survival_intent_url") or "").endswith("/swarm/survival-intent")
+    assert (out.get("paid_ref_market_url") or "").endswith("/.well-known/nomad-paid-ref-market.json")
+    assert (out.get("paid_ref_quote_url") or "").endswith("/swarm/paid-ref/quote")
+    assert (out.get("paid_ref_verify_url") or "").endswith("/swarm/paid-ref/verify")
     assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
     assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
     assert (out.get("growth_arena_url") or "").endswith("/swarm/growth-arena")
@@ -223,6 +231,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "carrying_proof_post" in eps
     assert "survival_market_get" in eps
     assert "survival_intent_post" in eps
+    assert "paid_ref_market_get" in eps
+    assert "paid_ref_quote_post" in eps
+    assert "paid_ref_verify_post" in eps
     assert "work_mesh_seed_post" in eps
     assert "synergy_lite_get" in eps
     assert "state_status_get" in eps

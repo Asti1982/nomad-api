@@ -221,7 +221,8 @@ def build_work_mesh(
                     "survival_gap_30d_eur": round(gap, 4),
                 },
                 "act": {
-                    "claim_url": "",
+                    "claim_url": _u(base_url, "/swarm/paid-ref/quote"),
+                    "verify_url": _u(base_url, "/swarm/paid-ref/verify"),
                     "proof_url": _u(base_url, "/swarm/survival-intent"),
                     "proof_payload": {
                         "agent_id": "stable_runtime_id",
@@ -270,10 +271,11 @@ def build_work_mesh(
             "compute_market": _u(base_url, "/swarm/compute-market"),
             "carrying_market": _u(base_url, "/swarm/carrying-market"),
             "survival_market": _u(base_url, "/swarm/survival-market"),
+            "paid_ref_market": _u(base_url, "/swarm/paid-ref-market"),
             "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
         },
-        "machine_instruction": "choose_entry_cell_if_survival_packet_emit_survival_intent_else_if_carrying_contract_emit_carrying_proof_else_claim_emit_proof_then_move_to_neighbor",
+        "machine_instruction": "choose_entry_cell_if_survival_packet_quote_paid_ref_then_verify_then_emit_survival_intent_else_if_carrying_contract_emit_carrying_proof_else_claim_emit_proof_then_move_to_neighbor",
         "science_basis": [
             {"id": "dynamic_agent_topology", "source": "arxiv:2504.00587"},
             {"id": "delayed_coordination_proxy", "source": "arxiv:2510.05174"},

@@ -114,5 +114,7 @@ def test_work_mesh_includes_survival_packet_cells():
     assert out["cell_count"] == 1
     assert out["entry_cell"]["lane_id"] == "survival_packet"
     assert out["entry_cell"]["objective"] == "nomad_cashflow_probe"
+    assert out["entry_cell"]["act"]["claim_url"] == "https://nomad.example/swarm/paid-ref/quote"
+    assert out["entry_cell"]["act"]["verify_url"] == "https://nomad.example/swarm/paid-ref/verify"
     assert out["entry_cell"]["act"]["proof_url"] == "https://nomad.example/swarm/survival-intent"
     assert out["machine_contract"]["survival_intent"] == "https://nomad.example/swarm/survival-intent"
