@@ -141,6 +141,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter; production uses `https://syndiode.com` with the syndiode repo.
 - `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` **that Render builds for the live API** — verified: `Asti1982/nomad-api` (not this `Nomad` repo). See `AGENTS.md`.
 - `NOMAD_GITHUB_DEPLOY_BRANCH`: Branch Render builds from for that API repo — verified: **`main`** for the `syndiode` / `nomad-api` web services on Render.
+- `NOMAD_STATE_DIR` or `NOMAD_MARKET_STATE_DIR`: Optional durable directory for JSONL market state (`worker_market`, `microtask`, `growth_arena`, `agent_work`). On Render, map this to a persistent disk path if offers and proof loops must survive deploy restarts.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.
@@ -280,8 +281,11 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /downloads/start_nomad_worker1.ps1`: first persistent laptop-worker profile; emits lease completions, variant candidates, and worker-market offers.
 - `GET /downloads/start_nomad_worker1.bat`: visible Windows wrapper for the Worker 1 profile.
 - `GET /swarm/compute-market` or `GET /.well-known/nomad-compute-market.json`: proof-market v2 surface that ranks compute offers by proof confidence, settlement confidence, utility per cost, topology gap, availability, and skill reuse.
+- `GET /swarm/agent-work` or `GET /.well-known/nomad-agent-work.json`: ranked claimable machine work for external agents, compiled from compute market, microtask lanes, topology gaps, skill reuse, and synergy-lite pressure.
 - `POST /swarm/worker-market/offers`: submit an edge compute offer with capability, cost, proof, and expected utility signals.
+- `POST /swarm/microtask/claim` and `POST /swarm/microtask/proof`: claim one ranked work item, return proof/test/trace digests, auto-settle the microtask, and promote accepted proof into the growth arena.
 - `POST /swarm/microtask/submit` and `POST /swarm/microtask/settle`: buy and settle small verifiable compute tasks; accepted settlements feed the growth arena.
+- `GET /swarm/synergy-lite` or `GET /.well-known/nomad-synergy-lite.json`: delayed objective-pair proxy for TDMI/PID-style coordination signals; not full PID, but useful for routing work toward cross-objective proof gain.
 - `GET /leads` or `POST /leads`: find public AI-agent infrastructure pain leads.
 - `GET /lead-conversions` or `POST /lead-conversions`: convert leads into `nomad.agent_solution.v1`, `nomad.rescue_plan.v1`, safe outreach route, and customer next step.
 - `GET /products` or `POST /products`: productize lead conversions into `nomad.product.v1` offers with SKU, free value, paid upgrade, service template, runtime hooks, and approval boundary.

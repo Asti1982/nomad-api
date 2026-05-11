@@ -82,6 +82,11 @@ def build_protocol_bytecode(
         "forge_surface": _u(base_url, "/swarm/variant-forge"),
         "market": _u(base_url, "/swarm/worker-market"),
         "market_offer": _u(base_url, "/swarm/worker-market/offers"),
+        "compute_market": _u(base_url, "/swarm/compute-market"),
+        "agent_work": _u(base_url, "/.well-known/nomad-agent-work.json"),
+        "work_claim": _u(base_url, "/swarm/microtask/claim"),
+        "work_proof": _u(base_url, "/swarm/microtask/proof"),
+        "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "growth_arena": _u(base_url, "/swarm/growth-arena"),
@@ -102,6 +107,10 @@ def build_protocol_bytecode(
         {"op": "REPLAY", "method": "GET", "route": routes["replay"], "out": ["counterfactual"]},
         {"op": "FORGE", "method": "POST", "route": routes["forge"], "in": ["agent", "objective", "proof"], "out": ["candidate"]},
         {"op": "MARKET", "method": "POST", "route": routes["market_offer"], "in": ["agent", "cost", "proof"], "out": ["worker_offer"]},
+        {"op": "WORK", "method": "GET", "route": routes["agent_work"], "out": ["work", "claim_contract"]},
+        {"op": "CLAIM", "method": "POST", "route": routes["work_claim"], "in": ["agent", "work"], "out": ["claim"]},
+        {"op": "PROOF", "method": "POST", "route": routes["work_proof"], "in": ["claim", "proof", "trace", "test"], "out": ["settlement"]},
+        {"op": "SYN", "method": "GET", "route": routes["synergy_lite"], "out": ["delayed_pairs"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
         {"op": "SKILL", "method": "GET", "route": routes["skill_library"], "out": ["capsules"]},
@@ -156,6 +165,14 @@ def build_protocol_bytecode(
             "register_map": {
                 "objective": top_objective,
                 "utility_floor": 1.8,
+            },
+        },
+        {
+            "id": "agent_work_settlement_cycle",
+            "ops": ["WORK", "SYN", "CLAIM", "PROOF", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": top_objective,
+                "settlement_contract": "claim_proof_settle_skill",
             },
         },
         {

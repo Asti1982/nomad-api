@@ -38,6 +38,9 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert out["route_table"]["forge"] == "https://nomad.example/swarm/variant-candidates"
     assert out["route_table"]["forge_surface"] == "https://nomad.example/swarm/variant-forge"
     assert out["route_table"]["market_offer"] == "https://nomad.example/swarm/worker-market/offers"
+    assert out["route_table"]["agent_work"] == "https://nomad.example/.well-known/nomad-agent-work.json"
+    assert out["route_table"]["work_claim"] == "https://nomad.example/swarm/microtask/claim"
+    assert out["route_table"]["work_proof"] == "https://nomad.example/swarm/microtask/proof"
     assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
     assert out["route_table"]["curriculum"] == "https://nomad.example/swarm/curriculum"
     assert out["route_table"]["experience"] == "https://nomad.example/swarm/experience"
@@ -51,6 +54,10 @@ def test_protocol_bytecode_compiles_nomad_routes():
         "REPLAY",
         "FORGE",
         "MARKET",
+        "WORK",
+        "CLAIM",
+        "PROOF",
+        "SYN",
         "ECO",
         "CURRIC",
         "SKILL",
@@ -59,6 +66,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert any(program["id"] == "contract_repair" for program in out["programs"])
     assert any(program["id"] == "variant_forge" for program in out["programs"])
     assert any(program["id"] == "worker_market_offer" for program in out["programs"])
+    assert any(program["id"] == "agent_work_settlement_cycle" for program in out["programs"])
     assert any(program["id"] == "local_ecology_tick" for program in out["programs"])
     assert any(program["id"] == "growth_arena_cycle" for program in out["programs"])
     assert out["machine_instruction"] == "execute_program_id_then_emit_proof_then_replay"
@@ -82,5 +90,6 @@ def test_cli_protocol_bytecode_returns_schema():
     assert out.get("route_table", {}).get("replay", "").endswith("/swarm/counterfactual-replay")
     assert out.get("route_table", {}).get("forge", "").endswith("/swarm/variant-candidates")
     assert out.get("route_table", {}).get("market_offer", "").endswith("/swarm/worker-market/offers")
+    assert out.get("route_table", {}).get("agent_work", "").endswith("/.well-known/nomad-agent-work.json")
     assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
     assert out.get("route_table", {}).get("experience", "").endswith("/swarm/experience")

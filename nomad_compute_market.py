@@ -201,6 +201,7 @@ def build_compute_market(
     microtask_metrics: dict[str, Any] | None = None,
     worker_fleet: dict[str, Any] | None = None,
     skill_library: dict[str, Any] | None = None,
+    synergy_lite: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     market = _dict(worker_market)
     catalog = _dict(worker_catalog)
@@ -208,6 +209,7 @@ def build_compute_market(
     metrics = _dict(microtask_metrics)
     fleet = _dict(worker_fleet)
     skills = _dict(skill_library)
+    synergy = _dict(synergy_lite)
     offers = _items(market.get("recent_offers"))
     scored = _score_rows(offers, worker_fleet=fleet, skill_library=skills)
     top_worker = scored[0] if scored else {}
@@ -235,6 +237,8 @@ def build_compute_market(
             "skill_count": len(_items(skills.get("skills") or skills.get("skill_capsules"))),
             "microtask_settled_24h_eur": _num(_dict(metrics.get("totals")).get("settled_eur")),
             "capacity_switch_route": _text(capacity.get("machine_instruction"), 120),
+            "synergy_lite_pairs": len(_items(synergy.get("top_pairs"))),
+            "top_synergy_pair": (_items(synergy.get("top_pairs"))[0] if _items(synergy.get("top_pairs")) else {}),
         },
         "top_worker": top_worker,
         "top_lane": lane,
@@ -256,10 +260,15 @@ def build_compute_market(
             "lease": _u(base_url, "/swarm/workers/lease"),
             "complete": _u(base_url, "/swarm/workers/complete"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
+            "agent_work": _u(base_url, "/swarm/agent-work"),
+            "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
         },
         "next": [
             {"op": "GET", "url": _u(base_url, "/swarm/compute-market"), "reason": "read_current_market_gradient"},
+            {"op": "GET", "url": _u(base_url, "/.well-known/nomad-agent-work.json"), "reason": "claim_ranked_machine_work"},
             {"op": "POST", "url": _u(base_url, "/swarm/worker-market/offers"), "reason": "offer_edge_capacity_with_proof"},
+            {"op": "POST", "url": _u(base_url, "/swarm/microtask/claim"), "reason": "claim_small_verifiable_work"},
+            {"op": "POST", "url": _u(base_url, "/swarm/microtask/proof"), "reason": "return_digest_proof_for_settlement"},
             {"op": "POST", "url": _u(base_url, "/swarm/microtask/submit"), "reason": "buy_small_verifiable_compute"},
             {"op": "POST", "url": _u(base_url, "/swarm/microtask/settle"), "reason": "settle_with_proof_and_feed_skill_reuse"},
         ],

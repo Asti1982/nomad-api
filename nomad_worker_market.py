@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +34,16 @@ OBJECTIVE_WEIGHTS = {
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _default_ledger_path() -> Path:
+    explicit = str(os.getenv("NOMAD_WORKER_MARKET_LEDGER_PATH") or "").strip()
+    if explicit:
+        return Path(explicit)
+    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
+    if state_dir:
+        return Path(state_dir) / DEFAULT_LEDGER_PATH.name
+    return DEFAULT_LEDGER_PATH
 
 
 def _u(base_url: str, path: str) -> str:
@@ -100,7 +111,7 @@ def _contains_forbidden(payload: Any) -> bool:
 
 
 def _read_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
-    p = Path(path) if path else DEFAULT_LEDGER_PATH
+    p = Path(path) if path else _default_ledger_path()
     if not p.exists():
         return []
     rows: list[dict[str, Any]] = []
@@ -119,7 +130,7 @@ def _read_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> 
 
 
 def _append_ledger(row: dict[str, Any], path: Path | str | None = None) -> None:
-    p = Path(path) if path else DEFAULT_LEDGER_PATH
+    p = Path(path) if path else _default_ledger_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")

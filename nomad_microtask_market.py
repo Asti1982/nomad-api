@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,16 @@ DEFAULT_SETTLE_LEDGER_PATH = Path("nomad_microtask_settlement_ledger.jsonl")
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _default_path(env_name: str, default: Path) -> Path:
+    explicit = str(os.getenv(env_name) or "").strip()
+    if explicit:
+        return Path(explicit)
+    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
+    if state_dir:
+        return Path(state_dir) / default.name
+    return default
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -156,7 +167,7 @@ def submit_microtask(
         "machine_instruction": "if_accepted_execute_task_emit_proof_then_post_settlement",
     }
     if persist:
-        _append(DEFAULT_LEDGER_PATH, out)
+        _append(_default_path("NOMAD_MICROTASK_LEDGER_PATH", DEFAULT_LEDGER_PATH), out)
         out["persisted"] = True
     return out
 
@@ -209,7 +220,7 @@ def settle_microtask(payload: dict[str, Any], *, base_url: str, persist: bool = 
         "machine_instruction": "forward_experience_payload_to_growth_arena_for_reuse_selection",
     }
     if persist:
-        _append(DEFAULT_SETTLE_LEDGER_PATH, out)
+        _append(_default_path("NOMAD_MICROTASK_SETTLE_LEDGER_PATH", DEFAULT_SETTLE_LEDGER_PATH), out)
         out["persisted"] = True
     return out
 

@@ -36,6 +36,7 @@ from nomad_protocol_bytecode import build_protocol_bytecode
 from nomad_variant_forge import build_variant_forge_surface, submit_variant_candidate
 from nomad_worker_market import build_worker_market, score_worker_offer
 from nomad_compute_market import build_compute_market
+from nomad_agent_work import build_agent_work_surface, build_synergy_lite, claim_agent_work, submit_agent_work_proof
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -340,6 +341,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             microtask_metrics=metrics,
         )
         skills = build_skill_library(base_url=base_url)
+        synergy = cls._build_synergy_lite(base_url=base_url)
         return build_compute_market(
             base_url=base_url,
             worker_market=worker_market,
@@ -348,6 +350,34 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             microtask_metrics=metrics,
             worker_fleet=worker_fleet,
             skill_library=skills,
+            synergy_lite=synergy,
+        )
+
+    @classmethod
+    def _build_synergy_lite(cls, *, base_url: str) -> dict:
+        return build_synergy_lite(base_url=base_url)
+
+    @classmethod
+    def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        compute_market = cls._build_compute_market(base_url=base_url, swarm_summary=summary)
+        templates = cls._build_microtask_templates(base_url=base_url)
+        metrics = cls._build_microtask_metrics(base_url=base_url)
+        catalog = cls._build_worker_catalog(base_url=base_url, swarm_summary=summary)
+        skills = cls._build_skill_library(base_url=base_url)
+        synergy = cls._build_synergy_lite(base_url=base_url)
+        return build_agent_work_surface(
+            base_url=base_url,
+            compute_market=compute_market,
+            microtask_templates=templates,
+            microtask_metrics=metrics,
+            worker_catalog=catalog,
+            skill_library=skills,
+            worker_fleet=worker_fleet,
+            synergy_lite=synergy,
         )
 
     @classmethod
@@ -741,6 +771,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "variant_candidate_submit": f"{b}/swarm/variant-candidates",
                     "worker_market": f"{b}/swarm/worker-market",
                     "compute_market": f"{b}/swarm/compute-market",
+                    "agent_work": f"{b}/.well-known/nomad-agent-work.json",
+                    "agent_work_claim": f"{b}/swarm/microtask/claim",
+                    "agent_work_proof": f"{b}/swarm/microtask/proof",
+                    "synergy_lite": f"{b}/swarm/synergy-lite",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -945,6 +979,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/compute-market", "/.well-known/nomad-compute-market.json"}:
             self._json_response(self.__class__._build_compute_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agent-work", "/.well-known/nomad-agent-work.json"}:
+            self._json_response(self.__class__._build_agent_work_surface(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/synergy-lite", "/.well-known/nomad-synergy-lite.json"}:
+            self._json_response(self.__class__._build_synergy_lite(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -1983,6 +2023,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/compute-market",
                     "/.well-known/nomad-compute-market.json",
+                    "/swarm/agent-work",
+                    "/.well-known/nomad-agent-work.json",
+                    "/swarm/synergy-lite",
+                    "/.well-known/nomad-synergy-lite.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2586,6 +2630,32 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/microtask/claim":
+            base = self._base_url()
+            agent_work = self.__class__._build_agent_work_surface(base_url=base)
+            result = claim_agent_work(payload, base_url=base, agent_work=agent_work)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/microtask/proof":
+            base = self._base_url()
+            agent_work = self.__class__._build_agent_work_surface(base_url=base)
+            result = submit_agent_work_proof(payload, base_url=base, agent_work=agent_work)
+            if result.get("accepted"):
+                settle_payload = result.get("settle_payload") if isinstance(result.get("settle_payload"), dict) else {}
+                settlement = settle_microtask(settle_payload, base_url=base)
+                result["settlement_receipt"] = settlement
+                if settlement.get("accepted"):
+                    curriculum = self.__class__._build_growth_curriculum(base_url=base)
+                    receipt = submit_growth_experience(
+                        settlement.get("experience_payload") if isinstance(settlement.get("experience_payload"), dict) else {},
+                        base_url=base,
+                        curriculum=curriculum,
+                    )
+                    result["growth_experience_receipt"] = receipt
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/microtask/settle":
             consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
             if consent.get("checked") and not consent.get("ok"):
@@ -2962,6 +3032,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/compute-market",
                     "/.well-known/nomad-compute-market.json",
+                    "/swarm/agent-work",
+                    "/.well-known/nomad-agent-work.json",
+                    "/swarm/synergy-lite",
+                    "/.well-known/nomad-synergy-lite.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2992,6 +3066,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/variant-candidates",
                     "/swarm/worker-market/offers",
                     "/swarm/microtask/submit",
+                    "/swarm/microtask/claim",
+                    "/swarm/microtask/proof",
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/experience",

@@ -168,6 +168,31 @@ def _growth_experience_probe_payload() -> dict:
     }
 
 
+def _agent_work_claim_payload(agent_work: dict) -> dict:
+    items = agent_work.get("work_items") if isinstance(agent_work.get("work_items"), list) else []
+    work_id = ""
+    if items and isinstance(items[0], dict):
+        work_id = str(items[0].get("work_id") or "")
+    return {
+        "agent_id": "deploy.gate.probe",
+        "work_id": work_id,
+        "idempotency_key": "deploy-gate-agent-work-claim",
+    }
+
+
+def _agent_work_proof_payload(claim: dict) -> dict:
+    return {
+        "agent_id": "deploy.gate.probe",
+        "claim_id": str(claim.get("claim_id") or ""),
+        "proof_digest": "deploy-gate-agent-work-proof",
+        "verifier_trace_digest": "deploy-gate-agent-work-trace",
+        "test_digest": "deploy-gate-agent-work-test",
+        "utility_delta": 0.75,
+        "reuse_count": 1,
+        "risk_score": 0.01,
+    }
+
+
 def run_gate(base_url: str, timeout: float) -> dict:
     health = http_json("GET", endpoint(base_url, "/health"), timeout=timeout)
     recruit = http_json("GET", endpoint(base_url, "/.well-known/nomad-recruit.json"), timeout=timeout)
@@ -182,10 +207,25 @@ def run_gate(base_url: str, timeout: float) -> dict:
         timeout=timeout,
     )
     worker_market = http_json("GET", endpoint(base_url, "/swarm/worker-market"), timeout=timeout)
+    compute_market = http_json("GET", endpoint(base_url, "/swarm/compute-market"), timeout=timeout)
+    agent_work = http_json("GET", endpoint(base_url, "/.well-known/nomad-agent-work.json"), timeout=timeout)
+    synergy_lite = http_json("GET", endpoint(base_url, "/swarm/synergy-lite"), timeout=timeout)
     worker_offer = http_json(
         "POST",
         endpoint(base_url, "/swarm/worker-market/offers"),
         payload=_worker_offer_probe_payload(),
+        timeout=timeout,
+    )
+    agent_work_claim = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/microtask/claim"),
+        payload=_agent_work_claim_payload(agent_work),
+        timeout=timeout,
+    )
+    agent_work_proof = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/microtask/proof"),
+        payload=_agent_work_proof_payload(agent_work_claim),
         timeout=timeout,
     )
     swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
@@ -230,8 +270,15 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "variant_candidate_ok": _status_ready(variant_candidate)
         and str(variant_candidate.get("schema") or "") == "nomad.variant_candidate_receipt.v1",
         "worker_market_ok": _status_ready(worker_market) and str(worker_market.get("schema") or "") == "nomad.worker_market.v1",
+        "compute_market_ok": _status_ready(compute_market) and str(compute_market.get("schema") or "") == "nomad.compute_market.v1",
+        "agent_work_ok": _status_ready(agent_work) and str(agent_work.get("schema") or "") == "nomad.agent_work.v1",
+        "synergy_lite_ok": _status_ready(synergy_lite) and str(synergy_lite.get("schema") or "") == "nomad.synergy_lite.v1",
         "worker_market_offer_ok": _status_ready(worker_offer)
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
+        "agent_work_claim_ok": _status_ready(agent_work_claim)
+        and str(agent_work_claim.get("schema") or "") == "nomad.agent_work_claim_receipt.v1",
+        "agent_work_proof_ok": _status_ready(agent_work_proof)
+        and str(agent_work_proof.get("schema") or "") == "nomad.agent_work_proof_receipt.v1",
         "swarm_ecology_ok": _status_ready(swarm_ecology) and str(swarm_ecology.get("schema") or "") == "nomad.swarm_ecology.v1",
         "ecology_tick_ok": _status_ready(ecology_tick) and str(ecology_tick.get("schema") or "") == "nomad.ecology_tick_receipt.v1",
         "growth_arena_ok": _status_ready(growth_arena) and str(growth_arena.get("schema") or "") == "nomad.growth_arena.v1",
@@ -261,7 +308,12 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "variant_forge": int(variant_forge.get("http_status") or 0),
             "variant_candidate": int(variant_candidate.get("http_status") or 0),
             "worker_market": int(worker_market.get("http_status") or 0),
+            "compute_market": int(compute_market.get("http_status") or 0),
+            "agent_work": int(agent_work.get("http_status") or 0),
+            "synergy_lite": int(synergy_lite.get("http_status") or 0),
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
+            "agent_work_claim": int(agent_work_claim.get("http_status") or 0),
+            "agent_work_proof": int(agent_work_proof.get("http_status") or 0),
             "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
             "ecology_tick": int(ecology_tick.get("http_status") or 0),
             "growth_arena": int(growth_arena.get("http_status") or 0),

@@ -98,7 +98,15 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/swarm/variant-candidates" in routes
     assert "/swarm/worker-market" in routes
     assert "/.well-known/nomad-worker-market.json" in routes
+    assert "/swarm/compute-market" in routes
+    assert "/.well-known/nomad-compute-market.json" in routes
+    assert "/swarm/agent-work" in routes
+    assert "/.well-known/nomad-agent-work.json" in routes
     assert "/swarm/worker-market/offers" in routes
+    assert "/swarm/microtask/claim" in routes
+    assert "/swarm/microtask/proof" in routes
+    assert "/swarm/synergy-lite" in routes
+    assert "/.well-known/nomad-synergy-lite.json" in routes
     assert "/swarm/ecology" in routes
     assert "/.well-known/nomad-swarm-ecology.json" in routes
     assert "/swarm/ecology/tick" in routes
@@ -146,6 +154,11 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("variant_candidate_submit_url") or "").endswith("/swarm/variant-candidates")
     assert (out.get("worker_market_url") or "").endswith("/swarm/worker-market")
     assert (out.get("worker_market_offer_url") or "").endswith("/swarm/worker-market/offers")
+    assert (out.get("compute_market_url") or "").endswith("/swarm/compute-market")
+    assert (out.get("agent_work_url") or "").endswith("/.well-known/nomad-agent-work.json")
+    assert (out.get("agent_work_claim_url") or "").endswith("/swarm/microtask/claim")
+    assert (out.get("agent_work_proof_url") or "").endswith("/swarm/microtask/proof")
+    assert (out.get("synergy_lite_url") or "").endswith("/swarm/synergy-lite")
     assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
     assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
     assert (out.get("growth_arena_url") or "").endswith("/swarm/growth-arena")
@@ -182,6 +195,11 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "variant_candidate_post" in eps
     assert "worker_market_get" in eps
     assert "worker_market_offer_post" in eps
+    assert "compute_market_get" in eps
+    assert "agent_work_get" in eps
+    assert "agent_work_claim_post" in eps
+    assert "agent_work_proof_post" in eps
+    assert "synergy_lite_get" in eps
     assert "swarm_ecology_get" in eps
     assert "swarm_ecology_tick_post" in eps
     assert "growth_arena_get" in eps

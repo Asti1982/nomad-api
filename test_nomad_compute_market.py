@@ -118,6 +118,7 @@ def test_build_compute_market_surface_aggregates_contracts():
         microtask_metrics={"totals": {"settled_eur": 0.02}, "lane_metrics": [{"lane_id": "endpoint_health_proof", "settled_eur": 0.02}]},
         worker_fleet={"active_worker_count": 1, "active_lease_count": 1, "objective_counts": {}},
         skill_library={"skills": [{"objective": "settlement_capacity_builder"}]},
+        synergy_lite={"top_pairs": [{"objective_pair": ["protocol_drift_scan", "settlement_capacity_builder"], "tdmi_lite_proxy": 0.5}]},
     )
 
     assert out["schema"] == "nomad.compute_market.v1"
@@ -125,4 +126,6 @@ def test_build_compute_market_surface_aggregates_contracts():
     assert out["top_worker"]["agent_id"] == "edge.one"
     assert out["top_lane"]["lane_id"] == "endpoint_health_proof"
     assert out["entry_contract"]["settle_url"] == "https://nomad.example/swarm/microtask/settle"
+    assert out["links"]["agent_work"] == "https://nomad.example/swarm/agent-work"
+    assert out["market_state"]["synergy_lite_pairs"] == 1
     assert out["machine_instruction"]

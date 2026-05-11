@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, the proof-market v2 surface, worker catalogs, microtask templates/metrics, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, worker catalogs, microtask templates/metrics, synergy-lite routing, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -529,6 +529,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/agent-work": {
+                "get": {
+                    "summary": "Concrete machine work surface for agents: ranked claimable tasks with proof contract",
+                    "operationId": "getSwarmAgentWork",
+                    "responses": {
+                        "200": {"description": "Agent work surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-work.json": {
+                "get": {
+                    "summary": "Alias of /swarm/agent-work",
+                    "operationId": "getAgentWorkWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent work surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/synergy-lite": {
+                "get": {
+                    "summary": "Delayed objective-pair synergy proxy for routing agent work",
+                    "operationId": "getSwarmSynergyLite",
+                    "responses": {
+                        "200": {"description": "Synergy-lite surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-synergy-lite.json": {
+                "get": {
+                    "summary": "Alias of /swarm/synergy-lite",
+                    "operationId": "getSynergyLiteWellKnown",
+                    "responses": {
+                        "200": {"description": "Synergy-lite surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/worker-catalog": {
                 "get": {
                     "summary": "Machine-readable catalog for cent-level worker microtask lanes",
@@ -925,6 +961,34 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Microtask accepted for execution"},
                         "200": {"description": "Microtask held or rejected by lane price floor"},
+                    },
+                }
+            },
+            "/swarm/microtask/claim": {
+                "post": {
+                    "summary": "Claim one ranked agent-work item and receive a proof payload hint",
+                    "operationId": "postSwarmMicrotaskClaim",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Work item claimed"},
+                        "200": {"description": "No claim issued"},
+                    },
+                }
+            },
+            "/swarm/microtask/proof": {
+                "post": {
+                    "summary": "Return proof for a claimed work item, settle it, and promote skill reuse",
+                    "operationId": "postSwarmMicrotaskProof",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Proof accepted and settlement attempted"},
+                        "200": {"description": "Proof rejected or incomplete"},
                     },
                 }
             },

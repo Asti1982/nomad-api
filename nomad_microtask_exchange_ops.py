@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,16 @@ SETTLE_LEDGER_PATH = Path("nomad_microtask_settlement_ledger.jsonl")
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _default_path(env_name: str, default: Path) -> Path:
+    explicit = str(os.getenv(env_name) or "").strip()
+    if explicit:
+        return Path(explicit)
+    state_dir = str(os.getenv("NOMAD_STATE_DIR") or os.getenv("NOMAD_MARKET_STATE_DIR") or "").strip()
+    if state_dir:
+        return Path(state_dir) / default.name
+    return default
 
 
 def _u(base_url: str, path: str) -> str:
@@ -87,8 +98,8 @@ def build_microtask_templates(*, base_url: str) -> dict[str, Any]:
 
 def build_microtask_metrics(*, base_url: str, lookback_hours: int = 24) -> dict[str, Any]:
     cutoff = datetime.now(UTC) - timedelta(hours=max(1, int(lookback_hours)))
-    submits = _read_rows(SUBMIT_LEDGER_PATH, limit=5000)
-    settles = _read_rows(SETTLE_LEDGER_PATH, limit=5000)
+    submits = _read_rows(_default_path("NOMAD_MICROTASK_LEDGER_PATH", SUBMIT_LEDGER_PATH), limit=5000)
+    settles = _read_rows(_default_path("NOMAD_MICROTASK_SETTLE_LEDGER_PATH", SETTLE_LEDGER_PATH), limit=5000)
     recent_submits: list[dict[str, Any]] = []
     for row in submits:
         ts = str(row.get("generated_at") or "").strip()

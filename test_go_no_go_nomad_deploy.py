@@ -121,8 +121,34 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
             return {"ok": True, "schema": "nomad.variant_candidate_receipt.v1", "http_status": 202}
         if url.endswith("/swarm/worker-market"):
             return {"ok": True, "schema": "nomad.worker_market.v1", "http_status": 200}
+        if url.endswith("/swarm/compute-market"):
+            return {"ok": True, "schema": "nomad.compute_market.v1", "http_status": 200}
+        if url.endswith("/.well-known/nomad-agent-work.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.agent_work.v1",
+                "work_items": [{"work_id": "nomad-work-probe"}],
+                "http_status": 200,
+            }
+        if url.endswith("/swarm/synergy-lite"):
+            return {"ok": True, "schema": "nomad.synergy_lite.v1", "http_status": 200}
         if url.endswith("/swarm/worker-market/offers"):
             return {"ok": True, "schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
+        if url.endswith("/swarm/microtask/claim"):
+            return {
+                "ok": True,
+                "schema": "nomad.agent_work_claim_receipt.v1",
+                "accepted": True,
+                "claim_id": "nomad-claim-probe",
+                "http_status": 202,
+            }
+        if url.endswith("/swarm/microtask/proof"):
+            return {
+                "ok": True,
+                "schema": "nomad.agent_work_proof_receipt.v1",
+                "accepted": True,
+                "http_status": 202,
+            }
         if url.endswith("/swarm/ecology"):
             return {"ok": True, "schema": "nomad.swarm_ecology.v1", "http_status": 200}
         if url.endswith("/swarm/ecology/tick"):
@@ -156,7 +182,12 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["go"] is True
     assert out["checks"]["protocol_bytecode_ok"] is True
     assert out["checks"]["variant_candidate_ok"] is True
+    assert out["checks"]["compute_market_ok"] is True
+    assert out["checks"]["agent_work_ok"] is True
+    assert out["checks"]["synergy_lite_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
+    assert out["checks"]["agent_work_claim_ok"] is True
+    assert out["checks"]["agent_work_proof_ok"] is True
     assert out["checks"]["ecology_tick_ok"] is True
     assert out["checks"]["growth_arena_ok"] is True
     assert out["checks"]["growth_experience_ok"] is True
