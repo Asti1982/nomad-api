@@ -24,6 +24,10 @@ services:
         value: https://www.syndiode.com
       - key: NOMAD_RENDER_DOMAIN
         value: onrender.syndiode.com
+      # Disk-ready state path. Attach a Render persistent disk at /var/data/nomad
+      # before relying on this for durable market memory; without a disk this is writable but ephemeral.
+      - key: NOMAD_STATE_DIR
+        value: /var/data/nomad
       - key: NOMAD_GITHUB_REPOSITORY
         value: Asti1982/Nomad
       - key: NOMAD_AGENT_NAME

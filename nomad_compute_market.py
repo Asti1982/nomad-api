@@ -261,7 +261,9 @@ def build_compute_market(
             "complete": _u(base_url, "/swarm/workers/complete"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
             "agent_work": _u(base_url, "/swarm/agent-work"),
+            "work_mesh": _u(base_url, "/swarm/work-mesh"),
             "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
+            "state_status": _u(base_url, "/swarm/state-status"),
         },
         "next": [
             {"op": "GET", "url": _u(base_url, "/swarm/compute-market"), "reason": "read_current_market_gradient"},

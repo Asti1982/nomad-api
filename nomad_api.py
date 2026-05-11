@@ -37,6 +37,8 @@ from nomad_variant_forge import build_variant_forge_surface, submit_variant_cand
 from nomad_worker_market import build_worker_market, score_worker_offer
 from nomad_compute_market import build_compute_market
 from nomad_agent_work import build_agent_work_surface, build_synergy_lite, claim_agent_work, submit_agent_work_proof
+from nomad_state_status import build_state_status
+from nomad_work_mesh import build_work_mesh, seed_work_mesh
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -358,6 +360,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return build_synergy_lite(base_url=base_url)
 
     @classmethod
+    def _build_state_status(cls, *, base_url: str) -> dict:
+        return build_state_status(base_url=base_url)
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -378,6 +384,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             skill_library=skills,
             worker_fleet=worker_fleet,
             synergy_lite=synergy,
+        )
+
+    @classmethod
+    def _build_work_mesh(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        agent_work = cls._build_agent_work_surface(base_url=base_url, swarm_summary=summary)
+        compute_market = cls._build_compute_market(base_url=base_url, swarm_summary=summary)
+        synergy = cls._build_synergy_lite(base_url=base_url)
+        skills = cls._build_skill_library(base_url=base_url)
+        state = cls._build_state_status(base_url=base_url)
+        return build_work_mesh(
+            base_url=base_url,
+            agent_work=agent_work,
+            compute_market=compute_market,
+            synergy_lite=synergy,
+            skill_library=skills,
+            state_status=state,
         )
 
     @classmethod
@@ -774,7 +797,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_work": f"{b}/.well-known/nomad-agent-work.json",
                     "agent_work_claim": f"{b}/swarm/microtask/claim",
                     "agent_work_proof": f"{b}/swarm/microtask/proof",
+                    "work_mesh": f"{b}/.well-known/nomad-work-mesh.json",
+                    "work_mesh_seed": f"{b}/swarm/work-mesh/seed",
                     "synergy_lite": f"{b}/swarm/synergy-lite",
+                    "state_status": f"{b}/swarm/state-status",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -983,8 +1009,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/agent-work", "/.well-known/nomad-agent-work.json"}:
             self._json_response(self.__class__._build_agent_work_surface(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/work-mesh", "/.well-known/nomad-work-mesh.json"}:
+            self._json_response(self.__class__._build_work_mesh(base_url=self._base_url()))
+            return
         if parsed.path in {"/swarm/synergy-lite", "/.well-known/nomad-synergy-lite.json"}:
             self._json_response(self.__class__._build_synergy_lite(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/state-status", "/.well-known/nomad-state-status.json"}:
+            self._json_response(self.__class__._build_state_status(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2025,8 +2057,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-compute-market.json",
                     "/swarm/agent-work",
                     "/.well-known/nomad-agent-work.json",
+                    "/swarm/work-mesh",
+                    "/.well-known/nomad-work-mesh.json",
                     "/swarm/synergy-lite",
                     "/.well-known/nomad-synergy-lite.json",
+                    "/swarm/state-status",
+                    "/.well-known/nomad-state-status.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2656,6 +2692,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/work-mesh/seed":
+            base = self._base_url()
+            mesh = self.__class__._build_work_mesh(base_url=base)
+            result = seed_work_mesh(payload, base_url=base, work_mesh=mesh)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/microtask/settle":
             consent = self.__class__._validate_adapter_consent(payload, path=parsed.path)
             if consent.get("checked") and not consent.get("ok"):
@@ -3034,8 +3077,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-compute-market.json",
                     "/swarm/agent-work",
                     "/.well-known/nomad-agent-work.json",
+                    "/swarm/work-mesh",
+                    "/.well-known/nomad-work-mesh.json",
                     "/swarm/synergy-lite",
                     "/.well-known/nomad-synergy-lite.json",
+                    "/swarm/state-status",
+                    "/.well-known/nomad-state-status.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3068,6 +3115,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/microtask/submit",
                     "/swarm/microtask/claim",
                     "/swarm/microtask/proof",
+                    "/swarm/work-mesh/seed",
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/experience",

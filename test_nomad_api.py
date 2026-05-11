@@ -238,8 +238,12 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-compute-market.json" in doc["paths"]
     assert "/swarm/agent-work" in doc["paths"]
     assert "/.well-known/nomad-agent-work.json" in doc["paths"]
+    assert "/swarm/work-mesh" in doc["paths"]
+    assert "/.well-known/nomad-work-mesh.json" in doc["paths"]
     assert "/swarm/synergy-lite" in doc["paths"]
     assert "/.well-known/nomad-synergy-lite.json" in doc["paths"]
+    assert "/swarm/state-status" in doc["paths"]
+    assert "/.well-known/nomad-state-status.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -250,6 +254,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/microtask/submit" in doc["paths"]
     assert "/swarm/microtask/claim" in doc["paths"]
     assert "/swarm/microtask/proof" in doc["paths"]
+    assert "/swarm/work-mesh/seed" in doc["paths"]
     assert "/swarm/microtask/settle" in doc["paths"]
     assert "/swarm/ecology" in doc["paths"]
     assert "/.well-known/nomad-swarm-ecology.json" in doc["paths"]
@@ -323,7 +328,9 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
     compute_market = NomadApiHandler._build_compute_market(base_url="https://nomad.example")
     agent_work = NomadApiHandler._build_agent_work_surface(base_url="https://nomad.example")
+    work_mesh = NomadApiHandler._build_work_mesh(base_url="https://nomad.example")
     synergy = NomadApiHandler._build_synergy_lite(base_url="https://nomad.example")
+    state_status = NomadApiHandler._build_state_status(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -348,7 +355,10 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert compute_market["entry_contract"]["settle_url"] == "https://nomad.example/swarm/microtask/settle"
     assert agent_work["schema"] == "nomad.agent_work.v1"
     assert agent_work["claim_contract"]["url"] == "https://nomad.example/swarm/microtask/claim"
+    assert work_mesh["schema"] == "nomad.work_mesh.v1"
+    assert work_mesh["machine_contract"]["claim"] == "https://nomad.example/swarm/microtask/claim"
     assert synergy["schema"] == "nomad.synergy_lite.v1"
+    assert state_status["schema"] == "nomad.state_status.v1"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

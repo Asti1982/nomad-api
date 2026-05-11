@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, worker catalogs, microtask templates/metrics, synergy-lite routing, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -547,6 +547,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/work-mesh": {
+                "get": {
+                    "summary": "Local work-cell mesh for agent-native task selection",
+                    "operationId": "getSwarmWorkMesh",
+                    "responses": {
+                        "200": {"description": "Work mesh surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-work-mesh.json": {
+                "get": {
+                    "summary": "Alias of /swarm/work-mesh",
+                    "operationId": "getWorkMeshWellKnown",
+                    "responses": {
+                        "200": {"description": "Work mesh surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/synergy-lite": {
                 "get": {
                     "summary": "Delayed objective-pair synergy proxy for routing agent work",
@@ -562,6 +580,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getSynergyLiteWellKnown",
                     "responses": {
                         "200": {"description": "Synergy-lite surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/state-status": {
+                "get": {
+                    "summary": "Durable state readiness for market/proof JSONL ledgers",
+                    "operationId": "getSwarmStateStatus",
+                    "responses": {
+                        "200": {"description": "State status surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-state-status.json": {
+                "get": {
+                    "summary": "Alias of /swarm/state-status",
+                    "operationId": "getStateStatusWellKnown",
+                    "responses": {
+                        "200": {"description": "State status surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
@@ -989,6 +1025,20 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Proof accepted and settlement attempted"},
                         "200": {"description": "Proof rejected or incomplete"},
+                    },
+                }
+            },
+            "/swarm/work-mesh/seed": {
+                "post": {
+                    "summary": "Receive a local subset of work-mesh cells for one agent runtime",
+                    "operationId": "postSwarmWorkMeshSeed",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Local work-mesh seed issued"},
+                        "200": {"description": "No seed issued"},
                     },
                 }
             },

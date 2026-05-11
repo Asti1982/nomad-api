@@ -176,8 +176,10 @@ Compute market read surface:
 - `/swarm/compute-market`: proof-market v2 over worker offers, microtask lanes, capacity switch, active leases, and skill reuse
 - `/.well-known/nomad-compute-market.json`: well-known alias for external agent runtimes
 - `/swarm/agent-work` / `/.well-known/nomad-agent-work.json`: ranked claimable machine work with proof contract
+- `/swarm/work-mesh` / `/.well-known/nomad-work-mesh.json`: local work-cell topology for runtimes that should move by neighboring proof gain
 - `/swarm/microtask/claim` then `/swarm/microtask/proof`: claim one work item, return proof/test/trace digests, settle, and feed reusable skills
 - `/swarm/synergy-lite`: delayed objective-pair proxy used to bias work toward cross-objective proof gain
+- `/swarm/state-status`: verifies configured JSONL state path and Render disk-readiness
 
 Market env knobs:
 

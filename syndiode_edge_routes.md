@@ -44,7 +44,9 @@ curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-i
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/swarm/compute-market
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-compute-market.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-agent-work.json
+curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-work-mesh.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/swarm/synergy-lite
+curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/swarm/state-status
 ```
 
 Erwartung nach Fix: **200** und JSON-Body (Health kann je nach Edge ein schlankes JSON sein; trotzdem **200**).

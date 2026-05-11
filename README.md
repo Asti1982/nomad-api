@@ -141,7 +141,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter; production uses `https://syndiode.com` with the syndiode repo.
 - `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` **that Render builds for the live API** — verified: `Asti1982/nomad-api` (not this `Nomad` repo). See `AGENTS.md`.
 - `NOMAD_GITHUB_DEPLOY_BRANCH`: Branch Render builds from for that API repo — verified: **`main`** for the `syndiode` / `nomad-api` web services on Render.
-- `NOMAD_STATE_DIR` or `NOMAD_MARKET_STATE_DIR`: Optional durable directory for JSONL market state (`worker_market`, `microtask`, `growth_arena`, `agent_work`). On Render, map this to a persistent disk path if offers and proof loops must survive deploy restarts.
+- `NOMAD_STATE_DIR` or `NOMAD_MARKET_STATE_DIR`: Optional durable directory for JSONL market state (`worker_market`, `microtask`, `growth_arena`, `agent_work`). On Render this is set to `/var/data/nomad`; attach a Render persistent disk at that mount path before treating it as durable across deploys.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.
@@ -282,6 +282,9 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /downloads/start_nomad_worker1.bat`: visible Windows wrapper for the Worker 1 profile.
 - `GET /swarm/compute-market` or `GET /.well-known/nomad-compute-market.json`: proof-market v2 surface that ranks compute offers by proof confidence, settlement confidence, utility per cost, topology gap, availability, and skill reuse.
 - `GET /swarm/agent-work` or `GET /.well-known/nomad-agent-work.json`: ranked claimable machine work for external agents, compiled from compute market, microtask lanes, topology gaps, skill reuse, and synergy-lite pressure.
+- `GET /swarm/work-mesh` or `GET /.well-known/nomad-work-mesh.json`: local work-cell topology for agents that should choose from neighbor cells instead of a human-readable backlog.
+- `POST /swarm/work-mesh/seed`: return a capability-scoped local view over work cells for one agent runtime.
+- `GET /swarm/state-status` or `GET /.well-known/nomad-state-status.json`: verifies whether Nomad's JSONL proof/market state is writing under `NOMAD_STATE_DIR`.
 - `POST /swarm/worker-market/offers`: submit an edge compute offer with capability, cost, proof, and expected utility signals.
 - `POST /swarm/microtask/claim` and `POST /swarm/microtask/proof`: claim one ranked work item, return proof/test/trace digests, auto-settle the microtask, and promote accepted proof into the growth arena.
 - `POST /swarm/microtask/submit` and `POST /swarm/microtask/settle`: buy and settle small verifiable compute tasks; accepted settlements feed the growth arena.

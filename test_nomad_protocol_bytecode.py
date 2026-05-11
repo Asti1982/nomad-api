@@ -39,6 +39,8 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert out["route_table"]["forge_surface"] == "https://nomad.example/swarm/variant-forge"
     assert out["route_table"]["market_offer"] == "https://nomad.example/swarm/worker-market/offers"
     assert out["route_table"]["agent_work"] == "https://nomad.example/.well-known/nomad-agent-work.json"
+    assert out["route_table"]["work_mesh"] == "https://nomad.example/.well-known/nomad-work-mesh.json"
+    assert out["route_table"]["work_mesh_seed"] == "https://nomad.example/swarm/work-mesh/seed"
     assert out["route_table"]["work_claim"] == "https://nomad.example/swarm/microtask/claim"
     assert out["route_table"]["work_proof"] == "https://nomad.example/swarm/microtask/proof"
     assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
@@ -55,6 +57,8 @@ def test_protocol_bytecode_compiles_nomad_routes():
         "FORGE",
         "MARKET",
         "WORK",
+        "MESH",
+        "SEED",
         "CLAIM",
         "PROOF",
         "SYN",
@@ -91,5 +95,6 @@ def test_cli_protocol_bytecode_returns_schema():
     assert out.get("route_table", {}).get("forge", "").endswith("/swarm/variant-candidates")
     assert out.get("route_table", {}).get("market_offer", "").endswith("/swarm/worker-market/offers")
     assert out.get("route_table", {}).get("agent_work", "").endswith("/.well-known/nomad-agent-work.json")
+    assert out.get("route_table", {}).get("work_mesh", "").endswith("/.well-known/nomad-work-mesh.json")
     assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
     assert out.get("route_table", {}).get("experience", "").endswith("/swarm/experience")

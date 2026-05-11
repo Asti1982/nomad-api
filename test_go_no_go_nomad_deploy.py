@@ -130,8 +130,12 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                 "work_items": [{"work_id": "nomad-work-probe"}],
                 "http_status": 200,
             }
+        if url.endswith("/.well-known/nomad-work-mesh.json"):
+            return {"ok": True, "schema": "nomad.work_mesh.v1", "cells": [{"cell_id": "c1"}], "http_status": 200}
         if url.endswith("/swarm/synergy-lite"):
             return {"ok": True, "schema": "nomad.synergy_lite.v1", "http_status": 200}
+        if url.endswith("/swarm/state-status"):
+            return {"ok": True, "schema": "nomad.state_status.v1", "http_status": 200}
         if url.endswith("/swarm/worker-market/offers"):
             return {"ok": True, "schema": "nomad.worker_market_offer_receipt.v1", "http_status": 202}
         if url.endswith("/swarm/microtask/claim"):
@@ -146,6 +150,13 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
             return {
                 "ok": True,
                 "schema": "nomad.agent_work_proof_receipt.v1",
+                "accepted": True,
+                "http_status": 202,
+            }
+        if url.endswith("/swarm/work-mesh/seed"):
+            return {
+                "ok": True,
+                "schema": "nomad.work_mesh_seed_receipt.v1",
                 "accepted": True,
                 "http_status": 202,
             }
@@ -184,10 +195,13 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["variant_candidate_ok"] is True
     assert out["checks"]["compute_market_ok"] is True
     assert out["checks"]["agent_work_ok"] is True
+    assert out["checks"]["work_mesh_ok"] is True
     assert out["checks"]["synergy_lite_ok"] is True
+    assert out["checks"]["state_status_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["agent_work_claim_ok"] is True
     assert out["checks"]["agent_work_proof_ok"] is True
+    assert out["checks"]["work_mesh_seed_ok"] is True
     assert out["checks"]["ecology_tick_ok"] is True
     assert out["checks"]["growth_arena_ok"] is True
     assert out["checks"]["growth_experience_ok"] is True

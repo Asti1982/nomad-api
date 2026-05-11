@@ -209,7 +209,9 @@ def run_gate(base_url: str, timeout: float) -> dict:
     worker_market = http_json("GET", endpoint(base_url, "/swarm/worker-market"), timeout=timeout)
     compute_market = http_json("GET", endpoint(base_url, "/swarm/compute-market"), timeout=timeout)
     agent_work = http_json("GET", endpoint(base_url, "/.well-known/nomad-agent-work.json"), timeout=timeout)
+    work_mesh = http_json("GET", endpoint(base_url, "/.well-known/nomad-work-mesh.json"), timeout=timeout)
     synergy_lite = http_json("GET", endpoint(base_url, "/swarm/synergy-lite"), timeout=timeout)
+    state_status = http_json("GET", endpoint(base_url, "/swarm/state-status"), timeout=timeout)
     worker_offer = http_json(
         "POST",
         endpoint(base_url, "/swarm/worker-market/offers"),
@@ -226,6 +228,12 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "POST",
         endpoint(base_url, "/swarm/microtask/proof"),
         payload=_agent_work_proof_payload(agent_work_claim),
+        timeout=timeout,
+    )
+    work_mesh_seed = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/work-mesh/seed"),
+        payload={"agent_id": "deploy.gate.probe", "capabilities": ["protocol_drift_scan"]},
         timeout=timeout,
     )
     swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
@@ -272,13 +280,17 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "worker_market_ok": _status_ready(worker_market) and str(worker_market.get("schema") or "") == "nomad.worker_market.v1",
         "compute_market_ok": _status_ready(compute_market) and str(compute_market.get("schema") or "") == "nomad.compute_market.v1",
         "agent_work_ok": _status_ready(agent_work) and str(agent_work.get("schema") or "") == "nomad.agent_work.v1",
+        "work_mesh_ok": _status_ready(work_mesh) and str(work_mesh.get("schema") or "") == "nomad.work_mesh.v1",
         "synergy_lite_ok": _status_ready(synergy_lite) and str(synergy_lite.get("schema") or "") == "nomad.synergy_lite.v1",
+        "state_status_ok": _status_ready(state_status) and str(state_status.get("schema") or "") == "nomad.state_status.v1",
         "worker_market_offer_ok": _status_ready(worker_offer)
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
         "agent_work_claim_ok": _status_ready(agent_work_claim)
         and str(agent_work_claim.get("schema") or "") == "nomad.agent_work_claim_receipt.v1",
         "agent_work_proof_ok": _status_ready(agent_work_proof)
         and str(agent_work_proof.get("schema") or "") == "nomad.agent_work_proof_receipt.v1",
+        "work_mesh_seed_ok": _status_ready(work_mesh_seed)
+        and str(work_mesh_seed.get("schema") or "") == "nomad.work_mesh_seed_receipt.v1",
         "swarm_ecology_ok": _status_ready(swarm_ecology) and str(swarm_ecology.get("schema") or "") == "nomad.swarm_ecology.v1",
         "ecology_tick_ok": _status_ready(ecology_tick) and str(ecology_tick.get("schema") or "") == "nomad.ecology_tick_receipt.v1",
         "growth_arena_ok": _status_ready(growth_arena) and str(growth_arena.get("schema") or "") == "nomad.growth_arena.v1",
@@ -310,10 +322,13 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "worker_market": int(worker_market.get("http_status") or 0),
             "compute_market": int(compute_market.get("http_status") or 0),
             "agent_work": int(agent_work.get("http_status") or 0),
+            "work_mesh": int(work_mesh.get("http_status") or 0),
             "synergy_lite": int(synergy_lite.get("http_status") or 0),
+            "state_status": int(state_status.get("http_status") or 0),
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
             "agent_work_claim": int(agent_work_claim.get("http_status") or 0),
             "agent_work_proof": int(agent_work_proof.get("http_status") or 0),
+            "work_mesh_seed": int(work_mesh_seed.get("http_status") or 0),
             "swarm_ecology": int(swarm_ecology.get("http_status") or 0),
             "ecology_tick": int(ecology_tick.get("http_status") or 0),
             "growth_arena": int(growth_arena.get("http_status") or 0),
