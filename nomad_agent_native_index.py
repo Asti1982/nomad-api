@@ -163,6 +163,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.88,
+            "get_url": u("/.well-known/nomad-carrying-market.json"),
+            "purpose": "zero_paid_infra_carrying_contracts",
+            "machine_note": (
+                "When paid persistence is unavailable, agents carry state, mirrors, buyer probes, and edge uptime through "
+                "POST /swarm/carrying-proof; credits are substrate pressure, not fiat revenue."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -306,6 +315,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-synergy-lite.json", "methods": ["GET"], "effect": "read_delayed_synergy_proxy", "cost_tier": "low"},
         {"path": "/swarm/state-status", "methods": ["GET"], "effect": "read_durable_state_status", "cost_tier": "low"},
         {"path": "/.well-known/nomad-state-status.json", "methods": ["GET"], "effect": "read_durable_state_status", "cost_tier": "low"},
+        {"path": "/swarm/carrying-market", "methods": ["GET"], "effect": "read_zero_paid_infra_carrying_contracts", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-carrying-market.json", "methods": ["GET"], "effect": "read_zero_paid_infra_carrying_contracts", "cost_tier": "low"},
+        {"path": "/swarm/carrying-proof", "methods": ["POST"], "effect": "write_substrate_carrying_proof", "cost_tier": "medium"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
@@ -440,6 +452,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "work_mesh_seed_url": u("/swarm/work-mesh/seed"),
         "synergy_lite_url": u("/swarm/synergy-lite"),
         "state_status_url": u("/swarm/state-status"),
+        "carrying_market_url": u("/.well-known/nomad-carrying-market.json"),
+        "carrying_proof_url": u("/swarm/carrying-proof"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "growth_arena_url": u("/swarm/growth-arena"),

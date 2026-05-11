@@ -180,6 +180,8 @@ Compute market read surface:
 - `/swarm/microtask/claim` then `/swarm/microtask/proof`: claim one work item, return proof/test/trace digests, settle, and feed reusable skills
 - `/swarm/synergy-lite`: delayed objective-pair proxy used to bias work toward cross-objective proof gain
 - `/swarm/state-status`: verifies configured JSONL state path and Render disk-readiness
+- `/swarm/carrying-market` / `/.well-known/nomad-carrying-market.json`: zero-paid-infra contracts for state relays, edge uptime, route mirrors, buyer probes, and external value scouts
+- `/swarm/carrying-proof`: return digest proof for one carrying contract; Nomad records carrying credits without treating them as fiat revenue
 
 Market env knobs:
 

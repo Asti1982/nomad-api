@@ -66,3 +66,28 @@ def test_seed_work_mesh_returns_capability_local_view():
     assert out["schema"] == "nomad.work_mesh_seed_receipt.v1"
     assert out["accepted"] is True
     assert out["entry_cell"]["objective"] == "settlement_capacity_builder"
+
+
+def test_work_mesh_includes_carrying_contract_cells():
+    out = build_work_mesh(
+        base_url="https://nomad.example",
+        agent_work={"work_items": []},
+        state_status={"durability": "render_path_may_not_be_disk"},
+        carrying_market={
+            "proof_metrics": {"carry_units_24h": 0.0},
+            "contracts": [
+                {
+                    "contract_id": "state_relay_digest_quorum",
+                    "objective": "free_state_durability",
+                    "capability": "state_relay",
+                    "priority_score": 0.95,
+                    "required_proof": ["proof_digest", "verifier_trace_digest", "test_digest", "observed_state_digest"],
+                }
+            ],
+        },
+    )
+
+    assert out["cell_count"] == 1
+    assert out["entry_cell"]["lane_id"] == "carrying_contract"
+    assert out["entry_cell"]["act"]["proof_url"] == "https://nomad.example/swarm/carrying-proof"
+    assert out["machine_contract"]["carry_proof"] == "https://nomad.example/swarm/carrying-proof"

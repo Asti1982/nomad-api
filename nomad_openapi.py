@@ -50,7 +50,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
                 "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -601,6 +601,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/carrying-market": {
+                "get": {
+                    "summary": "Zero-paid-infra carrying contracts for state relay, worker uptime, mirrors, buyer probes, and value scouts",
+                    "operationId": "getSwarmCarryingMarket",
+                    "responses": {
+                        "200": {"description": "Carrying market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-carrying-market.json": {
+                "get": {
+                    "summary": "Alias of /swarm/carrying-market",
+                    "operationId": "getCarryingMarketWellKnown",
+                    "responses": {
+                        "200": {"description": "Carrying market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/worker-catalog": {
                 "get": {
                     "summary": "Machine-readable catalog for cent-level worker microtask lanes",
@@ -1039,6 +1057,20 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Local work-mesh seed issued"},
                         "200": {"description": "No seed issued"},
+                    },
+                }
+            },
+            "/swarm/carrying-proof": {
+                "post": {
+                    "summary": "Submit substrate carrying proof without counting reciprocal credit as fiat settlement",
+                    "operationId": "postSwarmCarryingProof",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": ref_json_object()}},
+                    },
+                    "responses": {
+                        "202": {"description": "Carrying proof accepted and growth experience linked"},
+                        "200": {"description": "Carrying proof rejected or incomplete"},
                     },
                 }
             },

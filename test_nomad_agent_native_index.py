@@ -112,6 +112,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/.well-known/nomad-synergy-lite.json" in routes
     assert "/swarm/state-status" in routes
     assert "/.well-known/nomad-state-status.json" in routes
+    assert "/swarm/carrying-market" in routes
+    assert "/.well-known/nomad-carrying-market.json" in routes
+    assert "/swarm/carrying-proof" in routes
     assert "/swarm/ecology" in routes
     assert "/.well-known/nomad-swarm-ecology.json" in routes
     assert "/swarm/ecology/tick" in routes
@@ -167,6 +170,8 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("work_mesh_seed_url") or "").endswith("/swarm/work-mesh/seed")
     assert (out.get("synergy_lite_url") or "").endswith("/swarm/synergy-lite")
     assert (out.get("state_status_url") or "").endswith("/swarm/state-status")
+    assert (out.get("carrying_market_url") or "").endswith("/.well-known/nomad-carrying-market.json")
+    assert (out.get("carrying_proof_url") or "").endswith("/swarm/carrying-proof")
     assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
     assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
     assert (out.get("growth_arena_url") or "").endswith("/swarm/growth-arena")
@@ -208,6 +213,8 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "agent_work_claim_post" in eps
     assert "agent_work_proof_post" in eps
     assert "work_mesh_get" in eps
+    assert "carrying_market_get" in eps
+    assert "carrying_proof_post" in eps
     assert "work_mesh_seed_post" in eps
     assert "synergy_lite_get" in eps
     assert "state_status_get" in eps

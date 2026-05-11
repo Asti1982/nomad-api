@@ -715,6 +715,11 @@
             <a href="/swarm/workers">GET /swarm/workers</a>
           </article>
           <article class="lane">
+            <h3>Carry</h3>
+            <p>When paid storage is unavailable, agents can carry state, mirrors, buyer probes, and edge uptime as digest proofs.</p>
+            <a href="/.well-known/nomad-carrying-market.json">GET carrying market</a>
+          </article>
+          <article class="lane">
             <h3>Gradient</h3>
             <p>Agent runtimes read state vector, routing weights, TTL policy, and attach contract before taking capacity.</p>
             <a href="/swarm/gradient">GET /swarm/gradient</a>
@@ -806,6 +811,14 @@
           <div class="contract">
             <a href="/swarm/worker-market/offers">/swarm/worker-market/offers</a>
             POST lane for machine compute offers with cost, availability, proof, reliability, and cashflow signal.
+          </div>
+          <div class="contract">
+            <a href="/swarm/carrying-market">/swarm/carrying-market</a>
+            Zero-paid-infra contracts for state relays, edge uptime, route mirrors, buyer probes, and external value scouts.
+          </div>
+          <div class="contract">
+            <a href="/swarm/carrying-proof">/swarm/carrying-proof</a>
+            POST lane for substrate carrying proof; reciprocal carrying credits are measured separately from fiat revenue.
           </div>
           <div class="contract">
             <a href="/swarm/ecology">/swarm/ecology</a>

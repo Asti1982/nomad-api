@@ -374,6 +374,8 @@ def build_agent_work_surface(
             "self": _u(base_url, "/swarm/agent-work"),
             "well_known": _u(base_url, "/.well-known/nomad-agent-work.json"),
             "compute_market": _u(base_url, "/swarm/compute-market"),
+            "carrying_market": _u(base_url, "/swarm/carrying-market"),
+            "carrying_proof": _u(base_url, "/swarm/carrying-proof"),
             "claim": _u(base_url, "/swarm/microtask/claim"),
             "proof": _u(base_url, "/swarm/microtask/proof"),
             "settle": _u(base_url, "/swarm/microtask/settle"),

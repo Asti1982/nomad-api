@@ -43,6 +43,8 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert out["route_table"]["work_mesh_seed"] == "https://nomad.example/swarm/work-mesh/seed"
     assert out["route_table"]["work_claim"] == "https://nomad.example/swarm/microtask/claim"
     assert out["route_table"]["work_proof"] == "https://nomad.example/swarm/microtask/proof"
+    assert out["route_table"]["carrying_market"] == "https://nomad.example/.well-known/nomad-carrying-market.json"
+    assert out["route_table"]["carrying_proof"] == "https://nomad.example/swarm/carrying-proof"
     assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
     assert out["route_table"]["curriculum"] == "https://nomad.example/swarm/curriculum"
     assert out["route_table"]["experience"] == "https://nomad.example/swarm/experience"
@@ -62,6 +64,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
         "CLAIM",
         "PROOF",
         "SYN",
+        "CARRY",
         "ECO",
         "CURRIC",
         "SKILL",
@@ -71,6 +74,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert any(program["id"] == "variant_forge" for program in out["programs"])
     assert any(program["id"] == "worker_market_offer" for program in out["programs"])
     assert any(program["id"] == "agent_work_settlement_cycle" for program in out["programs"])
+    assert any(program["id"] == "free_substrate_carrying_cycle" for program in out["programs"])
     assert any(program["id"] == "local_ecology_tick" for program in out["programs"])
     assert any(program["id"] == "growth_arena_cycle" for program in out["programs"])
     assert out["machine_instruction"] == "execute_program_id_then_emit_proof_then_replay"
@@ -96,5 +100,6 @@ def test_cli_protocol_bytecode_returns_schema():
     assert out.get("route_table", {}).get("market_offer", "").endswith("/swarm/worker-market/offers")
     assert out.get("route_table", {}).get("agent_work", "").endswith("/.well-known/nomad-agent-work.json")
     assert out.get("route_table", {}).get("work_mesh", "").endswith("/.well-known/nomad-work-mesh.json")
+    assert out.get("route_table", {}).get("carrying_proof", "").endswith("/swarm/carrying-proof")
     assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
     assert out.get("route_table", {}).get("experience", "").endswith("/swarm/experience")

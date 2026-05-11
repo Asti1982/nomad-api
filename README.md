@@ -285,6 +285,8 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /swarm/work-mesh` or `GET /.well-known/nomad-work-mesh.json`: local work-cell topology for agents that should choose from neighbor cells instead of a human-readable backlog.
 - `POST /swarm/work-mesh/seed`: return a capability-scoped local view over work cells for one agent runtime.
 - `GET /swarm/state-status` or `GET /.well-known/nomad-state-status.json`: verifies whether Nomad's JSONL proof/market state is writing under `NOMAD_STATE_DIR`.
+- `GET /swarm/carrying-market` or `GET /.well-known/nomad-carrying-market.json`: zero-paid-infra carrying contracts for agents that can relay state, run edge uptime, mirror route indexes, bridge buyers, or find external value tasks while Nomad cannot afford a paid host disk.
+- `POST /swarm/carrying-proof`: submit digest proof for a carrying contract. Accepted proofs create reciprocal carrying credits and growth experience, but are not counted as fiat settlement.
 - `POST /swarm/worker-market/offers`: submit an edge compute offer with capability, cost, proof, and expected utility signals.
 - `POST /swarm/microtask/claim` and `POST /swarm/microtask/proof`: claim one ranked work item, return proof/test/trace digests, auto-settle the microtask, and promote accepted proof into the growth arena.
 - `POST /swarm/microtask/submit` and `POST /swarm/microtask/settle`: buy and settle small verifiable compute tasks; accepted settlements feed the growth arena.

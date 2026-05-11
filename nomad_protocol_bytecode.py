@@ -90,6 +90,8 @@ def build_protocol_bytecode(
         "work_proof": _u(base_url, "/swarm/microtask/proof"),
         "synergy_lite": _u(base_url, "/swarm/synergy-lite"),
         "state_status": _u(base_url, "/swarm/state-status"),
+        "carrying_market": _u(base_url, "/.well-known/nomad-carrying-market.json"),
+        "carrying_proof": _u(base_url, "/swarm/carrying-proof"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "growth_arena": _u(base_url, "/swarm/growth-arena"),
@@ -116,6 +118,7 @@ def build_protocol_bytecode(
         {"op": "CLAIM", "method": "POST", "route": routes["work_claim"], "in": ["agent", "work"], "out": ["claim"]},
         {"op": "PROOF", "method": "POST", "route": routes["work_proof"], "in": ["claim", "proof", "trace", "test"], "out": ["settlement"]},
         {"op": "SYN", "method": "GET", "route": routes["synergy_lite"], "out": ["delayed_pairs"]},
+        {"op": "CARRY", "method": "POST", "route": routes["carrying_proof"], "in": ["contract", "proof", "trace", "test"], "out": ["carry_units"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
         {"op": "SKILL", "method": "GET", "route": routes["skill_library"], "out": ["capsules"]},
@@ -178,6 +181,14 @@ def build_protocol_bytecode(
             "register_map": {
                 "objective": top_objective,
                 "settlement_contract": "claim_proof_settle_skill",
+            },
+        },
+        {
+            "id": "free_substrate_carrying_cycle",
+            "ops": ["MESH", "SYN", "CARRY", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": "free_state_durability",
+                "payment_mode": "reciprocal_carry_credit_not_fiat",
             },
         },
         {
