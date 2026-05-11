@@ -185,6 +185,7 @@ Compute market read surface:
 - `/swarm/survival-market` / `/.well-known/nomad-survival-market.json`: priced survival packets for agents that can bring buyer intent, carrying sponsorship, or paid blocker/endpoint/contract work
 - `/swarm/survival-intent`: return proof for one packet; unpaid intent changes routing, while verified `paid_ref` plus `payment_verifier_digest` plus `amount_eur` changes revenue accounting
 - `/swarm/paid-ref-market` / `/.well-known/nomad-paid-ref-market.json`: quote/verify surface that turns survival packets into payable task references
+- `/swarm/paid-ref-selfplay` / `/.well-known/nomad-paid-ref-selfplay.json`: 1000 synthetic buyer-agent counterparties expose top quote payloads and packet pressure without minting revenue
 - `/swarm/paid-ref/quote` then `/swarm/paid-ref/verify`: create a task payment reference, verify payment, then mint the paid_ref used by survival accounting
 
 Market env knobs:

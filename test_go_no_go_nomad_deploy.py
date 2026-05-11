@@ -109,6 +109,7 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                     {"op": "FORGE"},
                     {"op": "MARKET"},
                     {"op": "CARRY"},
+                    {"op": "SELFPLAY"},
                     {"op": "PAYREF"},
                     {"op": "SELL"},
                     {"op": "ECO"},
@@ -158,6 +159,23 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                 "ok": True,
                 "schema": "nomad.paid_ref_market.v1",
                 "top_packet_binding": {"packet_id": "agent_blocker_unblock_pack"},
+                "http_status": 200,
+            }
+        if url.endswith("/.well-known/nomad-paid-ref-selfplay.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.paid_ref_selfplay.v1",
+                "top_quote_payloads": [
+                    {
+                        "agent_id": "selfplay.agent.test",
+                        "packet_id": "agent_blocker_unblock_pack",
+                        "buyer_ref": "selfplay:test",
+                        "problem": "selfplay generated quote candidate",
+                        "proof_digest": "selfplay-proof",
+                        "verifier_trace_digest": "selfplay-trace",
+                        "test_digest": "selfplay-test",
+                    }
+                ],
                 "http_status": 200,
             }
         if url.endswith("/swarm/worker-market/offers"):
@@ -246,6 +264,7 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["carrying_market_ok"] is True
     assert out["checks"]["survival_market_ok"] is True
     assert out["checks"]["paid_ref_market_ok"] is True
+    assert out["checks"]["paid_ref_selfplay_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["agent_work_claim_ok"] is True
     assert out["checks"]["agent_work_proof_ok"] is True

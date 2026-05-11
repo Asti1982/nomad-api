@@ -1484,6 +1484,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("variant-forge is handled directly in run_once")
     if command == "worker-market":
         raise ValueError("worker-market is handled directly in run_once")
+    if command == "paid-ref-selfplay":
+        raise ValueError("paid-ref-selfplay is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1802,6 +1804,40 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
                 machine_economy=ctx.get("machine_economy") if isinstance(ctx.get("machine_economy"), dict) else {},
                 variant_forge=forge,
+            )
+        elif args.command == "paid-ref-selfplay":
+            from nomad_carrying_market import build_carrying_market
+            from nomad_microtask_exchange_ops import build_microtask_metrics
+            from nomad_paid_ref_forge import build_paid_ref_market
+            from nomad_paid_ref_selfplay import run_paid_ref_selfplay
+            from nomad_state_status import build_state_status
+            from nomad_survival_market import build_survival_market
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            metrics = build_microtask_metrics(base_url=base, lookback_hours=24)
+            carrying = build_carrying_market(
+                base_url=base,
+                state_status=build_state_status(base_url=base),
+                microtask_metrics=metrics,
+                worker_fleet=worker_fleet,
+                compute_market={},
+            )
+            survival = build_survival_market(
+                base_url=base,
+                machine_product_surface={},
+                carrying_market=carrying,
+                microtask_metrics=metrics,
+                worker_fleet=worker_fleet,
+            )
+            paid = build_paid_ref_market(base_url=base, survival_market=survival)
+            result = run_paid_ref_selfplay(
+                base_url=base,
+                survival_market=survival,
+                paid_ref_market=paid,
+                agent_count=int(getattr(args, "agents", 1000) or 1000),
+                seed=(getattr(args, "seed", None) or "").strip() or None,
             )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
@@ -2217,6 +2253,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Override public base URL for absolute links.",
     )
+    paid_ref_selfplay = subparsers.add_parser(
+        "paid-ref-selfplay",
+        help="Run synthetic buyer-agent selfplay over survival packets without minting revenue.",
+    )
+    paid_ref_selfplay.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    paid_ref_selfplay.add_argument("--agents", type=int, default=1000, help="Synthetic agent count (default 1000).")
+    paid_ref_selfplay.add_argument("--seed", default="", help="Optional deterministic seed.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

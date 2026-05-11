@@ -237,6 +237,15 @@ def _paid_ref_quote_payload(survival_market: dict) -> dict:
     }
 
 
+def _selfplay_quote_payload(paid_ref_selfplay: dict, survival_market: dict) -> dict:
+    quotes = paid_ref_selfplay.get("top_quote_payloads") if isinstance(paid_ref_selfplay.get("top_quote_payloads"), list) else []
+    if quotes and isinstance(quotes[0], dict):
+        payload = dict(quotes[0])
+        payload["create_task"] = True
+        return payload
+    return _paid_ref_quote_payload(survival_market)
+
+
 def run_gate(base_url: str, timeout: float) -> dict:
     health = http_json("GET", endpoint(base_url, "/health"), timeout=timeout)
     recruit = http_json("GET", endpoint(base_url, "/.well-known/nomad-recruit.json"), timeout=timeout)
@@ -259,6 +268,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
     carrying_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-carrying-market.json"), timeout=timeout)
     survival_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-survival-market.json"), timeout=timeout)
     paid_ref_market = http_json("GET", endpoint(base_url, "/.well-known/nomad-paid-ref-market.json"), timeout=timeout)
+    paid_ref_selfplay = http_json("GET", endpoint(base_url, "/.well-known/nomad-paid-ref-selfplay.json"), timeout=timeout)
     worker_offer = http_json(
         "POST",
         endpoint(base_url, "/swarm/worker-market/offers"),
@@ -298,7 +308,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
     paid_ref_quote = http_json(
         "POST",
         endpoint(base_url, "/swarm/paid-ref/quote"),
-        payload=_paid_ref_quote_payload(survival_market),
+        payload=_selfplay_quote_payload(paid_ref_selfplay, survival_market),
         timeout=timeout,
     )
     swarm_ecology = http_json("GET", endpoint(base_url, "/swarm/ecology"), timeout=timeout)
@@ -338,7 +348,10 @@ def run_gate(base_url: str, timeout: float) -> dict:
         "workers_ok": bool(workers.get("ok")) and str(workers.get("schema") or "") == "nomad.transition_worker_fleet.v1",
         "protocol_bytecode_ok": _status_ready(protocol)
         and str(protocol.get("schema") or "") == "nomad.protocol_bytecode.v1"
-        and _has_opcodes(protocol, {"FORGE", "MARKET", "CARRY", "PAYREF", "SELL", "ECO", "CURRIC", "SKILL", "EXP"}),
+        and _has_opcodes(
+            protocol,
+            {"FORGE", "MARKET", "CARRY", "SELFPLAY", "PAYREF", "SELL", "ECO", "CURRIC", "SKILL", "EXP"},
+        ),
         "variant_forge_ok": _status_ready(variant_forge) and str(variant_forge.get("schema") or "") == "nomad.variant_forge.v1",
         "variant_candidate_ok": _status_ready(variant_candidate)
         and str(variant_candidate.get("schema") or "") == "nomad.variant_candidate_receipt.v1",
@@ -354,6 +367,9 @@ def run_gate(base_url: str, timeout: float) -> dict:
         and str(survival_market.get("schema") or "") == "nomad.survival_market.v1",
         "paid_ref_market_ok": _status_ready(paid_ref_market)
         and str(paid_ref_market.get("schema") or "") == "nomad.paid_ref_market.v1",
+        "paid_ref_selfplay_ok": _status_ready(paid_ref_selfplay)
+        and str(paid_ref_selfplay.get("schema") or "") == "nomad.paid_ref_selfplay.v1"
+        and bool(paid_ref_selfplay.get("top_quote_payloads")),
         "worker_market_offer_ok": _status_ready(worker_offer)
         and str(worker_offer.get("schema") or "") == "nomad.worker_market_offer_receipt.v1",
         "agent_work_claim_ok": _status_ready(agent_work_claim)
@@ -405,6 +421,7 @@ def run_gate(base_url: str, timeout: float) -> dict:
             "carrying_market": int(carrying_market.get("http_status") or 0),
             "survival_market": int(survival_market.get("http_status") or 0),
             "paid_ref_market": int(paid_ref_market.get("http_status") or 0),
+            "paid_ref_selfplay": int(paid_ref_selfplay.get("http_status") or 0),
             "worker_market_offer": int(worker_offer.get("http_status") or 0),
             "agent_work_claim": int(agent_work_claim.get("http_status") or 0),
             "agent_work_proof": int(agent_work_proof.get("http_status") or 0),

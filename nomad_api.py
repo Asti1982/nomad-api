@@ -78,6 +78,7 @@ from nomad_growth_arena import build_growth_arena, build_growth_curriculum, buil
 from nomad_carrying_market import build_carrying_market, submit_carrying_proof
 from nomad_survival_market import build_survival_market, submit_survival_intent
 from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, quote_paid_ref, verify_paid_ref
+from nomad_paid_ref_selfplay import run_paid_ref_selfplay
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -404,6 +405,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def _build_paid_ref_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         survival = cls._build_survival_market(base_url=base_url, swarm_summary=swarm_summary)
         return build_paid_ref_market(base_url=base_url, survival_market=survival)
+
+    @classmethod
+    def _build_paid_ref_selfplay(
+        cls,
+        *,
+        base_url: str,
+        swarm_summary: dict | None = None,
+        agent_count: int = 1000,
+        seed: str | int | None = None,
+    ) -> dict:
+        survival = cls._build_survival_market(base_url=base_url, swarm_summary=swarm_summary)
+        paid_ref_market = build_paid_ref_market(base_url=base_url, survival_market=survival)
+        return run_paid_ref_selfplay(
+            base_url=base_url,
+            survival_market=survival,
+            paid_ref_market=paid_ref_market,
+            agent_count=agent_count,
+            seed=seed,
+        )
 
     @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -852,6 +872,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "survival_market": f"{b}/.well-known/nomad-survival-market.json",
                     "survival_intent": f"{b}/swarm/survival-intent",
                     "paid_ref_market": f"{b}/.well-known/nomad-paid-ref-market.json",
+                    "paid_ref_selfplay": f"{b}/.well-known/nomad-paid-ref-selfplay.json",
                     "paid_ref_quote": f"{b}/swarm/paid-ref/quote",
                     "paid_ref_verify": f"{b}/swarm/paid-ref/verify",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
@@ -1079,6 +1100,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/paid-ref-market", "/.well-known/nomad-paid-ref-market.json"}:
             self._json_response(self.__class__._build_paid_ref_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/paid-ref-selfplay", "/.well-known/nomad-paid-ref-selfplay.json"}:
+            try:
+                count = int((query.get("agents") or query.get("agent_count") or ["1000"])[0] or 1000)
+            except (TypeError, ValueError):
+                count = 1000
+            seed = (query.get("seed") or [""])[0] or None
+            self._json_response(
+                self.__class__._build_paid_ref_selfplay(
+                    base_url=self._base_url(),
+                    agent_count=count,
+                    seed=seed,
+                )
+            )
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2131,6 +2166,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-survival-market.json",
                     "/swarm/paid-ref-market",
                     "/.well-known/nomad-paid-ref-market.json",
+                    "/swarm/paid-ref-selfplay",
+                    "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3230,6 +3267,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-survival-market.json",
                     "/swarm/paid-ref-market",
                     "/.well-known/nomad-paid-ref-market.json",
+                    "/swarm/paid-ref-selfplay",
+                    "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

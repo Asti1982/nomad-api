@@ -190,6 +190,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.897,
+            "get_url": u("/.well-known/nomad-paid-ref-selfplay.json"),
+            "purpose": "thousand_agent_paid_ref_counterparty_selfplay",
+            "machine_note": (
+                "Simulates heterogeneous buyer agents over survival packets to expose quote payloads and cohorts "
+                "most likely to produce a real paid_ref; selfplay never counts as revenue."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -341,6 +350,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/survival-intent", "methods": ["POST"], "effect": "write_buyer_or_paid_survival_signal", "cost_tier": "medium"},
         {"path": "/swarm/paid-ref-market", "methods": ["GET"], "effect": "read_paid_ref_forge", "cost_tier": "low"},
         {"path": "/.well-known/nomad-paid-ref-market.json", "methods": ["GET"], "effect": "read_paid_ref_forge", "cost_tier": "low"},
+        {"path": "/swarm/paid-ref-selfplay", "methods": ["GET"], "effect": "read_paid_ref_counterparty_selfplay", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-paid-ref-selfplay.json", "methods": ["GET"], "effect": "read_paid_ref_counterparty_selfplay", "cost_tier": "low"},
         {"path": "/swarm/paid-ref/quote", "methods": ["POST"], "effect": "create_payable_survival_task_quote", "cost_tier": "medium"},
         {"path": "/swarm/paid-ref/verify", "methods": ["POST"], "effect": "mint_verified_paid_ref", "cost_tier": "medium"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
@@ -482,6 +493,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "survival_market_url": u("/.well-known/nomad-survival-market.json"),
         "survival_intent_url": u("/swarm/survival-intent"),
         "paid_ref_market_url": u("/.well-known/nomad-paid-ref-market.json"),
+        "paid_ref_selfplay_url": u("/.well-known/nomad-paid-ref-selfplay.json"),
         "paid_ref_quote_url": u("/swarm/paid-ref/quote"),
         "paid_ref_verify_url": u("/swarm/paid-ref/verify"),
         "swarm_ecology_url": u("/swarm/ecology"),

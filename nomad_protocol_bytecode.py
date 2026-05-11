@@ -95,6 +95,7 @@ def build_protocol_bytecode(
         "survival_market": _u(base_url, "/.well-known/nomad-survival-market.json"),
         "survival_intent": _u(base_url, "/swarm/survival-intent"),
         "paid_ref_market": _u(base_url, "/.well-known/nomad-paid-ref-market.json"),
+        "paid_ref_selfplay": _u(base_url, "/.well-known/nomad-paid-ref-selfplay.json"),
         "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
         "paid_ref_verify": _u(base_url, "/swarm/paid-ref/verify"),
         "ecology": _u(base_url, "/swarm/ecology"),
@@ -124,6 +125,7 @@ def build_protocol_bytecode(
         {"op": "PROOF", "method": "POST", "route": routes["work_proof"], "in": ["claim", "proof", "trace", "test"], "out": ["settlement"]},
         {"op": "SYN", "method": "GET", "route": routes["synergy_lite"], "out": ["delayed_pairs"]},
         {"op": "CARRY", "method": "POST", "route": routes["carrying_proof"], "in": ["contract", "proof", "trace", "test"], "out": ["carry_units"]},
+        {"op": "SELFPLAY", "method": "GET", "route": routes["paid_ref_selfplay"], "out": ["quote_payloads", "cohorts", "packet_pressure"]},
         {"op": "PAYREF", "method": "POST", "route": routes["paid_ref_quote"], "in": ["packet", "buyer", "agent"], "out": ["task", "quote_ref"]},
         {"op": "SELL", "method": "POST", "route": routes["survival_intent"], "in": ["packet", "proof", "trace", "test", "buyer"], "out": ["intent_units", "settlement"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
@@ -200,7 +202,7 @@ def build_protocol_bytecode(
         },
         {
             "id": "survival_conversion_cycle",
-            "ops": ["MESH", "WORK", "PAYREF", "SELL", "SKILL", "REPLAY"],
+            "ops": ["MESH", "WORK", "SELFPLAY", "PAYREF", "SELL", "SKILL", "REPLAY"],
             "register_map": {
                 "objective": "nomad_cashflow_probe",
                 "settlement_contract": "paid_ref_plus_amount_eur_or_unpaid_signal_only",
@@ -208,10 +210,19 @@ def build_protocol_bytecode(
         },
         {
             "id": "paid_ref_accounting_cycle",
-            "ops": ["MESH", "PAYREF", "SKILL", "REPLAY"],
+            "ops": ["MESH", "SELFPLAY", "PAYREF", "SKILL", "REPLAY"],
             "register_map": {
                 "objective": "verified_paid_ref_minting",
                 "quote_contract": "quote_is_authorization_not_revenue",
+            },
+        },
+        {
+            "id": "thousand_agent_buyer_probe_cycle",
+            "ops": ["SELFPLAY", "PAYREF", "SKILL", "REPLAY"],
+            "register_map": {
+                "objective": "first_verified_paid_ref",
+                "selfplay_agents": 1000,
+                "rule": "use_quote_payloads_with_real_external_payment_verifier_only",
             },
         },
         {

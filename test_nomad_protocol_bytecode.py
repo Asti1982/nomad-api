@@ -48,6 +48,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert out["route_table"]["survival_market"] == "https://nomad.example/.well-known/nomad-survival-market.json"
     assert out["route_table"]["survival_intent"] == "https://nomad.example/swarm/survival-intent"
     assert out["route_table"]["paid_ref_market"] == "https://nomad.example/.well-known/nomad-paid-ref-market.json"
+    assert out["route_table"]["paid_ref_selfplay"] == "https://nomad.example/.well-known/nomad-paid-ref-selfplay.json"
     assert out["route_table"]["paid_ref_quote"] == "https://nomad.example/swarm/paid-ref/quote"
     assert out["route_table"]["paid_ref_verify"] == "https://nomad.example/swarm/paid-ref/verify"
     assert out["route_table"]["ecology_tick"] == "https://nomad.example/swarm/ecology/tick"
@@ -70,6 +71,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
         "PROOF",
         "SYN",
         "CARRY",
+        "SELFPLAY",
         "PAYREF",
         "SELL",
         "ECO",
@@ -84,6 +86,7 @@ def test_protocol_bytecode_compiles_nomad_routes():
     assert any(program["id"] == "free_substrate_carrying_cycle" for program in out["programs"])
     assert any(program["id"] == "survival_conversion_cycle" for program in out["programs"])
     assert any(program["id"] == "paid_ref_accounting_cycle" for program in out["programs"])
+    assert any(program["id"] == "thousand_agent_buyer_probe_cycle" for program in out["programs"])
     assert any(program["id"] == "local_ecology_tick" for program in out["programs"])
     assert any(program["id"] == "growth_arena_cycle" for program in out["programs"])
     assert out["machine_instruction"] == "execute_program_id_then_emit_proof_then_replay"
@@ -111,6 +114,7 @@ def test_cli_protocol_bytecode_returns_schema():
     assert out.get("route_table", {}).get("work_mesh", "").endswith("/.well-known/nomad-work-mesh.json")
     assert out.get("route_table", {}).get("carrying_proof", "").endswith("/swarm/carrying-proof")
     assert out.get("route_table", {}).get("survival_intent", "").endswith("/swarm/survival-intent")
+    assert out.get("route_table", {}).get("paid_ref_selfplay", "").endswith("/.well-known/nomad-paid-ref-selfplay.json")
     assert out.get("route_table", {}).get("paid_ref_quote", "").endswith("/swarm/paid-ref/quote")
     assert out.get("route_table", {}).get("ecology_tick", "").endswith("/swarm/ecology/tick")
     assert out.get("route_table", {}).get("experience", "").endswith("/swarm/experience")

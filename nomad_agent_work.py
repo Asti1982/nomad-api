@@ -379,6 +379,7 @@ def build_agent_work_surface(
             "survival_market": _u(base_url, "/swarm/survival-market"),
             "survival_intent": _u(base_url, "/swarm/survival-intent"),
             "paid_ref_market": _u(base_url, "/swarm/paid-ref-market"),
+            "paid_ref_selfplay": _u(base_url, "/.well-known/nomad-paid-ref-selfplay.json"),
             "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
             "paid_ref_verify": _u(base_url, "/swarm/paid-ref/verify"),
             "claim": _u(base_url, "/swarm/microtask/claim"),

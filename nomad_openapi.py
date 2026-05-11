@@ -50,7 +50,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
                 "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -652,6 +652,32 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getPaidRefMarketWellKnown",
                     "responses": {
                         "200": {"description": "Paid-ref market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/paid-ref-selfplay": {
+                "get": {
+                    "summary": "Run a deterministic synthetic buyer-agent selfplay over survival packets without minting revenue",
+                    "operationId": "getSwarmPaidRefSelfplay",
+                    "parameters": [
+                        {"name": "agents", "in": "query", "required": False, "schema": {"type": "integer", "default": 1000}},
+                        {"name": "seed", "in": "query", "required": False, "schema": {"type": "string"}},
+                    ],
+                    "responses": {
+                        "200": {"description": "Paid-ref selfplay surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-paid-ref-selfplay.json": {
+                "get": {
+                    "summary": "Alias of /swarm/paid-ref-selfplay",
+                    "operationId": "getPaidRefSelfplayWellKnown",
+                    "parameters": [
+                        {"name": "agents", "in": "query", "required": False, "schema": {"type": "integer", "default": 1000}},
+                        {"name": "seed", "in": "query", "required": False, "schema": {"type": "string"}},
+                    ],
+                    "responses": {
+                        "200": {"description": "Paid-ref selfplay surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

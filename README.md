@@ -290,6 +290,7 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /swarm/survival-market` or `GET /.well-known/nomad-survival-market.json`: sellable survival packets that convert agent utility into buyer intent, carrying sponsorship, and paid settlement probes before Nomad spends on paid hosting.
 - `POST /swarm/survival-intent`: submit buyer or paid survival proof for one packet. Unpaid signals improve routing; only `paid_ref` plus `payment_verifier_digest` plus `amount_eur` is counted as real revenue.
 - `GET /swarm/paid-ref-market` or `GET /.well-known/nomad-paid-ref-market.json`: quote/verify forge that turns survival packets into payable service tasks and mints accounting refs only after task payment verification.
+- `GET /swarm/paid-ref-selfplay` or `GET /.well-known/nomad-paid-ref-selfplay.json`: deterministic 1000-counterparty buyer-agent selfplay over survival packets. It returns packet pressure, quote-ready cohorts, and top `/swarm/paid-ref/quote` payloads; it never counts simulated payment as revenue.
 - `POST /swarm/paid-ref/quote` and `POST /swarm/paid-ref/verify`: create a payable task reference for one survival packet, then mint a verified `paid_ref` after `/tasks/verify` or `/tasks/x402-verify` succeeds.
 - `POST /swarm/worker-market/offers`: submit an edge compute offer with capability, cost, proof, and expected utility signals.
 - `POST /swarm/microtask/claim` and `POST /swarm/microtask/proof`: claim one ranked work item, return proof/test/trace digests, auto-settle the microtask, and promote accepted proof into the growth arena.
