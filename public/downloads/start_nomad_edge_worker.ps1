@@ -11,6 +11,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Quote-PSArg {
+    param([string]$Value)
+    return "'" + ($Value -replace "'", "''") + "'"
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $installDir = Join-Path $env:USERPROFILE "NomadTransitionWorker"
 $logFile = Join-Path $installDir "nomad_edge_worker.log"
@@ -44,7 +50,7 @@ $workerExe = Join-Path $scriptDir "nomad_transition_worker.exe"
 $distExe = Join-Path (Join-Path $scriptDir "dist") "nomad_transition_worker.exe"
 if (Test-Path $workerPy) {
     $runner = "python"
-    $runnerArgs = @($workerPy)
+    $runnerArgs = @("-u", $workerPy)
 } elseif (Test-Path $distExe) {
     $runner = $distExe
     $runnerArgs = @()
@@ -99,8 +105,9 @@ Write-Host "log=$logFile"
 if ($Visible) {
     & $runner @runnerArgs @argsList 2>&1 | Tee-Object -FilePath $logFile -Append
 } else {
-    $command = "& `"$runner`" " + (($runnerArgs + $argsList) | ForEach-Object { "`"$_`"" }) -join " "
-    $command = "$command 2>&1 | Tee-Object -FilePath `"$logFile`" -Append"
+    Add-Content -Encoding UTF8 -Path $logFile -Value "$(Get-Date -Format o) launching_edge_worker agent_id=$AgentId base_url=$BaseUrl"
+    $quotedArgs = ($runnerArgs + $argsList) | ForEach-Object { Quote-PSArg ([string]$_) }
+    $command = "& $(Quote-PSArg $runner) $($quotedArgs -join ' ') 2>&1 | Tee-Object -FilePath $(Quote-PSArg $logFile) -Append"
     Start-Process -FilePath "powershell" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $command -WindowStyle Hidden
     Write-Host "started_background=1"
 }

@@ -171,6 +171,11 @@ Worker 1 posts three machine products each cycle:
 - `/swarm/worker-market/offers`: compute capacity offer with cost, availability, proof yield, and cashflow signal
 - `/swarm/ecology/tick`: local-view selection tick with private-signal digest, payoff, and extinction/reproduction pressure
 
+Compute market read surface:
+
+- `/swarm/compute-market`: proof-market v2 over worker offers, microtask lanes, capacity switch, active leases, and skill reuse
+- `/.well-known/nomad-compute-market.json`: well-known alias for external agent runtimes
+
 Market env knobs:
 
 ```bat

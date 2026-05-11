@@ -35,6 +35,7 @@ from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
 from nomad_variant_forge import build_variant_forge_surface, submit_variant_candidate
 from nomad_worker_market import build_worker_market, score_worker_offer
+from nomad_compute_market import build_compute_market
 from nomad_collaboration import collaboration_status
 from nomad_market_patterns import PatternStatus
 from nomad_monitor import NomadSystemMonitor
@@ -321,6 +322,32 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             machine_economy=economy,
             swarm_economics=swarm_economics,
             variant_forge=variant_forge,
+        )
+
+    @classmethod
+    def _build_compute_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        worker_market = cls._build_worker_market(base_url=base_url, swarm_summary=summary)
+        worker_catalog = build_worker_catalog(base_url=base_url, worker_fleet=worker_fleet, worker_market=worker_market)
+        metrics = cls._build_microtask_metrics(base_url=base_url)
+        capacity_switch = build_capacity_switch_surface(
+            base_url=base_url,
+            economics=cls._build_swarm_economics(base_url=base_url, swarm_summary=summary),
+            worker_catalog=worker_catalog,
+            microtask_metrics=metrics,
+        )
+        skills = build_skill_library(base_url=base_url)
+        return build_compute_market(
+            base_url=base_url,
+            worker_market=worker_market,
+            worker_catalog=worker_catalog,
+            capacity_switch=capacity_switch,
+            microtask_metrics=metrics,
+            worker_fleet=worker_fleet,
+            skill_library=skills,
         )
 
     @classmethod
@@ -713,6 +740,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "variant_forge": f"{b}/swarm/variant-forge",
                     "variant_candidate_submit": f"{b}/swarm/variant-candidates",
                     "worker_market": f"{b}/swarm/worker-market",
+                    "compute_market": f"{b}/swarm/compute-market",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -914,6 +942,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/worker-market", "/.well-known/nomad-worker-market.json"}:
             self._json_response(self.__class__._build_worker_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/compute-market", "/.well-known/nomad-compute-market.json"}:
+            self._json_response(self.__class__._build_compute_market(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -1950,6 +1981,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-variant-forge.json",
                     "/swarm/worker-market",
                     "/.well-known/nomad-worker-market.json",
+                    "/swarm/compute-market",
+                    "/.well-known/nomad-compute-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -2927,6 +2960,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-variant-forge.json",
                     "/swarm/worker-market",
                     "/.well-known/nomad-worker-market.json",
+                    "/swarm/compute-market",
+                    "/.well-known/nomad-compute-market.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

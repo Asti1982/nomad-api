@@ -234,6 +234,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/variant-candidates" in doc["paths"]
     assert "/swarm/worker-market" in doc["paths"]
     assert "/.well-known/nomad-worker-market.json" in doc["paths"]
+    assert "/swarm/compute-market" in doc["paths"]
+    assert "/.well-known/nomad-compute-market.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -313,6 +315,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     replay = NomadApiHandler._build_counterfactual_replay(base_url="https://nomad.example")
     forge = NomadApiHandler._build_variant_forge(base_url="https://nomad.example")
     market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
+    compute_market = NomadApiHandler._build_compute_market(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -332,6 +335,9 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert forge["submit_url"] == "https://nomad.example/swarm/variant-candidates"
     assert market["schema"] == "nomad.worker_market.v1"
     assert market["offer_url"] == "https://nomad.example/swarm/worker-market/offers"
+    assert compute_market["schema"] == "nomad.compute_market.v1"
+    assert compute_market["read_url"] == "https://nomad.example/swarm/compute-market"
+    assert compute_market["entry_contract"]["settle_url"] == "https://nomad.example/swarm/microtask/settle"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

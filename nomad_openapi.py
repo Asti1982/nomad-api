@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, worker catalogs, microtask templates/metrics, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, worker catalogs, microtask templates/metrics, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, POST /swarm/worker-market/offers, POST /swarm/microtask/submit, and POST /swarm/microtask/settle. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -508,6 +508,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getWorkerMarketWellKnown",
                     "responses": {
                         "200": {"description": "Worker market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/compute-market": {
+                "get": {
+                    "summary": "Proof-market v2: deterministic compute ranking over offers, microtasks, capacity switch, leases, and skills",
+                    "operationId": "getSwarmComputeMarket",
+                    "responses": {
+                        "200": {"description": "Compute market surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-compute-market.json": {
+                "get": {
+                    "summary": "Alias of /swarm/compute-market",
+                    "operationId": "getComputeMarketWellKnown",
+                    "responses": {
+                        "200": {"description": "Compute market surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
