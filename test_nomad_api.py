@@ -67,6 +67,7 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/survival-intent" in text
     assert "/.well-known/nomad-paid-ref-market.json" in text
     assert "/.well-known/nomad-paid-ref-selfplay.json" in text
+    assert "/.well-known/nomad-bounty-hunter.json" in text
     assert "/swarm/paid-ref/quote" in text
     assert "/swarm/ecology" in text
     assert "/swarm/ecology/tick" in text
@@ -259,6 +260,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-paid-ref-market.json" in doc["paths"]
     assert "/swarm/paid-ref-selfplay" in doc["paths"]
     assert "/.well-known/nomad-paid-ref-selfplay.json" in doc["paths"]
+    assert "/swarm/bounty-hunter" in doc["paths"]
+    assert "/.well-known/nomad-bounty-hunter.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -354,6 +357,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     survival_market = NomadApiHandler._build_survival_market(base_url="https://nomad.example")
     paid_ref_market = NomadApiHandler._build_paid_ref_market(base_url="https://nomad.example")
     paid_ref_selfplay = NomadApiHandler._build_paid_ref_selfplay(base_url="https://nomad.example")
+    bounty_hunter = NomadApiHandler._build_bounty_hunter(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -391,6 +395,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert paid_ref_selfplay["schema"] == "nomad.paid_ref_selfplay.v1"
     assert paid_ref_selfplay["agent_count"] == 1000
     assert paid_ref_selfplay["top_quote_payloads"]
+    assert bounty_hunter["schema"] == "nomad.bounty_hunter.v1"
+    assert bounty_hunter["top_candidate"]
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

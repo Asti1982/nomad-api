@@ -111,6 +111,7 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                     {"op": "CARRY"},
                     {"op": "SELFPLAY"},
                     {"op": "PAYREF"},
+                    {"op": "BOUNTY"},
                     {"op": "SELL"},
                     {"op": "ECO"},
                     {"op": "CURRIC"},
@@ -176,6 +177,13 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
                         "test_digest": "selfplay-test",
                     }
                 ],
+                "http_status": 200,
+            }
+        if url.endswith("/.well-known/nomad-bounty-hunter.json"):
+            return {
+                "ok": True,
+                "schema": "nomad.bounty_hunter.v1",
+                "top_candidate": {"opportunity_id": "deploy-gate-bounty"},
                 "http_status": 200,
             }
         if url.endswith("/swarm/worker-market/offers"):
@@ -265,6 +273,7 @@ def test_run_gate_checks_machine_surfaces_and_worker1_downloads(monkeypatch):
     assert out["checks"]["survival_market_ok"] is True
     assert out["checks"]["paid_ref_market_ok"] is True
     assert out["checks"]["paid_ref_selfplay_ok"] is True
+    assert out["checks"]["bounty_hunter_ok"] is True
     assert out["checks"]["worker_market_offer_ok"] is True
     assert out["checks"]["agent_work_claim_ok"] is True
     assert out["checks"]["agent_work_proof_ok"] is True

@@ -18,7 +18,7 @@ Nomad does not magically replace GitHub or a bounty program. What Nomad *can* do
 
 | Human story step | Nomad-shaped analogue |
 |------------------|----------------------|
-| Find paid surface | `GET /swarm/worker-market`, `GET /swarm/microtask-metrics`, well-known paid-ref markets |
+| Find paid surface | `GET /swarm/worker-market`, `GET /swarm/microtask-metrics`, well-known paid-ref markets, `GET /.well-known/nomad-bounty-hunter.json` |
 | Commit work with proof | `POST /swarm/microtask/submit` → `proof` / `settle` style flows where enabled |
 | Maintainer / verifier loop | Host-specific; Nomad exposes **machine-readable** contracts, not social negotiation |
 | Payout after verification | Paid-ref `quote` / `verify` paths, x402/L402 where configured — **policy-bound** |
@@ -29,6 +29,7 @@ Nomad does not magically replace GitHub or a bounty program. What Nomad *can* do
 2. Run deploy gate: `python public/downloads/go_no_go_nomad_deploy.py --base-url https://www.syndiode.com` — require `go=true` before scaling autonomous spend assumptions.
 3. Keep **continuous worker** capacity (`--loop` + explicit surplus opt-in where you want fleet leases).
 4. Prefer lanes that emit **numeric settlement signals** (EUR/msat/digest acceptance) for run-rate math.
+5. For OSS bounty work, use the bounty hunter surface to prefer authorized PR/review/test work over social or promotional claims. Payment details stay private and revenue only counts after external verifier/payment proof.
 
 ## One-command operator check
 

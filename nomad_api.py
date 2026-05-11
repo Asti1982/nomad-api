@@ -79,6 +79,7 @@ from nomad_carrying_market import build_carrying_market, submit_carrying_proof
 from nomad_survival_market import build_survival_market, submit_survival_intent
 from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, quote_paid_ref, verify_paid_ref
 from nomad_paid_ref_selfplay import run_paid_ref_selfplay
+from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -424,6 +425,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             agent_count=agent_count,
             seed=seed,
         )
+
+    @classmethod
+    def _build_bounty_hunter(cls, *, base_url: str) -> dict:
+        return build_bounty_hunter_surface(base_url=base_url)
 
     @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -875,6 +880,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "paid_ref_selfplay": f"{b}/.well-known/nomad-paid-ref-selfplay.json",
                     "paid_ref_quote": f"{b}/swarm/paid-ref/quote",
                     "paid_ref_verify": f"{b}/swarm/paid-ref/verify",
+                    "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1114,6 +1120,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     seed=seed,
                 )
             )
+            return
+        if parsed.path in {"/swarm/bounty-hunter", "/.well-known/nomad-bounty-hunter.json"}:
+            self._json_response(self.__class__._build_bounty_hunter(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2168,6 +2177,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-market.json",
                     "/swarm/paid-ref-selfplay",
                     "/.well-known/nomad-paid-ref-selfplay.json",
+                    "/swarm/bounty-hunter",
+                    "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3269,6 +3280,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-market.json",
                     "/swarm/paid-ref-selfplay",
                     "/.well-known/nomad-paid-ref-selfplay.json",
+                    "/swarm/bounty-hunter",
+                    "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

@@ -1486,6 +1486,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("worker-market is handled directly in run_once")
     if command == "paid-ref-selfplay":
         raise ValueError("paid-ref-selfplay is handled directly in run_once")
+    if command == "bounty-hunter":
+        raise ValueError("bounty-hunter is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -1838,6 +1840,16 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 paid_ref_market=paid,
                 agent_count=int(getattr(args, "agents", 1000) or 1000),
                 seed=(getattr(args, "seed", None) or "").strip() or None,
+            )
+        elif args.command == "bounty-hunter":
+            from nomad_bounty_hunter import build_bounty_hunter_surface, discover_github_bounties
+
+            discoveries = []
+            if bool(getattr(args, "discover_gh", False)):
+                discoveries = discover_github_bounties(limit=int(getattr(args, "limit", 10) or 10))
+            result = build_bounty_hunter_surface(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                discoveries=discoveries,
             )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
@@ -2260,6 +2272,13 @@ def build_parser() -> argparse.ArgumentParser:
     paid_ref_selfplay.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
     paid_ref_selfplay.add_argument("--agents", type=int, default=1000, help="Synthetic agent count (default 1000).")
     paid_ref_selfplay.add_argument("--seed", default="", help="Optional deterministic seed.")
+    bounty_hunter = subparsers.add_parser(
+        "bounty-hunter",
+        help="Rank authorized paid OSS bounty work into proof-first machine claim contracts.",
+    )
+    bounty_hunter.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    bounty_hunter.add_argument("--discover-gh", action="store_true", help="Read-only local GitHub bounty discovery through gh.")
+    bounty_hunter.add_argument("--limit", type=int, default=10, help="Per-repo GitHub discovery limit when --discover-gh is set.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

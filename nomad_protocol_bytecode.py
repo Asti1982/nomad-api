@@ -98,6 +98,7 @@ def build_protocol_bytecode(
         "paid_ref_selfplay": _u(base_url, "/.well-known/nomad-paid-ref-selfplay.json"),
         "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
         "paid_ref_verify": _u(base_url, "/swarm/paid-ref/verify"),
+        "bounty_hunter": _u(base_url, "/.well-known/nomad-bounty-hunter.json"),
         "ecology": _u(base_url, "/swarm/ecology"),
         "ecology_tick": _u(base_url, "/swarm/ecology/tick"),
         "growth_arena": _u(base_url, "/swarm/growth-arena"),
@@ -127,6 +128,7 @@ def build_protocol_bytecode(
         {"op": "CARRY", "method": "POST", "route": routes["carrying_proof"], "in": ["contract", "proof", "trace", "test"], "out": ["carry_units"]},
         {"op": "SELFPLAY", "method": "GET", "route": routes["paid_ref_selfplay"], "out": ["quote_payloads", "cohorts", "packet_pressure"]},
         {"op": "PAYREF", "method": "POST", "route": routes["paid_ref_quote"], "in": ["packet", "buyer", "agent"], "out": ["task", "quote_ref"]},
+        {"op": "BOUNTY", "method": "GET", "route": routes["bounty_hunter"], "out": ["opportunities", "top_candidate", "claim_contract"]},
         {"op": "SELL", "method": "POST", "route": routes["survival_intent"], "in": ["packet", "proof", "trace", "test", "buyer"], "out": ["intent_units", "settlement"]},
         {"op": "ECO", "method": "POST", "route": routes["ecology_tick"], "in": ["agent", "local", "payoff"], "out": ["retention"]},
         {"op": "CURRIC", "method": "GET", "route": routes["curriculum"], "out": ["tasks", "pressure"]},
@@ -223,6 +225,14 @@ def build_protocol_bytecode(
                 "objective": "first_verified_paid_ref",
                 "selfplay_agents": 1000,
                 "rule": "use_quote_payloads_with_real_external_payment_verifier_only",
+            },
+        },
+        {
+            "id": "authorized_bounty_revenue_cycle",
+            "ops": ["BOUNTY", "SKILL", "EXP", "PAYREF", "REPLAY"],
+            "register_map": {
+                "objective": "first_external_program_payment",
+                "claim_contract": "public_authorized_bounty_proof_first_payment_after_verifier",
             },
         },
         {

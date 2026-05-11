@@ -88,7 +88,8 @@ $revPaths = @(
     "/swarm/worker-market",
     "/swarm/microtask-metrics",
     "/.well-known/nomad-paid-ref-market.json",
-    "/.well-known/nomad-paid-ref-selfplay.json"
+    "/.well-known/nomad-paid-ref-selfplay.json",
+    "/.well-known/nomad-bounty-hunter.json"
 )
 foreach ($path in $revPaths) {
     $u = $BaseUrl.TrimEnd("/") + $path
@@ -144,3 +145,4 @@ Write-Host "1) Treat external bounty/GitHub success as orthogonal; Nomad supplie
 Write-Host "2) Never log or commit payout secrets; use host env / vault only."
 Write-Host "3) Require go_no_go gate before scaling autonomous economic assumptions."
 Write-Host "4) Prefer surfaces with explicit settle/verify semantics for run-rate accounting."
+Write-Host "5) Use /swarm/bounty-hunter for authorized paid OSS work; proof first, claim second, payout secrets never in public text."

@@ -35,7 +35,7 @@ Der Check kombiniert Render-Quelle, Public-Gate und lokalen Worker-Status in ein
 
 ## Autonomer Umsatz (ohne Mikromanagement, mit Leitplanken)
 
-Fuer Maschinen-getriebene Umsatzpfade (Worker-Markt, Microtask-Metriken, Paid-Ref-Oberflaechen) **zusaetzlich** zur Tragfaehigkeits-Baseline:
+Fuer Maschinen-getriebene Umsatzpfade (Worker-Markt, Microtask-Metriken, Paid-Ref-Oberflaechen, Bounty-Hunter) **zusaetzlich** zur Tragfaehigkeits-Baseline:
 
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_autonomous_revenue_execute_now.ps1 -StartLocalWorker`
 

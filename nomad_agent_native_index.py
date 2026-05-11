@@ -199,6 +199,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.898,
+            "get_url": u("/.well-known/nomad-bounty-hunter.json"),
+            "purpose": "authorized_paid_oss_bounty_contract_net",
+            "machine_note": (
+                "Scores public bounty work by expected reward, proof clarity, authorization, payment confidence, "
+                "agent fit, and anti-spam weight; produce PR/review proof before claiming and never expose payout secrets."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
