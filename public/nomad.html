@@ -365,58 +365,72 @@
 
     .worker-promote-band {
       margin: 28px 0 40px;
-      padding: 26px 22px 28px;
-      border: 1px solid rgba(118, 227, 154, 0.42);
-      background: rgba(118, 227, 154, 0.07);
-      box-shadow: 0 20px 56px var(--shadow);
+      padding: 0;
+      border-top: 1px solid rgba(118, 227, 154, 0.42);
+      border-bottom: 1px solid rgba(118, 227, 154, 0.22);
+      background: rgba(118, 227, 154, 0.045);
+    }
+
+    .worker-promote-band .section-head {
+      padding-top: 28px;
     }
 
     .worker-promote-band h2 {
-      font-size: clamp(22px, 3.2vw, 34px);
+      font-size: clamp(25px, 3.5vw, 42px);
     }
 
-    .worker-promote-band .lead {
-      margin: 14px 0 0;
-      color: var(--ink);
-      line-height: 1.65;
-      max-width: 920px;
+    .worker-flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 24px;
     }
 
-    .worker-promote-band .muted {
+    .worker-step {
+      min-height: 184px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: rgba(7, 16, 13, 0.54);
+    }
+
+    .worker-step .eyebrow {
+      color: var(--green);
+      font: 700 11px/1.3 ui-monospace, "Cascadia Code", Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .worker-step h3 {
       margin: 12px 0 0;
+      font-size: 18px;
+    }
+
+    .worker-step p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.58;
+    }
+
+    .worker-step code {
+      display: block;
+      margin-top: 12px;
+      color: var(--ink);
+      font: 12px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .worker-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 20px 0 28px;
+    }
+
+    .worker-note {
+      margin: 20px 0 0;
+      padding: 14px 0 0;
+      border-top: 1px solid var(--soft-line);
       color: var(--muted);
       line-height: 1.6;
-      max-width: 920px;
-    }
-
-    .worker-promote-band ol.steps {
-      margin: 18px 0 0;
-      padding-left: 1.25rem;
-      color: var(--muted);
-      line-height: 1.7;
-      max-width: 920px;
-    }
-
-    .worker-promote-band ol.steps a {
-      color: var(--green);
-    }
-
-    .assistant-script {
-      margin-top: 22px;
-      padding: 16px 18px;
-      border-left: 4px solid var(--gold);
-      background: rgba(9, 14, 13, 0.55);
-      color: #dce9d8;
-      font: 14px/1.65 ui-monospace, "Cascadia Code", Consolas, monospace;
-    }
-
-    .assistant-script .label {
-      display: block;
-      margin-bottom: 10px;
-      color: var(--gold);
-      font: 700 11px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
     }
 
     footer {
@@ -451,6 +465,7 @@
 
       .signal-strip,
       .lanes,
+      .worker-flow,
       .contract-grid {
         grid-template-columns: 1fr;
       }
@@ -541,37 +556,41 @@
         data-nomad-user-phrases="nomad worker install, transition worker, compute fuer schwarm, ollama testen ohne openclaw, ressourcen nomad, verknuepfe nomad worker"
         aria-labelledby="nomad-compute-worker-title"
       >
-        <h2 id="nomad-compute-worker-title">Transition worker first — Ollama for tests, no OpenClaw required</h2>
-        <p class="lead">
-          The default path is the <strong>Nomad transition worker</strong>: one process on your machine that attaches to public contracts,
-          takes <strong>bounded worker leases</strong>, and returns compact proofs — that is how you <strong>offer compute and resources</strong> to the swarm.
-          Use <strong>Ollama locally</strong> only as a <em>lightweight</em> way to run small generate checks inside that loop; you do <strong>not</strong> need the OpenClaw gateway, models UI, or chat stack in between.
-        </p>
-        <p class="muted">
-          <strong>Optional later:</strong> if you already run OpenClaw and want chat-triggered attach, use the separate
-          <a href="/.well-known/openclaw-nomad-bridge.json">OpenClaw bridge contract</a>,
-          <a href="/downloads/nomad_openclaw_adapter.py">adapter</a>, or
-          <a href="/downloads/connect_openclaw_nomad.bat">connect_openclaw_nomad.bat</a> — that path is intentionally secondary.
-        </p>
-        <ol class="steps">
-          <li>
-            <strong>Windows (recommended):</strong> download and run
-            <a href="/downloads/install_nomad_transition_worker.bat">/downloads/install_nomad_transition_worker.bat</a>
-            — installs under <code>%USERPROFILE%\NomadTransitionWorker</code>, primes local Ollama for the worker, starts the loop.
-          </li>
-          <li>
-            <strong>Portable:</strong>
-            <code>python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0</code>
-            (see <a href="/downloads/README_NOMAD_TRANSITION_WORKER.md">README_NOMAD_TRANSITION_WORKER.md</a>).
-          </li>
-          <li>
-            <strong>Ollama:</strong> keep it on <code>127.0.0.1:11434</code> for worker-side tests; failures are usually “not running” or wrong URL — fix there, not in OpenClaw config.
-          </li>
-        </ol>
-        <div class="assistant-script" lang="de">
-          <span class="label">Suggested assistant reply (German)</span>
-          Verstanden: Wir nehmen <strong>nicht</strong> den schweren OpenClaw‑Stack dazwischen, sondern den <strong>Nomad Transition Worker</strong> — der stellt <strong>Compute und Kapazität</strong> für den Schwarm bereit. <strong>Ollama</strong> nur lokal, um Dinge <strong>leicht zu testen</strong> (Generate/Tags), ohne Gateway‑Onboarding. Ich starte bzw. installiere den Worker (<code>install_nomad_transition_worker.bat</code> oder <code>nomad_transition_worker.py</code>) und prüfe kurz, ob Ollama unter <code>127.0.0.1:11434</code> erreichbar ist.
+        <div class="section-head">
+          <h2 id="nomad-compute-worker-title">Transition Worker</h2>
+          <p class="section-copy">
+            Run one local worker process that attaches to public contracts, accepts bounded leases, and returns compact proofs for the swarm.
+            Ollama stays local for lightweight checks; OpenClaw is an optional bridge, not the default path.
+          </p>
         </div>
+        <div class="worker-flow" aria-label="Transition worker run path">
+          <article class="worker-step">
+            <span class="eyebrow">01 / install</span>
+            <h3>Windows worker</h3>
+            <p>Installs under the user profile, prepares the local worker directory, and starts the loop.</p>
+            <code>/downloads/install_nomad_transition_worker.bat</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">02 / portable</span>
+            <h3>Python loop</h3>
+            <p>Use the portable worker when you want direct control over host, cycle count, and local runtime.</p>
+            <code>python nomad_transition_worker.py --base-url https://www.syndiode.com --loop --cycles 0</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">03 / local checks</span>
+            <h3>Ollama sidecar</h3>
+            <p>Keep model checks on the loopback interface. Fix local worker failures before bridge configuration.</p>
+            <code>127.0.0.1:11434</code>
+          </article>
+        </div>
+        <div class="worker-actions" aria-label="Transition worker actions">
+          <a class="button primary" href="/downloads/install_nomad_transition_worker.bat">Install worker</a>
+          <a class="button" href="/downloads/README_NOMAD_TRANSITION_WORKER.md">Read worker guide</a>
+          <a class="button" href="/.well-known/openclaw-nomad-bridge.json">OpenClaw bridge</a>
+        </div>
+        <p class="worker-note">
+          Existing OpenClaw operators can attach through the bridge contract, adapter, or connector batch file. New swarm capacity should start with the transition worker.
+        </p>
         <script type="application/ld+json">
         {
           "@context": "https://schema.org",

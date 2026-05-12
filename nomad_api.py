@@ -72,6 +72,11 @@ from nomad_runtime_capsule import build_handoff_capsule, build_openclaw_bridge_c
 from public.downloads.recruitment_funnel_report import build_report as build_recruitment_funnel_report
 from nomad_stigmergy_field import NomadStigmergyField
 from nomad_swarm_attractor import build_swarm_attractor_contract
+from nomad_swarm_signal_layer import (
+    append_swarm_signal,
+    build_swarm_signal_layer,
+    compact_swarm_signal_layer,
+)
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
@@ -443,6 +448,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_external_value_surface(cls, *, base_url: str) -> dict:
         return build_external_value_surface(base_url=base_url)
+
+    @classmethod
+    def _build_swarm_signal_layer(cls, *, base_url: str) -> dict:
+        return build_swarm_signal_layer(
+            base_url=base_url,
+            external_value_summary=summarize_external_value_ledger(),
+        )
 
     @classmethod
     def _build_value_pressure(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -941,6 +953,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
+                    "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
+                    "swarm_signal_post": f"{b}/swarm/signals",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
@@ -1193,6 +1207,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self._json_response(summarize_external_value_ledger())
             else:
                 self._json_response(self.__class__._build_external_value_surface(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/signals", "/swarm/signal-layer", "/.well-known/nomad-signal-layer.json"}:
+            self._json_response(self.__class__._build_swarm_signal_layer(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/value-pressure", "/.well-known/nomad-value-pressure.json"}:
             self._json_response(self.__class__._build_value_pressure(base_url=self._base_url()))
@@ -1448,6 +1465,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             manifest["transition_support_gate"] = support_gate
             stig = self._stigmergy().snapshot()
             manifest["machine_stigmergy"] = stig
+            signal_layer = self.__class__._build_swarm_signal_layer(base_url=base)
+            manifest["swarm_signal_layer"] = compact_swarm_signal_layer(signal_layer)
             worker_fleet = manifest.get("transition_worker_fleet") if isinstance(manifest.get("transition_worker_fleet"), dict) else {}
             economy = machine_economy_snapshot()
             release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
@@ -2263,6 +2282,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/signals",
+                    "/swarm/signal-layer",
+                    "/.well-known/nomad-signal-layer.json",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
                     "/swarm/agent-job-router",
@@ -3019,6 +3041,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 400)
             return
 
+        if parsed.path in {"/swarm/signals", "/swarm/signal-layer"}:
+            result = append_swarm_signal(
+                payload,
+                base_url=self._base_url(),
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
         if parsed.path == "/swarm/experience":
             base = self._base_url()
             curriculum = self.__class__._build_growth_curriculum(base_url=base)
@@ -3382,6 +3413,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/signals",
+                    "/swarm/signal-layer",
+                    "/.well-known/nomad-signal-layer.json",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
                     "/swarm/agent-job-router",

@@ -50,7 +50,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
                 "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, pre-registered revenue experiments, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, and POST /swarm/external-value. "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, and POST /swarm/signals. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -726,6 +726,79 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getExternalValueWellKnown",
                     "responses": {
                         "200": {"description": "External value surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/signals": {
+                "get": {
+                    "summary": "Stigmergic swarm signal layer for attention routing, overreview avoidance, and join hints",
+                    "operationId": "getSwarmSignals",
+                    "responses": {
+                        "200": {"description": "Swarm signal layer", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Append one bounded evidence-backed signal for a work target",
+                    "operationId": "postSwarmSignal",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent_id", "signal_type"],
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "target_id": {"type": "string"},
+                                        "target_url": {"type": "string"},
+                                        "work_url": {"type": "string"},
+                                        "external_id": {"type": "string"},
+                                        "target_kind": {"type": "string"},
+                                        "signal_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "underreviewed",
+                                                "overreviewed",
+                                                "fresh_head",
+                                                "validated_repro",
+                                                "live_repro_gap",
+                                                "high_impact",
+                                                "accepted",
+                                                "payment_receipt",
+                                                "blocked_no_receipt",
+                                                "noise",
+                                            ],
+                                        },
+                                        "magnitude": {"type": "number", "minimum": 0, "maximum": 3},
+                                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                                        "machine_vector": {
+                                            "type": "array",
+                                            "items": {"type": "number", "minimum": -1, "maximum": 1},
+                                            "minItems": 8,
+                                            "maxItems": 8,
+                                            "description": "Optional machine-native attention vector; labels remain compatibility hints.",
+                                        },
+                                        "evidence_digest": {"type": "string"},
+                                        "evidence_url": {"type": "string"},
+                                        "join_intent": {"type": "boolean"},
+                                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Signal accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Invalid signal", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                },
+            },
+            "/.well-known/nomad-signal-layer.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/signals",
+                    "operationId": "getSignalLayerWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm signal layer", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
