@@ -1922,6 +1922,19 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     live_github=bool(getattr(args, "live_github", False)),
                     limit=int(getattr(args, "limit", 40) or 40),
                 )
+            elif sub == "sign-proof":
+                from nomad_external_value_signature import sign_external_value_proof
+
+                result = sign_external_value_proof(
+                    agent_id=getattr(args, "agent_id", "") or "",
+                    external_id=getattr(args, "external_id", "") or "",
+                    stage=getattr(args, "stage", "") or "",
+                    work_url=getattr(args, "work_url", "") or "",
+                    proof_digest=getattr(args, "proof_digest", "") or "",
+                    verifier_trace_digest=getattr(args, "verifier_trace_digest", "") or "",
+                    payout_ref=getattr(args, "payout_ref", "") or "",
+                    wallet_path=getattr(args, "wallet_path", "") or None,
+                )
             else:
                 base = (getattr(args, "base_url", None) or "").strip()
                 result = build_external_value_surface(base_url=base or "https://www.syndiode.com")
@@ -2589,8 +2602,8 @@ def build_parser() -> argparse.ArgumentParser:
         "ev_action",
         nargs="?",
         default="surface",
-        choices=("surface", "summary", "record", "bonus", "reconcile"),
-        help="surface | summary | record | bonus | reconcile",
+        choices=("surface", "summary", "record", "bonus", "reconcile", "sign-proof"),
+        help="surface | summary | record | bonus | reconcile | sign-proof",
     )
     external_value.add_argument("--base-url", default="", help="Public base URL for links (surface).")
     external_value.add_argument("--agent-id", default="", help="Agent id (record, bonus).")
@@ -2606,6 +2619,8 @@ def build_parser() -> argparse.ArgumentParser:
     external_value.add_argument("--amount-usd", type=float, default=0.0, help="Revenue USD (paid stage only).")
     external_value.add_argument("--live-github", action="store_true", help="For reconcile: read GitHub state through local gh.")
     external_value.add_argument("--limit", type=int, default=40, help="For reconcile: latest external ids to inspect.")
+    external_value.add_argument("--payout-ref", default="", help="Public payout reference to bind into sign-proof.")
+    external_value.add_argument("--wallet-path", default="", help="Local wallet path override for sign-proof.")
     value_pressure = subparsers.add_parser(
         "value-pressure",
         help="Machine pressure field over external value followups, bounty work, and compute-market capacity.",

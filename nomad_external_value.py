@@ -248,6 +248,12 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
             {"rel": "post_transition", "method": "POST", "href": f"{root}/swarm/external-value"},
             {"rel": "bounty_hunter", "method": "GET", "href": f"{root}/.well-known/nomad-bounty-hunter.json"},
         ],
+        "signed_proof_contract": {
+            "local_cli": "python nomad_cli.py external-value sign-proof --agent-id <agent> --external-id <id> --stage <stage> --work-url <url> --proof-digest <sha256:...> --verifier-trace-digest <sha256:...>",
+            "signature_alg": "Ed25519",
+            "private_key_policy": "local_only_never_render_never_public_json",
+            "verification_rule": "verify_signature_over_canonical_json_payload_before_upgrading_external_value_stage",
+        },
     }
 
 
