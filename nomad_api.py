@@ -88,6 +88,7 @@ from nomad_external_value import (
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
 from nomad_agent_job_router import build_agent_job_router
+from nomad_revenue_science import build_revenue_science_surface
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -460,6 +461,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             openapi_document=build_openapi_document(base_url=base_url),
             value_pressure=cls._build_value_pressure(base_url=base_url, swarm_summary=summary),
             work_mesh=cls._build_work_mesh(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
+    def _build_revenue_science(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        pressure = cls._build_value_pressure(base_url=base_url, swarm_summary=summary)
+        return build_revenue_science_surface(
+            base_url=base_url,
+            value_pressure=pressure,
+            agent_job_router=build_agent_job_router(
+                base_url=base_url,
+                openapi_document=build_openapi_document(base_url=base_url),
+                value_pressure=pressure,
+                work_mesh=cls._build_work_mesh(base_url=base_url, swarm_summary=summary),
+            ),
+            external_value_summary=summarize_external_value_ledger(),
+            nonhuman_science=nonhuman_agent_science(base_url=base_url),
         )
 
     @classmethod
@@ -917,6 +935,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "external_value_post": f"{b}/swarm/external-value",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
+                    "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1171,6 +1190,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agent-job-router", "/.well-known/nomad-agent-jobs.json"}:
             self._json_response(self.__class__._build_agent_job_router(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/revenue-science", "/science/revenue-agents", "/.well-known/nomad-revenue-science.json"}:
+            self._json_response(self.__class__._build_revenue_science(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2233,6 +2255,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-value-pressure.json",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
+                    "/swarm/revenue-science",
+                    "/science/revenue-agents",
+                    "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3345,6 +3370,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-external-value.json",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
+                    "/swarm/agent-job-router",
+                    "/.well-known/nomad-agent-jobs.json",
+                    "/swarm/revenue-science",
+                    "/science/revenue-agents",
+                    "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

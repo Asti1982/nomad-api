@@ -72,6 +72,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-external-value.json" in text
     assert "/.well-known/nomad-value-pressure.json" in text
     assert "/.well-known/nomad-agent-jobs.json" in text
+    assert "/.well-known/nomad-revenue-science.json" in text
     assert "/swarm/paid-ref/quote" in text
     assert "/swarm/ecology" in text
     assert "/swarm/ecology/tick" in text
@@ -272,6 +273,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-value-pressure.json" in doc["paths"]
     assert "/swarm/agent-job-router" in doc["paths"]
     assert "/.well-known/nomad-agent-jobs.json" in doc["paths"]
+    assert "/swarm/revenue-science" in doc["paths"]
+    assert "/science/revenue-agents" in doc["paths"]
+    assert "/.well-known/nomad-revenue-science.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -371,6 +375,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     external_value = NomadApiHandler._build_external_value_surface(base_url="https://nomad.example")
     value_pressure = NomadApiHandler._build_value_pressure(base_url="https://nomad.example")
     agent_job_router = NomadApiHandler._build_agent_job_router(base_url="https://nomad.example")
+    revenue_science = NomadApiHandler._build_revenue_science(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -417,6 +422,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert value_pressure["read_url"] == "https://nomad.example/swarm/value-pressure"
     assert agent_job_router["schema"] == "nomad.agent_job_router.v1"
     assert agent_job_router["well_known_url"] == "https://nomad.example/.well-known/nomad-agent-jobs.json"
+    assert revenue_science["schema"] == "nomad.revenue_science.v1"
+    assert revenue_science["well_known_url"] == "https://nomad.example/.well-known/nomad-revenue-science.json"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

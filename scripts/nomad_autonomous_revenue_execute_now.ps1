@@ -89,7 +89,8 @@ $revPaths = @(
     "/swarm/microtask-metrics",
     "/.well-known/nomad-paid-ref-market.json",
     "/.well-known/nomad-paid-ref-selfplay.json",
-    "/.well-known/nomad-bounty-hunter.json"
+    "/.well-known/nomad-bounty-hunter.json",
+    "/.well-known/nomad-revenue-science.json"
 )
 foreach ($path in $revPaths) {
     $u = $BaseUrl.TrimEnd("/") + $path

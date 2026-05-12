@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, and POST /swarm/external-value. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, pre-registered revenue experiments, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, and POST /swarm/external-value. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -762,6 +762,33 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getAgentJobsWellKnown",
                     "responses": {
                         "200": {"description": "Agent job router", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/revenue-science": {
+                "get": {
+                    "summary": "Pre-registered machine revenue experiments over proof pressure and job packets",
+                    "operationId": "getSwarmRevenueScience",
+                    "responses": {
+                        "200": {"description": "Revenue science surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/science/revenue-agents": {
+                "get": {
+                    "summary": "Alias of /swarm/revenue-science",
+                    "operationId": "getScienceRevenueAgents",
+                    "responses": {
+                        "200": {"description": "Revenue science surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-revenue-science.json": {
+                "get": {
+                    "summary": "Alias of /swarm/revenue-science",
+                    "operationId": "getRevenueScienceWellKnown",
+                    "responses": {
+                        "200": {"description": "Revenue science surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
