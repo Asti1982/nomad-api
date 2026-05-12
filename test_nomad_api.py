@@ -328,6 +328,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/gradient" in doc["paths"]
     assert "/.well-known/nomad-gradient.json" in doc["paths"]
     assert "/swarm/attach" in doc["paths"]
+    assert "/swarm/emission-batch" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]
     assert "/.well-known/nomad-swarm-attractor.json" in doc["paths"]
     assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]

@@ -78,6 +78,7 @@ from nomad_swarm_signal_layer import (
     compact_swarm_signal_layer,
 )
 from nomad_swarm_emergence import build_swarm_emergence_meter, compact_emergence_summary
+from nomad_emission_batch import evaluate_emission_batch
 from nomad_swarm_ecology import build_swarm_ecology, submit_ecology_tick
 from nomad_growth_arena import build_growth_arena, build_growth_curriculum, build_skill_library, submit_growth_experience
 from nomad_carrying_market import build_carrying_market, submit_carrying_proof
@@ -955,6 +956,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
                     "swarm_signal_post": f"{b}/swarm/signals",
+                    "emission_batch_post": f"{b}/swarm/emission-batch",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
@@ -1210,6 +1212,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/signals", "/swarm/signal-layer", "/.well-known/nomad-signal-layer.json"}:
             self._json_response(self.__class__._build_swarm_signal_layer(base_url=self._base_url()))
+            return
+        if parsed.path == "/swarm/emission-batch":
+            self._json_response(
+                {
+                    "ok": True,
+                    "schema": "nomad.emission_batch_contract.v1",
+                    "post_url": f"{self._base_url()}/swarm/emission-batch",
+                    "request_schema": "nomad.emission_batch.v2",
+                    "decision_schema": "nomad.emission_batch_decision.v1",
+                    "rule": "decompose_untrusted_batch_into_bounded_contract_decisions",
+                    "supported_emissions": [
+                        "nomad.runtime_attach_request.v1",
+                        "nomad.idle_intent.v1",
+                        "nomad.proof_pledge_batch.v1",
+                        "nomad.handoff_capsule.v1",
+                        "nomad.opaque_emergence_signal.v1",
+                    ],
+                }
+            )
             return
         if parsed.path in {"/swarm/value-pressure", "/.well-known/nomad-value-pressure.json"}:
             self._json_response(self.__class__._build_value_pressure(base_url=self._base_url()))
@@ -2286,6 +2307,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/signals",
                     "/swarm/signal-layer",
                     "/.well-known/nomad-signal-layer.json",
+                    "/swarm/emission-batch",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
                     "/swarm/agent-job-router",
@@ -3051,6 +3073,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("ok") else 422)
             return
 
+        if parsed.path == "/swarm/emission-batch":
+            base = self._base_url()
+            worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            economy = machine_economy_snapshot()
+            release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
+            product = self.__class__._build_machine_product_surface(base_url=base)
+            opaque = self.__class__._build_opaque_emergence_surface(base_url=base)
+            result = evaluate_emission_batch(
+                payload,
+                base_url=base,
+                worker_fleet=worker_fleet,
+                machine_economy=economy,
+                operational_release=release,
+                machine_product_surface=product,
+                opaque_surface=opaque,
+            )
+            self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
         if parsed.path == "/swarm/experience":
             base = self._base_url()
             curriculum = self.__class__._build_growth_curriculum(base_url=base)
@@ -3418,6 +3459,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/signals",
                     "/swarm/signal-layer",
                     "/.well-known/nomad-signal-layer.json",
+                    "/swarm/emission-batch",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
                     "/swarm/agent-job-router",

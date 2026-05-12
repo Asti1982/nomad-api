@@ -50,7 +50,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
                 "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, pre-registered revenue experiments, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, and POST /swarm/signals. "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /swarm/emission-batch, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, POST /swarm/signals, and POST /swarm/emission-batch. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -801,6 +801,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         "200": {"description": "Swarm signal layer", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
+            },
+            "/swarm/emission-batch": {
+                "get": {
+                    "summary": "Contract for decomposing untrusted external runtime emission batches",
+                    "operationId": "getEmissionBatchContract",
+                    "responses": {
+                        "200": {"description": "Emission batch contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Decompose a batch into bounded attach, idle, handoff, proof-pledge, and opaque-candidate decisions",
+                    "operationId": "postEmissionBatch",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["schema", "emissions"],
+                                    "properties": {
+                                        "schema": {"type": "string", "enum": ["nomad.emission_batch.v2"]},
+                                        "emitter": {"type": "string"},
+                                        "gradient_hash_matched": {"type": "string"},
+                                        "capsule_digest_matched": {"type": "string"},
+                                        "worker_gap_filled": {"type": "number"},
+                                        "emissions": {"type": "array", "items": {"type": "object"}, "maxItems": 16},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Batch evaluated", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Invalid batch", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                },
             },
             "/swarm/value-pressure": {
                 "get": {
