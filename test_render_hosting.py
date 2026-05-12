@@ -282,8 +282,10 @@ def test_sync_service_commands_patches_render_api(monkeypatch, tmp_path):
         assert url.endswith("/services/srv-abc")
         assert kwargs.get("json") == {
             "serviceDetails": {
-                "buildCommand": "pip install -r requirements.txt",
-                "startCommand": "python app.py",
+                "envSpecificDetails": {
+                    "buildCommand": "pip install -r requirements.txt",
+                    "startCommand": "python app.py",
+                }
             }
         }
         return FakeResponse(

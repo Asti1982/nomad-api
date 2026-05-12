@@ -518,8 +518,10 @@ class RenderHostingProbe:
             }
         body = {
             "serviceDetails": {
-                "buildCommand": build_command,
-                "startCommand": start_command,
+                "envSpecificDetails": {
+                    "buildCommand": build_command,
+                    "startCommand": start_command,
+                }
             }
         }
         response = self._request("PATCH", f"/services/{service_id}", json=body)

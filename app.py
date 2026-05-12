@@ -1,8 +1,8 @@
 """Entry point for hosts that default to `python app.py` (e.g. Render).
 
 The HTTP server implementation lives in `nomad_api.py`; this module delegates to it.
-If a host starts without dependencies installed, bootstrap only missing modules
-needed for import-time startup (instead of installing full requirements.txt).
+Render must install dependencies in the build step; runtime pip bootstrap is kept
+as an explicit recovery switch only.
 """
 
 from __future__ import annotations
@@ -42,7 +42,11 @@ def _import_nomad_api_with_bootstrap(max_attempts: int = 4):
     return _serve
 
 
-if (os.getenv("RENDER") or "").strip().lower() == "true":
+if (
+    (os.getenv("RENDER") or "").strip().lower() == "true"
+    and (os.getenv("NOMAD_RUNTIME_PIP_BOOTSTRAP") or "").strip().lower()
+    in {"1", "true", "yes", "on"}
+):
     serve = _import_nomad_api_with_bootstrap()
 else:
     from nomad_api import serve
