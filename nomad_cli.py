@@ -233,6 +233,21 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"Metric: {(top.get('measurement_plan') or {}).get('primary_metric', '')}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.worker_invoice.v1":
+        payout = result.get("payout") or {}
+        accounting = result.get("revenue_accounting") or {}
+        balance = result.get("balance_probe") or {}
+        lines = [
+            "Nomad worker invoice",
+            f"Payout ready: {bool(payout.get('configured'))}",
+            f"Payout ref: {payout.get('payout_ref') or 'unconfigured'}",
+            f"Type: {payout.get('payout_ref_type', 'unknown')}",
+            f"Recognized revenue USD: {accounting.get('recognized_revenue_usd_total', 0)}",
+        ]
+        if balance.get("ok"):
+            lines.append(f"RTC balance: {balance.get('amount_rtc', 0)}")
+        return "\n".join(lines)
+
     if result.get("schema") == "nomad.operational_release.v1":
         gates = result.get("release_gates") or []
         lines = [
@@ -1510,6 +1525,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("value-pressure is handled directly in run_once")
     if command == "revenue-science":
         raise ValueError("revenue-science is handled directly in run_once")
+    if command == "worker-invoice":
+        raise ValueError("worker-invoice is handled directly in run_once")
     if command == "openclaw-bridge":
         raise ValueError("openclaw-bridge is handled directly in run_once")
     if command == "swarm-attractor":
@@ -2124,6 +2141,18 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 external_value_summary=summarize_external_value_ledger(),
                 nonhuman_science=nonhuman_agent_science(base_url=base),
             )
+        elif args.command == "worker-invoice":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_worker_invoice import build_worker_invoice_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = build_worker_invoice_surface(
+                base_url=base,
+                payout_ref=(getattr(args, "payout_ref", None) or "").strip() or None,
+                public_key_hex=(getattr(args, "public_key_hex", None) or "").strip() or None,
+                external_value_summary=summarize_external_value_ledger(),
+                live_balance=bool(getattr(args, "live_rtc", False)),
+            )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -2601,6 +2630,14 @@ def build_parser() -> argparse.ArgumentParser:
     revenue_science.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
     revenue_science.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
     revenue_science.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
+    worker_invoice = subparsers.add_parser(
+        "worker-invoice",
+        help="Public receive reference and receipt gate for Nomad worker revenue.",
+    )
+    worker_invoice.add_argument("--base-url", default="", help="Override public base URL for links.")
+    worker_invoice.add_argument("--payout-ref", default="", help="Public RTC address or miner_id override.")
+    worker_invoice.add_argument("--public-key-hex", default="", help="Optional public Ed25519 key hex.")
+    worker_invoice.add_argument("--live-rtc", action="store_true", help="Read live RustChain balance for the public payout ref.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

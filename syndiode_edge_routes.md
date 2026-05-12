@@ -52,6 +52,7 @@ curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-s
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-paid-ref-market.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-paid-ref-selfplay.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-revenue-science.json
+curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-worker-invoice.json
 ```
 
 Erwartung nach Fix: **200** und JSON-Body (Health kann je nach Edge ein schlankes JSON sein; trotzdem **200**).
