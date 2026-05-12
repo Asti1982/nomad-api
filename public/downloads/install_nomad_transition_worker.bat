@@ -4,7 +4,9 @@ setlocal EnableDelayedExpansion
 set BASE_URL=%1
 if "%BASE_URL%"=="" set BASE_URL=https://www.syndiode.com
 set INSTALL_DIR=%USERPROFILE%\NomadTransitionWorker
+set WORKER_PY_URL=%BASE_URL%/downloads/nomad_transition_worker.py
 set EXE_URL=%BASE_URL%/downloads/nomad_transition_worker.exe
+set MANIFEST_URL=%BASE_URL%/downloads/nomad_transition_worker_manifest.json
 set RUNNER_URL=%BASE_URL%/downloads/run_nomad_transition_worker_exe.bat
 set README_URL=%BASE_URL%/downloads/README_NOMAD_TRANSITION_WORKER.md
 set WORKER1_PS1_URL=%BASE_URL%/downloads/start_nomad_worker1.ps1
@@ -37,12 +39,17 @@ set OLLAMA_SWARM_ALIAS=%INSTALL_DIR%\nomad_ollama_swarm.bat
 echo Installing Nomad Agent from %BASE_URL%
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EXE_URL%' -OutFile '%INSTALL_DIR%\nomad_transition_worker.exe'"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER_PY_URL%' -OutFile '%INSTALL_DIR%\nomad_transition_worker.py'"
 if errorlevel 1 (
-  echo Failed to download EXE from %EXE_URL%
+  echo Failed to download worker script from %WORKER_PY_URL%
   exit /b 1
 )
 
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EXE_URL%' -OutFile '%INSTALL_DIR%\nomad_transition_worker.exe'" >nul 2>&1
+if errorlevel 1 (
+  echo EXE download failed or is unavailable; installer will use the Python worker when Python is present.
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%MANIFEST_URL%' -OutFile '%INSTALL_DIR%\nomad_transition_worker_manifest.json'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%RUNNER_URL%' -OutFile '%INSTALL_DIR%\run_nomad_transition_worker_exe.bat'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%README_URL%' -OutFile '%INSTALL_DIR%\README_NOMAD_TRANSITION_WORKER.md'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.ps1'" >nul 2>&1
@@ -61,7 +68,7 @@ echo Starting Nomad Edge Worker (visible PowerShell + live JSON output, no Ollam
 echo Log file: %LOG_FILE%
 call :write_watchdog
 call :register_watchdog_tasks
-start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_EDGE_WORKER='1'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_EDGE_RESERVE_MIN_SECONDS='%NOMAD_EDGE_INTERVAL%'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; & '%INSTALL_DIR%\nomad_transition_worker.exe' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% 2>&1 | Tee-Object -FilePath '%LOG_FILE%' -Append"
+start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%BASE_URL%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
 echo.
 echo Nomad Agent started.
 echo Edge launcher: %EDGE_ALIAS%
@@ -112,7 +119,7 @@ echo set NOMAD_MACHINE_OBJECTIVE=unhuman_supremacy
 echo set NOMAD_WORKER_PAYMENT_RAIL=%WORKER_PAYMENT_RAIL%
 echo set NOMAD_WORKER_COST_MSAT_PER_MINUTE=%WORKER_COST_MSAT%
 echo set NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES=%WORKER_AVAIL_MIN%
-echo start "nomad_edge" /min "%INSTALL_DIR%\nomad_transition_worker.exe" --base-url %%BASE_URL%% --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% ^>^> "%%LOG_FILE%%" 2^>^&1
+echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%%BASE_URL%%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT%
 ) > "%AGENT_ALIAS%"
 (
 echo @echo off
@@ -121,7 +128,7 @@ echo set BASE_URL=%%1
 echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
 echo set LOG_FILE=%LOG_FILE%
 echo cd /d "%INSTALL_DIR%"
-echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "$env:NOMAD_EDGE_WORKER='1'; $env:NOMAD_SWARM_SURPLUS_OPT_IN='1'; $env:NOMAD_EDGE_RESERVE_MIN_SECONDS='%NOMAD_EDGE_INTERVAL%'; $env:NOMAD_MACHINE_OBJECTIVE='unhuman_supremacy'; $env:NOMAD_WORKER_PAYMENT_RAIL='%WORKER_PAYMENT_RAIL%'; $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE='%WORKER_COST_MSAT%'; $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES='%WORKER_AVAIL_MIN%'; .\nomad_transition_worker.exe --base-url '%%BASE_URL%%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval %NOMAD_EDGE_INTERVAL% --timeout %NOMAD_EDGE_TIMEOUT% 2^>^&1 ^| Tee-Object -FilePath '%%LOG_FILE%%' -Append"
+echo powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%%BASE_URL%%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
 ) > "%AGENT_VISIBLE_ALIAS%"
 (
 echo @echo off
@@ -150,6 +157,7 @@ echo python "%INSTALL_DIR%\nomad_ollama_swarm_bridge.py" --base-url "%%BASE_URL%
 ) > "%OLLAMA_SWARM_ALIAS%"
 (
 echo @echo off
+echo powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -match 'nomad_transition_worker' } ^| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" ^>nul 2^>^&1
 echo taskkill /IM nomad_transition_worker.exe /F ^>nul 2^>^&1
 echo schtasks /End /TN "NomadAgent-Autostart" ^>nul 2^>^&1
 echo schtasks /End /TN "NomadAgent-Watchdog" ^>nul 2^>^&1
@@ -165,9 +173,9 @@ echo     [string]$InstallDir = "$env:USERPROFILE\NomadTransitionWorker",
 echo     [string]$LogFile = "$env:USERPROFILE\NomadTransitionWorker\nomad_agent.log",
 echo     [string]$OllamaUrl = "http://127.0.0.1:11434"
 echo ^)
-echo $exe = Join-Path $InstallDir "nomad_transition_worker.exe"
-echo if ^(-not ^(Test-Path $exe^)^) { exit 1 }
-echo $already = Get-CimInstance Win32_Process ^| Where-Object { $_.Name -eq "nomad_transition_worker.exe" -and $_.CommandLine -match "unhuman_supremacy" }
+echo $launcher = Join-Path $InstallDir "start_nomad_edge_worker.ps1"
+echo if ^(-not ^(Test-Path $launcher^)^) { exit 1 }
+echo $already = Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -match "nomad_transition_worker" -and $_.CommandLine -match "unhuman_supremacy" }
 echo if ^($already^) { exit 0 }
 echo $env:NOMAD_EDGE_WORKER = "1"
 echo $env:NOMAD_SWARM_SURPLUS_OPT_IN = "1"
@@ -176,7 +184,7 @@ echo $env:NOMAD_MACHINE_OBJECTIVE = "unhuman_supremacy"
 echo $env:NOMAD_WORKER_PAYMENT_RAIL = "%WORKER_PAYMENT_RAIL%"
 echo $env:NOMAD_WORKER_COST_MSAT_PER_MINUTE = "%WORKER_COST_MSAT%"
 echo $env:NOMAD_WORKER_MARKET_AVAILABILITY_MINUTES = "%WORKER_AVAIL_MIN%"
-echo Start-Process -FilePath $exe -ArgumentList "--base-url", $BaseUrl, "--machine-objective", "unhuman_supremacy", "--edge", "--no-ollama", "--swarm-surplus", "--loop", "--cycles", "0", "--interval", "%NOMAD_EDGE_INTERVAL%", "--timeout", "%NOMAD_EDGE_TIMEOUT%" -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden
+echo ^& $launcher -BaseUrl $BaseUrl -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT%
 ) > "%WATCHDOG_PS1%"
 exit /b 0
 

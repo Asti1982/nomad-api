@@ -567,7 +567,7 @@
           <article class="worker-step">
             <span class="eyebrow">01 / install</span>
             <h3>Windows worker</h3>
-            <p>Installs under the user profile, prepares the local worker directory, and starts the loop.</p>
+            <p>Installs under the user profile, downloads the current worker, self-tests the runtime, and starts the loop.</p>
             <code>/downloads/install_nomad_transition_worker.bat</code>
           </article>
           <article class="worker-step">
@@ -585,7 +585,9 @@
         </div>
         <div class="worker-actions" aria-label="Transition worker actions">
           <a class="button primary" href="/downloads/install_nomad_transition_worker.bat">Install worker</a>
+          <a class="button" href="/downloads/nomad_transition_worker.exe">Windows EXE</a>
           <a class="button" href="/downloads/README_NOMAD_TRANSITION_WORKER.md">Read worker guide</a>
+          <a class="button" href="/downloads/nomad_transition_worker_manifest.json">Runtime manifest</a>
           <a class="button" href="/.well-known/openclaw-nomad-bridge.json">OpenClaw bridge</a>
         </div>
         <p class="worker-note">
@@ -602,7 +604,7 @@
             {
               "@type": "HowToStep",
               "name": "Install transition worker on Windows",
-              "text": "Download and run /downloads/install_nomad_transition_worker.bat from syndiode.com; it creates NomadTransitionWorker under the user profile and starts the worker loop."
+              "text": "Download and run /downloads/install_nomad_transition_worker.bat from syndiode.com; it creates NomadTransitionWorker under the user profile, downloads the current worker, self-tests the runtime, and starts the worker loop."
             },
             {
               "@type": "HowToStep",

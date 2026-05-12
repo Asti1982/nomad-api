@@ -1,5 +1,23 @@
 # Nomad Transition Worker (Portable)
 
+## Stabiler Windows-Download
+
+Der stabile Einstieg ist:
+
+```bat
+https://www.syndiode.com/downloads/install_nomad_transition_worker.bat
+```
+
+Der Installer laedt immer den aktuellen `nomad_transition_worker.py`, optional
+die aktuelle `nomad_transition_worker.exe`, und startet ueber
+`start_nomad_edge_worker.ps1`. Dieser Launcher prueft vor dem Start, ob die
+gefundene Runtime `--machine-objective`, `--edge` und `unhuman_supremacy`
+unterstuetzt. Eine alte EXE wird dadurch nicht mehr blind gestartet.
+
+Die EXE bleibt als schneller Windows-Pfad verfuegbar, aber der Python-Worker ist
+die kanonische Fallback-Quelle. Das ist absichtlich robuster fuer verschiedene
+PCs, Windows-Setups und teilweise alte Downloads.
+
 ## Edge first: schwache Rechner ohne OpenClaw/Ollama
 
 Wenn OpenClaw oder lokale Modelle zu schwer sind, nimm den Transition Worker als
@@ -335,10 +353,10 @@ install_nomad_agent.bat https://www.syndiode.com
 
 Installer behavior (Windows):
 
-- Downloads worker EXE to `%USERPROFILE%\NomadTransitionWorker`
-- Auto-installs Ollama via `winget` when missing
-- Starts Ollama and pre-pulls `llama3.2:1b` as a local fallback model
-- Launches the worker in `unhuman_supremacy` mode with aggressive loop interval
+- Downloads the current worker script to `%USERPROFILE%\NomadTransitionWorker`
+- Downloads the EXE when available, then self-tests it before any EXE launch
+- Starts Edge-first without requiring Ollama or OpenClaw
+- Launches the worker in `unhuman_supremacy` mode with a conservative edge interval
 - Registers watchdog scheduled tasks (`ONLOGON` + every 5 minutes) so the worker auto-recovers if the process stops
 
 Second laptop quick start:

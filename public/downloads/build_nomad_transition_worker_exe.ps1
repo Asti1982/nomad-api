@@ -22,6 +22,12 @@ $exePath = Join-Path $root "dist\nomad_transition_worker.exe"
 $publishedPath = Join-Path $root "nomad_transition_worker.exe"
 if (Test-Path $exePath) {
   Copy-Item -Force $exePath $publishedPath
+  $helpText = & $publishedPath --help 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0 -or $helpText -notmatch "--machine-objective" -or $helpText -notmatch "--edge" -or $helpText -notmatch "unhuman_supremacy") {
+    throw "Built EXE failed the Nomad transition worker compatibility self-test."
+  }
+  $hash = (Get-FileHash -Algorithm SHA256 -Path $publishedPath).Hash.ToLowerInvariant()
+  Write-Host "Published SHA256: $hash"
 }
 
 Write-Host ""

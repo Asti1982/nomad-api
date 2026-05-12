@@ -1,0 +1,63 @@
+{
+  "schema": "nomad.transition_worker_download_manifest.v1",
+  "generated_at": "2026-05-12T17:25:00Z",
+  "base_url": "https://www.syndiode.com",
+  "recommended_installer": {
+    "path": "/downloads/install_nomad_transition_worker.bat",
+    "sha256": "fbbd5448f561c033c4fb249a2db1e84143e19dec539a1e938cdf69b98ad1454c",
+    "bytes": 12137,
+    "behavior": "downloads current worker script, optional EXE, manifest, launchers; starts Edge-first through start_nomad_edge_worker.ps1"
+  },
+  "runtimes": [
+    {
+      "kind": "python_script",
+      "path": "/downloads/nomad_transition_worker.py",
+      "sha256": "f093519f5dc66ece064ecf4316592b63a2e83c4d12dd1fd561673dcced16c644",
+      "bytes": 92213,
+      "canonical": true
+    },
+    {
+      "kind": "windows_x64_exe",
+      "path": "/downloads/nomad_transition_worker.exe",
+      "sha256": "af2d49136b8d2fdf1b0d9a6eff42060f7e8e15bf098a48c1299385e7e5d318d1",
+      "bytes": 9354203,
+      "built_with": "PyInstaller 6.20.0, Python 3.14.3",
+      "canonical": false
+    }
+  ],
+  "launchers": [
+    {
+      "path": "/downloads/start_nomad_edge_worker.ps1",
+      "sha256": "fce9c8ac9eb6e134999a6c2c4f81de81760daa1f58a3ea8d4ee8f3b3dff70689",
+      "bytes": 5834,
+      "self_test": "--help must contain --machine-objective, --edge, and unhuman_supremacy before launch"
+    },
+    {
+      "path": "/downloads/run_nomad_transition_worker_exe.bat",
+      "sha256": "631af210fc563e68d489afdde684bab5ecfd77f3642e39a0c133f2d7bc7a8700",
+      "bytes": 2307,
+      "behavior": "prefers start_nomad_edge_worker.ps1, otherwise checks EXE compatibility before launch"
+    }
+  ],
+  "default_worker_args": [
+    "--base-url",
+    "https://www.syndiode.com",
+    "--machine-objective",
+    "unhuman_supremacy",
+    "--edge",
+    "--no-ollama",
+    "--swarm-surplus",
+    "--loop",
+    "--cycles",
+    "0",
+    "--interval",
+    "90",
+    "--timeout",
+    "30"
+  ],
+  "required_help_markers": [
+    "--machine-objective",
+    "--edge",
+    "unhuman_supremacy"
+  ]
+}

@@ -2196,6 +2196,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/nomad.html",
                     "/downloads/nomad_transition_worker.py",
                     "/downloads/nomad_transition_worker.exe",
+                    "/downloads/nomad_transition_worker_manifest.json",
                     "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
                     "/downloads/start_nomad_edge_worker.ps1",
@@ -3315,6 +3316,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/nomad.html",
                     "/downloads/nomad_transition_worker.py",
                     "/downloads/nomad_transition_worker.exe",
+                    "/downloads/nomad_transition_worker_manifest.json",
                     "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
                     "/downloads/start_nomad_edge_worker.ps1",
@@ -3841,6 +3843,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     hints=[
                         "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
+                        "GET /downloads/nomad_transition_worker_manifest.json for hashes and runtime compatibility.",
                         "GET /downloads/install_nomad_agent.bat for the short installer alias.",
                         "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
                         "GET /downloads/start_nomad_edge_worker.ps1 for the lightweight no-Ollama Edge worker profile.",
