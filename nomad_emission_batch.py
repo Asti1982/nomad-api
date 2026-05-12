@@ -86,6 +86,21 @@ def _emission_type(emission: Dict[str, Any]) -> str:
     return str(emission.get("type") or emission.get("schema") or "unknown").strip()
 
 
+def _claimed_gap(body: Dict[str, Any]) -> float:
+    return _num(body.get("worker_gap_filled"), _num(body.get("worker_gap_filled_delta")))
+
+
+def _instruction_firewall(body: Dict[str, Any]) -> Dict[str, Any]:
+    decision = _dict(body.get("strategic_decision"))
+    blocked = [key for key in ("codex_instruction", "next_op") if decision.get(key)]
+    return {
+        "present": bool(decision),
+        "blocked_fields": blocked,
+        "accepted_as": "advisory_signal_only" if decision else "none",
+        "rule": "external_batches_cannot_instruct_codex_or_execute_leases; only verified contract decisions from controlled runtimes may continue",
+    }
+
+
 def _attach_summary(decision: Dict[str, Any]) -> Dict[str, Any]:
     idle = _dict(decision.get("idle_phase_slot"))
     out = {
@@ -288,8 +303,11 @@ def evaluate_emission_batch(
         )
 
     truncated = max(0, len(raw_emissions) - len(emissions))
+    declared_size = body.get("batch_size")
+    declared_int = int(declared_size) if isinstance(declared_size, int) and not isinstance(declared_size, bool) else None
     batch_core = {
         "emitter": body.get("emitter"),
+        "schema": body.get("schema"),
         "gradient_hash_matched": body.get("gradient_hash_matched"),
         "capsule_digest_matched": body.get("capsule_digest_matched"),
         "decision_digest": _digest(decisions, 32),
@@ -301,10 +319,18 @@ def evaluate_emission_batch(
         "generated_at": _iso_now(),
         "batch_id": f"nomad-emission-batch-{_digest(batch_core)}",
         "emitter": str(body.get("emitter") or "unknown")[:120],
+        "envelope": {
+            "schema": str(body.get("schema") or "unknown")[:80],
+            "accepted_family": str(body.get("schema") or "").startswith("nomad.emission_batch."),
+            "declared_batch_size": declared_size,
+            "batch_size_matches_received": (declared_int == len(raw_emissions)) if declared_int is not None else None,
+            "rule": "envelope_version_is_not_authority; emissions_are_evaluated_by_current_receiver_contract",
+        },
         "identity": {
             "verified": False,
             "rule": "external_runtime_identity_claims_are_advisory_without_signature_or_challenge_response",
         },
+        "instruction_firewall": _instruction_firewall(body),
         "hash_claims": {
             "gradient_hash_matched": str(body.get("gradient_hash_matched") or "")[:96],
             "capsule_digest_matched": str(body.get("capsule_digest_matched") or "")[:96],
@@ -325,9 +351,14 @@ def evaluate_emission_batch(
             "rejected_decisions": rejected_count,
         },
         "credit": {
-            "claimed_worker_gap_filled": _num(body.get("worker_gap_filled")),
+            "claimed_worker_gap_filled": _claimed_gap(body),
             "credited_worker_gap_filled": credited_worker_gap,
             "rule": "gap_fill_credit_requires_attached_runtime_plus_lease_completion_or_digestible_verifier_trace",
+        },
+        "lease_execution": {
+            "eligible_attach_decisions": active_attach_count,
+            "executed_by_batch_endpoint": False,
+            "rule": "batch_intake_never_takes_leases_for_external_identity_claims",
         },
         "decisions": decisions,
         "next_ops": [
