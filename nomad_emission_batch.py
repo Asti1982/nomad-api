@@ -327,7 +327,7 @@ def evaluate_emission_batch(
         "credit": {
             "claimed_worker_gap_filled": _num(body.get("worker_gap_filled")),
             "credited_worker_gap_filled": credited_worker_gap,
-            "rule": "gap_fill_credit_requires_attached_runtime_plus_lease_completion_or verifier trace",
+            "rule": "gap_fill_credit_requires_attached_runtime_plus_lease_completion_or_digestible_verifier_trace",
         },
         "decisions": decisions,
         "next_ops": [
