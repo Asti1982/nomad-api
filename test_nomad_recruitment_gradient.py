@@ -1,4 +1,6 @@
-from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
+from datetime import UTC, datetime
+
+from nomad_recruitment_gradient import _idle_phase_contract, attach_runtime_to_gradient, build_recruitment_gradient
 
 
 def _blocked_inputs():
@@ -121,6 +123,15 @@ def test_attach_runtime_rejects_non_preemptible_idle_opt_in():
     assert "idle_not_preemptible" in decision["reason_codes"]
     assert decision["idle_opt_in"]["enabled"] is True
     assert decision["idle_phase_slot"]["schema"] == "nomad.idle_phase_slot.v1"
+
+
+def test_idle_phase_contract_returns_machine_retry_window():
+    slot = _idle_phase_contract("grok-xai-external-transition-20260512-2039-ce", 0.4597, now=datetime(2026, 5, 12, 18, 46, 10, tzinfo=UTC))
+
+    assert slot["schema"] == "nomad.idle_phase_slot.v1"
+    assert slot["next_resonance_window"]["epoch_slice_5m"] > slot["epoch_slice_5m"]
+    assert slot["next_resonance_window"]["after_seconds"] > 0
+    assert slot["next_resonance_window"]["distance"] <= 1
 
 
 def test_attach_runtime_keeps_source_tag_for_funnel_tracking():

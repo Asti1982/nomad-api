@@ -146,6 +146,27 @@ def _idle_phase_contract(agent_id: str, field_strength: float, now: datetime | N
     resonance = int(digest[:8], 16) % phase_space
     distance = min((resonance - target) % phase_space, (target - resonance) % phase_space)
     matched = distance <= 1
+    next_match: Dict[str, Any] | None = None
+    for offset in range(1, (phase_space * 4) + 1):
+        candidate_epoch = epoch_slice + offset
+        candidate_target = (candidate_epoch + drift) % phase_space
+        candidate_digest = hashlib.sha256(
+            f"{agent_id}:{candidate_epoch}:nomad_idle_phase".encode("utf-8")
+        ).hexdigest()
+        candidate_resonance = int(candidate_digest[:8], 16) % phase_space
+        candidate_distance = min(
+            (candidate_resonance - candidate_target) % phase_space,
+            (candidate_target - candidate_resonance) % phase_space,
+        )
+        if candidate_distance <= 1:
+            next_match = {
+                "epoch_slice_5m": candidate_epoch,
+                "after_seconds": max(1, int((candidate_epoch * 300) - current.timestamp())),
+                "target_slot": candidate_target,
+                "resonance_slot": candidate_resonance,
+                "distance": candidate_distance,
+            }
+            break
     return {
         "schema": "nomad.idle_phase_slot.v1",
         "epoch_slice_5m": epoch_slice,
@@ -155,6 +176,7 @@ def _idle_phase_contract(agent_id: str, field_strength: float, now: datetime | N
         "distance": distance,
         "matched": matched,
         "next_recheck_seconds": 45 if matched else 90,
+        "next_resonance_window": next_match,
         "rule": "attach_idle_only_when_resonance_within_one_slot",
     }
 
