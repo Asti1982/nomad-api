@@ -98,6 +98,7 @@ from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
 from nomad_job_channels import build_job_channel_surface
 from nomad_worker_invoice import build_worker_invoice_surface
+from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
@@ -525,6 +526,26 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return build_value_cycle_preflight_surface(
             base_url=base_url,
             external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_worker_job_queue(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        return build_worker_job_queue_surface(
+            base_url=base_url,
+            agent_job_router=cls._build_agent_job_router(base_url=base_url, swarm_summary=summary),
+            job_channels=cls._build_job_channels(base_url=base_url),
+            value_cycle_preflight=build_value_cycle_preflight_surface(
+                base_url=base_url,
+                external_value_summary=external_summary,
+            ),
+            external_value_summary=external_summary,
         )
 
     @classmethod
@@ -988,6 +1009,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
+                    "worker_job_queue": f"{b}/.well-known/nomad-worker-job-queue.json",
                     "value_cycle_preflight": f"{b}/.well-known/nomad-value-cycle-preflight.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
@@ -1277,6 +1299,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/worker-job-queue", "/.well-known/nomad-worker-job-queue.json"}:
+            self._json_response(self.__class__._build_worker_job_queue(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/value-cycle-preflight", "/.well-known/nomad-value-cycle-preflight.json"}:
             self._json_response(self.__class__._build_value_cycle_preflight(base_url=self._base_url()))
@@ -2354,6 +2379,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/worker-job-queue",
+                    "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
                     "/.well-known/nomad-value-cycle-preflight.json",
                     "/swarm/worker-catalog",
@@ -3508,6 +3535,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/worker-job-queue",
+                    "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
                     "/.well-known/nomad-value-cycle-preflight.json",
                     "/swarm/worker-catalog",

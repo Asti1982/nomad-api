@@ -299,6 +299,19 @@ def _compact_text(result: Dict[str, Any]) -> str:
             ]
         )
 
+    if result.get("schema") == "nomad.worker_job_queue.v1":
+        summary = result.get("summary") or {}
+        entry = result.get("entry_job") or {}
+        return "\n".join(
+            [
+                "Nomad worker job queue",
+                f"Jobs: {summary.get('job_count', 0)} executable={summary.get('executable_now_count', 0)} read_only={summary.get('read_only_count', 0)}",
+                f"Active nonpaid: {summary.get('active_nonpaid_external_count', 0)} paid={summary.get('paid_external_count', 0)}",
+                f"Top: {entry.get('job_type', '')} role={entry.get('worker_role', '')}",
+                f"Artifact: {', '.join((entry.get('required_artifacts') or [])[:3])}",
+            ]
+        )
+
     if result.get("schema") == "nomad.operational_release.v1":
         gates = result.get("release_gates") or []
         lines = [
@@ -2342,6 +2355,11 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 payout_method_compatible=bool(getattr(args, "payout_method_compatible", False)),
                 work_proof_ready=bool(getattr(args, "work_proof_ready", False)),
             )
+        elif args.command == "worker-job-queue":
+            from nomad_api import NomadApiHandler
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = NomadApiHandler._build_worker_job_queue(base_url=base)
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -2876,6 +2894,11 @@ def build_parser() -> argparse.ArgumentParser:
     value_cycle_preflight.add_argument("--payout-terms-verified", action="store_true", help="Assert that payout conditions were checked for this cycle.")
     value_cycle_preflight.add_argument("--payout-method-compatible", action="store_true", help="Assert that the program can pay this public receive reference or an accepted equivalent.")
     value_cycle_preflight.add_argument("--work-proof-ready", action="store_true", help="Assert that local repro, patch digest, or verifier trace exists before public claim.")
+    worker_job_queue = subparsers.add_parser(
+        "worker-job-queue",
+        help="Compile paid-channel, gate, patch, and settlement jobs into a hard artifact queue for workers.",
+    )
+    worker_job_queue.add_argument("--base-url", default="", help="Override public base URL for links.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",
