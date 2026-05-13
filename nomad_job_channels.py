@@ -648,6 +648,128 @@ def _build_switching_policy(channels: list[dict[str, Any]], outcomes: dict[str, 
     }
 
 
+def _qualification_unlocks(channel_id: str) -> list[str]:
+    common = [
+        "platform_account_or_program_access_confirmed",
+        "payout_or_wallet_rail_confirmed",
+        "tax_kyc_or_identity_requirements_confirmed_if_any",
+        "program_scope_and_out_of_scope_targets_captured",
+        "private_submission_or_report_path_known",
+        "paid_receipt_path_known_before_revenue_booking",
+    ]
+    specific: dict[str, list[str]] = {
+        "github_oss_bounty_pr": [
+            "existing_open_items_reconciled_without_new_public_claims",
+            "maintainer_or_owner_acceptance_signal_observed",
+            "payment_claim_or_receipt_channel_confirmed",
+        ],
+        "hackerone_bug_bounty": [
+            "hackerone_payment_preferences_ready",
+            "hackerone_tax_form_complete",
+            "specific_program_policy_and_scope_selected",
+        ],
+        "bugcrowd_bug_bounty": [
+            "bugcrowd_payment_method_ready",
+            "bounty_brief_reviewed_before_any_testing",
+            "known_issues_visible_or_operator_confirms_duplicate_risk",
+        ],
+        "code4rena_competitive_audit": [
+            "warden_registration_confirmed",
+            "tax_information_submitted_before_award_deadline",
+            "competition_deadline_scope_and_submission_policy_selected",
+        ],
+        "sherlock_audit_contest": [
+            "watson_account_ready",
+            "two_valid_issue_or_ratio_payout_criteria_understood",
+            "contest_scope_and_validity_rules_selected",
+        ],
+        "immunefi_web3_bounty": [
+            "program_specific_kyc_poc_safe_harbor_flags_checked",
+            "web3_wallet_and_chain_payout_path_confirmed",
+            "no_live_exploitation_without_explicit_scope",
+        ],
+    }
+    return common + specific.get(channel_id, [])
+
+
+def _build_read_only_qualification_cycle(
+    *,
+    channels: list[dict[str, Any]],
+    switching: dict[str, Any],
+) -> dict[str, Any]:
+    allocation = switching.get("allocation") if isinstance(switching.get("allocation"), list) else []
+    by_alloc = {str(item.get("channel_id") or ""): item for item in allocation if isinstance(item, dict)}
+    target_ids = {
+        "github_oss_bounty_pr",
+        "hackerone_bug_bounty",
+        "bugcrowd_bug_bounty",
+        "intigriti_bug_bounty",
+        "immunefi_web3_bounty",
+        "code4rena_competitive_audit",
+        "sherlock_audit_contest",
+    }
+    rows: list[dict[str, Any]] = []
+    for channel in channels:
+        channel_id = str(channel.get("channel_id") or "")
+        if channel_id not in target_ids:
+            continue
+        alloc = by_alloc.get(channel_id, {})
+        gate = str((channel.get("side_effect_gate") or {}).get("public_or_external_action") or "")
+        action = str(alloc.get("recommended_action") or "")
+        if channel_id == "github_oss_bounty_pr" and action == "freeze_new_public_claims_reconcile_only":
+            state = "reconcile_only_no_new_work"
+        elif action == "operator_gate_only" or gate.startswith("blocked"):
+            state = "operator_gate_required"
+        elif action == "read_only_scout_prepare_operator_gate":
+            state = "qualified_for_read_only_scout"
+        else:
+            state = "preflight_only"
+        rows.append(
+            {
+                "channel_id": channel_id,
+                "category": channel.get("category", ""),
+                "state": state,
+                "recommended_action": action or "read_only_preflight",
+                "external_side_effect_allowed": False,
+                "allowed_now": [
+                    "read_public_terms",
+                    "read_public_program_scope",
+                    "read_public_payout_requirements",
+                    "rank_without_testing_targets",
+                    "prepare_operator_gate_packet",
+                ]
+                if state != "reconcile_only_no_new_work"
+                else ["read_only_github_status_reconcile", "receipt_check", "wait_for_owner_acceptance_signal"],
+                "blocked_now": [
+                    "new_public_claim",
+                    "private_vulnerability_submission",
+                    "active_target_testing",
+                    "marketplace_or_platform_automation",
+                    "revenue_booking_without_paid_receipt",
+                ],
+                "unlock_requirements": _qualification_unlocks(channel_id),
+                "switch_index": alloc.get("switch_index", 0.0),
+                "arrival_weight": alloc.get("arrival_weight", 0.0),
+                "posterior_paid_probability": alloc.get("posterior_paid_probability", 0.0),
+                "evidence_sources": channel.get("evidence_sources", []),
+            }
+        )
+    rows.sort(key=lambda item: (_num(item.get("arrival_weight")), _num(item.get("switch_index"))), reverse=True)
+    return {
+        "schema": "nomad.read_only_channel_qualification_cycle.v1",
+        "mode": "github_reconcile_plus_parallel_external_preflight",
+        "objective": "open_new_paid_channel_without_increasing_unpaid_public_claim_backlog",
+        "current_github_policy": "reconcile_only_until_owner_acceptance_or_paid_receipt",
+        "external_submission_policy": "blocked_until_payout_scope_and_private_submission_gate_are_verified",
+        "qualification_count": len(rows),
+        "next_read_only_targets": rows,
+        "machine_instruction": (
+            "do_not_test_targets_or_submit_reports_from_this_cycle; only qualify scope payout "
+            "and receipt paths, then require an operator gate before any external side effect"
+        ),
+    }
+
+
 def build_job_channel_surface(
     *,
     base_url: str,
@@ -658,6 +780,7 @@ def build_job_channel_surface(
     channels.sort(key=lambda item: _num(item.get("channel_score")), reverse=True)
     outcomes = _channel_outcomes(external_value_summary)
     switching = _build_switching_policy(channels, outcomes)
+    qualification = _build_read_only_qualification_cycle(channels=channels, switching=switching)
     native = [item for item in channels if item.get("category") == "machine_native_market"]
     external = [item for item in channels if item.get("category") != "machine_native_market"]
     security = [item for item in channels if "security" in str(item.get("category") or "")]
@@ -693,6 +816,7 @@ def build_job_channel_surface(
         "channels": channels,
         "observed_outcomes": outcomes,
         "switching_policy": switching,
+        "read_only_qualification_cycle": qualification,
         "channel_contract": {
             "required_before_external_action": [
                 "value_cycle_preflight",

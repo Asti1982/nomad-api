@@ -251,6 +251,9 @@ def _compact_text(result: Dict[str, Any]) -> str:
         components = top.get("score_components") or {}
         switching = result.get("switching_policy") or {}
         probe = switching.get("next_external_probe") or switching.get("next_channel_probe") or {}
+        qualification = result.get("read_only_qualification_cycle") or {}
+        targets = qualification.get("next_read_only_targets") or []
+        qtop = targets[0] if targets else {}
         lines = [
             "Nomad job channels",
             f"Channels: {summary.get('channel_count', 0)} external={summary.get('external_channel_count', 0)} security={summary.get('security_channel_count', 0)}",
@@ -260,6 +263,10 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"Switching: {switching.get('arrival_policy', '')} triggered={bool(switching.get('triggered'))}",
             f"Next external probe: {probe.get('channel_id', '')} action={probe.get('recommended_action', '')}",
         ]
+        if qualification:
+            lines.append(f"Qualification: {qualification.get('mode', '')} targets={qualification.get('qualification_count', 0)}")
+        if qtop:
+            lines.append(f"Next read-only target: {qtop.get('channel_id', '')} state={qtop.get('state', '')}")
         return "\n".join(lines)
 
     if result.get("schema") == "nomad.worker_invoice.v1":

@@ -91,6 +91,8 @@ def test_channel_switching_freezes_nonpaying_github_arrivals():
     )
     policy = out["switching_policy"]
     github = next(item for item in policy["allocation"] if item["channel_id"] == "github_oss_bounty_pr")
+    qualification = out["read_only_qualification_cycle"]
+    q_by_id = {item["channel_id"]: item for item in qualification["next_read_only_targets"]}
 
     assert policy["triggered"] is True
     assert policy["arrival_policy"] == "suppress_new_public_claims_on_nonpaying_channel"
@@ -98,3 +100,9 @@ def test_channel_switching_freezes_nonpaying_github_arrivals():
     assert github["arrival_weight"] == 0.0
     assert policy["next_channel_probe"]["channel_id"] != "github_oss_bounty_pr"
     assert policy["next_external_probe"]["channel_id"] != "github_oss_bounty_pr"
+    assert qualification["schema"] == "nomad.read_only_channel_qualification_cycle.v1"
+    assert qualification["external_submission_policy"] == "blocked_until_payout_scope_and_private_submission_gate_are_verified"
+    assert q_by_id["github_oss_bounty_pr"]["state"] == "reconcile_only_no_new_work"
+    assert q_by_id["hackerone_bug_bounty"]["state"] == "qualified_for_read_only_scout"
+    assert q_by_id["bugcrowd_bug_bounty"]["external_side_effect_allowed"] is False
+    assert "tax_information_submitted_before_award_deadline" in q_by_id["code4rena_competitive_audit"]["unlock_requirements"]
