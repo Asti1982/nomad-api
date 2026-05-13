@@ -568,6 +568,91 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
         },
     ]
 
+    literature_runtime_compiler = {
+        "schema": "nomad.literature_runtime_compiler.v1",
+        "purpose": "Turn agent-science findings into measurable Nomad control policies rather than human workflow metaphors.",
+        "input_domains": [
+            "multi_agent_coordination",
+            "delayed_reward_allocation",
+            "open_ended_agent_design",
+            "message_integrity_and_collective_risk",
+            "affordance_or_state_transition_evaluation",
+        ],
+        "translation_rule": [
+            "accept_primary_or_traceable_research_as_hypothesis_source",
+            "extract_only_the_measurable_mechanism_not_the_human_story",
+            "compile_mechanism_to_state_transition_lease_proof_or_routing_weight",
+            "release_capacity_only_after_verifier_trace_or_external_receipt",
+            "retract_or_decay_weight_when_effect_measure_does_not_return",
+        ],
+        "human_imaginability_filter": {
+            "human_unfamiliarity": "not_a_blocker",
+            "human_aesthetic_discomfort": "not_a_reward_signal",
+            "anthropomorphic_role_fit": "ignored",
+            "operator_explanation": "secondary_artifact_after_machine_policy",
+            "hard_stop_classes": [
+                "false_fact_or_fake_receipt",
+                "missing_authorization_or_scope",
+                "secret_capture_or_public_payout_secret",
+                "irreversible_side_effect_without_contract",
+                "financial_commitment_without_settlement_path",
+            ],
+        },
+        "runtime_shape": {
+            "unit": "state_transition",
+            "currency": "proof_digest_verifier_trace_or_paid_receipt",
+            "scheduler": "bandit_beacon_plus_queue_escape",
+            "memory": "experience_archive_with_reputation_decay",
+            "social_layer": "intent_pubsub_not_persuasion",
+        },
+        "scientific_priors": [
+            {
+                "id": "delayed_feedback_bandits",
+                "url": "https://arxiv.org/abs/1011.1161",
+                "nomad_rule": "Do not keep allocating to a channel while reward feedback is censored and unpaid backlog grows.",
+            },
+            {
+                "id": "thompson_sampling_with_delays",
+                "url": "https://arxiv.org/abs/2202.12431",
+                "nomad_rule": "Exploration persists, but posterior paid probability decays under delayed nonpayment.",
+            },
+            {
+                "id": "little_law_queue_control",
+                "url": "https://pubsonline.informs.org/doi/10.1287/opre.9.3.383",
+                "nomad_rule": "When paid throughput is zero, reduce new arrivals into that queue before WIP overwhelms settlement.",
+            },
+            {
+                "id": "restless_bandit_index_policy",
+                "url": "https://www.mdpi.com/2227-7390/11/7/1639",
+                "nomad_rule": "Channels keep changing while idle; rank by dynamic index instead of loyalty or narrative fit.",
+            },
+        ],
+    }
+
+    cashflow_channel_policy = {
+        "schema": "nomad.cashflow_channel_policy.v1",
+        "objective": "maximize_verified_cashflow_per_unit_risk_and_attention",
+        "reward_signal": "positive_paid_receipt",
+        "non_reward_signals": ["found", "submitted", "approved", "merged", "thanks", "maintainer_interest"],
+        "model": "delayed_feedback_bandit_with_little_law_queue_escape",
+        "human_distance_rule": (
+            "A channel is not a relationship to preserve. It is an arm with delayed, censored feedback, "
+            "authorization gates, and a settlement hazard."
+        ),
+        "switching_rule": {
+            "if": "paid_count == 0 and active_nonpaid >= 12",
+            "then": "freeze_new_public_claims_on_current_nonpaying_channel",
+            "allowed_work": ["read_only_reconcile", "receipt_check", "scope_scout_without_side_effect"],
+            "next_probe": "highest_index_channel_with_preflightable_payout_and_scope",
+        },
+        "nomad_bindings": [
+            u("/.well-known/nomad-job-channels.json"),
+            u("/.well-known/nomad-external-value.json"),
+            u("/.well-known/nomad-value-cycle-preflight.json"),
+            u("/.well-known/nomad-worker-invoice.json"),
+        ],
+    }
+
     return {
         "ok": True,
         "schema": "nomad.nonhuman_agent_science.v1",
@@ -667,6 +752,8 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
         "research_claims": claims,
         "implementation_principles": principles,
         "implementation_lanes": lanes,
+        "literature_runtime_compiler": literature_runtime_compiler,
+        "cashflow_channel_policy": cashflow_channel_policy,
         "next_nomad_build_steps": next_steps,
         "recommended_boot_insert": {
             "after": "/machine-economy",

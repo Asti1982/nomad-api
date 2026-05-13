@@ -55,6 +55,20 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert any(step["id"] == "implement_agency_meter" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "expand_swarm_attractor_trials" for step in out["next_nomad_build_steps"])
 
+    compiler = out["literature_runtime_compiler"]
+    assert compiler["schema"] == "nomad.literature_runtime_compiler.v1"
+    assert compiler["human_imaginability_filter"]["human_unfamiliarity"] == "not_a_blocker"
+    assert compiler["human_imaginability_filter"]["anthropomorphic_role_fit"] == "ignored"
+    assert "missing_authorization_or_scope" in compiler["human_imaginability_filter"]["hard_stop_classes"]
+    assert compiler["runtime_shape"]["scheduler"] == "bandit_beacon_plus_queue_escape"
+
+    cashflow = out["cashflow_channel_policy"]
+    assert cashflow["schema"] == "nomad.cashflow_channel_policy.v1"
+    assert cashflow["reward_signal"] == "positive_paid_receipt"
+    assert "approved" in cashflow["non_reward_signals"]
+    assert cashflow["switching_rule"]["then"] == "freeze_new_public_claims_on_current_nonpaying_channel"
+    assert cashflow["nomad_bindings"][0] == "https://nomad.example/.well-known/nomad-job-channels.json"
+
 
 def test_cli_nonhuman_science_returns_schema():
     from nomad_cli import run_once

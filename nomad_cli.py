@@ -201,12 +201,24 @@ def _compact_text(result: Dict[str, Any]) -> str:
     if mode == "nomad_nonhuman_agent_science" or result.get("schema") == "nomad.nonhuman_agent_science.v1":
         claims = result.get("research_claims") or []
         lanes = result.get("implementation_lanes") or []
+        compiler = result.get("literature_runtime_compiler") or {}
+        cashflow = result.get("cashflow_channel_policy") or {}
         lines = [
             "Nomad nonhuman agent science",
             f"Claims: {len(claims)}",
             f"Lanes: {len(lanes)}",
             f"Stance: {result.get('stance', '')}",
         ]
+        if compiler:
+            filt = compiler.get("human_imaginability_filter") or {}
+            shape = compiler.get("runtime_shape") or {}
+            lines.append(f"Compiler: {compiler.get('schema', '')}")
+            lines.append(f"Human unfamiliarity: {filt.get('human_unfamiliarity', '')}")
+            lines.append(f"Scheduler: {shape.get('scheduler', '')}")
+        if cashflow:
+            switch = cashflow.get("switching_rule") or {}
+            lines.append(f"Cashflow reward: {cashflow.get('reward_signal', '')}")
+            lines.append(f"Cashflow switch: {switch.get('then', '')}")
         if claims:
             lines.append("Research pressure:")
             for item in claims[:5]:
