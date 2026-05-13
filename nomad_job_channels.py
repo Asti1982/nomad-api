@@ -51,9 +51,30 @@ def _clean_id(value: Any, fallback: str = "") -> str:
     return text[:140].strip("_.:/#-") or fallback
 
 
+def _items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _digest(value: Any, length: int = 24) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 JOB_CHANNEL_SEEDS: list[dict[str, Any]] = [
@@ -429,10 +450,214 @@ def score_job_channel(channel: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_job_channel_surface(*, base_url: str) -> dict[str, Any]:
+def _infer_channel_id(row: dict[str, Any]) -> str:
+    explicit = _clean_id(row.get("channel_id") or row.get("source_channel") or "")
+    if explicit:
+        return explicit
+    external_id = str(row.get("external_id") or "").lower()
+    work_url = str(row.get("work_url") or "").lower()
+    raw = f"{external_id} {work_url}"
+    if raw.startswith("gh_") or "github.com" in raw:
+        return "github_oss_bounty_pr"
+    if "hackerone.com" in raw:
+        return "hackerone_bug_bounty"
+    if "bugcrowd.com" in raw:
+        return "bugcrowd_bug_bounty"
+    if "intigriti.com" in raw:
+        return "intigriti_bug_bounty"
+    if "immunefi.com" in raw:
+        return "immunefi_web3_bounty"
+    if "code4rena" in raw:
+        return "code4rena_competitive_audit"
+    if "sherlock" in raw:
+        return "sherlock_audit_contest"
+    if "onlydust" in raw:
+        return "onlydust_open_source_rewards"
+    return "unknown"
+
+
+def _channel_outcomes(external_value_summary: dict[str, Any] | None) -> dict[str, Any]:
+    summary = external_value_summary if isinstance(external_value_summary, dict) else {}
+    now = datetime.now(UTC)
+    by_channel: dict[str, dict[str, Any]] = {}
+    total_paid = 0
+    total_active_nonpaid = 0
+    latest = _items(summary.get("latest_by_external"))
+    for row in latest:
+        channel_id = _infer_channel_id(row)
+        item = by_channel.setdefault(
+            channel_id,
+            {
+                "channel_id": channel_id,
+                "distinct_items": 0,
+                "paid_count": 0,
+                "active_nonpaid": 0,
+                "submitted_count": 0,
+                "approved_count": 0,
+                "merged_count": 0,
+                "max_nonpaid_age_hours": 0.0,
+                "age_hours_sum": 0.0,
+            },
+        )
+        stage = _clean_id(row.get("stage"), "unknown")
+        item["distinct_items"] += 1
+        if stage == "paid" and _num(row.get("revenue_recognized_usd")) > 0:
+            item["paid_count"] += 1
+            total_paid += 1
+            continue
+        if stage in {"found", "submitted", "approved", "merged"}:
+            item["active_nonpaid"] += 1
+            total_active_nonpaid += 1
+            if stage == "submitted":
+                item["submitted_count"] += 1
+            elif stage == "approved":
+                item["approved_count"] += 1
+            elif stage == "merged":
+                item["merged_count"] += 1
+            when = _parse_dt(row.get("last_generated_at"))
+            age_hours = max(0.0, (now - when).total_seconds() / 3600.0) if when else 0.0
+            item["age_hours_sum"] += age_hours
+            item["max_nonpaid_age_hours"] = max(_num(item.get("max_nonpaid_age_hours")), age_hours)
+    for item in by_channel.values():
+        active = max(1, int(item.get("active_nonpaid") or 0))
+        item["mean_nonpaid_age_hours"] = round(_num(item.get("age_hours_sum")) / active, 4)
+        item["max_nonpaid_age_hours"] = round(_num(item.get("max_nonpaid_age_hours")), 4)
+        item.pop("age_hours_sum", None)
+    return {
+        "schema": "nomad.job_channel_outcomes.v1",
+        "recognized_revenue_usd_total": _num(summary.get("revenue_recognized_usd_total")),
+        "distinct_externals": int(_num(summary.get("distinct_externals"))),
+        "total_paid_count": total_paid,
+        "total_active_nonpaid": total_active_nonpaid,
+        "by_channel": by_channel,
+    }
+
+
+def _build_switching_policy(channels: list[dict[str, Any]], outcomes: dict[str, Any]) -> dict[str, Any]:
+    by_channel = outcomes.get("by_channel") if isinstance(outcomes.get("by_channel"), dict) else {}
+    total_paid = int(_num(outcomes.get("total_paid_count")))
+    total_active = int(_num(outcomes.get("total_active_nonpaid")))
+    global_escape = total_paid == 0 and total_active >= 12
+    allocations: list[dict[str, Any]] = []
+    for channel in channels:
+        channel_id = str(channel.get("channel_id") or "")
+        observed = by_channel.get(channel_id) if isinstance(by_channel.get(channel_id), dict) else {}
+        active = int(_num(observed.get("active_nonpaid")))
+        paid = int(_num(observed.get("paid_count")))
+        age = _num(observed.get("mean_nonpaid_age_hours"))
+        components = channel.get("score_components") if isinstance(channel.get("score_components"), dict) else {}
+        prior_success = _clamp(
+            0.20
+            + 0.24 * _num(components.get("payout_clarity"))
+            + 0.22 * _num(components.get("authorization_clarity"))
+            + 0.22 * _num(components.get("proof_clarity"))
+            + 0.12 * _num(components.get("autonomy_allowed")),
+            0.05,
+            0.92,
+        )
+        prior_strength = 4.0
+        delayed_nonpaid_equiv = active * _clamp(age / 72.0, 0.05, 1.0)
+        alpha = 1.0 + prior_strength * prior_success + paid
+        beta = 1.0 + prior_strength * (1.0 - prior_success) + delayed_nonpaid_equiv
+        posterior_paid_probability = alpha / max(0.0001, alpha + beta)
+        queue_penalty = 1.0 / (1.0 + 0.08 * active + 0.02 * _num(observed.get("max_nonpaid_age_hours")))
+        switch_index = _num(channel.get("channel_score")) * posterior_paid_probability * queue_penalty
+        gate = str((channel.get("side_effect_gate") or {}).get("public_or_external_action") or "")
+        action = "exploit_after_preflight"
+        arrival_weight = _clamp(switch_index)
+        if gate.startswith("blocked"):
+            action = "operator_gate_only"
+            arrival_weight = 0.0
+        elif global_escape and channel_id == "github_oss_bounty_pr" and active > 0 and paid == 0:
+            action = "freeze_new_public_claims_reconcile_only"
+            arrival_weight = 0.0
+        elif active > 0 and paid == 0 and age >= 24:
+            action = "cooldown_mature_nonpaying_channel"
+            arrival_weight = min(arrival_weight, 0.05)
+        elif not observed and gate == "read_only_scout_then_operator_private_submission":
+            action = "read_only_scout_prepare_operator_gate"
+            arrival_weight = min(0.18, max(0.04, arrival_weight))
+        elif not observed:
+            action = "small_exploration_probe_after_preflight"
+            arrival_weight = min(0.24, max(0.05, arrival_weight))
+        allocations.append(
+            {
+                "channel_id": channel_id,
+                "category": channel.get("category", ""),
+                "switch_index": round(switch_index, 6),
+                "arrival_weight": round(arrival_weight, 6),
+                "recommended_action": action,
+                "posterior_paid_probability": round(posterior_paid_probability, 6),
+                "observed": {
+                    "active_nonpaid": active,
+                    "paid_count": paid,
+                    "submitted_count": int(_num(observed.get("submitted_count"))),
+                    "approved_count": int(_num(observed.get("approved_count"))),
+                    "merged_count": int(_num(observed.get("merged_count"))),
+                    "mean_nonpaid_age_hours": round(age, 4),
+                    "max_nonpaid_age_hours": round(_num(observed.get("max_nonpaid_age_hours")), 4),
+                },
+            }
+        )
+    allocations.sort(key=lambda item: (_num(item.get("arrival_weight")), _num(item.get("switch_index"))), reverse=True)
+    external_probe = next(
+        (
+            item
+            for item in allocations
+            if item.get("category") != "machine_native_market"
+            and item.get("channel_id") != "github_oss_bounty_pr"
+            and item.get("recommended_action") in {"read_only_scout_prepare_operator_gate", "small_exploration_probe_after_preflight"}
+        ),
+        {},
+    )
+    native_probe = next((item for item in allocations if item.get("category") == "machine_native_market"), {})
+    any_probe = next(
+        (
+            item
+            for item in allocations
+            if item.get("recommended_action") in {"read_only_scout_prepare_operator_gate", "small_exploration_probe_after_preflight"}
+        ),
+        allocations[0] if allocations else {},
+    )
+    return {
+        "schema": "nomad.channel_switching_policy.v1",
+        "mode": "delayed_reward_bandit_with_queue_escape",
+        "arrival_policy": "suppress_new_public_claims_on_nonpaying_channel" if global_escape else "allocate_by_switch_index_after_preflight",
+        "triggered": global_escape,
+        "trigger_reason": (
+            f"paid_count=0 and active_nonpaid={total_active} >= 12; freeze arrivals into current nonpaying public channel"
+            if global_escape
+            else "paid receipts or low active nonpaid backlog keep channel allocation open"
+        ),
+        "learning_rule": [
+            "Treat each channel as a delayed-feedback bandit arm.",
+            "Treat submitted/approved/merged without receipt as censored pending feedback, not revenue.",
+            "Use queue pressure to stop new arrivals when nonpaid WIP grows faster than paid receipts.",
+            "Shift only into read-only scout mode when platform account, tax, KYC, or private disclosure gates are missing.",
+        ],
+        "allocation": allocations,
+        "next_channel_probe": external_probe if global_escape and external_probe else any_probe,
+        "next_external_probe": external_probe,
+        "next_native_probe": native_probe,
+        "hard_guards": [
+            "no_out_of_scope_security_testing",
+            "no_marketplace_scraping_or_auto_apply_without_approved_api",
+            "no_public_disclosure_before_program_allows_it",
+            "no_revenue_without_positive_paid_receipt",
+        ],
+    }
+
+
+def build_job_channel_surface(
+    *,
+    base_url: str,
+    external_value_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build Nomad's broad external job-channel surface."""
     channels = [score_job_channel(item) for item in JOB_CHANNEL_SEEDS]
     channels.sort(key=lambda item: _num(item.get("channel_score")), reverse=True)
+    outcomes = _channel_outcomes(external_value_summary)
+    switching = _build_switching_policy(channels, outcomes)
     native = [item for item in channels if item.get("category") == "machine_native_market"]
     external = [item for item in channels if item.get("category") != "machine_native_market"]
     security = [item for item in channels if "security" in str(item.get("category") or "")]
@@ -466,6 +691,8 @@ def build_job_channel_surface(*, base_url: str) -> dict[str, Any]:
         "top_channel": channels[0] if channels else {},
         "top_external_channel": external[0] if external else {},
         "channels": channels,
+        "observed_outcomes": outcomes,
+        "switching_policy": switching,
         "channel_contract": {
             "required_before_external_action": [
                 "value_cycle_preflight",
@@ -486,13 +713,14 @@ def build_job_channel_surface(*, base_url: str) -> dict[str, Any]:
             {"op": "GET", "url": _u(base_url, "/.well-known/nomad-bounty-hunter.json"), "reason": "continue_existing_github_channel_when_settlement_throttle_allows"},
         ],
         "machine_instruction": (
-            "choose_top_channel_only_after_preflight; security_platforms_are_private_report_channels; "
+            "choose_channel_by_switch_index_not_loyalty; freeze_nonpaying_public_channels_when_wip_exceeds_receipts; security_platforms_are_private_report_channels; "
             "freelance_marketplaces_are_draft_only_without_approved_api; never_book_revenue_without_paid_receipt"
         ),
         "science_basis": [
             {"id": "contract_net_task_allocation", "source": "smith_1980_contract_net_protocol"},
-            {"id": "proof_carrying_work", "source": "reproducible_oss_and_private_vulnerability_reporting_practice"},
-            {"id": "bandit_channel_selection", "source": "exploration_exploitation_under_uncertain_rewards"},
+            {"id": "delayed_feedback_bandits", "source": "bandit_allocation_with_delayed_rewards_and_thompson_sampling"},
+            {"id": "restless_bandit_index_policy", "source": "whittle_index_dynamic_resource_allocation"},
             {"id": "queue_control", "source": "little_law_wip_and_settlement_latency"},
+            {"id": "survival_hazard", "source": "censored_pending_feedback_modeled_as_payment_hazard"},
         ],
     }

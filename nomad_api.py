@@ -508,7 +508,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _build_job_channels(cls, *, base_url: str) -> dict:
-        return build_job_channel_surface(base_url=base_url)
+        return build_job_channel_surface(
+            base_url=base_url,
+            external_value_summary=summarize_external_value_ledger(),
+        )
 
     @classmethod
     def _build_worker_invoice(cls, *, base_url: str) -> dict:

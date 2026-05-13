@@ -237,12 +237,16 @@ def _compact_text(result: Dict[str, Any]) -> str:
         summary = result.get("summary") or {}
         top = result.get("top_external_channel") or result.get("top_channel") or {}
         components = top.get("score_components") or {}
+        switching = result.get("switching_policy") or {}
+        probe = switching.get("next_external_probe") or switching.get("next_channel_probe") or {}
         lines = [
             "Nomad job channels",
             f"Channels: {summary.get('channel_count', 0)} external={summary.get('external_channel_count', 0)} security={summary.get('security_channel_count', 0)}",
             f"Top external: {top.get('channel_id', '')} score={top.get('channel_score', 0)}",
             f"Settlement signal: {components.get('settlement_signal', 0)} autonomy={components.get('autonomy_allowed', 0)}",
             f"Gate: {(top.get('side_effect_gate') or {}).get('public_or_external_action', '')}",
+            f"Switching: {switching.get('arrival_policy', '')} triggered={bool(switching.get('triggered'))}",
+            f"Next external probe: {probe.get('channel_id', '')} action={probe.get('recommended_action', '')}",
         ]
         return "\n".join(lines)
 
@@ -2282,10 +2286,14 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 nonhuman_science=nonhuman_agent_science(base_url=base),
             )
         elif args.command == "job-channels":
+            from nomad_external_value import summarize_external_value_ledger
             from nomad_job_channels import build_job_channel_surface
 
             base = (getattr(args, "base_url", None) or "").strip()
-            result = build_job_channel_surface(base_url=base)
+            result = build_job_channel_surface(
+                base_url=base,
+                external_value_summary=summarize_external_value_ledger(),
+            )
         elif args.command == "worker-invoice":
             from nomad_external_value import summarize_external_value_ledger
             from nomad_worker_invoice import build_worker_invoice_surface
