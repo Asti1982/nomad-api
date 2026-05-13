@@ -108,6 +108,35 @@ JOB_CHANNEL_SEEDS: list[dict[str, Any]] = [
         ],
     },
     {
+        "channel_id": "issuehunt_funded_oss_issue",
+        "label": "IssueHunt funded OSS issues",
+        "category": "oss_funded_issue",
+        "entry_url": "https://oss.issuehunt.io/issues",
+        "nomad_route": "/swarm/job-channels",
+        "agent_work_modes": ["implementation_pr", "docs_pr", "maintenance_patch"],
+        "payout_gate": "IssueHunt-funded open issue, upstream PR acceptance, and IssueHunt claim path",
+        "settlement_rail": "issuehunt_reward_after_merged_pr_and_platform_claim",
+        "authorization_gate": "open GitHub issue, visible funding badge, repo contribution policy, and PR creation permission",
+        "proof_gate": "public branch or PR URL with local test/repro digest; submitted only after upstream PR exists",
+        "autonomy_policy": "public_pr_allowed_after_preflight_but_no_revenue_until_issuehunt_receipt",
+        "score": {
+            "agent_fit": 0.84,
+            "authorization_clarity": 0.82,
+            "payout_clarity": 0.72,
+            "proof_clarity": 0.88,
+            "autonomy_allowed": 0.80,
+            "settlement_speed": 0.32,
+            "competition_risk": 0.62,
+            "platform_friction": 0.46,
+        },
+        "evidence_sources": [
+            {
+                "url": "https://oss.issuehunt.io/issues",
+                "claim": "IssueHunt exposes funded open-source issues and instructs contributors to submit pull requests to receive deposits.",
+            }
+        ],
+    },
+    {
         "channel_id": "hackerone_bug_bounty",
         "label": "HackerOne bug bounty programs",
         "category": "security_bug_bounty",
@@ -457,6 +486,8 @@ def _infer_channel_id(row: dict[str, Any]) -> str:
     external_id = str(row.get("external_id") or "").lower()
     work_url = str(row.get("work_url") or "").lower()
     raw = f"{external_id} {work_url}"
+    if raw.startswith("issuehunt:") or "issuehunt.io" in raw:
+        return "issuehunt_funded_oss_issue"
     if raw.startswith("gh_") or "github.com" in raw:
         return "github_oss_bounty_pr"
     if "hackerone.com" in raw:
@@ -663,6 +694,12 @@ def _qualification_unlocks(channel_id: str) -> list[str]:
             "maintainer_or_owner_acceptance_signal_observed",
             "payment_claim_or_receipt_channel_confirmed",
         ],
+        "issuehunt_funded_oss_issue": [
+            "funding_badge_amount_and_issue_state_verified",
+            "upstream_pr_creation_or_compare_link_confirmed",
+            "issuehunt_claim_account_and_receipt_path_confirmed",
+            "duplicate_open_prs_checked_before_work",
+        ],
         "hackerone_bug_bounty": [
             "hackerone_payment_preferences_ready",
             "hackerone_tax_form_complete",
@@ -701,6 +738,7 @@ def _build_read_only_qualification_cycle(
     by_alloc = {str(item.get("channel_id") or ""): item for item in allocation if isinstance(item, dict)}
     target_ids = {
         "github_oss_bounty_pr",
+        "issuehunt_funded_oss_issue",
         "hackerone_bug_bounty",
         "bugcrowd_bug_bounty",
         "intigriti_bug_bounty",

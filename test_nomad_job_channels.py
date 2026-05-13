@@ -103,6 +103,34 @@ def test_channel_switching_freezes_nonpaying_github_arrivals():
     assert qualification["schema"] == "nomad.read_only_channel_qualification_cycle.v1"
     assert qualification["external_submission_policy"] == "blocked_until_payout_scope_and_private_submission_gate_are_verified"
     assert q_by_id["github_oss_bounty_pr"]["state"] == "reconcile_only_no_new_work"
+    assert q_by_id["issuehunt_funded_oss_issue"]["state"] == "preflight_only"
+    assert "upstream_pr_creation_or_compare_link_confirmed" in q_by_id["issuehunt_funded_oss_issue"]["unlock_requirements"]
     assert q_by_id["hackerone_bug_bounty"]["state"] == "qualified_for_read_only_scout"
     assert q_by_id["bugcrowd_bug_bounty"]["external_side_effect_allowed"] is False
     assert "tax_information_submitted_before_award_deadline" in q_by_id["code4rena_competitive_audit"]["unlock_requirements"]
+
+
+def test_issuehunt_funded_issue_is_tracked_as_separate_channel():
+    external_summary = {
+        "schema": "nomad.external_value_summary.v1",
+        "distinct_externals": 1,
+        "revenue_recognized_usd_total": 0.0,
+        "latest_by_external": [
+            {
+                "external_id": "issuehunt:sindresorhus/fkill#25",
+                "stage": "found",
+                "work_url": "https://github.com/sindresorhus/fkill/issues/25",
+                "last_generated_at": "2026-05-13T13:08:58+00:00",
+                "revenue_recognized_usd": 0.0,
+            }
+        ],
+    }
+
+    out = build_job_channel_surface(
+        base_url="https://nomad.example",
+        external_value_summary=external_summary,
+    )
+    observed = out["observed_outcomes"]["by_channel"]["issuehunt_funded_oss_issue"]
+
+    assert observed["active_nonpaid"] == 1
+    assert observed["paid_count"] == 0
