@@ -96,6 +96,7 @@ from nomad_value_pressure import build_value_pressure_surface
 from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
+from nomad_job_channels import build_job_channel_surface
 from nomad_worker_invoice import build_worker_invoice_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
@@ -504,6 +505,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             external_value_summary=summarize_external_value_ledger(),
             nonhuman_science=nonhuman_agent_science(base_url=base_url),
         )
+
+    @classmethod
+    def _build_job_channels(cls, *, base_url: str) -> dict:
+        return build_job_channel_surface(base_url=base_url)
 
     @classmethod
     def _build_worker_invoice(cls, *, base_url: str) -> dict:
@@ -1263,6 +1268,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/revenue-science", "/science/revenue-agents", "/.well-known/nomad-revenue-science.json"}:
             self._json_response(self.__class__._build_revenue_science(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/job-channels", "/.well-known/nomad-job-channels.json"}:
+            self._json_response(self.__class__._build_job_channels(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))

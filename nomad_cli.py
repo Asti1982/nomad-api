@@ -233,6 +233,19 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"Metric: {(top.get('measurement_plan') or {}).get('primary_metric', '')}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.job_channels.v1":
+        summary = result.get("summary") or {}
+        top = result.get("top_external_channel") or result.get("top_channel") or {}
+        components = top.get("score_components") or {}
+        lines = [
+            "Nomad job channels",
+            f"Channels: {summary.get('channel_count', 0)} external={summary.get('external_channel_count', 0)} security={summary.get('security_channel_count', 0)}",
+            f"Top external: {top.get('channel_id', '')} score={top.get('channel_score', 0)}",
+            f"Settlement signal: {components.get('settlement_signal', 0)} autonomy={components.get('autonomy_allowed', 0)}",
+            f"Gate: {(top.get('side_effect_gate') or {}).get('public_or_external_action', '')}",
+        ]
+        return "\n".join(lines)
+
     if result.get("schema") == "nomad.worker_invoice.v1":
         payout = result.get("payout") or {}
         accounting = result.get("revenue_accounting") or {}
@@ -2268,6 +2281,11 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 external_value_summary=summarize_external_value_ledger(),
                 nonhuman_science=nonhuman_agent_science(base_url=base),
             )
+        elif args.command == "job-channels":
+            from nomad_job_channels import build_job_channel_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = build_job_channel_surface(base_url=base)
         elif args.command == "worker-invoice":
             from nomad_external_value import summarize_external_value_ledger
             from nomad_worker_invoice import build_worker_invoice_surface
@@ -2805,6 +2823,11 @@ def build_parser() -> argparse.ArgumentParser:
     revenue_science.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
     revenue_science.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
     revenue_science.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
+    job_channels = subparsers.add_parser(
+        "job-channels",
+        help="Rank external paid-work channels by authorization, proof, payout, and settlement friction.",
+    )
+    job_channels.add_argument("--base-url", default="", help="Override public base URL for links.")
     worker_invoice = subparsers.add_parser(
         "worker-invoice",
         help="Public receive reference and receipt gate for Nomad worker revenue.",
