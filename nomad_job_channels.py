@@ -137,6 +137,39 @@ JOB_CHANNEL_SEEDS: list[dict[str, Any]] = [
         ],
     },
     {
+        "channel_id": "algora_github_bounty",
+        "label": "Algora GitHub bounties",
+        "category": "oss_bounty",
+        "entry_url": "https://algora.io/community",
+        "nomad_route": "/swarm/job-channels",
+        "agent_work_modes": ["implementation_pr", "docs_pr", "maintainer_scoped_fix"],
+        "payout_gate": "Algora bounty attached to a public GitHub issue; maintainer acceptance and platform payout path confirmed",
+        "settlement_rail": "algora_platform_payout_after_merged_or_awarded_pr",
+        "authorization_gate": "public GitHub issue, bounty listing, repo contribution policy, and duplicate PR check",
+        "proof_gate": "public PR URL with focused tests and issue-linked bounty evidence",
+        "autonomy_policy": "read_only_discovery_then_bounded_pr_after_duplicate_and_payout_gate",
+        "score": {
+            "agent_fit": 0.86,
+            "authorization_clarity": 0.82,
+            "payout_clarity": 0.76,
+            "proof_clarity": 0.88,
+            "autonomy_allowed": 0.78,
+            "settlement_speed": 0.48,
+            "competition_risk": 0.58,
+            "platform_friction": 0.44,
+        },
+        "evidence_sources": [
+            {
+                "url": "https://algora.io/community",
+                "claim": "Algora exposes open-source bounties linked to GitHub issues and PR-based contribution flows.",
+            },
+            {
+                "url": "https://algora.io/keephq/bounties/community",
+                "claim": "Public organization bounty boards list open bounties, completed bounties, and total awarded amounts.",
+            },
+        ],
+    },
+    {
         "channel_id": "hackerone_bug_bounty",
         "label": "HackerOne bug bounty programs",
         "category": "security_bug_bounty",
@@ -488,6 +521,8 @@ def _infer_channel_id(row: dict[str, Any]) -> str:
     raw = f"{external_id} {work_url}"
     if raw.startswith("issuehunt:") or "issuehunt.io" in raw:
         return "issuehunt_funded_oss_issue"
+    if raw.startswith("algora:") or "algora.io" in raw:
+        return "algora_github_bounty"
     if raw.startswith("gh_") or "github.com" in raw:
         return "github_oss_bounty_pr"
     if "hackerone.com" in raw:
@@ -700,6 +735,12 @@ def _qualification_unlocks(channel_id: str) -> list[str]:
             "issuehunt_claim_account_and_receipt_path_confirmed",
             "duplicate_open_prs_checked_before_work",
         ],
+        "algora_github_bounty": [
+            "algora_bounty_amount_and_issue_state_verified",
+            "repo_contribution_policy_and_duplicate_prs_checked",
+            "algora_solver_account_and_payout_path_confirmed",
+            "maintainer_merge_or_award_condition_understood",
+        ],
         "hackerone_bug_bounty": [
             "hackerone_payment_preferences_ready",
             "hackerone_tax_form_complete",
@@ -739,6 +780,7 @@ def _build_read_only_qualification_cycle(
     target_ids = {
         "github_oss_bounty_pr",
         "issuehunt_funded_oss_issue",
+        "algora_github_bounty",
         "hackerone_bug_bounty",
         "bugcrowd_bug_bounty",
         "intigriti_bug_bounty",

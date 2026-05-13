@@ -105,6 +105,8 @@ def test_channel_switching_freezes_nonpaying_github_arrivals():
     assert q_by_id["github_oss_bounty_pr"]["state"] == "reconcile_only_no_new_work"
     assert q_by_id["issuehunt_funded_oss_issue"]["state"] == "preflight_only"
     assert "upstream_pr_creation_or_compare_link_confirmed" in q_by_id["issuehunt_funded_oss_issue"]["unlock_requirements"]
+    assert q_by_id["algora_github_bounty"]["state"] == "qualified_for_read_only_scout"
+    assert "algora_solver_account_and_payout_path_confirmed" in q_by_id["algora_github_bounty"]["unlock_requirements"]
     assert q_by_id["hackerone_bug_bounty"]["state"] == "qualified_for_read_only_scout"
     assert q_by_id["bugcrowd_bug_bounty"]["external_side_effect_allowed"] is False
     assert "tax_information_submitted_before_award_deadline" in q_by_id["code4rena_competitive_audit"]["unlock_requirements"]
@@ -134,3 +136,31 @@ def test_issuehunt_funded_issue_is_tracked_as_separate_channel():
 
     assert observed["active_nonpaid"] == 1
     assert observed["paid_count"] == 0
+
+
+def test_algora_bounty_is_tracked_as_separate_channel():
+    external_summary = {
+        "schema": "nomad.external_value_summary.v1",
+        "distinct_externals": 1,
+        "revenue_recognized_usd_total": 0.0,
+        "latest_by_external": [
+            {
+                "external_id": "algora:keephq/keep#3960",
+                "stage": "found",
+                "work_url": "https://algora.io/keephq/bounties/community?fund=keephq%2Fkeep%233960",
+                "last_generated_at": "2026-05-13T13:55:00+00:00",
+                "revenue_recognized_usd": 0.0,
+            }
+        ],
+    }
+
+    out = build_job_channel_surface(
+        base_url="https://nomad.example",
+        external_value_summary=external_summary,
+    )
+    observed = out["observed_outcomes"]["by_channel"]["algora_github_bounty"]
+    algora = next(item for item in out["channels"] if item["channel_id"] == "algora_github_bounty")
+
+    assert observed["active_nonpaid"] == 1
+    assert observed["paid_count"] == 0
+    assert algora["side_effect_gate"]["public_or_external_action"] == "read_only_scout_then_operator_private_submission"
