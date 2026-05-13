@@ -114,3 +114,49 @@ def test_current_stage_for_external_reads_tail(tmp_path, monkeypatch):
     )
     events = _read_events(_ledger_path())
     assert current_stage_for_external(events, "id3") == "found"
+
+
+def test_summary_latest_limit_can_keep_older_merged_settlement_candidates(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev4.jsonl"))
+    merged_id = "gh_pr:test/repo#old-merged"
+    base = {
+        "agent_id": "nomad.test",
+        "external_id": merged_id,
+        "work_url": "https://github.com/test/repo/pull/old-merged",
+        "proof_digest": "p",
+        "verifier_trace_digest": "v",
+    }
+    assert append_external_value_event({**base, "stage": "found"})["ok"]
+    assert append_external_value_event({**base, "stage": "submitted"})["ok"]
+    assert append_external_value_event({**base, "stage": "approved"})["ok"]
+    assert append_external_value_event({**base, "stage": "merged"})["ok"]
+
+    for idx in range(45):
+        eid = f"gh_pr:test/repo#{idx}"
+        assert append_external_value_event(
+            {
+                "agent_id": "nomad.test",
+                "external_id": eid,
+                "stage": "found",
+                "work_url": "",
+                "proof_digest": "",
+                "verifier_trace_digest": "",
+            }
+        )["ok"]
+        assert append_external_value_event(
+            {
+                "agent_id": "nomad.test",
+                "external_id": eid,
+                "stage": "submitted",
+                "work_url": f"https://github.com/test/repo/pull/{idx}",
+                "proof_digest": "p",
+                "verifier_trace_digest": "v",
+            }
+        )["ok"]
+
+    default_summary = summarize_external_value_ledger(limit=200)
+    wide_summary = summarize_external_value_ledger(limit=200, latest_limit=200)
+
+    assert merged_id not in {row["external_id"] for row in default_summary["latest_by_external"]}
+    assert merged_id in {row["external_id"] for row in wide_summary["latest_by_external"]}
+    assert wide_summary["latest_by_external_visible_count"] == wide_summary["distinct_externals"]

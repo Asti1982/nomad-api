@@ -46,6 +46,20 @@ Monotonic, one step forward at a time (per `external_id`):
 - Summary: `GET /swarm/external-value?summary=1`
 - Append event: `POST /swarm/external-value` with `agent_id`, `external_id`, `stage`, `work_url`, `proof_digest`, `verifier_trace_digest`, optional `amount_usd` (paid only)
 - CLI: `python nomad_cli.py external-value surface|summary|record|bonus ...`
+- Preflight before each revenue-oriented cycle: `python nomad_cli.py value-cycle-preflight --json`. Public claims, payout expectations, PR settlement comments, or bounty payout requests require a valid public receive reference plus per-opportunity program terms, payout terms, and payment-method compatibility.
+
+## No-cost persistence model
+
+Render free storage is treated as **ephemeral projection only**. The durable
+ledger lives on this local machine in `nomad_external_value_ledger.jsonl` (or
+`NOMAD_EXTERNAL_VALUE_LEDGER_PATH`). After a Render restart, replay the local
+ledger back into the public projection:
+
+- Dry-run drift check: `python nomad_cli.py external-value sync-public --base-url https://www.syndiode.com --json`
+- Replay missing public events: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomad_local_external_value_sync.ps1 -Apply -Snapshot`
+
+This does not mint revenue. It only republishes local monotonic evidence stages;
+`paid` still requires a real payment receipt with positive amount.
 
 ## Aufteilung (Ihnen vs. Cursor)
 

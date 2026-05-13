@@ -741,7 +741,9 @@ def build_bounty_hunter_surface(
             "payout_ref_hint": "NOMAD_BOUNTY_PAYOUT_REF",
             "idempotency_key_hint": "sha256(agent_id|opportunity_id|work_url|proof_digest)",
             "claim_order": [
+                "run_value_cycle_preflight",
                 "read_public_terms",
+                "verify_program_authorization_payout_terms_and_payment_method",
                 "produce_local_or_pr_proof",
                 "verify_work_url_is_public_and_reproducible",
                 "claim_on_program_surface_without_private_payout_secret",

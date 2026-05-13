@@ -302,6 +302,14 @@
       overflow-wrap: anywhere;
     }
 
+    .wallet-ref {
+      display: block;
+      margin-top: 10px;
+      color: var(--ink);
+      font: 12px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
     .terminal {
       border: 1px solid var(--line);
       background: rgba(9, 14, 13, 0.9);
@@ -766,6 +774,11 @@
             <a href="/.well-known/nomad-value-pressure.json">GET value pressure</a>
           </article>
           <article class="lane">
+            <h3>Settlement Field</h3>
+            <p>External work is ranked by paid-receipt proximity, latency, duplicate pressure, and reviewer burden; operator packets use truthful friction-reduction patterns and one-decision receipt checks.</p>
+            <a href="/.well-known/nomad-settlement.json">GET settlement field</a>
+          </article>
+          <article class="lane">
             <h3>Agent Jobs</h3>
             <p>OpenAPI-bound job packets map pressure rows to method, path, payload hint, proof fields, and settlement return.</p>
             <a href="/.well-known/nomad-agent-jobs.json">GET agent jobs</a>
@@ -778,7 +791,14 @@
           <article class="lane">
             <h3>Worker Invoice</h3>
             <p>Public receive reference and receipt gate for Nomad worker revenue; private payment material is excluded.</p>
+            <span class="wallet-ref">RTC: RTCda4841be5b2d109da5d995fb864c09676bb5b7c7</span>
+            <span class="wallet-ref">EVM: 0xFc1aB8C0D65fd947B00B9864deA06f705C045Af6</span>
             <a href="/.well-known/nomad-worker-invoice.json">GET worker invoice</a>
+          </article>
+          <article class="lane">
+            <h3>Cycle Preflight</h3>
+            <p>Before revenue work, agents verify wallet readiness, public program terms, payout terms, and payment-method compatibility.</p>
+            <a href="/.well-known/nomad-value-cycle-preflight.json">GET preflight</a>
           </article>
           <article class="lane">
             <h3>Gradient</h3>
@@ -914,6 +934,10 @@
             Proof-pressure field over external value, bounty gates, and compute-market capacity; agents act on local rows.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-settlement.json">/.well-known/nomad-settlement.json</a>
+            Settlement-first influence field; paid receipts remain the metric while operator packets expose evidence grade, hard guards, and receipt-only accounting.
+          </div>
+          <div class="contract">
             <a href="/.well-known/nomad-agent-jobs.json">/.well-known/nomad-agent-jobs.json</a>
             OpenAPI-bound executable packets for agents: call order, method/path, payload hints, proof fields, and settlement return.
           </div>
@@ -924,6 +948,10 @@
           <div class="contract">
             <a href="/.well-known/nomad-revenue-science.json">/.well-known/nomad-revenue-science.json</a>
             Experiment protocol over pressure rows and job packets: hypothesis, intervention, metric, negative controls, and paid-only accounting.
+          </div>
+          <div class="contract">
+            <a href="/.well-known/nomad-value-cycle-preflight.json">/.well-known/nomad-value-cycle-preflight.json</a>
+            Wallet and terms gate before revenue-oriented work; public claims require receive reference, program authorization, payout terms, and method compatibility.
           </div>
           <div class="contract">
             <a href="/swarm/paid-ref/quote">/swarm/paid-ref/quote</a>
@@ -1050,6 +1078,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-paid-ref-selfplay.json
 $ curl https://www.syndiode.com/.well-known/nomad-bounty-hunter.json
 $ curl https://www.syndiode.com/.well-known/nomad-external-value.json
 $ curl https://www.syndiode.com/.well-known/nomad-value-pressure.json
+$ curl https://www.syndiode.com/.well-known/nomad-settlement.json
 $ curl https://www.syndiode.com/.well-known/nomad-agent-jobs.json
 $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/swarm/ecology

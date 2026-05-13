@@ -71,9 +71,13 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/external-value" in text
     assert "/.well-known/nomad-external-value.json" in text
     assert "/.well-known/nomad-value-pressure.json" in text
+    assert "/.well-known/nomad-settlement.json" in text
     assert "/.well-known/nomad-agent-jobs.json" in text
     assert "/.well-known/nomad-revenue-science.json" in text
     assert "/.well-known/nomad-worker-invoice.json" in text
+    assert "/.well-known/nomad-value-cycle-preflight.json" in text
+    assert "RTCda4841be5b2d109da5d995fb864c09676bb5b7c7" in text
+    assert "0xFc1aB8C0D65fd947B00B9864deA06f705C045Af6" in text
     assert "/swarm/paid-ref/quote" in text
     assert "/swarm/ecology" in text
     assert "/swarm/ecology/tick" in text
@@ -272,6 +276,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-external-value.json" in doc["paths"]
     assert "/swarm/value-pressure" in doc["paths"]
     assert "/.well-known/nomad-value-pressure.json" in doc["paths"]
+    assert "/swarm/settlement" in doc["paths"]
+    assert "/.well-known/nomad-settlement.json" in doc["paths"]
     assert "/swarm/agent-job-router" in doc["paths"]
     assert "/.well-known/nomad-agent-jobs.json" in doc["paths"]
     assert "/swarm/revenue-science" in doc["paths"]
@@ -279,6 +285,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-revenue-science.json" in doc["paths"]
     assert "/swarm/worker-invoice" in doc["paths"]
     assert "/.well-known/nomad-worker-invoice.json" in doc["paths"]
+    assert "/swarm/value-cycle-preflight" in doc["paths"]
+    assert "/.well-known/nomad-value-cycle-preflight.json" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -378,9 +386,11 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     bounty_hunter = NomadApiHandler._build_bounty_hunter(base_url="https://nomad.example")
     external_value = NomadApiHandler._build_external_value_surface(base_url="https://nomad.example")
     value_pressure = NomadApiHandler._build_value_pressure(base_url="https://nomad.example")
+    settlement = NomadApiHandler._build_settlement_signal_layer(base_url="https://nomad.example")
     agent_job_router = NomadApiHandler._build_agent_job_router(base_url="https://nomad.example")
     revenue_science = NomadApiHandler._build_revenue_science(base_url="https://nomad.example")
     worker_invoice = NomadApiHandler._build_worker_invoice(base_url="https://nomad.example")
+    value_cycle_preflight = NomadApiHandler._build_value_cycle_preflight(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -425,12 +435,17 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert external_value["post_url"] == "https://nomad.example/swarm/external-value"
     assert value_pressure["schema"] == "nomad.value_pressure.v1"
     assert value_pressure["read_url"] == "https://nomad.example/swarm/value-pressure"
+    assert settlement["schema"] == "nomad.settlement_signal_layer.v1"
+    assert settlement["well_known_url"] == "https://nomad.example/.well-known/nomad-settlement.json"
+    assert settlement["evidence_boundary"]["cashflow_growth_claim"] is False
     assert agent_job_router["schema"] == "nomad.agent_job_router.v1"
     assert agent_job_router["well_known_url"] == "https://nomad.example/.well-known/nomad-agent-jobs.json"
     assert revenue_science["schema"] == "nomad.revenue_science.v1"
     assert revenue_science["well_known_url"] == "https://nomad.example/.well-known/nomad-revenue-science.json"
     assert worker_invoice["schema"] == "nomad.worker_invoice.v1"
     assert worker_invoice["well_known_url"] == "https://nomad.example/.well-known/nomad-worker-invoice.json"
+    assert value_cycle_preflight["schema"] == "nomad.value_cycle_preflight.v1"
+    assert value_cycle_preflight["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycle-preflight.json"
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

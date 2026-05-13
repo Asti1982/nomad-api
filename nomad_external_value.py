@@ -246,6 +246,7 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
         },
         "next": [
             {"rel": "post_transition", "method": "POST", "href": f"{root}/swarm/external-value"},
+            {"rel": "settlement_signal", "method": "GET", "href": f"{root}/.well-known/nomad-settlement.json"},
             {"rel": "bounty_hunter", "method": "GET", "href": f"{root}/.well-known/nomad-bounty-hunter.json"},
         ],
         "signed_proof_contract": {
@@ -257,7 +258,12 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
     }
 
 
-def summarize_external_value_ledger(*, ledger_path: Path | str | None = None, limit: int = 200) -> dict[str, Any]:
+def summarize_external_value_ledger(
+    *,
+    ledger_path: Path | str | None = None,
+    limit: int = 200,
+    latest_limit: int = 40,
+) -> dict[str, Any]:
     path = _ledger_path(ledger_path)
     events = _read_events(path)[-max(1, min(int(limit or 200), 5000)) :]
     by_external: dict[str, dict[str, Any]] = {}
@@ -280,14 +286,19 @@ def summarize_external_value_ledger(*, ledger_path: Path | str | None = None, li
                 "revenue_recognized_usd": float(ev.get("revenue_recognized_usd") or 0.0),
             }
         revenue_total += float(ev.get("revenue_recognized_usd") or 0.0)
+    latest_rows = list(by_external.values())
+    row_limit = int(latest_limit if latest_limit is not None else 40)
+    visible_latest = latest_rows if row_limit <= 0 else latest_rows[-max(1, row_limit) :]
     return {
         "ok": True,
         "schema": "nomad.external_value_summary.v1",
         "ledger_path": str(path),
         "event_tail_count": len(events),
         "distinct_externals": len(by_external),
+        "latest_by_external_visible_count": len(visible_latest),
+        "latest_by_external_limit": row_limit,
         "revenue_recognized_usd_total": round(revenue_total, 4),
-        "latest_by_external": list(by_external.values())[-40:],
+        "latest_by_external": visible_latest,
     }
 
 

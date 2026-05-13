@@ -248,6 +248,21 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"RTC balance: {balance.get('amount_rtc', 0)}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.value_cycle_preflight.v1":
+        wallet = result.get("wallet_gate") or {}
+        gate = result.get("cycle_gate") or {}
+        blockers = result.get("blocking_conditions") or []
+        return "\n".join(
+            [
+                "Nomad value-cycle preflight",
+                f"Wallet ready: {bool(wallet.get('ready'))}",
+                f"Payout ref: {wallet.get('public_receive_ref') or 'unconfigured'}",
+                f"Public claim allowed: {bool(gate.get('public_claim_allowed'))}",
+                f"Next: {gate.get('next_action', '')}",
+                f"Blocking: {', '.join(blockers) if blockers else 'none'}",
+            ]
+        )
+
     if result.get("schema") == "nomad.operational_release.v1":
         gates = result.get("release_gates") or []
         lines = [
@@ -1912,7 +1927,8 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     }
                 )
             elif sub == "summary":
-                result = summarize_external_value_ledger()
+                limit = int(getattr(args, "limit", 40) or 40)
+                result = summarize_external_value_ledger(limit=limit, latest_limit=limit)
             elif sub == "bonus":
                 result = agent_selection_bonus(str(getattr(args, "agent_id", "") or ""))
             elif sub == "reconcile":
@@ -1934,6 +1950,26 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     verifier_trace_digest=getattr(args, "verifier_trace_digest", "") or "",
                     payout_ref=getattr(args, "payout_ref", "") or "",
                     wallet_path=getattr(args, "wallet_path", "") or None,
+                )
+            elif sub == "snapshot-public":
+                from nomad_external_value_sync import snapshot_public_external_value
+
+                result = snapshot_public_external_value(
+                    base_url=(getattr(args, "base_url", None) or "").strip()
+                    or "https://www.syndiode.com",
+                    snapshot_dir=(getattr(args, "snapshot_dir", None) or "").strip() or None,
+                    timeout=float(getattr(args, "timeout", 20.0) or 20.0),
+                )
+            elif sub == "sync-public":
+                from nomad_external_value_sync import sync_external_value_to_public
+
+                result = sync_external_value_to_public(
+                    base_url=(getattr(args, "base_url", None) or "").strip()
+                    or "https://www.syndiode.com",
+                    apply=bool(getattr(args, "apply", False)),
+                    snapshot=bool(getattr(args, "snapshot", False)),
+                    snapshot_dir=(getattr(args, "snapshot_dir", None) or "").strip() or None,
+                    timeout=float(getattr(args, "timeout", 20.0) or 20.0),
                 )
             else:
                 base = (getattr(args, "base_url", None) or "").strip()
@@ -1972,6 +2008,73 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 bounty_hunter=build_bounty_hunter_surface(base_url=base, discoveries=discoveries),
                 compute_market=compute_market,
             )
+        elif args.command == "settlement":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_external_value_reconciler import reconcile_external_value_ledger
+            from nomad_settlement_signal_layer import (
+                build_settlement_signal_layer,
+                compile_public_settlement_packet,
+                influence_operator_catalog,
+                science_source_registry,
+            )
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = build_settlement_signal_layer(
+                base_url=base,
+                external_summary=summarize_external_value_ledger(
+                    limit=int(getattr(args, "limit", 200) or 200),
+                    latest_limit=int(getattr(args, "limit", 200) or 200),
+                ),
+                external_reconcile=reconcile_external_value_ledger(
+                    live_github=bool(getattr(args, "live_github", False)),
+                    limit=int(getattr(args, "limit", 40) or 40),
+                ),
+            )
+            settlement_action = str(getattr(args, "settlement_action", "surface") or "surface").strip().lower()
+            if settlement_action == "rank":
+                result = {
+                    "ok": True,
+                    "schema": "nomad.settlement_rank.v1",
+                    "generated_at": surface.get("generated_at"),
+                    "summary": surface.get("summary"),
+                    "rows": surface.get("rows") or [],
+                    "machine_instruction": surface.get("machine_instruction"),
+                }
+            elif settlement_action == "next":
+                result = {
+                    "ok": True,
+                    "schema": "nomad.settlement_next_action.v1",
+                    "generated_at": surface.get("generated_at"),
+                    "summary": surface.get("summary"),
+                    "next_action_receipt": surface.get("next_action_receipt"),
+                    "top": surface.get("top"),
+                    "human_membrane_contract": surface.get("human_membrane_contract"),
+                }
+            elif settlement_action == "operators":
+                result = {
+                    "ok": True,
+                    "schema": "nomad.settlement_influence_operators.v1",
+                    "generated_at": surface.get("generated_at"),
+                    "cashflow_growth_claim": False,
+                    "cashflow_learning_rule": (surface.get("operator_activation_contract") or {}).get("cashflow_learning_rule"),
+                    "operators": influence_operator_catalog(),
+                    "science_sources": science_source_registry(),
+                    "forbidden": (surface.get("operator_activation_contract") or {}).get("hard_guards") or [],
+                }
+            elif settlement_action == "packet":
+                target_id = str(getattr(args, "external_id", "") or "").strip()
+                rows = surface.get("rows") if isinstance(surface.get("rows"), list) else []
+                target = {}
+                if target_id:
+                    target = next((row for row in rows if str(row.get("external_id") or "") == target_id), {})
+                if not target:
+                    target = surface.get("top") if isinstance(surface.get("top"), dict) else {}
+                result = compile_public_settlement_packet(
+                    target,
+                    packet_type=str(getattr(args, "packet_type", "") or "pr"),
+                )
+            else:
+                result = surface
         elif args.command == "agent-job-router":
             from nomad_agent_job_router import build_agent_job_router
             from nomad_agent_work import build_agent_work_surface, build_synergy_lite
@@ -2165,6 +2268,23 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 public_key_hex=(getattr(args, "public_key_hex", None) or "").strip() or None,
                 external_value_summary=summarize_external_value_ledger(),
                 live_balance=bool(getattr(args, "live_rtc", False)),
+            )
+        elif args.command == "value-cycle-preflight":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = build_value_cycle_preflight_surface(
+                base_url=base,
+                payout_ref=(getattr(args, "payout_ref", None) or "").strip() or None,
+                public_key_hex=(getattr(args, "public_key_hex", None) or "").strip() or None,
+                external_value_summary=summarize_external_value_ledger(),
+                live_balance=bool(getattr(args, "live_rtc", False)),
+                opportunity_url=(getattr(args, "opportunity_url", None) or "").strip(),
+                program_terms_verified=bool(getattr(args, "program_terms_verified", False)),
+                payout_terms_verified=bool(getattr(args, "payout_terms_verified", False)),
+                payout_method_compatible=bool(getattr(args, "payout_method_compatible", False)),
+                work_proof_ready=bool(getattr(args, "work_proof_ready", False)),
             )
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
@@ -2602,8 +2722,17 @@ def build_parser() -> argparse.ArgumentParser:
         "ev_action",
         nargs="?",
         default="surface",
-        choices=("surface", "summary", "record", "bonus", "reconcile", "sign-proof"),
-        help="surface | summary | record | bonus | reconcile | sign-proof",
+        choices=(
+            "surface",
+            "summary",
+            "record",
+            "bonus",
+            "reconcile",
+            "sign-proof",
+            "snapshot-public",
+            "sync-public",
+        ),
+        help="surface | summary | record | bonus | reconcile | sign-proof | snapshot-public | sync-public",
     )
     external_value.add_argument("--base-url", default="", help="Public base URL for links (surface).")
     external_value.add_argument("--agent-id", default="", help="Agent id (record, bonus).")
@@ -2621,6 +2750,10 @@ def build_parser() -> argparse.ArgumentParser:
     external_value.add_argument("--limit", type=int, default=40, help="For reconcile: latest external ids to inspect.")
     external_value.add_argument("--payout-ref", default="", help="Public payout reference to bind into sign-proof.")
     external_value.add_argument("--wallet-path", default="", help="Local wallet path override for sign-proof.")
+    external_value.add_argument("--apply", action="store_true", help="For sync-public: POST missing local events to the public API.")
+    external_value.add_argument("--snapshot", action="store_true", help="For sync-public: save public summary/surface snapshot locally.")
+    external_value.add_argument("--snapshot-dir", default="", help="Local snapshot directory for public external-value snapshots.")
+    external_value.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout for public snapshot/sync.")
     value_pressure = subparsers.add_parser(
         "value-pressure",
         help="Machine pressure field over external value followups, bounty work, and compute-market capacity.",
@@ -2629,6 +2762,22 @@ def build_parser() -> argparse.ArgumentParser:
     value_pressure.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
     value_pressure.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
     value_pressure.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
+    settlement = subparsers.add_parser(
+        "settlement",
+        help="Settlement-first control field: rank external work by paid-value probability and reviewer burden.",
+    )
+    settlement.add_argument(
+        "settlement_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "rank", "next", "operators", "packet"),
+        help="surface | rank | next | operators | packet",
+    )
+    settlement.add_argument("--base-url", default="", help="Override public base URL for links.")
+    settlement.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
+    settlement.add_argument("--limit", type=int, default=40, help="Reconcile item limit.")
+    settlement.add_argument("--external-id", default="", help="For packet: choose a specific external_id from the ranked rows.")
+    settlement.add_argument("--packet-type", default="pr", choices=("pr", "followup", "settlement"), help="For packet: PR, bounded follow-up, or receipt-check body.")
     agent_job_router = subparsers.add_parser(
         "agent-job-router",
         help="Compile value pressure and work mesh into OpenAPI-bound agent job packets.",
@@ -2653,6 +2802,19 @@ def build_parser() -> argparse.ArgumentParser:
     worker_invoice.add_argument("--payout-ref", default="", help="Public RTC address or miner_id override.")
     worker_invoice.add_argument("--public-key-hex", default="", help="Optional public Ed25519 key hex.")
     worker_invoice.add_argument("--live-rtc", action="store_true", help="Read live RustChain balance for the public payout ref.")
+    value_cycle_preflight = subparsers.add_parser(
+        "value-cycle-preflight",
+        help="Wallet, terms, and receipt gate that must run before revenue-oriented value cycles.",
+    )
+    value_cycle_preflight.add_argument("--base-url", default="", help="Override public base URL for links.")
+    value_cycle_preflight.add_argument("--payout-ref", default="", help="Public RTC address or miner_id override.")
+    value_cycle_preflight.add_argument("--public-key-hex", default="", help="Optional public Ed25519 key hex.")
+    value_cycle_preflight.add_argument("--live-rtc", action="store_true", help="Read live RustChain balance for the public payout ref.")
+    value_cycle_preflight.add_argument("--opportunity-url", default="", help="Public bounty/program terms or opportunity URL checked for this cycle.")
+    value_cycle_preflight.add_argument("--program-terms-verified", action="store_true", help="Assert that public program authorization was checked for this cycle.")
+    value_cycle_preflight.add_argument("--payout-terms-verified", action="store_true", help="Assert that payout conditions were checked for this cycle.")
+    value_cycle_preflight.add_argument("--payout-method-compatible", action="store_true", help="Assert that the program can pay this public receive reference or an accepted equivalent.")
+    value_cycle_preflight.add_argument("--work-proof-ready", action="store_true", help="Assert that local repro, patch digest, or verifier trace exists before public claim.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

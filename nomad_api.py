@@ -93,9 +93,11 @@ from nomad_external_value import (
 )
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
+from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
 from nomad_worker_invoice import build_worker_invoice_surface
+from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -468,6 +470,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_settlement_signal_layer(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        return build_settlement_signal_layer(
+            base_url=base_url,
+            external_summary=summarize_external_value_ledger(limit=1000, latest_limit=200),
+            external_reconcile=reconcile_external_value_ledger(live_github=False, limit=40),
+            value_pressure=cls._build_value_pressure(base_url=base_url, swarm_summary=swarm_summary),
+        )
+
+    @classmethod
     def _build_agent_job_router(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         return build_agent_job_router(
@@ -497,6 +508,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_worker_invoice(cls, *, base_url: str) -> dict:
         return build_worker_invoice_surface(
+            base_url=base_url,
+            external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_value_cycle_preflight(cls, *, base_url: str) -> dict:
+        return build_value_cycle_preflight_surface(
             base_url=base_url,
             external_value_summary=summarize_external_value_ledger(),
         )
@@ -958,9 +976,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "swarm_signal_post": f"{b}/swarm/signals",
                     "emission_batch_post": f"{b}/swarm/emission-batch",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
+                    "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
+                    "value_cycle_preflight": f"{b}/.well-known/nomad-value-cycle-preflight.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1235,6 +1255,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/value-pressure", "/.well-known/nomad-value-pressure.json"}:
             self._json_response(self.__class__._build_value_pressure(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
+            self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
+            return
         if parsed.path in {"/swarm/agent-job-router", "/.well-known/nomad-agent-jobs.json"}:
             self._json_response(self.__class__._build_agent_job_router(base_url=self._base_url()))
             return
@@ -1243,6 +1266,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/value-cycle-preflight", "/.well-known/nomad-value-cycle-preflight.json"}:
+            self._json_response(self.__class__._build_value_cycle_preflight(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2317,6 +2343,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/value-cycle-preflight",
+                    "/.well-known/nomad-value-cycle-preflight.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3469,6 +3497,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/value-cycle-preflight",
+                    "/.well-known/nomad-value-cycle-preflight.json",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
