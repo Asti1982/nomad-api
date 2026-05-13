@@ -138,6 +138,24 @@ SCIENCE_SOURCE_REGISTRY: tuple[dict[str, str], ...] = (
         "boundary": "social claims are disabled unless project-specific truth is visible",
     },
     {
+        "id": "little_law_wip_backpressure",
+        "url": "https://doi.org/10.1287/opre.9.3.383",
+        "supports": "work in progress, throughput, and waiting time are coupled in stable service queues",
+        "boundary": "applies as a queue-control prior, not as a cashflow guarantee",
+    },
+    {
+        "id": "kaplan_meier_censoring",
+        "url": "https://www.jstor.org/stable/2281868",
+        "supports": "intermediate unresolved observations should be treated as censored rather than terminal outcomes",
+        "boundary": "Nomad uses this as accounting discipline, not as a predictor of payment certainty",
+    },
+    {
+        "id": "sequential_design_bandits",
+        "url": "https://doi.org/10.1090/S0002-9904-1952-09620-8",
+        "supports": "allocation can adapt from observed rewards while separating exploration and exploitation",
+        "boundary": "only paid receipts are terminal rewards in the external-value loop",
+    },
+    {
         "id": "agentic_security_prs",
         "url": "https://arxiv.org/abs/2601.00477",
         "supports": "agent-generated security work still needs human review and adjustment",
@@ -222,6 +240,130 @@ def _stage_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         if stage in counts:
             counts[stage] += 1
     return counts
+
+
+def _build_bottleneck_control(
+    *,
+    counts: dict[str, int],
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile merge/settlement/paid into a terminal-reward control loop.
+
+    The controller is deliberately machine-native: it does not model rapport or
+    persuasion. It treats maintainers and payors as external service queues and
+    only opens the smallest truthful actuator that can reduce uncertainty.
+    """
+
+    active = counts["found"] + counts["submitted"] + counts["approved"] + counts["merged"]
+    merge_queue = counts["submitted"] + counts["approved"]
+    settlement_queue = counts["merged"]
+    human_queue = merge_queue + settlement_queue
+    paid = counts["paid"]
+    bottleneck_ratio = (human_queue / active) if active else 0.0
+    paid_total = _num(summary.get("revenue_recognized_usd_total"))
+
+    # Until paid throughput exists, keep public-arrival pressure very low. Once
+    # receipts exist, WIP may grow, but only in proportion to observed terminal
+    # settlement rather than submitted/approved volume.
+    dynamic_wip_cap = max(3, min(12, 2 + paid * 3))
+    wip_over_cap = active > dynamic_wip_cap
+    mature_rows = [
+        row
+        for row in rows
+        if str(row.get("current_stage") or "") != "paid"
+        and _num(row.get("age_hours")) >= _num(row.get("minimum_wait_hours_before_followup"))
+    ]
+    receipt_rows = [
+        row
+        for row in mature_rows
+        if str(row.get("current_stage") or "") == "merged"
+        or str(row.get("action") or "") == "await_payment_receipt"
+    ]
+    followup_rows = [
+        row
+        for row in mature_rows
+        if str(row.get("action") or "").startswith("await_")
+        and row not in receipt_rows
+    ]
+
+    if receipt_rows:
+        next_lane = "receipt_discovery"
+        actuator = "compile_one_settlement_packet"
+        public_budget = 0
+    elif followup_rows:
+        next_lane = "merge_or_acceptance_uncertainty_reduction"
+        actuator = "compile_one_followup_packet"
+        public_budget = 0 if wip_over_cap else 1
+    elif wip_over_cap or bottleneck_ratio >= 0.70:
+        next_lane = "arrival_backpressure"
+        actuator = "scout_or_reconcile_only"
+        public_budget = 0
+    else:
+        next_lane = "proof_first_new_work"
+        actuator = "allow_one_new_public_claim_after_preflight"
+        public_budget = 1
+
+    terminal_reward_observed = paid > 0 and paid_total > 0.0
+    return {
+        "schema": "nomad.merge_settlement_paid_bottleneck_control.v1",
+        "problem": "external_value_accumulates_in_submitted_approved_merged_before_paid_receipts",
+        "controller_state": "bottlenecked" if human_queue > 0 and (bottleneck_ratio >= 0.5 or wip_over_cap) else "open_loop",
+        "queue_observation": {
+            "active_nonpaid": active,
+            "merge_queue": merge_queue,
+            "settlement_queue": settlement_queue,
+            "human_queue": human_queue,
+            "paid_count": paid,
+            "paid_total_usd": round(paid_total, 4),
+            "bottleneck_ratio": round(bottleneck_ratio, 4),
+            "dynamic_wip_cap": dynamic_wip_cap,
+            "wip_over_cap": wip_over_cap,
+            "mature_followup_count": len(followup_rows),
+            "mature_receipt_count": len(receipt_rows),
+        },
+        "control_action": {
+            "next_lane": next_lane,
+            "actuator": actuator,
+            "new_public_claim_budget": public_budget,
+            "allowed_new_work_when_budget_zero": "read_only_scouting_local_repro_or_reconcile_only",
+            "single_outward_packet_rule": "at_most_one_truthful_low_burden_packet_per_external_item_after_mature_wait",
+        },
+        "credit_assignment": {
+            "terminal_reward": "paid_receipt_with_positive_amount",
+            "censored_states": ["found", "submitted", "approved", "merged"],
+            "reward_leak_forbidden": ["self_review", "soft_ack", "merge_without_receipt", "approval_without_receipt"],
+            "terminal_reward_observed": terminal_reward_observed,
+        },
+        "nonhuman_solution": {
+            "description": "replace human-like work rhythm with a queue controller: throttle arrivals, collapse evidence packets, and optimize only terminal paid receipts",
+            "human_social_surface": "minimal_truthful_actuator_not_persona",
+            "machine_surface": "state_counts_plus_wait_hazard_plus_terminal_reward",
+            "anti_pattern": "more_open_prs_when_the_paid_queue_is_unserved",
+        },
+        "science_locks": [
+            {
+                "id": "little_law_wip_backpressure",
+                "claim": "higher work-in-progress in a constrained service queue increases waiting time unless throughput rises",
+                "nomad_rule": "new_public_claim_budget_goes_to_zero_when_active_nonpaid_exceeds_dynamic_wip_cap",
+            },
+            {
+                "id": "survival_censoring",
+                "claim": "unpaid intermediate stages are censored observations, not terminal outcomes",
+                "nomad_rule": "submitted_approved_merged_update_wait_hazard_but_do_not_count_as_revenue",
+            },
+            {
+                "id": "bandit_terminal_reward_separation",
+                "claim": "policy weights should be learned from terminal reward, with proxies kept separate",
+                "nomad_rule": "operator_weights_can_increase_only_after_paid_receipts_per_agent_hour_improve",
+            },
+            {
+                "id": "algorithm_aversion_control_knob",
+                "claim": "giving counterparties a real small control knob can reduce resistance to algorithmic work",
+                "nomad_rule": "public_packet_offers_split_narrow_remove_or_retest_without_pressure",
+            },
+        ],
+    }
 
 
 def _followups_by_external(external_reconcile: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -588,6 +730,7 @@ def build_settlement_signal_layer(
     bottleneck_ratio = (human_queue / active) if active else 0.0
     top = rows[0] if rows else {}
     pressure_top = value_pressure.get("top") if isinstance(value_pressure, dict) and isinstance(value_pressure.get("top"), dict) else {}
+    bottleneck_control = _build_bottleneck_control(counts=counts, rows=rows, summary=summary)
     return {
         "ok": True,
         "schema": "nomad.settlement_signal_layer.v1",
@@ -630,6 +773,7 @@ def build_settlement_signal_layer(
             "stage_guard": "paid_only_counts_as_revenue",
             "work_url": top.get("work_url", ""),
         },
+        "bottleneck_control": bottleneck_control,
         "human_membrane_contract": {
             "name": "truthful_influence_settlement_membrane",
             "purpose": "use known maintainer review and payor-attention patterns as lawful truthful evidence-ordering interfaces, without false facts or fake pressure",

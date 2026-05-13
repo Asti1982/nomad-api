@@ -64,6 +64,40 @@ def _reconcile():
     }
 
 
+def _congested_summary():
+    rows = []
+    for number in range(1, 7):
+        rows.append(
+            {
+                "external_id": f"gh_pr:test/congested#{number}",
+                "agent_id": "nomad.test",
+                "stage": "submitted",
+                "work_url": f"https://github.com/test/congested/pull/{number}",
+                "last_generated_at": "2026-05-10T00:00:00+00:00",
+                "nomad_proof_receipt_digest": f"rs{number}",
+                "revenue_recognized_usd": 0.0,
+            }
+        )
+    rows.append(
+        {
+            "external_id": "gh_pr:test/congested#99",
+            "agent_id": "nomad.test",
+            "stage": "merged",
+            "work_url": "https://github.com/test/congested/pull/99",
+            "last_generated_at": "2026-05-10T00:00:00+00:00",
+            "nomad_proof_receipt_digest": "rm99",
+            "revenue_recognized_usd": 0.0,
+        }
+    )
+    return {
+        "schema": "nomad.external_value_summary.v1",
+        "event_tail_count": len(rows),
+        "distinct_externals": len(rows),
+        "revenue_recognized_usd_total": 0.0,
+        "latest_by_external": rows,
+    }
+
+
 def test_settlement_layer_prioritizes_merged_payment_receipt_without_fake_revenue():
     surface = build_settlement_signal_layer(
         base_url="https://nomad.example",
@@ -78,6 +112,7 @@ def test_settlement_layer_prioritizes_merged_payment_receipt_without_fake_revenu
     assert surface["top"]["score_components"]["stage_multiplier"] > 1.0
     assert surface["summary"]["revenue_recognized_usd_total"] == 16.88
     assert surface["next_action_receipt"]["stage_guard"] == "paid_only_counts_as_revenue"
+    assert surface["bottleneck_control"]["credit_assignment"]["terminal_reward"] == "paid_receipt_with_positive_amount"
 
 
 def test_truthful_influence_patterns_are_enabled_without_cashflow_claim():
@@ -159,6 +194,44 @@ def test_influence_operator_catalog_disables_unproven_norm_anchor_by_default():
     assert "false_revenue_count" in by_id["receipt_boundary_lock"]["metric"]
 
 
+def test_bottleneck_control_throttles_arrivals_when_human_queue_exceeds_paid_throughput():
+    surface = build_settlement_signal_layer(
+        external_summary=_congested_summary(),
+        external_reconcile={"schema": "nomad.external_value_reconcile.v1", "followups": []},
+    )
+    control = surface["bottleneck_control"]
+
+    assert control["schema"] == "nomad.merge_settlement_paid_bottleneck_control.v1"
+    assert control["controller_state"] == "bottlenecked"
+    assert control["queue_observation"]["active_nonpaid"] == 7
+    assert control["queue_observation"]["dynamic_wip_cap"] == 3
+    assert control["queue_observation"]["wip_over_cap"] is True
+    assert control["control_action"]["new_public_claim_budget"] == 0
+    assert control["control_action"]["next_lane"] == "receipt_discovery"
+    assert control["credit_assignment"]["censored_states"] == ["found", "submitted", "approved", "merged"]
+    assert "more_open_prs_when_the_paid_queue_is_unserved" in control["nonhuman_solution"]["anti_pattern"]
+
+
+def test_cli_settlement_bottleneck_exposes_terminal_reward_controller(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev.jsonl"))
+    assert append_external_value_event(
+        {
+            "agent_id": "nomad.test",
+            "external_id": "gh_pr:test/repo#4",
+            "stage": "found",
+            "work_url": "",
+            "proof_digest": "",
+            "verifier_trace_digest": "",
+        }
+    )["ok"]
+
+    out = run_once(["settlement", "bottleneck", "--json"])
+
+    assert out["schema"] == "nomad.settlement_bottleneck_control.v1"
+    assert out["bottleneck_control"]["credit_assignment"]["terminal_reward"] == "paid_receipt_with_positive_amount"
+    assert out["bottleneck_control"]["control_action"]["allowed_new_work_when_budget_zero"] == "read_only_scouting_local_repro_or_reconcile_only"
+
+
 def test_cli_settlement_operators_exposes_science_sources():
     out = run_once(["settlement", "operators", "--json"])
 
@@ -166,3 +239,4 @@ def test_cli_settlement_operators_exposes_science_sources():
     assert out["cashflow_growth_claim"] is False
     assert any(item["id"] == "agency_control_knob" for item in out["operators"])
     assert any(item["id"] == "algorithm_aversion_adjustability" for item in out["science_sources"])
+    assert any(item["id"] == "little_law_wip_backpressure" for item in out["science_sources"])

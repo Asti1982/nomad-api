@@ -2047,8 +2047,19 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     "generated_at": surface.get("generated_at"),
                     "summary": surface.get("summary"),
                     "next_action_receipt": surface.get("next_action_receipt"),
+                    "bottleneck_control": surface.get("bottleneck_control"),
                     "top": surface.get("top"),
                     "human_membrane_contract": surface.get("human_membrane_contract"),
+                }
+            elif settlement_action == "bottleneck":
+                result = {
+                    "ok": True,
+                    "schema": "nomad.settlement_bottleneck_control.v1",
+                    "generated_at": surface.get("generated_at"),
+                    "summary": surface.get("summary"),
+                    "bottleneck_control": surface.get("bottleneck_control"),
+                    "top": surface.get("top"),
+                    "operator_activation_contract": surface.get("operator_activation_contract"),
                 }
             elif settlement_action == "operators":
                 result = {
@@ -2770,8 +2781,8 @@ def build_parser() -> argparse.ArgumentParser:
         "settlement_action",
         nargs="?",
         default="surface",
-        choices=("surface", "rank", "next", "operators", "packet"),
-        help="surface | rank | next | operators | packet",
+        choices=("surface", "rank", "next", "bottleneck", "operators", "packet"),
+        help="surface | rank | next | bottleneck | operators | packet",
     )
     settlement.add_argument("--base-url", default="", help="Override public base URL for links.")
     settlement.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
