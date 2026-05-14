@@ -80,7 +80,7 @@ def test_nomad_public_html_page_exists():
     assert "HandyOracle" in text
     assert "v0.1.0-edge-gadget" in text
     assert "/downloads/syndiode_gadgets_manifest.json" in text
-    assert "https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk" in text
+    assert "/downloads/handyoracle-edge-gadget.apk" in text
     assert "Transition Worker" in text
     assert "Fleet Lattice" in text
     assert "Carrying Capacity" in text
@@ -174,7 +174,8 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert gadget["version"] == "0.1.0-edge-gadget"
     assert gadget["human_surface"]["private_by_default"] is True
     assert gadget["nomad_surface"]["sends_private_oracle_text"] is False
-    assert gadget["download"]["apk"].endswith("/v0.1.0-edge-gadget/app-release.apk")
+    assert gadget["download"]["apk"].endswith("/downloads/handyoracle-edge-gadget.apk")
+    assert gadget["download"]["apk_sha256"] == "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9"
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():

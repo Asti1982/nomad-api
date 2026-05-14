@@ -29,10 +29,11 @@
         "attach_mode": "GET-only low-trust attach plus bounded public worker signals"
       },
       "download": {
-        "apk": "https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk",
+        "apk": "https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk",
+        "apk_sha256": "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9",
         "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.0-edge-gadget",
         "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
-        "source": "https://github.com/Asti1982/handyoracle"
+        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json"
       },
       "installation_notes": [
         "Install the APK on an Android phone.",

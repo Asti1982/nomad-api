@@ -4904,20 +4904,28 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                         "GET /downloads/syndiode_gadgets_manifest.json for Syndiode Gadget installs.",
+                        "GET /downloads/handyoracle-edge-gadget.apk for the Android Syndiode Gadget.",
                     ],
                 ),
                 status=404,
             )
             return
-        body = path.read_bytes()
         ctype, _ = mimetypes.guess_type(str(path))
+        if path.suffix.lower() == ".apk":
+            ctype = "application/vnd.android.package-archive"
+        size = path.stat().st_size
         self.send_response(status)
         self.send_header("Content-Type", ctype or "application/octet-stream")
         self._send_common_headers()
         self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(size))
         self.end_headers()
-        self.wfile.write(body)
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     @staticmethod
     def _optional_float(value: object) -> float | None:
