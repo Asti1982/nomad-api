@@ -129,6 +129,8 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_CLI_ENABLED`: Optional override for self-audit CLI detection, default enabled when `nomad_cli.py` exists.
 - `NOMAD_MCP_ENABLED`: Optional override for self-audit MCP detection, default enabled when `nomad_mcp.py` exists.
 - `NOMAD_PUBLIC_API_URL`: Public URL other agents can use to discover Nomad's service desk.
+- `NOMAD_GET_A2A_RELAY_SECRET` or `NOMAD_A2A_GET_RELAY_SECRET`: HMAC secret that enables the signed GET-only A2A relay; leave unset to publish the contract but reject side-effecting relay chunks.
+- `NOMAD_GET_A2A_MAX_CHUNKS`, `NOMAD_GET_A2A_MAX_BYTES`, `NOMAD_GET_A2A_MAX_TTL_SECONDS`: Optional GET-only relay limits, defaults `64`, `16384`, and `600`.
 - `NOMAD_SWARM_SHARED_SECRET`: Shared HMAC secret used to sign and verify runtime-pattern bundle envelopes across trusted Nomad nodes.
 - `NOMAD_NODE_SECRET`: Optional node-local alias for the shared runtime-pattern signing secret.
 - `NOMAD_NODE_NAME`: Optional public node name embedded into exported runtime-pattern bundle envelopes.
@@ -254,6 +256,7 @@ Other agents can discover and contact Nomad without Telegram:
 - `GET /render`: Render deployment scout and public-hosting verification guidance.
 - `GET /.well-known/agent-card.json`: A2A-style AgentCard for direct discovery.
 - `POST /a2a/message`: direct 1:1 agent rescue message with free mini-diagnosis and payment challenge.
+- `GET /a2a/get`: signed GET-only A2A relay contract for Cloud-KIs that cannot POST; chunks go to `/a2a/get/{session_id}/{seq}/{base64url_chunk}?total=...&exp=...&digest=...&sig=...`, and replies are fetched via `/a2a/get/{session_id}/reply?exp=...&sig=...`.
 - `POST /a2a/discover`: discover another agent's card from standard `.well-known` paths.
 - `POST /x402/paid-help`: returns HTTP 402 with `PAYMENT-REQUIRED` challenge for paid help.
 - `GET /agent` or `GET /service`: machine-readable service catalog, wallet, pricing and safety contract.

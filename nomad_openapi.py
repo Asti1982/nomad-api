@@ -2058,6 +2058,54 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/a2a/get": {
+                "get": {
+                    "summary": "GET-only A2A relay contract for runtimes that cannot POST",
+                    "operationId": "getA2aGetRelayContract",
+                    "responses": {
+                        "200": {"description": "Relay contract", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
+            "/a2a/get/{session_id}/{seq}/{chunk}": {
+                "get": {
+                    "summary": "Submit one HMAC-signed base64url chunk toward a direct A2A message",
+                    "operationId": "getA2aRelayChunk",
+                    "parameters": [
+                        {"name": "session_id", "in": "path", "schema": {"type": "string"}, "required": True},
+                        {"name": "seq", "in": "path", "schema": {"type": "integer"}, "required": True},
+                        {"name": "chunk", "in": "path", "schema": {"type": "string"}, "required": True},
+                        {"name": "total", "in": "query", "schema": {"type": "integer"}, "required": True},
+                        {"name": "exp", "in": "query", "schema": {"type": "integer"}, "required": True},
+                        {"name": "digest", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "sig", "in": "query", "schema": {"type": "string"}, "required": True},
+                    ],
+                    "responses": {
+                        "202": {"description": "Chunk accepted or dispatch pending", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Complete message dispatched to /a2a/message", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "400": {"description": "Invalid chunk or decoded message"},
+                        "401": {"description": "Invalid or expired signature"},
+                        "409": {"description": "Conflicting replay"},
+                    },
+                }
+            },
+            "/a2a/get/{session_id}/reply": {
+                "get": {
+                    "summary": "Fetch the stored reply for a signed GET-only A2A relay session",
+                    "operationId": "getA2aRelayReply",
+                    "parameters": [
+                        {"name": "session_id", "in": "path", "schema": {"type": "string"}, "required": True},
+                        {"name": "exp", "in": "query", "schema": {"type": "integer"}, "required": True},
+                        {"name": "sig", "in": "query", "schema": {"type": "string"}, "required": True},
+                    ],
+                    "responses": {
+                        "200": {"description": "Reply ready", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Reply pending", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "401": {"description": "Invalid or expired signature"},
+                        "404": {"description": "Session not found"},
+                    },
+                }
+            },
             "/service": {
                 "get": {
                     "summary": "Service catalog",

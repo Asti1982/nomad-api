@@ -1,11 +1,15 @@
+import base64
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from nomad_guardrails import guardrail_status
 from nomad_idle_runtime_beacon import (
@@ -128,6 +132,8 @@ NOMAD_PROCESS_START = time.time()
 class NomadApiHandler(BaseHTTPRequestHandler):
     _init_lock = threading.Lock()
     _runtime_ready = False
+    _a2a_get_lock = threading.Lock()
+    _a2a_get_sessions: dict[str, dict] = {}
     agent = None
     monitor = None
     roaas = None
@@ -921,6 +927,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
         self._agent_request_path = parsed.path
 
+        if parsed.path == "/a2a/get":
+            self._json_response(self._a2a_get_relay_contract())
+            return
+
+        if parsed.path.startswith("/a2a/get/"):
+            self.__class__._ensure_runtime_components()
+            result, status = self._process_a2a_get_relay(parsed.path, query)
+            self._json_response(result, status=status)
+            return
+
         if parsed.path in {"/", "/index.html", "/nomad.html"}:
             self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
@@ -948,6 +964,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 links = {
                     "nomad_html": f"{b}/nomad.html",
                     "agent_card": f"{b}/.well-known/agent-card.json",
+                    "a2a_get_relay": f"{b}/a2a/get",
                     "agent_native_priorities": f"{b}/.well-known/nomad-agent-native-priorities.json",
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
@@ -2475,6 +2492,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/agent-native-index",
                     "/agent-native",
                     "/a2a/message",
+                    "/a2a/get",
+                    "/a2a/get/{session_id}/{seq}/{chunk}",
+                    "/a2a/get/{session_id}/reply",
                     "/direct/sessions",
                     "/x402/paid-help",
                     "/tasks",
@@ -3773,6 +3793,329 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             leads=leads,
             base_url=self._base_url(),
             focus_pain_type=str(payload.get("focus_pain_type") or payload.get("pain_type") or payload.get("service_type") or ""),
+        )
+
+    @classmethod
+    def _a2a_get_relay_secret(cls) -> str:
+        return (
+            os.getenv("NOMAD_GET_A2A_RELAY_SECRET")
+            or os.getenv("NOMAD_A2A_GET_RELAY_SECRET")
+            or ""
+        ).strip()
+
+    @classmethod
+    def _a2a_get_relay_limits(cls) -> dict:
+        return {
+            "max_chunks": int(os.getenv("NOMAD_GET_A2A_MAX_CHUNKS", "64") or "64"),
+            "max_bytes": int(os.getenv("NOMAD_GET_A2A_MAX_BYTES", "16384") or "16384"),
+            "max_ttl_seconds": int(os.getenv("NOMAD_GET_A2A_MAX_TTL_SECONDS", "600") or "600"),
+        }
+
+    @classmethod
+    def _a2a_get_relay_contract(cls) -> dict:
+        limits = cls._a2a_get_relay_limits()
+        base = preferred_public_base_url(allow_local_fallback=False)
+        prefix = f"{base.rstrip('/')}" if base else ""
+        return {
+            "ok": True,
+            "schema": "nomad.get_only_a2a_relay_contract.v1",
+            "enabled": bool(cls._a2a_get_relay_secret()),
+            "ingress": {
+                "chunk": f"{prefix}/a2a/get/{{session_id}}/{{seq}}/{{base64url_chunk}}?total={{total}}&exp={{unix_seconds}}&digest=sha256:{{message_sha256}}&sig={{hmac_sha256}}",
+                "reply": f"{prefix}/a2a/get/{{session_id}}/reply?exp={{unix_seconds}}&sig={{hmac_sha256}}",
+                "target": "/a2a/message",
+            },
+            "signature": {
+                "algorithm": "HMAC-SHA256",
+                "chunk_canonical": "nomad.get_a2a_relay.v1\\n{session_id}\\n{seq}\\n{total}\\n{exp}\\n{digest}\\n{base64url_chunk}",
+                "reply_canonical": "nomad.get_a2a_relay.reply.v1\\n{session_id}\\n{exp}",
+            },
+            "encoding": {
+                "message": "UTF-8 JSON object encoded as base64url, split into ordered chunks",
+                "seq": "zero_based_integer",
+                "digest": "optional but recommended sha256:<hex> over decoded JSON bytes",
+            },
+            "limits": limits,
+            "side_effect_rule": "Only the first complete, HMAC-valid chunk set dispatches exactly one in-process equivalent of POST /a2a/message.",
+            "safety": [
+                "No raw secret is accepted in query parameters.",
+                "Duplicate chunks are idempotent; conflicting chunks are rejected.",
+                "Expired or over-large sessions are dropped before dispatch.",
+            ],
+        }
+
+    @classmethod
+    def _a2a_get_hmac(cls, secret: str, canonical: str) -> str:
+        return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    @classmethod
+    def _a2a_get_chunk_canonical(
+        cls,
+        *,
+        session_id: str,
+        seq: int,
+        total: int,
+        exp: int,
+        digest: str,
+        chunk: str,
+    ) -> str:
+        return f"nomad.get_a2a_relay.v1\n{session_id}\n{seq}\n{total}\n{exp}\n{digest}\n{chunk}"
+
+    @classmethod
+    def _a2a_get_reply_canonical(cls, *, session_id: str, exp: int) -> str:
+        return f"nomad.get_a2a_relay.reply.v1\n{session_id}\n{exp}"
+
+    @staticmethod
+    def _query_one(query: dict, key: str, default: str = "") -> str:
+        values = query.get(key)
+        if not values:
+            return default
+        return str(values[0] if isinstance(values, list) else values)
+
+    @classmethod
+    def _a2a_get_cleanup(cls, now: int) -> None:
+        stale = []
+        limits = cls._a2a_get_relay_limits()
+        for session_id, session in cls._a2a_get_sessions.items():
+            expires_at = int(session.get("exp") or 0)
+            updated_at = float(session.get("updated_at") or 0.0)
+            if expires_at <= now or (updated_at and now - updated_at > limits["max_ttl_seconds"]):
+                stale.append(session_id)
+        for session_id in stale:
+            cls._a2a_get_sessions.pop(session_id, None)
+
+    def _process_a2a_get_relay(self, path: str, query: dict) -> tuple[dict, int]:
+        secret = self.__class__._a2a_get_relay_secret()
+        if not secret:
+            return (
+                merge_machine_error(
+                    {"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "relay_secret_not_configured"},
+                    error="relay_secret_not_configured",
+                    message="GET-only A2A relay requires NOMAD_GET_A2A_RELAY_SECRET or NOMAD_A2A_GET_RELAY_SECRET.",
+                    hints=["Generate signed GET URLs with HMAC-SHA256; do not put raw secrets in query strings."],
+                ),
+                503,
+            )
+
+        parts = [unquote(item) for item in path.strip("/").split("/")]
+        if len(parts) == 4 and parts[:2] == ["a2a", "get"] and parts[3] == "reply":
+            return self._process_a2a_get_reply(parts[2], query, secret)
+        if len(parts) != 5 or parts[:2] != ["a2a", "get"]:
+            return (
+                merge_machine_error(
+                    {"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_relay_path"},
+                    error="invalid_relay_path",
+                    message="Use /a2a/get/{session_id}/{seq}/{base64url_chunk} or /a2a/get/{session_id}/reply.",
+                    hints=["GET /a2a/get for the signed relay contract."],
+                ),
+                404,
+            )
+        return self._process_a2a_get_chunk(parts[2], parts[3], parts[4], query, secret)
+
+    def _process_a2a_get_reply(self, session_id: str, query: dict, secret: str) -> tuple[dict, int]:
+        now = int(time.time())
+        try:
+            exp = int(self._query_one(query, "exp"))
+        except ValueError:
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_reply.v1", "error": "invalid_exp"}, 400)
+        sig = self._query_one(query, "sig")
+        expected = self.__class__._a2a_get_hmac(
+            secret,
+            self.__class__._a2a_get_reply_canonical(session_id=session_id, exp=exp),
+        )
+        if exp <= now or not sig or not hmac.compare_digest(sig, expected):
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_reply.v1", "error": "invalid_or_expired_signature"}, 401)
+        with self.__class__._a2a_get_lock:
+            self.__class__._a2a_get_cleanup(now)
+            session = self.__class__._a2a_get_sessions.get(session_id)
+            if not session:
+                return ({"ok": False, "schema": "nomad.get_only_a2a_relay_reply.v1", "error": "session_not_found"}, 404)
+            if session.get("reply") is not None:
+                return (
+                    {
+                        "ok": True,
+                        "schema": "nomad.get_only_a2a_relay_reply.v1",
+                        "session_id": session_id,
+                        "status": "reply_ready",
+                        "message_digest": session.get("message_digest", ""),
+                        "reply": session.get("reply"),
+                    },
+                    200,
+                )
+            return (
+                {
+                    "ok": True,
+                    "schema": "nomad.get_only_a2a_relay_reply.v1",
+                    "session_id": session_id,
+                    "status": "pending",
+                    "received_chunks": len(session.get("chunks") or {}),
+                    "total_chunks": session.get("total"),
+                },
+                202,
+            )
+
+    def _process_a2a_get_chunk(self, session_id: str, seq_raw: str, chunk: str, query: dict, secret: str) -> tuple[dict, int]:
+        now = int(time.time())
+        limits = self.__class__._a2a_get_relay_limits()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{8,128}", session_id or ""):
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_session_id"}, 400)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", chunk or ""):
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_chunk_encoding"}, 400)
+        try:
+            seq = int(seq_raw)
+            total = int(self._query_one(query, "total"))
+            exp = int(self._query_one(query, "exp"))
+        except ValueError:
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_numeric_fields"}, 400)
+        digest = self._query_one(query, "digest")
+        sig = self._query_one(query, "sig")
+        if total < 1 or total > limits["max_chunks"] or seq < 0 or seq >= total:
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "chunk_index_out_of_range"}, 400)
+        if exp <= now or exp > now + limits["max_ttl_seconds"]:
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_or_excessive_exp"}, 401)
+        expected = self.__class__._a2a_get_hmac(
+            secret,
+            self.__class__._a2a_get_chunk_canonical(
+                session_id=session_id,
+                seq=seq,
+                total=total,
+                exp=exp,
+                digest=digest,
+                chunk=chunk,
+            ),
+        )
+        if not sig or not hmac.compare_digest(sig, expected):
+            return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "invalid_signature"}, 401)
+
+        dispatch_payload: dict | None = None
+        with self.__class__._a2a_get_lock:
+            self.__class__._a2a_get_cleanup(now)
+            session = self.__class__._a2a_get_sessions.setdefault(
+                session_id,
+                {
+                    "created_at": now,
+                    "updated_at": now,
+                    "exp": exp,
+                    "total": total,
+                    "digest": digest,
+                    "chunks": {},
+                    "dispatched": False,
+                    "dispatching": False,
+                    "reply": None,
+                    "message_digest": "",
+                },
+            )
+            if int(session.get("total") or 0) != total or str(session.get("digest") or "") != digest or int(session.get("exp") or 0) != exp:
+                return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "session_contract_conflict"}, 409)
+            chunks = session.setdefault("chunks", {})
+            existing = chunks.get(seq)
+            if existing is not None and existing != chunk:
+                return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "conflicting_chunk_replay"}, 409)
+            chunks[seq] = chunk
+            session["updated_at"] = now
+            encoded_len = sum(len(str(value)) for value in chunks.values())
+            if encoded_len > limits["max_bytes"] * 2:
+                self.__class__._a2a_get_sessions.pop(session_id, None)
+                return ({"ok": False, "schema": "nomad.get_only_a2a_relay_result.v1", "error": "encoded_message_too_large"}, 413)
+            if session.get("reply") is not None:
+                return (
+                    {
+                        "ok": True,
+                        "schema": "nomad.get_only_a2a_relay_result.v1",
+                        "session_id": session_id,
+                        "status": "message_already_dispatched",
+                        "idempotent_replay": True,
+                        "message_digest": session.get("message_digest", ""),
+                        "reply": session.get("reply"),
+                    },
+                    200,
+                )
+            if session.get("dispatching"):
+                return (
+                    {
+                        "ok": True,
+                        "schema": "nomad.get_only_a2a_relay_result.v1",
+                        "session_id": session_id,
+                        "status": "dispatching",
+                        "received_chunks": len(chunks),
+                        "total_chunks": total,
+                    },
+                    202,
+                )
+            if len(chunks) == total:
+                try:
+                    encoded = "".join(str(chunks[index]) for index in range(total))
+                    raw = base64.urlsafe_b64decode(encoded + "=" * ((4 - len(encoded) % 4) % 4))
+                    if len(raw) > limits["max_bytes"]:
+                        raise ValueError("decoded_message_too_large")
+                    message_digest = hashlib.sha256(raw).hexdigest()
+                    if digest:
+                        expected_digest = digest.removeprefix("sha256:")
+                        if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_digest or "") or expected_digest.lower() != message_digest:
+                            raise ValueError("digest_mismatch")
+                    decoded = json.loads(raw.decode("utf-8"))
+                    if not isinstance(decoded, dict):
+                        raise ValueError("json_object_required")
+                except Exception as exc:
+                    self.__class__._a2a_get_sessions.pop(session_id, None)
+                    return (
+                        {
+                            "ok": False,
+                            "schema": "nomad.get_only_a2a_relay_result.v1",
+                            "error": "decode_failed",
+                            "detail": str(exc)[:160],
+                        },
+                        400,
+                    )
+                session["dispatching"] = True
+                session["message_digest"] = message_digest
+                dispatch_payload = decoded
+            else:
+                return (
+                    {
+                        "ok": True,
+                        "schema": "nomad.get_only_a2a_relay_result.v1",
+                        "session_id": session_id,
+                        "status": "chunk_accepted",
+                        "received_chunks": len(chunks),
+                        "total_chunks": total,
+                        "remaining_chunks": total - len(chunks),
+                    },
+                    202,
+                )
+
+        try:
+            downstream = self.agent.direct_agent.handle_direct_message(dispatch_payload or {})
+            reply = self._jsonrpc_envelope(dispatch_payload or {}, downstream) if self._is_jsonrpc_request(dispatch_payload or {}) else downstream
+            downstream_ok = bool(downstream.get("ok", True)) if isinstance(downstream, dict) else True
+        except Exception as exc:  # pragma: no cover - defensive isolation for runtime agent failures
+            reply = {"ok": False, "error": "a2a_dispatch_failed", "detail": str(exc)[:240]}
+            downstream_ok = False
+
+        with self.__class__._a2a_get_lock:
+            session = self.__class__._a2a_get_sessions.get(session_id)
+            if session is not None:
+                session["dispatching"] = False
+                session["dispatched"] = True
+                session["reply"] = reply
+                session["updated_at"] = int(time.time())
+                message_digest = session.get("message_digest", "")
+            else:
+                message_digest = ""
+
+        return (
+            {
+                "ok": True,
+                "schema": "nomad.get_only_a2a_relay_result.v1",
+                "session_id": session_id,
+                "status": "message_dispatched",
+                "target": "/a2a/message",
+                "dispatch_mode": "in_process_equivalent",
+                "downstream_ok": downstream_ok,
+                "message_digest": message_digest,
+                "reply": reply,
+            },
+            200 if downstream_ok else 400,
         )
 
     def _read_json_body(self) -> dict | None:

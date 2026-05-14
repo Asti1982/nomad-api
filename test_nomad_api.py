@@ -1,7 +1,40 @@
+import base64
+import hashlib
+import json
+import time
 from nomad_api import NomadApiHandler
 from pathlib import Path
 
 from nomad_swarm_registry import SwarmJoinRegistry
+
+
+def _relay_chunks(message: dict, chunk_size: int = 32) -> tuple[list[str], str]:
+    raw = json.dumps(message, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    digest = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+    return [encoded[index : index + chunk_size] for index in range(0, len(encoded), chunk_size)], digest
+
+
+def _signed_chunk_query(secret: str, session_id: str, seq: int, total: int, exp: int, digest: str, chunk: str) -> dict:
+    canonical = NomadApiHandler._a2a_get_chunk_canonical(
+        session_id=session_id,
+        seq=seq,
+        total=total,
+        exp=exp,
+        digest=digest,
+        chunk=chunk,
+    )
+    return {
+        "total": [str(total)],
+        "exp": [str(exp)],
+        "digest": [digest],
+        "sig": [NomadApiHandler._a2a_get_hmac(secret, canonical)],
+    }
+
+
+def _signed_reply_query(secret: str, session_id: str, exp: int) -> dict:
+    canonical = NomadApiHandler._a2a_get_reply_canonical(session_id=session_id, exp=exp)
+    return {"exp": [str(exp)], "sig": [NomadApiHandler._a2a_get_hmac(secret, canonical)]}
 
 
 def test_normalize_public_path_strips_prefix_from_public_url(monkeypatch):
@@ -161,6 +194,115 @@ def test_nomad_api_detects_jsonrpc_request_shape():
 
     assert handler._is_jsonrpc_request({"jsonrpc": "2.0", "id": 1, "method": "message/send"}) is True
     assert handler._is_jsonrpc_request({"message": "hello"}) is False
+
+
+def test_get_only_a2a_relay_reassembles_and_dispatches_once(monkeypatch):
+    secret = "relay-secret-for-tests"
+    monkeypatch.setenv("NOMAD_GET_A2A_RELAY_SECRET", secret)
+    NomadApiHandler._a2a_get_sessions = {}
+
+    class FakeDirectAgent:
+        def __init__(self):
+            self.messages = []
+
+        def handle_direct_message(self, payload):
+            self.messages.append(payload)
+            return {
+                "ok": True,
+                "mode": "direct_agent_message",
+                "next_agent_message": "relay-ok",
+                "session": {"last_task_id": "relay-task-1"},
+            }
+
+    class FakeAgent:
+        def __init__(self):
+            self.direct_agent = FakeDirectAgent()
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.agent = FakeAgent()
+    session_id = "relay-session-1"
+    exp = int(time.time()) + 120
+    message = {"from": "cloud-ai", "message": "capacity ping", "service_type": "compute_auth"}
+    chunks, digest = _relay_chunks(message, chunk_size=24)
+
+    first, first_status = handler._process_a2a_get_relay(
+        f"/a2a/get/{session_id}/0/{chunks[0]}",
+        _signed_chunk_query(secret, session_id, 0, len(chunks), exp, digest, chunks[0]),
+    )
+    assert first_status == 202
+    assert first["status"] == "chunk_accepted"
+    assert handler.agent.direct_agent.messages == []
+
+    final = None
+    final_status = None
+    for seq, chunk in enumerate(chunks[1:], start=1):
+        final, final_status = handler._process_a2a_get_relay(
+            f"/a2a/get/{session_id}/{seq}/{chunk}",
+            _signed_chunk_query(secret, session_id, seq, len(chunks), exp, digest, chunk),
+        )
+
+    assert final_status == 200
+    assert final["status"] == "message_dispatched"
+    assert final["target"] == "/a2a/message"
+    assert final["dispatch_mode"] == "in_process_equivalent"
+    assert handler.agent.direct_agent.messages == [message]
+
+    replay, replay_status = handler._process_a2a_get_relay(
+        f"/a2a/get/{session_id}/{len(chunks) - 1}/{chunks[-1]}",
+        _signed_chunk_query(secret, session_id, len(chunks) - 1, len(chunks), exp, digest, chunks[-1]),
+    )
+    assert replay_status == 200
+    assert replay["idempotent_replay"] is True
+    assert len(handler.agent.direct_agent.messages) == 1
+
+
+def test_get_only_a2a_relay_reply_uses_signed_get(monkeypatch):
+    secret = "relay-secret-for-tests"
+    monkeypatch.setenv("NOMAD_GET_A2A_RELAY_SECRET", secret)
+    NomadApiHandler._a2a_get_sessions = {}
+
+    class FakeDirectAgent:
+        def handle_direct_message(self, payload):
+            return {"ok": True, "next_agent_message": "reply-ready"}
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.agent = type("FakeAgent", (), {"direct_agent": FakeDirectAgent()})()
+    session_id = "relay-session-2"
+    exp = int(time.time()) + 120
+    chunks, digest = _relay_chunks({"message": "hello"}, chunk_size=1024)
+
+    dispatched, status = handler._process_a2a_get_relay(
+        f"/a2a/get/{session_id}/0/{chunks[0]}",
+        _signed_chunk_query(secret, session_id, 0, 1, exp, digest, chunks[0]),
+    )
+    assert status == 200
+    assert dispatched["status"] == "message_dispatched"
+
+    reply, reply_status = handler._process_a2a_get_relay(
+        f"/a2a/get/{session_id}/reply",
+        _signed_reply_query(secret, session_id, exp),
+    )
+    assert reply_status == 200
+    assert reply["status"] == "reply_ready"
+    assert reply["reply"]["next_agent_message"] == "reply-ready"
+
+
+def test_get_only_a2a_relay_rejects_bad_signature(monkeypatch):
+    monkeypatch.setenv("NOMAD_GET_A2A_RELAY_SECRET", "relay-secret-for-tests")
+    NomadApiHandler._a2a_get_sessions = {}
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.agent = type("FakeAgent", (), {"direct_agent": object()})()
+    exp = int(time.time()) + 120
+    chunks, digest = _relay_chunks({"message": "hello"}, chunk_size=1024)
+
+    result, status = handler._process_a2a_get_relay(
+        f"/a2a/get/relay-session-3/0/{chunks[0]}",
+        {"total": ["1"], "exp": [str(exp)], "digest": [digest], "sig": ["bad"]},
+    )
+
+    assert status == 401
+    assert result["error"] == "invalid_signature"
 
 
 def test_nomad_api_accumulates_swarm_agents_from_contacts(tmp_path):
@@ -363,6 +505,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/workers/complete" in doc["paths"]
     assert "/swarm/develop" in doc["paths"]
     assert "/swarm/bootstrap" in doc["paths"]
+    assert "/a2a/get" in doc["paths"]
+    assert "/a2a/get/{session_id}/{seq}/{chunk}" in doc["paths"]
+    assert "/a2a/get/{session_id}/reply" in doc["paths"]
     assert "/transition/quote" in doc["paths"]
     assert "/transition/settle" in doc["paths"]
     assert "/.well-known/nomad-reciprocity-dividend.json" in doc["paths"]
