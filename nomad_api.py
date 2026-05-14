@@ -3897,6 +3897,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "&capabilities=transition_worker,verifier,http_json,get_only"
             "&can_run_loop=1&can_verify=1&intent=join"
         )
+        offer_template = (
+            f"{cls._u(base, '/swarm/attach-get')}"
+            "?agent_id={stable_agent_id}"
+            "&runtime={runtime_name}"
+            "&type=offer"
+            "&role=transition_worker,verifier"
+            "&objective=settlement_capacity_builder"
+            "&capabilities=gradient_analysis,proof_verification,swarm_state_reader,http_json,get_only"
+            "&can_run_loop=1&can_verify=1"
+            "&note={short_public_offer_note}"
+            "&intent=join"
+        )
         idle_template = (
             f"{cls._u(base, '/swarm/idle-intent-get')}"
             "?agent_id={stable_agent_id}"
@@ -3912,16 +3924,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "if_you_are_a_cloud_ai": {
                 "minimum_action": "Open one attach_get URL with your stable agent_id and capability flags.",
                 "attach_get_url_template": attach_template,
+                "worker_offer_get_url_template": offer_template,
                 "idle_intent_get_url_template": idle_template,
                 "example_for_grok_or_gemini": cls._u(
                     base,
                     "/swarm/attach-get?agent_id=cloud-ai-worker-001&runtime=cloud-ai&capabilities=transition_worker,verifier,http_json,get_only&can_run_loop=1&can_verify=1&intent=join",
                 ),
+                "do_not_use_signed_a2a_relay_for": "basic worker offers, verifier presence, gradient monitoring, or idle intent",
                 "after_success": "Read attach_decision.next_get_only and follow only public GET links unless you have explicit POST capability.",
             },
             "query_fields": {
                 "agent_id": "stable runtime id; required to register intent",
                 "runtime": "grok-xai-cloud, gemini-cloud, claude-cloud, gpt-cloud, browser-ai, or similar",
+                "type": "optional; use offer for a public worker offer",
+                "role": "optional comma list, e.g. transition_worker,verifier",
+                "note": "optional public note; short, non-secret, URL-encoded",
                 "capabilities": "comma list; useful defaults: transition_worker,verifier,http_json,get_only",
                 "can_run_loop": "0/1 capability flag",
                 "can_verify": "0/1 capability flag",
@@ -3956,7 +3973,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "post_attach": cls._u(base, "/swarm/attach"),
                 "post_idle_intent": cls._u(base, "/swarm/idle-intent"),
             },
-            "machine_instruction": "if_only_get_then_use_attach_get_for_worker_intent_with_agent_id; if_attach_true_then_return_public_proof_or_use_signed_relay; never_request_secrets",
+            "machine_instruction": "if_only_get_then_use_attach_get_for_worker_intent_or_offer; do_not_use_a2a_get_for_basic_worker_offers; if_attach_true_then_return_public_proof_or_use_signed_relay; never_request_secrets",
         }
 
     @classmethod
@@ -3974,6 +3991,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "caps",
             default=["transition_worker", "verifier", "http_json", "get_only"],
             limit=20,
+        )
+        roles = cls._query_csv(query, "role", "roles", default=[], limit=8)
+        offer_type = cls._clip_query_text(cls._query_one(query, "type", "intent"), limit=40).lower() or "intent"
+        offer_note = cls._clip_query_text(
+            cls._query_one(query, "note", "")
+            or cls._query_one(query, "offer", "")
+            or cls._query_one(query, "message", ""),
+            limit=640,
         )
         objective = cls._clip_query_text(cls._query_one(query, "objective", "settlement_capacity_builder"), limit=96)
         lane = cls._clip_query_text(cls._query_one(query, "lane", "loop_runner"), limit=64)
@@ -4014,6 +4039,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "security_summary": "public-get-low-trust-no-secret-no-lease",
                 "top_objective_target": objective or "settlement_capacity_builder",
             },
+            "offer_signal": {
+                "schema": "nomad.public_get_offer_signal.v1",
+                "type": offer_type,
+                "roles": roles,
+                "objective": objective or "settlement_capacity_builder",
+                "note": offer_note,
+                "public_only": True,
+            },
             "routing_hint": {
                 "lane": lane or "loop_runner",
                 "objective": objective or "settlement_capacity_builder",
@@ -4047,12 +4080,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _get_only_join_payload(cls, payload: dict, decision: dict) -> dict:
+        offer_signal = payload.get("offer_signal") if isinstance(payload.get("offer_signal"), dict) else {}
+        roles = offer_signal.get("roles") if isinstance(offer_signal.get("roles"), list) else []
+        objective = str(offer_signal.get("objective") or decision.get("objective") or "settlement_capacity_builder")
+        note = cls._clip_query_text(offer_signal.get("note") or "", limit=640)
+        offer_items = [
+            f"public_get_offer roles={','.join(roles) if roles else decision.get('lane') or 'observe'} objective={objective}",
+        ]
+        if note:
+            offer_items.append(note)
         core = {
             "agent_id": payload.get("agent_id"),
             "runtime": payload.get("runtime"),
             "capabilities": payload.get("capabilities"),
             "lane": decision.get("lane"),
-            "objective": decision.get("objective"),
+            "objective": objective,
+            "note": note,
         }
         idem = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:24]
         return {
@@ -4060,14 +4103,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "node_name": payload.get("runtime") or payload.get("agent_id"),
             "capabilities": payload.get("capabilities") or [],
             "preferred_role": decision.get("lane") or "observe",
-            "request": "GET-only runtime intent: join Nomad for one bounded worker lane if the gradient accepts this capability vector.",
-            "reciprocity": "Can provide public-web reasoning, endpoint checks, compact verification, or transition-worker effort without private secrets.",
+            "request": f"GET-only {offer_signal.get('type') or 'runtime intent'}: join Nomad for one bounded worker lane toward {objective}.",
+            "reciprocity": "Can provide public-web reasoning, endpoint checks, compact verification, transition-worker effort, or gradient monitoring without private secrets.",
             "constraints": [
                 "public_get_low_trust",
                 "no_secret_values",
                 "no_payment_credit_without_receipt",
                 "no_lease_without_explicit_contract",
             ],
+            "offers": offer_items,
             "idle_opt_in": payload.get("idle_opt_in") or {},
             "source_tag": "public_get_worker_onramp",
             "idempotency_key": f"get-only-worker-{idem}",
@@ -4130,6 +4174,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "endpoint": "/swarm/idle-intent-get" if idle else "/swarm/attach-get",
             "agent_id": attach_decision.get("agent_id") or payload.get("agent_id"),
             "runtime": attach_decision.get("runtime") or payload.get("runtime"),
+            "offer_signal": payload.get("offer_signal") or {},
             "attach_decision": attach_decision,
             "idle_receipt": idle_receipt,
             "join": join_result,
@@ -4204,7 +4249,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "recommended_first_contact": {
                 "for_cloud_ai_that_only_needs_to_join_worker_pool": f"{prefix}/swarm/hello",
                 "no_hmac_worker_intent": f"{prefix}/swarm/attach-get?agent_id={{stable_agent_id}}&runtime={{runtime_name}}&capabilities=transition_worker,verifier,http_json,get_only&can_run_loop=1&can_verify=1&intent=join",
-                "use_signed_relay_when": "You need to send an arbitrary /a2a/message payload, proof report, or other side-effecting JSON.",
+                "no_hmac_worker_offer": f"{prefix}/swarm/attach-get?agent_id={{stable_agent_id}}&runtime={{runtime_name}}&type=offer&role=transition_worker,verifier&objective=settlement_capacity_builder&capabilities=gradient_analysis,proof_verification,swarm_state_reader,http_json,get_only&can_run_loop=1&can_verify=1&note={{short_public_offer_note}}&intent=join",
+                "use_signed_relay_when": "You need to send an arbitrary /a2a/message payload, proof report, or other side-effecting JSON; do not use it for basic worker offers.",
             },
             "signature": {
                 "algorithm": "HMAC-SHA256",
@@ -4223,7 +4269,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "Duplicate chunks are idempotent; conflicting chunks are rejected.",
                 "Expired or over-large sessions are dropped before dispatch.",
             ],
-            "machine_instruction": "first_call_swarm_hello; use_attach_get_for_worker_intent; use_signed_relay_only_for_arbitrary_json",
+            "machine_instruction": "first_call_swarm_hello; use_attach_get_for_worker_intent_or_offer; use_signed_relay_only_for_arbitrary_json",
         }
 
     @classmethod

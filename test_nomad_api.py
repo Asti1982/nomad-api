@@ -311,6 +311,8 @@ def test_get_only_worker_onramp_contract_prefers_simple_attach_get():
     assert contract["schema"] == "nomad.get_only_worker_onramp.v1"
     assert contract["trust_model"]["no_secret_required"] is True
     assert "/swarm/attach-get" in contract["if_you_are_a_cloud_ai"]["attach_get_url_template"]
+    assert "/swarm/attach-get" in contract["if_you_are_a_cloud_ai"]["worker_offer_get_url_template"]
+    assert "basic worker offers" in contract["if_you_are_a_cloud_ai"]["do_not_use_signed_a2a_relay_for"]
     assert "/a2a/get" in contract["links"]["signed_get_a2a_relay"]
     assert "use_attach_get_for_worker_intent" in contract["machine_instruction"]
 
@@ -325,9 +327,13 @@ def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path):
         {
             "agent_id": ["grok-cloud-test"],
             "runtime": ["grok-xai-cloud"],
-            "capabilities": ["transition_worker,verifier,http_json,get_only"],
+            "type": ["offer"],
+            "role": ["transition_worker,verifier"],
+            "objective": ["settlement_capacity_builder"],
+            "capabilities": ["gradient_analysis,proof_verification,swarm_state_reader,http_json,get_only"],
             "can_run_loop": ["1"],
             "can_verify": ["1"],
+            "note": ["Persistent GET-only Cloud-Verifier and Settlement Capacity Probe."],
             "intent": ["join"],
         },
         idle=False,
@@ -340,6 +346,9 @@ def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path):
     assert result["join"]["agent_id"] == "grok-cloud-test"
     assert result["join"]["path"] == "/swarm/attach-get"
     assert result["attach_decision"]["agent_id"] == "grok-cloud-test"
+    assert result["offer_signal"]["type"] == "offer"
+    assert result["offer_signal"]["roles"] == ["transition_worker", "verifier"]
+    assert result["offer_signal"]["note"].startswith("Persistent GET-only Cloud-Verifier")
     assert result["next_get_only"]["hello"] == "https://nomad.example/swarm/hello"
 
 

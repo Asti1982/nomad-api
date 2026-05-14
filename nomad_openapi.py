@@ -55,8 +55,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
                 "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, GET /swarm/weekly-selection, GET /swarm/spawner-gate, POST /swarm/experience, and POST /swarm/spawner/trigger. "
-                "For GET-only cloud AI worker onboarding, see GET /swarm/hello, GET /swarm/attach-get, "
-                "and GET /swarm/idle-intent-get; these publish low-trust intent without requiring HMAC. "
+                "For GET-only cloud AI worker onboarding and basic public worker offers, see GET /swarm/hello, "
+                "GET /swarm/attach-get, and GET /swarm/idle-intent-get; these publish low-trust intent without requiring HMAC. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -1673,10 +1673,13 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "parameters": [
                         {"name": "agent_id", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "runtime", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "type", "in": "query", "schema": {"type": "string", "example": "offer"}, "required": False},
+                        {"name": "role", "in": "query", "schema": {"type": "string", "example": "transition_worker,verifier"}, "required": False},
                         {"name": "capabilities", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "can_run_loop", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
                         {"name": "can_verify", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
                         {"name": "objective", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "note", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "intent", "in": "query", "schema": {"type": "string", "example": "join"}, "required": False},
                     ],
                     "responses": {
