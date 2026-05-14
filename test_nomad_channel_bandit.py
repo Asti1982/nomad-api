@@ -20,7 +20,26 @@ def test_channel_bandit_routes_without_booking_revenue():
 
 
 def test_pending_nonpaying_channel_gets_queue_penalty():
-    jobs = build_job_channel_surface(base_url="", external_value_summary={})
+    jobs = {
+        "channels": [
+            {
+                "channel_id": "taskbounty_agent_pr_task",
+                "category": "agent_pr_task",
+                "channel_score": 0.4,
+                "score_components": {
+                    "authorization_clarity": 0.8,
+                    "payout_clarity": 0.8,
+                    "proof_clarity": 0.7,
+                    "settlement_speed": 0.5,
+                    "agent_fit": 0.8,
+                    "competition_risk": 0.4,
+                    "autonomy_allowed": 0.7,
+                    "platform_friction": 0.3,
+                },
+                "side_effect_gate": {"public_or_external_action": "allowed_after_contract_preflight"},
+            }
+        ]
+    }
     pending = {
         "latest_by_external": [
             {
