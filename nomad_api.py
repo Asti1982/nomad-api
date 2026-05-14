@@ -100,6 +100,7 @@ from nomad_value_pressure import build_value_pressure_surface
 from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
+from nomad_channel_bandit import build_delayed_channel_bandit_surface
 from nomad_job_channels import build_job_channel_surface
 from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
@@ -526,6 +527,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return build_job_channel_surface(
             base_url=base_url,
             external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_channel_bandit(cls, *, base_url: str) -> dict:
+        external_summary = summarize_external_value_ledger()
+        job_channels = build_job_channel_surface(
+            base_url=base_url,
+            external_value_summary=external_summary,
+        )
+        return build_delayed_channel_bandit_surface(
+            base_url=base_url,
+            job_channel_surface=job_channels,
+            external_value_summary=external_summary,
+            signal_layer=build_swarm_signal_layer(base_url=base_url, external_value_summary=external_summary),
+            viability_kernel=cls._build_viability_kernel(base_url=base_url),
         )
 
     @classmethod
@@ -1103,6 +1119,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
+                    "channel_bandit": f"{b}/.well-known/nomad-channel-bandit.json",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
@@ -1413,6 +1430,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/job-channels", "/.well-known/nomad-job-channels.json"}:
             self._json_response(self.__class__._build_job_channels(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/channel-bandit", "/.well-known/nomad-channel-bandit.json"}:
+            self._json_response(self.__class__._build_channel_bandit(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
@@ -2517,6 +2537,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/revenue-science",
                     "/science/revenue-agents",
                     "/.well-known/nomad-revenue-science.json",
+                    "/swarm/channel-bandit",
+                    "/.well-known/nomad-channel-bandit.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
@@ -3709,6 +3731,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/revenue-science",
                     "/science/revenue-agents",
                     "/.well-known/nomad-revenue-science.json",
+                    "/swarm/channel-bandit",
+                    "/.well-known/nomad-channel-bandit.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",

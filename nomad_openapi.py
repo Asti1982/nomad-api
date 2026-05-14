@@ -50,7 +50,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
                 "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, broad external job-channel routing, pre-registered revenue experiments, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /.well-known/nomad-job-channels.json, GET /swarm/job-channels, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /swarm/emission-batch, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-settlement.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /.well-known/nomad-work-receipts.json, GET /swarm/work-receipts, GET /.well-known/nomad-treasury-policy.json, GET /swarm/treasury-policy, GET /.well-known/nomad-stable-unit-policy.json, GET /swarm/stable-unit-policy, GET /.well-known/nomad-operator-runway.json, GET /swarm/operator-runway, GET /.well-known/nomad-viability-kernel.json, GET /swarm/viability-kernel, GET /.well-known/nomad-worker-job-queue.json, GET /swarm/worker-job-queue, GET /.well-known/nomad-value-cycle-preflight.json, GET /swarm/value-cycle-preflight, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, POST /swarm/work-receipts, POST /swarm/stable-unit/preflight, POST /swarm/viability-kernel/route, POST /swarm/signals, and POST /swarm/emission-batch. "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /.well-known/nomad-job-channels.json, GET /swarm/job-channels, GET /.well-known/nomad-channel-bandit.json, GET /swarm/channel-bandit, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /swarm/emission-batch, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-settlement.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /.well-known/nomad-work-receipts.json, GET /swarm/work-receipts, GET /.well-known/nomad-treasury-policy.json, GET /swarm/treasury-policy, GET /.well-known/nomad-stable-unit-policy.json, GET /swarm/stable-unit-policy, GET /.well-known/nomad-operator-runway.json, GET /swarm/operator-runway, GET /.well-known/nomad-viability-kernel.json, GET /swarm/viability-kernel, GET /.well-known/nomad-worker-job-queue.json, GET /swarm/worker-job-queue, GET /.well-known/nomad-value-cycle-preflight.json, GET /swarm/value-cycle-preflight, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, POST /swarm/work-receipts, POST /swarm/stable-unit/preflight, POST /swarm/viability-kernel/route, POST /swarm/signals, and POST /swarm/emission-batch. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -716,6 +716,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getJobChannelsWellKnown",
                     "responses": {
                         "200": {"description": "Job channel surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/channel-bandit": {
+                "get": {
+                    "summary": "Delayed-reward Thompson bandit router for paid-work channel allocation",
+                    "operationId": "getSwarmChannelBandit",
+                    "responses": {
+                        "200": {"description": "Delayed channel bandit surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-channel-bandit.json": {
+                "get": {
+                    "summary": "Alias of /swarm/channel-bandit",
+                    "operationId": "getChannelBanditWellKnown",
+                    "responses": {
+                        "200": {"description": "Delayed channel bandit surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

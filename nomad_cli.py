@@ -1589,6 +1589,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("value-pressure is handled directly in run_once")
     if command == "revenue-science":
         raise ValueError("revenue-science is handled directly in run_once")
+    if command == "channel-bandit":
+        raise ValueError("channel-bandit is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2332,6 +2334,23 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=base,
                 external_value_summary=summarize_external_value_ledger(),
             )
+        elif args.command == "channel-bandit":
+            from nomad_channel_bandit import build_delayed_channel_bandit_surface
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_job_channels import build_job_channel_surface
+            from nomad_swarm_signal_layer import build_swarm_signal_layer
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            external_summary = summarize_external_value_ledger()
+            result = build_delayed_channel_bandit_surface(
+                base_url=base,
+                job_channel_surface=build_job_channel_surface(
+                    base_url=base,
+                    external_value_summary=external_summary,
+                ),
+                external_value_summary=external_summary,
+                signal_layer=build_swarm_signal_layer(base_url=base, external_value_summary=external_summary),
+            )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3047,6 +3066,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rank external paid-work channels by authorization, proof, payout, and settlement friction.",
     )
     job_channels.add_argument("--base-url", default="", help="Override public base URL for links.")
+    channel_bandit = subparsers.add_parser(
+        "channel-bandit",
+        help="Delayed-reward Thompson bandit router for value-cycle channel allocation.",
+    )
+    channel_bandit.add_argument("--base-url", default="", help="Override public base URL for links.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",
