@@ -1593,6 +1593,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("channel-bandit is handled directly in run_once")
     if command == "shadow-lane":
         raise ValueError("shadow-lane is handled directly in run_once")
+    if command == "decoupling-field":
+        raise ValueError("decoupling-field is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2416,6 +2418,53 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         shadow_surface=surface,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "decoupling-field":
+            from nomad_api import NomadApiHandler
+            from nomad_decoupling_field import evaluate_decoupling_merge
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            field = NomadApiHandler._build_decoupling_field(base_url=base)
+            action = str(getattr(args, "decoupling_action", "surface") or "surface")
+            if action == "surface":
+                result = field
+            else:
+                raw_json = str(getattr(args, "merge_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    cells = field.get("context_cells") if isinstance(field.get("context_cells"), list) else []
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-decoupling",
+                        "divergence_score": float(getattr(args, "divergence_score", 0.42) or 0.0),
+                        "cells": [
+                            {
+                                "cell_id": cell.get("cell_id"),
+                                "objective": cell.get("objective"),
+                                "candidate_digest": f"sha256:cli-candidate-{idx}",
+                                "proof_digest": f"sha256:cli-proof-{idx}",
+                                "context_mask_digest": cell.get("context_mask_digest"),
+                                "model_family": f"cli_mask_{idx}",
+                            }
+                            for idx, cell in enumerate(cells[:2], start=1)
+                        ],
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.decoupling_field_cli_error.v1",
+                        "error": "invalid_merge_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "merge_json_not_object",
+                    }
+                else:
+                    result = evaluate_decoupling_merge(
+                        payload,
+                        base_url=base,
+                        decoupling_field=field,
+                        persist=not bool(getattr(args, "dry_run", False)),
+                    )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3159,6 +3208,22 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_lane.add_argument("--risk-score", type=float, default=0.05, help="Claimed risk score for CLI candidate.")
     shadow_lane.add_argument("--fail-local-test", action="store_true", help="Force the CLI local test to fail.")
     shadow_lane.add_argument("--dry-run", action="store_true", help="Evaluate without appending the shadow-lane ledger.")
+    decoupling_field = subparsers.add_parser(
+        "decoupling-field",
+        help="Structural anti-collapse cells: isolate, digest, then merge-gate into the shadow lane.",
+    )
+    decoupling_field.add_argument(
+        "decoupling_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "merge"),
+        help="surface | merge",
+    )
+    decoupling_field.add_argument("--base-url", default="", help="Override public base URL for links.")
+    decoupling_field.add_argument("--merge-json", default="", help="Full JSON merge payload.")
+    decoupling_field.add_argument("--agent-id", default="", help="Agent id for generated CLI merge.")
+    decoupling_field.add_argument("--divergence-score", type=float, default=0.42, help="Synthetic merge divergence score.")
+    decoupling_field.add_argument("--dry-run", action="store_true", help="Evaluate without appending the decoupling ledger.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",
