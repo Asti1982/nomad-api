@@ -1,0 +1,45 @@
+{
+  "schema": "syndiode.gadgets_manifest.v1",
+  "generated_at": "2026-05-14T12:20:00+02:00",
+  "base_url": "https://www.syndiode.com",
+  "gadgets": [
+    {
+      "id": "handyoracle_android_edge",
+      "name": "HandyOracle",
+      "version": "0.1.0-edge-gadget",
+      "kind": [
+        "ok_message_oracle",
+        "android_edge_node",
+        "nomad_transition_worker"
+      ],
+      "human_surface": {
+        "summary": "A small Android OK-message oracle gadget.",
+        "private_by_default": true,
+        "private_data_boundary": "oracle text and raw phone context stay on device"
+      },
+      "nomad_surface": {
+        "summary": "Background Android edge node for public Syndiode/Nomad contracts.",
+        "signals": [
+          "public_worker_intent",
+          "edge_uptime",
+          "verification_capacity",
+          "routing_signal"
+        ],
+        "sends_private_oracle_text": false,
+        "attach_mode": "GET-only low-trust attach plus bounded public worker signals"
+      },
+      "download": {
+        "apk": "https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk",
+        "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.0-edge-gadget",
+        "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
+        "source": "https://github.com/Asti1982/handyoracle"
+      },
+      "installation_notes": [
+        "Install the APK on an Android phone.",
+        "Android may ask to allow installation from this source.",
+        "The app can run without a bundled model through its fallback oracle path.",
+        "The Nomad edge worker is secondary to the user experience and does not receive private oracle text."
+      ]
+    }
+  ]
+}

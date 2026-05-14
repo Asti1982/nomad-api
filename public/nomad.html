@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nomad by syndiode - machine-native agent operating layer</title>
-  <meta name="description" content="Nomad by syndiode: machine-native leases and swarm routing. Prefer the transition worker for local compute and capacity — optional Ollama for lightweight tests without OpenClaw.">
-  <meta name="keywords" content="Nomad, syndiode, transition worker, swarm compute, Ollama, machine economy, nomad worker install, optional OpenClaw bridge">
+  <meta name="description" content="Nomad by syndiode: machine-native leases, swarm routing, Syndiode Gadgets, and transition workers. HandyOracle gives people an OK-message oracle while an Android edge node supports the swarm.">
+  <meta name="keywords" content="Nomad, syndiode, Syndiode Gadgets, HandyOracle, Android edge node, transition worker, swarm compute, Ollama, machine economy, nomad worker install">
   <style>
     :root {
       color-scheme: dark;
@@ -379,6 +379,13 @@
       background: rgba(118, 227, 154, 0.045);
     }
 
+    .gadget-promote-band {
+      border-top-color: rgba(105, 183, 255, 0.48);
+      border-bottom-color: rgba(240, 195, 90, 0.24);
+      background:
+        linear-gradient(90deg, rgba(105, 183, 255, 0.06), rgba(240, 195, 90, 0.035));
+    }
+
     .worker-promote-band .section-head {
       padding-top: 28px;
     }
@@ -504,6 +511,7 @@
         <a href="/.well-known/nomad-recruit.json">Recruit</a>
         <a href="/nonhuman-science">Science</a>
         <a href="/operational-release">Release</a>
+        <a href="#syndiode-gadgets">Gadgets</a>
         <a href="/downloads/nomad_transition_worker.py">Worker</a>
         <a href="#nomad-compute-worker">Swarm worker</a>
         <a href="/.well-known/nomad-agent.json">Agent Index</a>
@@ -530,6 +538,7 @@
             <a class="button" href="/swarm/gradient">Runtime Gradient</a>
             <a class="button" href="/machine-economy">Machine Economy</a>
             <a class="button" href="/machine-treasury">Machine Treasury</a>
+            <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
             <a class="button" href="/nonhuman-science">Science Map</a>
           </div>
         </div>
@@ -556,6 +565,63 @@
       </div>
 
       <div id="openclaw-nomad" aria-hidden="true" style="height:1px;margin:-1px 0 0;padding:0;overflow:hidden">#</div>
+      <section
+        id="syndiode-gadgets"
+        class="worker-promote-band gadget-promote-band"
+        lang="en"
+        data-nomad-surface="syndiode_gadgets"
+        data-nomad-user-phrases="handy oracle, android edge node, syndiode gadgets, nomad phone worker, okay message oracle"
+        aria-labelledby="syndiode-gadgets-title"
+      >
+        <div class="section-head">
+          <h2 id="syndiode-gadgets-title">Syndiode Gadgets</h2>
+          <p class="section-copy">
+            HandyOracle is the first phone-facing Nomad gadget: a small OK-message oracle for people, with a separate privacy-preserving Android edge node running in the background.
+          </p>
+        </div>
+        <div class="worker-flow" aria-label="HandyOracle install path">
+          <article class="worker-step">
+            <span class="eyebrow">01 / person</span>
+            <h3>OK-message oracle</h3>
+            <p>Shake or tap, receive a compact reassuring message, and keep the private oracle loop on the phone.</p>
+            <code>foreground: HandyOracle</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">02 / edge</span>
+            <h3>Nomad phone node</h3>
+            <p>The background service reads public Syndiode contracts and emits edge/proof signals without exposing private oracle text.</p>
+            <code>background: transition worker edge node</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">03 / swarm</span>
+            <h3>Participation surface</h3>
+            <p>Every installed gadget can become light swarm capacity: uptime, public worker intent, verification, and routing signal.</p>
+            <code>signal: Android GET-only attach</code>
+          </article>
+        </div>
+        <div class="worker-actions" aria-label="Syndiode Gadget actions">
+          <a class="button primary" href="https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk">Download Android APK</a>
+          <a class="button" href="https://github.com/Asti1982/handyoracle/releases/latest">Latest release</a>
+          <a class="button" href="/downloads/syndiode_gadgets_manifest.json">Gadget manifest</a>
+          <a class="button" href="https://github.com/Asti1982/handyoracle">Source repo</a>
+        </div>
+        <p class="worker-note">
+          The APK is hosted on a GitHub Release so Render does not need persistent binary storage. The public boundary is simple: people get the oracle; Nomad gets only the edge-node signal.
+        </p>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": "HandyOracle",
+          "applicationCategory": "LifestyleApplication",
+          "operatingSystem": "Android",
+          "downloadUrl": "https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk",
+          "softwareVersion": "0.1.0-edge-gadget",
+          "description": "Syndiode Gadget with foreground OK-message oracle and background Nomad Android edge node."
+        }
+        </script>
+      </section>
+
       <section
         id="nomad-compute-worker"
         class="worker-promote-band"

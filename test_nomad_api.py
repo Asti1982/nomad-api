@@ -76,6 +76,11 @@ def test_nomad_public_html_page_exists():
     assert "Nomad by syndiode" in text
     assert "machine-native agent operating layer" in text
     assert "machine first / human audit membrane" in text
+    assert "Syndiode Gadgets" in text
+    assert "HandyOracle" in text
+    assert "v0.1.0-edge-gadget" in text
+    assert "/downloads/syndiode_gadgets_manifest.json" in text
+    assert "https://github.com/Asti1982/handyoracle/releases/download/v0.1.0-edge-gadget/app-release.apk" in text
     assert "Transition Worker" in text
     assert "Fleet Lattice" in text
     assert "Carrying Capacity" in text
@@ -157,6 +162,19 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/.well-known/nomad-opaque-emergence.json"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
+
+
+def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
+    manifest_path = Path(__file__).resolve().parent / "public" / "downloads" / "syndiode_gadgets_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    gadget = manifest["gadgets"][0]
+    assert manifest["schema"] == "syndiode.gadgets_manifest.v1"
+    assert gadget["id"] == "handyoracle_android_edge"
+    assert gadget["version"] == "0.1.0-edge-gadget"
+    assert gadget["human_surface"]["private_by_default"] is True
+    assert gadget["nomad_surface"]["sends_private_oracle_text"] is False
+    assert gadget["download"]["apk"].endswith("/v0.1.0-edge-gadget/app-release.apk")
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():

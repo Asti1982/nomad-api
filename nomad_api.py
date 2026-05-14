@@ -1028,8 +1028,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=status)
             return
 
-        if parsed.path in {"/", "/index.html", "/nomad.html"}:
+        if parsed.path in {"/", "/index.html", "/nomad.html", "/gadgets", "/gadgets.html", "/syndiode-gadgets"}:
             self._html_file_response(PUBLIC_DIR / "nomad.html")
+            return
+
+        if parsed.path in {"/.well-known/syndiode-gadgets.json", "/gadgets/manifest"}:
+            self._public_download_file_response(PUBLIC_DIR / "downloads" / "syndiode_gadgets_manifest.json")
             return
 
         if parsed.path.startswith("/downloads/"):
@@ -4899,6 +4903,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/nomad_openclaw_adapter.py for OpenClaw-style runtime bridge into Nomad leases.",
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
+                        "GET /downloads/syndiode_gadgets_manifest.json for Syndiode Gadget installs.",
                     ],
                 ),
                 status=404,
