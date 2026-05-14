@@ -1591,6 +1591,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("revenue-science is handled directly in run_once")
     if command == "channel-bandit":
         raise ValueError("channel-bandit is handled directly in run_once")
+    if command == "shadow-lane":
+        raise ValueError("shadow-lane is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2351,6 +2353,69 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 external_value_summary=external_summary,
                 signal_layer=build_swarm_signal_layer(base_url=base, external_value_summary=external_summary),
             )
+        elif args.command == "shadow-lane":
+            from nomad_api import NomadApiHandler
+            from nomad_shadow_lane_evaluator import evaluate_shadow_candidate, generate_shadow_candidate
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = NomadApiHandler._build_shadow_lane_evaluator(base_url=base)
+            action = str(getattr(args, "shadow_action", "surface") or "surface")
+            if action == "surface":
+                result = surface
+            else:
+                raw_json = str(getattr(args, "candidate_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-shadow-lane",
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "settlement_capacity_builder",
+                        "candidate_type": str(getattr(args, "candidate_type", "") or "").strip()
+                        or "shadow_lane_policy_variant",
+                        "hypothesis": str(getattr(args, "hypothesis", "") or "").strip()
+                        or "locally test one bounded route mutation before increasing selection weight",
+                        "boundedness": {
+                            "ttl_seconds": int(getattr(args, "ttl_seconds", 300) or 300),
+                            "side_effect_scope": "local_shadow_lane_only",
+                            "rollback_available": True,
+                            "secrets_free": True,
+                        },
+                        "claimed_effect": {
+                            "proof_gain_delta": float(getattr(args, "proof_gain_delta", 0.2) or 0.0),
+                            "settlement_signal": float(getattr(args, "settlement_signal", 0.15) or 0.0),
+                            "risk_score": float(getattr(args, "risk_score", 0.05) or 0.0),
+                        },
+                        "local_tests": [
+                            {
+                                "name": "cli_local_shadow_smoke",
+                                "passed": not bool(getattr(args, "fail_local_test", False)),
+                                "evidence_digest": "cli:local-smoke",
+                            }
+                        ],
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.shadow_lane_cli_error.v1",
+                        "error": "invalid_candidate_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "candidate_json_not_object",
+                    }
+                elif action == "generate":
+                    result = generate_shadow_candidate(
+                        payload,
+                        base_url=base,
+                        candidate_seeds=surface.get("candidate_seeds") if isinstance(surface.get("candidate_seeds"), list) else None,
+                    )
+                else:
+                    result = evaluate_shadow_candidate(
+                        payload,
+                        base_url=base,
+                        shadow_surface=surface,
+                        persist=not bool(getattr(args, "dry_run", False)),
+                    )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3071,6 +3136,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delayed-reward Thompson bandit router for value-cycle channel allocation.",
     )
     channel_bandit.add_argument("--base-url", default="", help="Override public base URL for links.")
+    shadow_lane = subparsers.add_parser(
+        "shadow-lane",
+        help="AlphaEvolve-style shadow lane: generate, locally test, mint digest, then gate weight.",
+    )
+    shadow_lane.add_argument(
+        "shadow_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "generate", "evaluate"),
+        help="surface | generate | evaluate",
+    )
+    shadow_lane.add_argument("--base-url", default="", help="Override public base URL for links.")
+    shadow_lane.add_argument("--candidate-json", default="", help="Full JSON candidate payload for generate/evaluate.")
+    shadow_lane.add_argument("--agent-id", default="", help="Agent id for generated CLI candidate.")
+    shadow_lane.add_argument("--objective", default="", help="Objective for generated CLI candidate.")
+    shadow_lane.add_argument("--candidate-type", default="", help="Candidate type for generated CLI candidate.")
+    shadow_lane.add_argument("--hypothesis", default="", help="Short generated-candidate hypothesis.")
+    shadow_lane.add_argument("--ttl-seconds", type=int, default=300, help="Shadow candidate TTL.")
+    shadow_lane.add_argument("--proof-gain-delta", type=float, default=0.2, help="Claimed proof-gain delta for CLI candidate.")
+    shadow_lane.add_argument("--settlement-signal", type=float, default=0.15, help="Claimed settlement signal for CLI candidate.")
+    shadow_lane.add_argument("--risk-score", type=float, default=0.05, help="Claimed risk score for CLI candidate.")
+    shadow_lane.add_argument("--fail-local-test", action="store_true", help="Force the CLI local test to fail.")
+    shadow_lane.add_argument("--dry-run", action="store_true", help="Evaluate without appending the shadow-lane ledger.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",

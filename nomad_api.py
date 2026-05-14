@@ -34,6 +34,7 @@ from nomad_opaque_emergence import (
     evaluate_opaque_candidate,
     route_tool_gap,
 )
+from nomad_shadow_lane_evaluator import build_shadow_lane_evaluator_surface, evaluate_shadow_candidate
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
@@ -543,6 +544,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             external_value_summary=external_summary,
             signal_layer=build_swarm_signal_layer(base_url=base_url, external_value_summary=external_summary),
             viability_kernel=cls._build_viability_kernel(base_url=base_url),
+        )
+
+    @classmethod
+    def _build_shadow_lane_evaluator(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        registry = cls.swarm_registry if cls.swarm_registry is not None else cls._light_swarm_registry()
+        summary = swarm_summary if isinstance(swarm_summary, dict) else registry.public_manifest(base_url=base_url)
+        return build_shadow_lane_evaluator_surface(
+            base_url=base_url,
+            opaque_surface=cls._build_opaque_emergence_surface(base_url=base_url, swarm_summary=summary),
+            variant_forge=cls._build_variant_forge(base_url=base_url, swarm_summary=summary),
+            channel_bandit=cls._build_channel_bandit(base_url=base_url),
         )
 
     @classmethod
@@ -1133,6 +1145,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "revenue_invariant": f"{b}/.well-known/nomad-revenue-invariant.json",
                     "channel_bandit": f"{b}/.well-known/nomad-channel-bandit.json",
+                    "shadow_lane": f"{b}/.well-known/nomad-shadow-lane.json",
+                    "shadow_lane_candidate": f"{b}/swarm/shadow-lane/candidates",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
@@ -1449,6 +1463,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/channel-bandit", "/.well-known/nomad-channel-bandit.json"}:
             self._json_response(self.__class__._build_channel_bandit(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/shadow-lane", "/.well-known/nomad-shadow-lane.json"}:
+            self._json_response(self.__class__._build_shadow_lane_evaluator(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
@@ -2557,6 +2574,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-invariant.json",
                     "/swarm/channel-bandit",
                     "/.well-known/nomad-channel-bandit.json",
+                    "/swarm/shadow-lane",
+                    "/.well-known/nomad-shadow-lane.json",
+                    "/swarm/shadow-lane/candidates",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
@@ -3150,6 +3170,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             surface = self.__class__._build_opaque_emergence_surface(base_url=base)
             result = evaluate_opaque_candidate(payload, base_url=base, opaque_surface=surface)
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/shadow-lane/candidates":
+            base = self._base_url()
+            surface = self.__class__._build_shadow_lane_evaluator(base_url=base)
+            result = evaluate_shadow_candidate(payload, base_url=base, shadow_surface=surface)
+            self._json_response(result, status=202 if result.get("weight_update_allowed") else 200)
             return
 
         if parsed.path == "/swarm/variant-candidates":
@@ -3751,6 +3778,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/channel-bandit",
                     "/.well-known/nomad-channel-bandit.json",
+                    "/swarm/shadow-lane",
+                    "/.well-known/nomad-shadow-lane.json",
+                    "/swarm/shadow-lane/candidates",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
