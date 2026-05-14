@@ -109,7 +109,6 @@ from nomad_microtask_exchange_ops import build_microtask_templates, build_microt
 from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
-from workflow import NomadAgent
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -867,6 +866,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         with cls._init_lock:
             if cls._runtime_ready:
                 return
+            from workflow import NomadAgent
+
             agent = NomadAgent()
             cls.agent = agent
             cls.monitor = NomadSystemMonitor(agent=agent)
@@ -875,6 +876,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             cls.agent_development = agent.agent_development
             cls.outbound_tracker = agent.outbound_tracker
             cls._runtime_ready = True
+
+    @classmethod
+    def _light_swarm_registry(cls) -> SwarmJoinRegistry:
+        if cls.swarm_registry is None:
+            cls.swarm_registry = SwarmJoinRegistry()
+        return cls.swarm_registry
 
     @staticmethod
     def _public_url_path_prefix() -> str:
@@ -1078,8 +1085,6 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(build_openapi_document(base_url=self._base_url()))
             return
 
-        self.__class__._ensure_runtime_components()
-
         if parsed.path in {"/swarm/hello", "/ai", "/agent/hello", "/.well-known/nomad-ai.json"}:
             self._json_response(self._get_only_worker_onramp_contract(base_url=self._base_url()))
             return
@@ -1093,6 +1098,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             result, status = self._process_get_only_runtime_attach(query, idle=True)
             self._json_response(result, status=status)
             return
+
+        self.__class__._ensure_runtime_components()
 
         if parsed.path in {"/status", "/top"}:
             self._json_response(self.monitor.snapshot())
@@ -4083,7 +4090,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         payload = self.__class__._get_only_attach_payload(query, idle=idle)
         if idle:
             payload = normalize_idle_intent_payload(payload)
-        worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+        registry = self.__class__._light_swarm_registry()
+        worker_fleet = registry.worker_fleet_contract(base_url=base)
         economy = machine_economy_snapshot()
         release = operational_release_snapshot(base_url=base, worker_fleet=worker_fleet, economy=economy)
         attach_decision = attach_runtime_to_gradient(
@@ -4096,7 +4104,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         join_result: dict = {"ok": True, "registered": False, "reason": "register_false_or_placeholder"}
         if self.__class__._get_only_should_register(query, str(payload.get("agent_id") or "")):
             join_payload = self.__class__._get_only_join_payload(payload, attach_decision)
-            join_result = self.swarm_registry.register_join(
+            join_result = registry.register_join(
                 join_payload,
                 base_url=base,
                 remote_addr=self._remote_addr(),
@@ -4105,12 +4113,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             join_result["registered"] = bool(join_result.get("ok"))
 
         if idle:
-            product = self.__class__._build_machine_product_surface(base_url=base)
             idle_receipt = build_idle_runtime_intent_receipt(
                 payload,
                 base_url=base,
                 attach_decision=attach_decision,
-                machine_product_surface=product,
+                machine_product_surface={},
             )
         else:
             idle_receipt = {}
