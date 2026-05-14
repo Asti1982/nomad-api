@@ -305,6 +305,57 @@ def test_get_only_a2a_relay_rejects_bad_signature(monkeypatch):
     assert result["error"] == "invalid_signature"
 
 
+def test_get_only_worker_onramp_contract_prefers_simple_attach_get():
+    contract = NomadApiHandler._get_only_worker_onramp_contract(base_url="https://nomad.example")
+
+    assert contract["schema"] == "nomad.get_only_worker_onramp.v1"
+    assert contract["trust_model"]["no_secret_required"] is True
+    assert "/swarm/attach-get" in contract["if_you_are_a_cloud_ai"]["attach_get_url_template"]
+    assert "/a2a/get" in contract["links"]["signed_get_a2a_relay"]
+    assert "use_attach_get_for_worker_intent" in contract["machine_instruction"]
+
+
+def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path):
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.swarm_registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+    handler._remote_addr = lambda: "203.0.113.7"  # type: ignore[method-assign]
+
+    result, status = handler._process_get_only_runtime_attach(
+        {
+            "agent_id": ["grok-cloud-test"],
+            "runtime": ["grok-xai-cloud"],
+            "capabilities": ["transition_worker,verifier,http_json,get_only"],
+            "can_run_loop": ["1"],
+            "can_verify": ["1"],
+            "intent": ["join"],
+        },
+        idle=False,
+    )
+
+    assert status == 202
+    assert result["schema"] == "nomad.get_only_runtime_attach_receipt.v1"
+    assert result["trust_tier"] == "public_get_low_trust"
+    assert result["join"]["registered"] is True
+    assert result["join"]["agent_id"] == "grok-cloud-test"
+    assert result["join"]["path"] == "/swarm/attach-get"
+    assert result["attach_decision"]["agent_id"] == "grok-cloud-test"
+    assert result["next_get_only"]["hello"] == "https://nomad.example/swarm/hello"
+
+
+def test_get_only_attach_without_agent_id_returns_contract(tmp_path):
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.swarm_registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+
+    result, status = handler._process_get_only_runtime_attach({}, idle=False)
+
+    assert status == 200
+    assert result["schema"] == "nomad.get_only_worker_onramp.v1"
+    assert result["mode"] == "contract_only"
+    assert "agent_id" in result["message"]
+
+
 def test_nomad_api_accumulates_swarm_agents_from_contacts(tmp_path):
     class FakeContacts:
         def list_contacts(self, limit=100):
@@ -483,6 +534,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/runtime/handoff" in doc["paths"]
     assert "/swarm/gradient" in doc["paths"]
     assert "/.well-known/nomad-gradient.json" in doc["paths"]
+    assert "/swarm/hello" in doc["paths"]
+    assert "/.well-known/nomad-ai.json" in doc["paths"]
+    assert "/swarm/attach-get" in doc["paths"]
     assert "/swarm/attach" in doc["paths"]
     assert "/swarm/emission-batch" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]
@@ -499,6 +553,7 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/join" in doc["paths"]
     assert "/swarm/emergence" in doc["paths"]
     assert "/swarm/trace" in doc["paths"]
+    assert "/swarm/idle-intent-get" in doc["paths"]
     assert "/swarm/idle-intent" in doc["paths"]
     assert "/swarm/workers" in doc["paths"]
     assert "/swarm/workers/lease" in doc["paths"]

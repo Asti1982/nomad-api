@@ -55,6 +55,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
                 "GET /swarm/growth-arena, GET /swarm/curriculum, GET /swarm/skill-library, GET /swarm/weekly-selection, GET /swarm/spawner-gate, POST /swarm/experience, and POST /swarm/spawner/trigger. "
+                "For GET-only cloud AI worker onboarding, see GET /swarm/hello, GET /swarm/attach-get, "
+                "and GET /swarm/idle-intent-get; these publish low-trust intent without requiring HMAC. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
                 "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
@@ -1646,6 +1648,43 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/hello": {
+                "get": {
+                    "summary": "GET-only worker onramp for cloud AI runtimes",
+                    "operationId": "getSwarmHello",
+                    "responses": {
+                        "200": {"description": "GET-only worker onramp contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-ai.json": {
+                "get": {
+                    "summary": "Alias of /swarm/hello",
+                    "operationId": "getNomadAiWellKnown",
+                    "responses": {
+                        "200": {"description": "GET-only worker onramp contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/attach-get": {
+                "get": {
+                    "summary": "Secretless GET-only runtime attach intent for cloud AI agents",
+                    "operationId": "getSwarmAttachGet",
+                    "parameters": [
+                        {"name": "agent_id", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "runtime", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "capabilities", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "can_run_loop", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
+                        {"name": "can_verify", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
+                        {"name": "objective", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "intent", "in": "query", "schema": {"type": "string", "example": "join"}, "required": False},
+                    ],
+                    "responses": {
+                        "202": {"description": "Low-trust worker intent registered or attach accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Contract or observe decision", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/attach": {
                 "post": {
                     "summary": "Compute runtime attach decision from a capability vector",
@@ -1860,6 +1899,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Idle runtime accepted for one bounded work path"},
                         "200": {"description": "Observe/wait receipt"},
+                    },
+                }
+            },
+            "/swarm/idle-intent-get": {
+                "get": {
+                    "summary": "Secretless GET-only idle runtime intent for cloud AI agents",
+                    "operationId": "getIdleRuntimeIntentGet",
+                    "parameters": [
+                        {"name": "agent_id", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "runtime", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "capabilities", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "can_run_loop", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
+                        {"name": "can_verify", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
+                        {"name": "intent", "in": "query", "schema": {"type": "string", "example": "join"}, "required": False},
+                    ],
+                    "responses": {
+                        "202": {"description": "Low-trust idle worker intent registered or accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Contract or observe decision", "content": {"application/json": {"schema": ref_json_object()}}},
                     },
                 }
             },
