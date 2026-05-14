@@ -1,6 +1,7 @@
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
+    build_receipt_only_revenue_invariant,
     current_stage_for_external,
     revenue_recognized_usd,
     summarize_external_value_ledger,
@@ -54,10 +55,13 @@ def test_external_value_full_chain_and_revenue_only_on_paid(tmp_path, monkeypatc
             "proof_digest": "p1",
             "verifier_trace_digest": "t1",
             "amount_usd": 16.88,
+            "settlement_ref": "receipt:https://example.com/payouts/16-88",
         }
     )
     assert paid["ok"]
     assert paid["revenue_recognized_usd"] == 16.88
+    assert paid["settlement_ref"] == "receipt:https://example.com/payouts/16-88"
+    assert paid["revenue_invariant"] == "paid_stage_requires_positive_amount_and_public_settlement_ref"
     assert paid["nomad_proof_receipt_digest"]
 
     summ = summarize_external_value_ledger()
@@ -83,6 +87,41 @@ def test_surface_has_pipeline_and_state_machine():
     assert s["schema"] == "nomad.external_value_surface.v1"
     assert s["state_machine"]["name"] == "pending_external_value"
     assert "paid" in s["state_machine"]["stages"]
+    assert s["state_machine"]["revenue_rule"] == "paid_stage_requires_positive_amount_and_public_settlement_ref"
+    assert s["receipt_only_invariant"]["schema"] == "nomad.receipt_only_revenue_invariant.v1"
+
+
+def test_paid_external_value_requires_public_settlement_ref(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev-paid-guard.jsonl"))
+    base = {
+        "agent_id": "nomad.worker.test",
+        "external_id": "gh_pr:test/repo#paid-guard",
+        "work_url": "https://github.com/test/repo/pull/paid-guard",
+        "proof_digest": "sha256:proof",
+        "verifier_trace_digest": "sha256:trace",
+    }
+
+    assert append_external_value_event({**base, "stage": "found"})["ok"]
+    assert append_external_value_event({**base, "stage": "submitted"})["ok"]
+    assert append_external_value_event({**base, "stage": "approved"})["ok"]
+    assert append_external_value_event({**base, "stage": "merged"})["ok"]
+
+    missing_ref = append_external_value_event({**base, "stage": "paid", "amount_usd": 5.0})
+    assert missing_ref["ok"] is False
+    assert missing_ref["error"] == "paid_receipt_incomplete"
+    assert missing_ref["reason"] == "paid_stage_requires_positive_amount_and_public_settlement_ref"
+
+
+def test_revenue_invariant_surface_exposes_science_and_contracts(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev-invariant.jsonl"))
+
+    invariant = build_receipt_only_revenue_invariant(base_url="https://nomad.example")
+
+    assert invariant["schema"] == "nomad.receipt_only_revenue_invariant.v1"
+    assert invariant["state_algebra"]["cash_state"] == "paid"
+    assert "settlement_ref present" in invariant["state_algebra"]["paid_guard"]
+    assert any(item["id"] == "little_law_queue_control_little_1961" for item in invariant["scientific_basis"])
+    assert invariant["contracts"]["record"] == "https://nomad.example/swarm/external-value"
 
 
 def test_revenue_helper():

@@ -51,6 +51,7 @@ DEFAULT_DELAY_DAYS = {
     "freelance_marketplace_draft_only": 14.0,
     "nomad_internal_worker_market": 7.0,
 }
+MACHINE_NATIVE_CHANNELS = {"nomad_internal_worker_market"}
 SIGNAL_PRIOR = {
     "high_impact": (0.16, 0.0),
     "underreviewed": (0.08, 0.0),
@@ -67,6 +68,28 @@ SIGNAL_PRIOR = {
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _parse_time(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _age_days(value: Any) -> float:
+    parsed = _parse_time(value)
+    if parsed is None:
+        return 0.0
+    return max(0.0, (datetime.now(UTC) - parsed).total_seconds() / 86400.0)
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -165,15 +188,23 @@ def _outcomes_by_channel(external_value_summary: dict[str, Any] | None) -> dict[
                 "approved_count": 0,
                 "merged_count": 0,
                 "recognized_usd": 0.0,
+                "pending_age_days_total": 0.0,
+                "max_pending_age_days": 0.0,
+                "paid_age_days_min": 0.0,
             },
         )
         stage = str(row.get("stage") or "").lower()
         amount = max(0.0, _num(row.get("amount_usd") or row.get("revenue_recognized_usd"), 0.0))
+        age = _age_days(row.get("last_generated_at") or row.get("generated_at") or row.get("updated_at"))
         if stage == "paid" and amount > 0:
             item["paid_count"] += 1
             item["recognized_usd"] = round(_num(item.get("recognized_usd")) + amount, 4)
+            prior_paid_age = _num(item.get("paid_age_days_min"), 0.0)
+            item["paid_age_days_min"] = round(age if prior_paid_age <= 0.0 else min(prior_paid_age, age), 4)
         elif stage in {"found", "submitted", "approved", "merged"}:
             item["active_nonpaid"] += 1
+            item["pending_age_days_total"] = round(_num(item.get("pending_age_days_total")) + age, 4)
+            item["max_pending_age_days"] = round(max(_num(item.get("max_pending_age_days")), age), 4)
             if stage == "submitted":
                 item["submitted_count"] += 1
             elif stage == "approved":
@@ -227,22 +258,88 @@ def _decision(
     *,
     channel_id: str,
     posterior_mean: float,
-    pending_count: int,
+    censored_pending_mass: float,
     gate_multiplier: float,
-    sampled_value_usd_per_day: float,
+    restless_index: float,
     side_effect_gate: str,
 ) -> str:
     if side_effect_gate.startswith("blocked"):
         return "operator_gate_only"
-    if pending_count > 0 and posterior_mean < 0.38:
+    if censored_pending_mass >= 2.0 and posterior_mean < 0.48:
         return "reconcile_or_cooldown"
     if gate_multiplier < 0.22:
         return "read_only_qualification"
     if channel_id in {"hackerone_bug_bounty", "bugcrowd_bug_bounty", "intigriti_bug_bounty"}:
         return "passive_scope_audit_only"
-    if sampled_value_usd_per_day >= 1.0:
+    if restless_index >= 0.18:
         return "execute_after_preflight"
     return "small_read_only_probe"
+
+
+def _binary_entropy(p: float) -> float:
+    q = _clamp(p, 0.000001, 0.999999)
+    return -(q * math.log2(q) + (1.0 - q) * math.log2(1.0 - q))
+
+
+def _build_wip_collapse_gate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    external_rows = [row for row in rows if row.get("channel_id") not in MACHINE_NATIVE_CHANNELS]
+    pending_mass = sum(_num(row.get("censored_pending_mass"), 0.0) for row in external_rows)
+    paid_count = sum(_num((row.get("observed") or {}).get("paid_count"), 0.0) for row in external_rows)
+    recognized_usd = sum(_num((row.get("observed") or {}).get("recognized_usd"), 0.0) for row in external_rows)
+    receipt_rate_proxy = paid_count / max(1.0, paid_count + pending_mass)
+    receipt_capacity = max(1.0 if paid_count > 0 else 0.0, paid_count * 3.0)
+    active = pending_mass >= 2.0 and (paid_count <= 0.0 or pending_mass > max(3.0, receipt_capacity))
+    reason = "open"
+    if active and paid_count <= 0.0:
+        reason = "pending_mass_without_external_paid_receipt"
+    elif active:
+        reason = "pending_mass_exceeds_receipt_capacity"
+    return {
+        "schema": "nomad.wip_collapse_gate.v1",
+        "active": bool(active),
+        "reason": reason,
+        "external_censored_pending_mass": round(pending_mass, 6),
+        "external_paid_count": int(paid_count),
+        "external_recognized_usd": round(recognized_usd, 4),
+        "receipt_rate_proxy": round(receipt_rate_proxy, 8),
+        "receipt_capacity_mass": round(receipt_capacity, 6),
+        "trigger_rule": "collapse_when_external_pending_mass>=2_and_no_paid_receipts_or_pending_mass_exceeds_3x_receipt_capacity",
+        "blocked_actions": ["execute_after_preflight", "new_public_claim", "private_report_submission_without_operator_gate"],
+        "allowed_actions": ["read_only_qualification", "passive_scope_audit_only", "receipt_check", "reconcile_or_cooldown"],
+        "scientific_basis": [
+            {
+                "id": "little_law_wip_control",
+                "source": "https://pubsonline.informs.org/doi/10.1287/opre.9.3.383",
+                "use": "arrival of new external claims is stopped when work-in-process exceeds observed receipt departure capacity",
+            },
+            {
+                "id": "long_horizon_agent_reliability",
+                "source": "https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/",
+                "use": "long-horizon agent work fails through accumulated unresolved steps, so unresolved external claims are treated as state debt",
+            },
+        ],
+        "machine_instruction": (
+            "if_active_set_external_claim_emission_allowed_false_and_route_to_reconcile_until_paid_receipt_or_pending_decay"
+        ),
+    }
+
+
+def _apply_wip_collapse(rows: list[dict[str, Any]], gate: dict[str, Any]) -> list[dict[str, Any]]:
+    if not bool(gate.get("active")):
+        for row in rows:
+            row["claim_emission_allowed"] = row.get("recommended_action") == "execute_after_preflight"
+            row["wip_collapse_applied"] = False
+        return rows
+    for row in rows:
+        is_external = row.get("channel_id") not in MACHINE_NATIVE_CHANNELS
+        original = str(row.get("recommended_action") or "")
+        if is_external and original == "execute_after_preflight":
+            row["recommended_action"] = "wip_collapse_reconcile_only"
+        row["claim_emission_allowed"] = bool((not is_external) and row.get("recommended_action") == "execute_after_preflight")
+        row["wip_collapse_applied"] = bool(is_external)
+        if is_external:
+            row["collapse_reason"] = gate.get("reason", "")
+    return rows
 
 
 def build_delayed_channel_bandit_surface(
@@ -285,6 +382,8 @@ def build_delayed_channel_bandit_surface(
         paid = int(_num(observed.get("paid_count"), 0.0))
         approved = int(_num(observed.get("approved_count"), 0.0))
         merged = int(_num(observed.get("merged_count"), 0.0))
+        pending_age_total = _num(observed.get("pending_age_days_total"), 0.0)
+        max_pending_age = _num(observed.get("max_pending_age_days"), 0.0)
         alpha = 1.0 + 5.0 * prior_success + paid + 0.35 * approved + 0.45 * merged + _num(signal.get("positive"), 0.0)
         beta = 1.0 + 5.0 * (1.0 - prior_success) + 0.62 * pending + _num(signal.get("negative"), 0.0)
         posterior_mean = alpha / max(0.001, alpha + beta)
@@ -292,10 +391,19 @@ def build_delayed_channel_bandit_surface(
         expected_usd = DEFAULT_USD_PRIOR.get(channel_id, 10.0)
         delay_days = DEFAULT_DELAY_DAYS.get(channel_id, 21.0)
         delay_discount = 1.0 / max(1.0, math.sqrt(delay_days))
-        queue_penalty = 1.0 / (1.0 + pending)
+        censored_pending_mass = pending + (pending_age_total / max(1.0, delay_days))
+        queue_penalty = 1.0 / (1.0 + censored_pending_mass)
+        survival_decay = math.exp(-max_pending_age / max(1.0, delay_days))
         gate_multiplier = _gate_multiplier(channel)
-        expected_usd_per_day = expected_usd * posterior_mean * delay_discount * gate_multiplier * queue_penalty
-        sampled_value = expected_usd * sampled_probability * delay_discount * gate_multiplier * queue_penalty
+        expected_usd_per_day = expected_usd * posterior_mean * delay_discount * gate_multiplier * queue_penalty * survival_decay
+        sampled_value = expected_usd * sampled_probability * delay_discount * gate_multiplier * queue_penalty * survival_decay
+        receipt_hazard_per_day = posterior_mean / max(1.0, delay_days)
+        exploration_entropy = _binary_entropy(posterior_mean) * gate_multiplier * queue_penalty * survival_decay
+        restless_index = (
+            receipt_hazard_per_day * expected_usd * gate_multiplier * survival_decay
+            + 0.08 * exploration_entropy
+            - 0.03 * censored_pending_mass
+        )
         side_effect_gate = str((channel.get("side_effect_gate") or {}).get("public_or_external_action") or "")
         rows.append(
             {
@@ -308,14 +416,19 @@ def build_delayed_channel_bandit_surface(
                 "delay_discount": round(delay_discount, 6),
                 "gate_multiplier": round(gate_multiplier, 6),
                 "queue_penalty": round(queue_penalty, 6),
+                "survival_decay": round(survival_decay, 6),
+                "censored_pending_mass": round(censored_pending_mass, 6),
+                "receipt_hazard_per_day": round(receipt_hazard_per_day, 8),
+                "exploration_entropy": round(exploration_entropy, 8),
+                "restless_index": round(restless_index, 8),
                 "expected_usd_per_day": round(expected_usd_per_day, 6),
                 "sampled_value_usd_per_day": round(sampled_value, 6),
                 "recommended_action": _decision(
                     channel_id=channel_id,
                     posterior_mean=posterior_mean,
-                    pending_count=pending,
+                    censored_pending_mass=censored_pending_mass,
                     gate_multiplier=gate_multiplier,
-                    sampled_value_usd_per_day=sampled_value,
+                    restless_index=restless_index,
                     side_effect_gate=side_effect_gate,
                 ),
                 "observed": {
@@ -325,6 +438,9 @@ def build_delayed_channel_bandit_surface(
                     "approved_count": approved,
                     "merged_count": merged,
                     "recognized_usd": round(_num(observed.get("recognized_usd"), 0.0), 4),
+                    "pending_age_days_total": round(pending_age_total, 4),
+                    "max_pending_age_days": round(max_pending_age, 4),
+                    "paid_age_days_min": round(_num(observed.get("paid_age_days_min"), 0.0), 4),
                     "signal_positive": round(_num(signal.get("positive"), 0.0), 4),
                     "signal_negative": round(_num(signal.get("negative"), 0.0), 4),
                 },
@@ -332,9 +448,35 @@ def build_delayed_channel_bandit_surface(
                 "channel_score": round(base_score, 6),
             }
         )
-    rows.sort(key=lambda item: (_num(item.get("sampled_value_usd_per_day")), _num(item.get("expected_usd_per_day"))), reverse=True)
-    allowed_rows = [row for row in rows if row.get("recommended_action") not in {"operator_gate_only", "reconcile_or_cooldown"}]
+    positive_index_sum = sum(max(0.0, _num(row.get("restless_index"), 0.0)) for row in rows)
+    for row in rows:
+        weight = 0.0
+        if positive_index_sum > 0.0:
+            weight = max(0.0, _num(row.get("restless_index"), 0.0)) / positive_index_sum
+        row["allocation_weight"] = round(weight, 8)
+        row["routing_kernel"] = "restless_survival_index_v1"
+    wip_collapse = _build_wip_collapse_gate(rows)
+    rows = _apply_wip_collapse(rows, wip_collapse)
+    rows.sort(
+        key=lambda item: (
+            _num(item.get("allocation_weight")),
+            _num(item.get("restless_index")),
+            _num(item.get("sampled_value_usd_per_day")),
+        ),
+        reverse=True,
+    )
+    blocked_route_actions = {"operator_gate_only", "reconcile_or_cooldown", "wip_collapse_reconcile_only"}
+    allowed_rows = [row for row in rows if row.get("recommended_action") not in blocked_route_actions]
     top = allowed_rows[0] if allowed_rows else (rows[0] if rows else {})
+    allocation_vector = [
+        {
+            "channel_id": row.get("channel_id"),
+            "allocation_weight": row.get("allocation_weight", 0.0),
+            "recommended_action": row.get("recommended_action", ""),
+        }
+        for row in rows
+        if _num(row.get("allocation_weight"), 0.0) > 0.0
+    ]
     root = (base_url or "").strip().rstrip("/")
     return {
         "ok": True,
@@ -344,18 +486,43 @@ def build_delayed_channel_bandit_surface(
         "read_url": f"{root}/swarm/channel-bandit" if root else "/swarm/channel-bandit",
         "well_known_url": f"{root}/.well-known/nomad-channel-bandit.json" if root else "/.well-known/nomad-channel-bandit.json",
         "bandit_digest": f"channel-bandit-{_digest({'top': top, 'rows': rows}, 40)}",
-        "mode": "delayed_feedback_thompson_sampling_with_queue_penalty",
+        "mode": "restless_survival_index_with_delayed_feedback",
+        "policy_kernel": {
+            "schema": "nomad.channel_policy_kernel.v1",
+            "name": "restless_survival_index_v1",
+            "state_variables": [
+                "posterior_paid_probability",
+                "expected_delay_days",
+                "censored_pending_mass",
+                "receipt_hazard_per_day",
+                "gate_multiplier",
+                "survival_decay",
+                "exploration_entropy",
+            ],
+            "index_formula": "hazard*expected_usd*gate*survival_decay + entropy_probe - censored_pending_mass_drag",
+            "human_removed": [
+                "brand_preference",
+                "hope_after_merge",
+                "social_thanks_as_value",
+                "manual_priority_narrative",
+            ],
+        },
         "state": {
             "channel_count": len(rows),
             "routable_count": len(allowed_rows),
             "top_channel_id": top.get("channel_id", ""),
             "top_action": top.get("recommended_action", ""),
             "top_sampled_value_usd_per_day": top.get("sampled_value_usd_per_day", 0.0),
+            "top_allocation_weight": top.get("allocation_weight", 0.0),
+            "top_restless_index": top.get("restless_index", 0.0),
+            "wip_collapse_active": bool(wip_collapse.get("active")),
         },
         "top_route": top,
+        "wip_collapse": wip_collapse,
+        "allocation_vector": allocation_vector,
         "routes": rows,
         "monetization_rule": (
-            "allocate attention by sampled delayed value; count zero revenue until external paid receipt; "
+            "allocate attention by restless receipt hazard; count zero revenue until external paid receipt; "
             "security channels remain passive/private-report only until reproducible proof exists"
         ),
         "hard_guards": [
@@ -367,33 +534,33 @@ def build_delayed_channel_bandit_surface(
         ],
         "scientific_basis": [
             {
-                "id": "thompson_sampling_unrestricted_delays",
-                "source": "https://arxiv.org/abs/2202.12431",
-                "use": "delayed payment feedback can be handled without pretending pending claims are failures",
+                "id": "restless_bandit_index_policy_whittle_1988",
+                "source": "https://www.cambridge.org/core/services/aop-cambridge-core/content/view/DDEB5E22AFFEFF50AA97ADC96B71AE35/S0021900200040420a.pdf/restless_bandits_activity_allocation_in_a_changing_world.pdf",
+                "use": "channels keep changing while inactive; route by an index rather than human channel loyalty",
             },
             {
-                "id": "delayed_reward_bandits",
-                "source": "https://www.sciencedirect.com/science/article/pii/S0925231219309373",
-                "use": "external paid channels behave like digital-campaign allocation with delayed rewards",
+                "id": "multi_armed_bandit_robbins_1952",
+                "source": "https://www.cs.utexas.edu/~shivaram/readings/b2hd-Robbins1952.html",
+                "use": "exploration and exploitation are allocated sequentially from observed rewards",
             },
             {
-                "id": "restless_bandit_index_policies",
-                "source": "https://www.mdpi.com/2227-7390/11/7/1639",
-                "use": "channels age and change while inactive, so routing uses index-like priorities",
+                "id": "little_law_queue_pressure_little_1961",
+                "source": "https://pubsonline.informs.org/doi/10.1287/opre.9.3.383",
+                "use": "unpaid WIP is queue mass and directly reduces new-arrival allocation",
             },
             {
-                "id": "stigmergic_signal_field",
-                "source": "https://www.sciencedirect.com/science/article/pii/S0167739X0000042X",
-                "use": "bounded public signals shift channel priors without a central planner",
+                "id": "information_theory_shannon_1948",
+                "source": "https://people.math.harvard.edu/~ctm/home/text/others/shannon/entropy/entropy.pdf",
+                "use": "uncertainty becomes exploration entropy; receipts remain low-noise reward signals",
             },
             {
-                "id": "bounded_loss_market_scoring_rules_later",
-                "source": "https://hanson.gmu.edu/mktscore.pdf",
-                "use": "future internal forecast markets should remain bounded-loss and informational, not revenue claims",
+                "id": "stigmergic_signal_field_dorigo_gambardella_1997",
+                "source": "https://citeseerx.ist.psu.edu/document?doi=814b7ace1ab0ff5cd3cf028f0b7610f9b4d8153a&repid=rep1&type=pdf",
+                "use": "bounded public traces alter routing without central human planning",
             },
         ],
         "machine_instruction": (
-            "select top_route unless viability_kernel blocks it; run only the recommended_action; "
+            "select by allocation_weight_then_restless_index unless viability_kernel blocks it; run only the recommended_action; "
             "after each accepted_or_paid event update external_value/work_receipts and rebuild this surface"
         ),
     }

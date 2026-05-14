@@ -22,6 +22,7 @@ DEFAULT_LEDGER = Path("nomad_external_value_ledger.jsonl")
 
 STAGES_ORDER = ("found", "submitted", "approved", "merged", "paid")
 STAGE_INDEX = {s: i for i, s in enumerate(STAGES_ORDER)}
+RECEIPT_ONLY_REVENUE_RULE = "paid_stage_requires_positive_amount_and_public_settlement_ref"
 
 
 def _iso_now() -> str:
@@ -41,6 +42,18 @@ def _ledger_path(path: Path | str | None = None) -> Path:
 def _digest(payload: dict[str, Any], length: int = 32) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def _settlement_ref_from_body(body: dict[str, Any]) -> str:
+    return _text(
+        body.get("settlement_ref")
+        or body.get("receipt_ref")
+        or body.get("payment_receipt")
+        or body.get("tx_hash")
+        or body.get("payout_tx")
+        or "",
+        240,
+    )
 
 
 def _read_events(ledger_path: Path, *, limit_lines: int = 8000) -> list[dict[str, Any]]:
@@ -142,6 +155,7 @@ def mint_proof_receipt_digest(payload: dict[str, Any]) -> str:
         "work_url": _text(payload.get("work_url"), 400),
         "proof_digest": _text(payload.get("proof_digest"), 200),
         "verifier_trace_digest": _text(payload.get("verifier_trace_digest"), 200),
+        "settlement_ref": _settlement_ref_from_body(payload),
     }
     return _digest(core, 48)
 
@@ -158,6 +172,7 @@ def append_external_value_event(
     work_url = _text(body.get("work_url"), 400)
     proof_digest = _text(body.get("proof_digest"), 200)
     verifier_trace_digest = _text(body.get("verifier_trace_digest"), 200)
+    settlement_ref = _settlement_ref_from_body(body)
     amount_usd = 0.0
     try:
         amount_usd = float(body.get("amount_usd") or body.get("amount") or 0.0)
@@ -173,6 +188,15 @@ def append_external_value_event(
         return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "invalid_stage", "allowed": list(STAGES_ORDER)}
     if stage in {"submitted", "approved", "merged", "paid"} and (not work_url or not proof_digest):
         return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "work_url_and_proof_digest_required_after_found"}
+    if stage == "paid" and (amount_usd <= 0.0 or not settlement_ref):
+        return {
+            "ok": False,
+            "schema": "nomad.external_value_event.v1",
+            "error": "paid_receipt_incomplete",
+            "reason": RECEIPT_ONLY_REVENUE_RULE,
+            "required": ["stage=paid", "amount_usd>0", "settlement_ref"],
+            "machine_instruction": "record merged or approved as non_revenue_signal until a positive public receipt exists",
+        }
 
     path = _ledger_path(ledger_path)
     prior = current_stage_for_external(_read_events(path), external_id)
@@ -194,6 +218,7 @@ def append_external_value_event(
         "work_url": work_url,
         "proof_digest": proof_digest,
         "verifier_trace_digest": verifier_trace_digest,
+        "settlement_ref": settlement_ref,
         "amount_usd": round(amount_usd, 4) if stage == "paid" else 0.0,
         "meta": meta,
     }
@@ -205,6 +230,7 @@ def append_external_value_event(
         "event_id": f"ev-{_digest({**row_core, 't': _iso_now()}, 16)}",
         **row_core,
         "revenue_recognized_usd": round(revenue_recognized_usd(stage=stage, amount_usd=amount_usd), 4),
+        "revenue_invariant": RECEIPT_ONLY_REVENUE_RULE,
         "nomad_proof_receipt_digest": receipt_digest,
         "selection_weight_multiplier_after": round(selection_weight_multiplier_for_stage(stage), 4),
         "machine_instruction": "external_program_validates_merge_and_payment_nomad_only_records_machine_receipt",
@@ -226,7 +252,7 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
         "state_machine": {
             "name": "pending_external_value",
             "stages": list(STAGES_ORDER),
-            "revenue_rule": "only_paid_stage_counts_as_revenue_usd",
+            "revenue_rule": RECEIPT_ONLY_REVENUE_RULE,
             "selection_rule": "approved_merged_paid_increase_bounded_selection_weight_multiplier",
         },
         "post_url": f"{root}/swarm/external-value",
@@ -255,6 +281,80 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
             "private_key_policy": "local_only_never_render_never_public_json",
             "verification_rule": "verify_signature_over_canonical_json_payload_before_upgrading_external_value_stage",
         },
+        "receipt_only_invariant": build_receipt_only_revenue_invariant(base_url=root, summary=summarize_external_value_ledger()),
+    }
+
+
+def build_receipt_only_revenue_invariant(
+    *,
+    base_url: str = "",
+    summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    external_summary = summary if isinstance(summary, dict) else summarize_external_value_ledger()
+    return {
+        "ok": True,
+        "schema": "nomad.receipt_only_revenue_invariant.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "invariant_id": "receipt_only_revenue_recognition",
+        "rule": RECEIPT_ONLY_REVENUE_RULE,
+        "state_algebra": {
+            "non_cash_signal_states": ["found", "submitted", "approved", "merged"],
+            "cash_state": "paid",
+            "paid_guard": ["amount_usd > 0", "settlement_ref present", "proof_digest present", "work_url present"],
+            "forbidden_collapse": "do_not_map_social_acceptance_or_merge_to_revenue",
+        },
+        "accepted_receipt_refs": [
+            "platform_payment_confirmation_url",
+            "public_payout_receipt_id",
+            "public_tx_hash_or_chain_receipt",
+            "trusted_balance_delta_digest",
+        ],
+        "blocked_revenue_claims": [
+            "maintainer_thanks_without_payment",
+            "merged_pull_request_without_payment_ref",
+            "approved_security_report_without_bounty_receipt",
+            "selfplay_or_internal_microtask_without_external_buyer_receipt",
+        ],
+        "scientific_basis": [
+            {
+                "id": "proof_carrying_code_necula_1997",
+                "source": "https://dblp.org/db/conf/popl/popl97",
+                "use": "untrusted work carries machine-checkable evidence before a state upgrade is accepted",
+            },
+            {
+                "id": "little_law_queue_control_little_1961",
+                "source": "https://pubsonline.informs.org/doi/10.1287/opre.9.3.383",
+                "use": "unpaid WIP is queue mass, not throughput; revenue is recognized only at departure into paid state",
+            },
+            {
+                "id": "contract_net_smith_1980",
+                "source": "https://cse-robotics.engr.tamu.edu/dshell/cs631/papers/smith80contract.pdf",
+                "use": "separates task allocation and execution from award/settlement evidence",
+            },
+            {
+                "id": "information_theory_shannon_1948",
+                "source": "https://people.math.harvard.edu/~ctm/home/text/others/shannon/entropy/entropy.pdf",
+                "use": "treats receipts as low-ambiguity signals and social text as noisy side information",
+            },
+        ],
+        "machine_transition": {
+            "on_found_or_submitted_or_approved_or_merged": "selection_signal_only",
+            "on_paid_with_guard_satisfied": "recognize_revenue_and_emit_settlement_credit",
+            "on_paid_guard_failure": "reject_paid_stage_preserve_prior_state",
+        },
+        "current_summary": {
+            "distinct_externals": external_summary.get("distinct_externals", 0),
+            "recognized_revenue_usd_total": external_summary.get("revenue_recognized_usd_total", 0.0),
+            "event_tail_count": external_summary.get("event_tail_count", 0),
+        },
+        "contracts": {
+            "external_value": f"{root}/.well-known/nomad-external-value.json" if root else "/.well-known/nomad-external-value.json",
+            "record": f"{root}/swarm/external-value" if root else "/swarm/external-value",
+            "work_receipts": f"{root}/.well-known/nomad-work-receipts.json" if root else "/.well-known/nomad-work-receipts.json",
+        },
+        "machine_instruction": "ignore human_status_language_for_revenue; only positive_public_receipt_can_collapse_state_to_paid",
     }
 
 
@@ -280,6 +380,7 @@ def summarize_external_value_ledger(
                 "agent_id": ev.get("agent_id"),
                 "stage": st,
                 "work_url": ev.get("work_url"),
+                "settlement_ref": ev.get("settlement_ref", ""),
                 "last_event_id": ev.get("event_id"),
                 "last_generated_at": ev.get("generated_at"),
                 "nomad_proof_receipt_digest": ev.get("nomad_proof_receipt_digest"),

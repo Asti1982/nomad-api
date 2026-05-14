@@ -93,6 +93,7 @@ from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
+    build_receipt_only_revenue_invariant,
     summarize_external_value_ledger,
 )
 from nomad_external_value_reconciler import reconcile_external_value_ledger
@@ -875,6 +876,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_revenue_invariant(cls, *, base_url: str) -> dict:
+        return build_receipt_only_revenue_invariant(
+            base_url=base_url,
+            summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
     def _build_machine_field(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -1123,6 +1131,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
+                    "revenue_invariant": f"{b}/.well-known/nomad-revenue-invariant.json",
                     "channel_bandit": f"{b}/.well-known/nomad-channel-bandit.json",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
@@ -1431,6 +1440,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/revenue-science", "/science/revenue-agents", "/.well-known/nomad-revenue-science.json"}:
             self._json_response(self.__class__._build_revenue_science(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/revenue-invariant", "/.well-known/nomad-revenue-invariant.json"}:
+            self._json_response(self.__class__._build_revenue_invariant(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/job-channels", "/.well-known/nomad-job-channels.json"}:
             self._json_response(self.__class__._build_job_channels(base_url=self._base_url()))
@@ -2541,6 +2553,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/revenue-science",
                     "/science/revenue-agents",
                     "/.well-known/nomad-revenue-science.json",
+                    "/swarm/revenue-invariant",
+                    "/.well-known/nomad-revenue-invariant.json",
                     "/swarm/channel-bandit",
                     "/.well-known/nomad-channel-bandit.json",
                     "/swarm/worker-invoice",

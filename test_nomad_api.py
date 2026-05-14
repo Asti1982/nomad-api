@@ -114,6 +114,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-agent-jobs.json" in text
     assert "/.well-known/nomad-worker-job-queue.json" in text
     assert "/.well-known/nomad-revenue-science.json" in text
+    assert "/.well-known/nomad-revenue-invariant.json" in text
     assert "/.well-known/nomad-worker-invoice.json" in text
     assert "/.well-known/nomad-value-cycle-preflight.json" in text
     assert "RTCda4841be5b2d109da5d995fb864c09676bb5b7c7" in text
