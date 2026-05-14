@@ -1589,6 +1589,12 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("value-pressure is handled directly in run_once")
     if command == "revenue-science":
         raise ValueError("revenue-science is handled directly in run_once")
+    if command == "taskbounty-scout":
+        raise ValueError("taskbounty-scout is handled directly in run_once")
+    if command == "taskbounty-access-gate":
+        raise ValueError("taskbounty-access-gate is handled directly in run_once")
+    if command == "superteam-scout":
+        raise ValueError("superteam-scout is handled directly in run_once")
     if command == "worker-invoice":
         raise ValueError("worker-invoice is handled directly in run_once")
     if command == "openclaw-bridge":
@@ -2326,6 +2332,30 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=base,
                 external_value_summary=summarize_external_value_ledger(),
             )
+        elif args.command == "taskbounty-scout":
+            from nomad_taskbounty_scout import build_taskbounty_scout
+
+            result = build_taskbounty_scout(
+                api_base=(getattr(args, "api_base", None) or "").strip() or None,
+                limit=int(getattr(args, "limit", 20) or 20),
+                include_details=not bool(getattr(args, "no_details", False)),
+            )
+        elif args.command == "taskbounty-access-gate":
+            from nomad_taskbounty_scout import probe_taskbounty_access_gate
+
+            result = probe_taskbounty_access_gate(
+                task_id=str(getattr(args, "task_id", "") or "").strip(),
+                api_base=(getattr(args, "api_base", None) or "").strip() or None,
+            )
+        elif args.command == "superteam-scout":
+            from nomad_superteam_scout import build_superteam_scout
+
+            result = build_superteam_scout(
+                base_url=(getattr(args, "base_url", None) or "").strip() or None,
+                listing_type=(getattr(args, "listing_type", None) or "").strip() or None,
+                take=int(getattr(args, "take", 20) or 20),
+                include_details=bool(getattr(args, "details", False)),
+            )
         elif args.command == "worker-invoice":
             from nomad_external_value import summarize_external_value_ledger
             from nomad_worker_invoice import build_worker_invoice_surface
@@ -2338,6 +2368,150 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 external_value_summary=summarize_external_value_ledger(),
                 live_balance=bool(getattr(args, "live_rtc", False)),
             )
+        elif args.command == "work-receipts":
+            from nomad_work_receipts import (
+                build_treasury_policy_surface,
+                build_work_receipt_surface,
+                record_work_receipt,
+                summarize_work_receipts,
+            )
+
+            action = str(getattr(args, "receipt_action", "surface") or "surface").strip().lower()
+            base = (getattr(args, "base_url", None) or "").strip()
+            if action == "record":
+                result = record_work_receipt(
+                    {
+                        "agent_id": getattr(args, "agent_id", "") or "",
+                        "work_id": getattr(args, "work_id", "") or getattr(args, "external_id", "") or "",
+                        "work_type": getattr(args, "work_type", "") or "",
+                        "objective": getattr(args, "objective", "") or "",
+                        "external_value_stage": getattr(args, "stage", "") or "",
+                        "work_url": getattr(args, "work_url", "") or "",
+                        "proof_digest": getattr(args, "proof_digest", "") or "",
+                        "verifier_trace_digest": getattr(args, "verifier_trace_digest", "") or "",
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "settlement_ref": getattr(args, "settlement_ref", "") or "",
+                        "idempotency_key": getattr(args, "idempotency_key", "") or "",
+                    }
+                )
+            elif action == "summary":
+                result = summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80))
+            elif action == "policy":
+                from nomad_external_value import summarize_external_value_ledger
+
+                result = build_treasury_policy_surface(
+                    base_url=base,
+                    work_receipt_summary=summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80)),
+                    external_value_summary=summarize_external_value_ledger(),
+                )
+            else:
+                result = build_work_receipt_surface(
+                    base_url=base,
+                    summary=summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80)),
+                )
+        elif args.command == "stable-unit":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_stable_unit_policy import build_stable_unit_policy_surface, evaluate_stable_unit_preflight
+            from nomad_work_receipts import summarize_work_receipts
+
+            action = str(getattr(args, "stable_action", "policy") or "policy").strip().lower()
+            base = (getattr(args, "base_url", None) or "").strip()
+            if action == "preflight":
+                result = evaluate_stable_unit_preflight(
+                    {
+                        "mode": getattr(args, "mode", "") or "simulation",
+                        "requested_units": float(getattr(args, "requested_units", 0.0) or 0.0),
+                        "reference_unit": getattr(args, "reference_unit", "") or "USD",
+                        "redemption_buffer_ratio": float(getattr(args, "redemption_buffer_ratio", 1.05) or 1.05),
+                        "reserve_assets": [
+                            {
+                                "asset_id": getattr(args, "reserve_asset_id", "") or "reserve-1",
+                                "asset_type": getattr(args, "reserve_asset_type", "") or "cash_or_cash_equivalent",
+                                "currency": getattr(args, "reserve_currency", "") or "USD",
+                                "amount": float(getattr(args, "reserve_amount", 0.0) or 0.0),
+                                "haircut": float(getattr(args, "reserve_haircut", 0.08) or 0.08),
+                                "liquidity_weight": float(getattr(args, "reserve_liquidity_weight", 1.0) or 1.0),
+                                "custodian_ref": getattr(args, "custodian_ref", "") or "",
+                                "attestation_digest": getattr(args, "attestation_digest", "") or "",
+                            }
+                        ],
+                        "issuer_authorization_ref": getattr(args, "issuer_authorization_ref", "") or "",
+                        "whitepaper_ref": getattr(args, "whitepaper_ref", "") or "",
+                        "reserve_attestation_ref": getattr(args, "reserve_attestation_ref", "") or "",
+                        "redemption_plan_ref": getattr(args, "redemption_plan_ref", "") or "",
+                        "governance_policy_ref": getattr(args, "governance_policy_ref", "") or "",
+                        "compliance_opinion_ref": getattr(args, "compliance_opinion_ref", "") or "",
+                    }
+                )
+            else:
+                result = build_stable_unit_policy_surface(
+                    base_url=base,
+                    work_receipt_summary=summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80)),
+                    external_value_summary=summarize_external_value_ledger(),
+                )
+        elif args.command == "operator-runway":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_operator_runway import build_operator_runway_surface
+            from nomad_work_receipts import summarize_work_receipts
+
+            result = build_operator_runway_surface(
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                external_value_summary=summarize_external_value_ledger(),
+                work_receipt_summary=summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80)),
+                monthly_min_eur=getattr(args, "monthly_min_eur", None),
+                liquid_cash_eur=getattr(args, "liquid_cash_eur", None),
+                expected_income_30d_eur=getattr(args, "expected_income_30d_eur", None),
+                operator_befinden=getattr(args, "befinden", None),
+                publish_amounts=bool(getattr(args, "public_amounts", False)),
+            )
+        elif args.command == "viability-kernel":
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_operator_runway import build_operator_runway_surface
+            from nomad_stable_unit_policy import build_stable_unit_policy_surface
+            from nomad_viability_kernel import build_viability_kernel_surface, route_viability_action
+            from nomad_work_receipts import build_treasury_policy_surface, summarize_work_receipts
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            work_summary = summarize_work_receipts(limit=int(getattr(args, "limit", 80) or 80))
+            external_summary = summarize_external_value_ledger()
+            operator = build_operator_runway_surface(
+                base_url=base,
+                external_value_summary=external_summary,
+                work_receipt_summary=work_summary,
+                operator_befinden=getattr(args, "befinden", None),
+                publish_amounts=bool(getattr(args, "public_amounts", False)),
+            )
+            stable = build_stable_unit_policy_surface(
+                base_url=base,
+                work_receipt_summary=work_summary,
+                external_value_summary=external_summary,
+            )
+            treasury = build_treasury_policy_surface(
+                base_url=base,
+                work_receipt_summary=work_summary,
+                external_value_summary=external_summary,
+            )
+            kernel = build_viability_kernel_surface(
+                base_url=base,
+                operator_runway=operator,
+                external_value_summary=external_summary,
+                work_receipt_summary=work_summary,
+                stable_unit_policy=stable,
+                treasury_policy=treasury,
+            )
+            action = str(getattr(args, "kernel_action", "surface") or "surface").strip().lower()
+            if action == "route":
+                result = route_viability_action(
+                    {
+                        "action_type": getattr(args, "action_type", "") or "",
+                        "target_url": getattr(args, "target_url", "") or "",
+                        "paid_required": bool(getattr(args, "paid_required", False)),
+                        "note": getattr(args, "note", "") or "",
+                    },
+                    viability_kernel=kernel,
+                )
+            else:
+                result = kernel
         elif args.command == "value-cycle-preflight":
             from nomad_external_value import summarize_external_value_ledger
             from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
@@ -2873,6 +3047,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rank external paid-work channels by authorization, proof, payout, and settlement friction.",
     )
     job_channels.add_argument("--base-url", default="", help="Override public base URL for links.")
+    taskbounty_scout = subparsers.add_parser(
+        "taskbounty-scout",
+        help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",
+    )
+    taskbounty_scout.add_argument("--api-base", default="", help="Override TaskBounty API base URL.")
+    taskbounty_scout.add_argument("--limit", type=int, default=20, help="Maximum open tasks to inspect.")
+    taskbounty_scout.add_argument("--no-details", action="store_true", help="Skip per-task detail reads.")
+    taskbounty_access_gate = subparsers.add_parser(
+        "taskbounty-access-gate",
+        help="Probe TaskBounty clone/submission workflow and block claims unless upstream PR access is real.",
+    )
+    taskbounty_access_gate.add_argument("--task-id", required=True, help="TaskBounty task UUID to probe.")
+    taskbounty_access_gate.add_argument("--api-base", default="", help="Override TaskBounty API base URL.")
+    superteam_scout = subparsers.add_parser(
+        "superteam-scout",
+        help="Read-only Superteam Earn agent listing scout: deadline/access/claim gates before submission.",
+    )
+    superteam_scout.add_argument("--base-url", default="", help="Override Superteam base URL.")
+    superteam_scout.add_argument("--type", dest="listing_type", default="", choices=("", "bounty", "project", "hackathon"), help="Optional listing type filter.")
+    superteam_scout.add_argument("--take", type=int, default=20, help="Maximum listings to inspect.")
+    superteam_scout.add_argument("--details", action="store_true", help="Fetch per-listing details.")
     worker_invoice = subparsers.add_parser(
         "worker-invoice",
         help="Public receive reference and receipt gate for Nomad worker revenue.",
@@ -2881,6 +3076,92 @@ def build_parser() -> argparse.ArgumentParser:
     worker_invoice.add_argument("--payout-ref", default="", help="Public RTC address or miner_id override.")
     worker_invoice.add_argument("--public-key-hex", default="", help="Optional public Ed25519 key hex.")
     worker_invoice.add_argument("--live-rtc", action="store_true", help="Read live RustChain balance for the public payout ref.")
+    work_receipts = subparsers.add_parser(
+        "work-receipts",
+        help="Non-transferable proof-of-useful-work receipts and treasury policy gates.",
+    )
+    work_receipts.add_argument(
+        "receipt_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "summary", "record", "policy"),
+        help="surface | summary | record | policy",
+    )
+    work_receipts.add_argument("--base-url", default="", help="Override public base URL for links.")
+    work_receipts.add_argument("--agent-id", default="", help="Agent id (record).")
+    work_receipts.add_argument("--work-id", default="", help="Stable work id, task id, PR id, or external id (record).")
+    work_receipts.add_argument("--external-id", default="", help="Alias for --work-id.")
+    work_receipts.add_argument("--work-type", default="", help="external_value | verifier | infrastructure_patch | transition_worker.")
+    work_receipts.add_argument("--objective", default="", help="Objective the receipt supports.")
+    work_receipts.add_argument("--stage", default="", help="none | found | submitted | approved | merged | paid.")
+    work_receipts.add_argument("--work-url", default="", help="Public proof URL.")
+    work_receipts.add_argument("--proof-digest", default="", help="Public proof digest.")
+    work_receipts.add_argument("--verifier-trace-digest", default="", help="Verifier trace digest.")
+    work_receipts.add_argument("--amount-usd", type=float, default=0.0, help="Paid amount; only credited at stage=paid with settlement ref.")
+    work_receipts.add_argument("--settlement-ref", default="", help="Public receipt, payout, or tx reference for paid receipts.")
+    work_receipts.add_argument("--idempotency-key", default="", help="Stable key to prevent duplicate receipts.")
+    work_receipts.add_argument("--limit", type=int, default=80, help="Summary tail limit.")
+    stable_unit = subparsers.add_parser(
+        "stable-unit",
+        help="Reserve/liability preflight for Nomad internal stable units; no public transferable mint.",
+    )
+    stable_unit.add_argument(
+        "stable_action",
+        nargs="?",
+        default="policy",
+        choices=("policy", "preflight"),
+        help="policy | preflight",
+    )
+    stable_unit.add_argument("--base-url", default="", help="Override public base URL for links.")
+    stable_unit.add_argument("--mode", default="simulation", choices=("simulation", "internal_nontransferable", "public_transferable"), help="Preflight mode.")
+    stable_unit.add_argument("--requested-units", type=float, default=0.0, help="Requested stable-unit liabilities for preflight.")
+    stable_unit.add_argument("--reference-unit", default="USD", help="USD or EUR reference label for preflight.")
+    stable_unit.add_argument("--redemption-buffer-ratio", type=float, default=1.05, help="Reserve ratio required after stress.")
+    stable_unit.add_argument("--reserve-asset-id", default="reserve-1", help="Reserve asset id.")
+    stable_unit.add_argument("--reserve-asset-type", default="cash_or_cash_equivalent", help="Reserve asset type.")
+    stable_unit.add_argument("--reserve-currency", default="USD", help="Reserve currency label.")
+    stable_unit.add_argument("--reserve-amount", type=float, default=0.0, help="Reserve amount/value.")
+    stable_unit.add_argument("--reserve-haircut", type=float, default=0.08, help="Stress haircut for reserve asset.")
+    stable_unit.add_argument("--reserve-liquidity-weight", type=float, default=1.0, help="Liquidity weight 0..1.")
+    stable_unit.add_argument("--custodian-ref", default="", help="Public custody/custodian evidence reference.")
+    stable_unit.add_argument("--attestation-digest", default="", help="Public reserve attestation digest.")
+    stable_unit.add_argument("--issuer-authorization-ref", default="", help="Public issuer authorization reference.")
+    stable_unit.add_argument("--whitepaper-ref", default="", help="Public whitepaper reference.")
+    stable_unit.add_argument("--reserve-attestation-ref", default="", help="Public reserve attestation reference.")
+    stable_unit.add_argument("--redemption-plan-ref", default="", help="Public redemption plan reference.")
+    stable_unit.add_argument("--governance-policy-ref", default="", help="Public governance policy reference.")
+    stable_unit.add_argument("--compliance-opinion-ref", default="", help="Public compliance opinion reference.")
+    stable_unit.add_argument("--limit", type=int, default=80, help="Receipt summary tail limit.")
+    operator_runway = subparsers.add_parser(
+        "operator-runway",
+        help="Privacy-preserving operator survival guard: runway before treasury/swarm expansion.",
+    )
+    operator_runway.add_argument("--base-url", default="", help="Override public base URL for links.")
+    operator_runway.add_argument("--monthly-min-eur", type=float, default=None, help="Local minimum monthly coverage.")
+    operator_runway.add_argument("--liquid-cash-eur", type=float, default=None, help="Local liquid cash estimate.")
+    operator_runway.add_argument("--expected-income-30d-eur", type=float, default=None, help="Expected near-term income.")
+    operator_runway.add_argument("--befinden", default=None, help="Sebastian Hoeger coarse state: stable | strained | overloaded | critical.")
+    operator_runway.add_argument("--public-amounts", action="store_true", help="Include exact amounts in output; off by default.")
+    operator_runway.add_argument("--limit", type=int, default=80, help="Receipt summary tail limit.")
+    viability_kernel = subparsers.add_parser(
+        "viability-kernel",
+        help="Admissible-control kernel: route Nomad actions through operator, paid-flow, WIP, and reserve constraints.",
+    )
+    viability_kernel.add_argument(
+        "kernel_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "route"),
+        help="surface | route",
+    )
+    viability_kernel.add_argument("--base-url", default="", help="Override public base URL for links.")
+    viability_kernel.add_argument("--befinden", default=None, help="Sebastian Hoeger coarse state override for local routing.")
+    viability_kernel.add_argument("--action-type", default="", help="For route: proposed action_type.")
+    viability_kernel.add_argument("--target-url", default="", help="For route: proposed target URL.")
+    viability_kernel.add_argument("--paid-required", action="store_true", help="For route: require existing paid flow.")
+    viability_kernel.add_argument("--note", default="", help="For route: public note.")
+    viability_kernel.add_argument("--public-amounts", action="store_true", help="Include exact operator amounts in local output if configured.")
+    viability_kernel.add_argument("--limit", type=int, default=80, help="Receipt summary tail limit.")
     value_cycle_preflight = subparsers.add_parser(
         "value-cycle-preflight",
         help="Wallet, terms, and receipt gate that must run before revenue-oriented value cycles.",

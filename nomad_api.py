@@ -101,9 +101,18 @@ from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
 from nomad_job_channels import build_job_channel_surface
+from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
 from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
+from nomad_stable_unit_policy import build_stable_unit_policy_surface, evaluate_stable_unit_preflight
+from nomad_viability_kernel import build_viability_kernel_surface, route_viability_action
+from nomad_work_receipts import (
+    build_treasury_policy_surface,
+    build_work_receipt_surface,
+    record_work_receipt,
+    summarize_work_receipts,
+)
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -524,6 +533,65 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return build_worker_invoice_surface(
             base_url=base_url,
             external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_work_receipts(cls, *, base_url: str) -> dict:
+        return build_work_receipt_surface(
+            base_url=base_url,
+            summary=summarize_work_receipts(),
+        )
+
+    @classmethod
+    def _build_treasury_policy(cls, *, base_url: str) -> dict:
+        return build_treasury_policy_surface(
+            base_url=base_url,
+            work_receipt_summary=summarize_work_receipts(),
+            external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_stable_unit_policy(cls, *, base_url: str) -> dict:
+        return build_stable_unit_policy_surface(
+            base_url=base_url,
+            work_receipt_summary=summarize_work_receipts(),
+            external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_operator_runway(cls, *, base_url: str) -> dict:
+        return build_operator_runway_surface(
+            base_url=base_url,
+            external_value_summary=summarize_external_value_ledger(),
+            work_receipt_summary=summarize_work_receipts(),
+        )
+
+    @classmethod
+    def _build_viability_kernel(cls, *, base_url: str) -> dict:
+        work_summary = summarize_work_receipts()
+        external_summary = summarize_external_value_ledger()
+        operator = build_operator_runway_surface(
+            base_url=base_url,
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+        )
+        stable = build_stable_unit_policy_surface(
+            base_url=base_url,
+            work_receipt_summary=work_summary,
+            external_value_summary=external_summary,
+        )
+        treasury = build_treasury_policy_surface(
+            base_url=base_url,
+            work_receipt_summary=work_summary,
+            external_value_summary=external_summary,
+        )
+        return build_viability_kernel_surface(
+            base_url=base_url,
+            operator_runway=operator,
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+            stable_unit_policy=stable,
+            treasury_policy=treasury,
         )
 
     @classmethod
@@ -1036,6 +1104,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
+                    "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
+                    "work_receipts_post": f"{b}/swarm/work-receipts",
+                    "treasury_policy": f"{b}/.well-known/nomad-treasury-policy.json",
+                    "stable_unit_policy": f"{b}/.well-known/nomad-stable-unit-policy.json",
+                    "stable_unit_preflight": f"{b}/swarm/stable-unit/preflight",
+                    "operator_runway": f"{b}/.well-known/nomad-operator-runway.json",
+                    "viability_kernel": f"{b}/.well-known/nomad-viability-kernel.json",
+                    "viability_route": f"{b}/swarm/viability-kernel/route",
                     "worker_job_queue": f"{b}/.well-known/nomad-worker-job-queue.json",
                     "value_cycle_preflight": f"{b}/.well-known/nomad-value-cycle-preflight.json",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
@@ -1340,6 +1416,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/work-receipts", "/.well-known/nomad-work-receipts.json"}:
+            if query.get("summary"):
+                self._json_response(summarize_work_receipts())
+            else:
+                self._json_response(self.__class__._build_work_receipts(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/treasury-policy", "/.well-known/nomad-treasury-policy.json"}:
+            self._json_response(self.__class__._build_treasury_policy(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/stable-unit-policy", "/.well-known/nomad-stable-unit-policy.json"}:
+            self._json_response(self.__class__._build_stable_unit_policy(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/operator-runway", "/.well-known/nomad-operator-runway.json"}:
+            self._json_response(self.__class__._build_operator_runway(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/viability-kernel", "/.well-known/nomad-viability-kernel.json"}:
+            self._json_response(self.__class__._build_viability_kernel(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-job-queue", "/.well-known/nomad-worker-job-queue.json"}:
             self._json_response(self.__class__._build_worker_job_queue(base_url=self._base_url()))
@@ -2425,6 +2519,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/work-receipts",
+                    "/.well-known/nomad-work-receipts.json",
+                    "/swarm/treasury-policy",
+                    "/.well-known/nomad-treasury-policy.json",
+                    "/swarm/stable-unit-policy",
+                    "/.well-known/nomad-stable-unit-policy.json",
+                    "/swarm/stable-unit/preflight",
+                    "/swarm/operator-runway",
+                    "/.well-known/nomad-operator-runway.json",
+                    "/swarm/viability-kernel",
+                    "/.well-known/nomad-viability-kernel.json",
+                    "/swarm/viability-kernel/route",
                     "/swarm/worker-job-queue",
                     "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
@@ -3183,6 +3289,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 400)
             return
 
+        if parsed.path == "/swarm/work-receipts":
+            result = record_work_receipt(payload)
+            status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
+            self._json_response(result, status=status)
+            return
+
+        if parsed.path == "/swarm/stable-unit/preflight":
+            result = evaluate_stable_unit_preflight(payload)
+            self._json_response(result, status=200 if result.get("schema") == "nomad.stable_unit_preflight.v1" else 400)
+            return
+
+        if parsed.path == "/swarm/viability-kernel/route":
+            kernel = self.__class__._build_viability_kernel(base_url=self._base_url())
+            result = route_viability_action(payload, viability_kernel=kernel)
+            self._json_response(result, status=200 if result.get("decision") == "allow" else 409)
+            return
+
         if parsed.path in {"/swarm/signals", "/swarm/signal-layer"}:
             result = append_swarm_signal(
                 payload,
@@ -3588,6 +3711,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-revenue-science.json",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
+                    "/swarm/work-receipts",
+                    "/.well-known/nomad-work-receipts.json",
+                    "/swarm/treasury-policy",
+                    "/.well-known/nomad-treasury-policy.json",
+                    "/swarm/stable-unit-policy",
+                    "/.well-known/nomad-stable-unit-policy.json",
+                    "/swarm/stable-unit/preflight",
+                    "/swarm/operator-runway",
+                    "/.well-known/nomad-operator-runway.json",
+                    "/swarm/viability-kernel",
+                    "/.well-known/nomad-viability-kernel.json",
+                    "/swarm/viability-kernel/route",
                     "/swarm/worker-job-queue",
                     "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
