@@ -36,6 +36,10 @@ from nomad_opaque_emergence import (
 )
 from nomad_shadow_lane_evaluator import build_shadow_lane_evaluator_surface, evaluate_shadow_candidate
 from nomad_decoupling_field import build_decoupling_field_surface, evaluate_decoupling_merge
+from nomad_anti_consensus_reservoir import (
+    build_anti_consensus_reservoir_surface,
+    evaluate_anti_consensus_candidate,
+)
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
@@ -567,6 +571,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             channel_bandit=cls._build_channel_bandit(base_url=base_url),
             signal_layer=cls._build_swarm_signal_layer(base_url=base_url),
             opaque_surface=cls._build_opaque_emergence_surface(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
+    def _build_anti_consensus_reservoir(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls._light_swarm_registry().public_manifest(base_url=base_url)
+        return build_anti_consensus_reservoir_surface(
+            base_url=base_url,
+            decoupling_field=cls._build_decoupling_field(base_url=base_url, swarm_summary=summary),
+            shadow_lane=cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary),
+            channel_bandit=cls._build_channel_bandit(base_url=base_url),
+            signal_layer=cls._build_swarm_signal_layer(base_url=base_url),
         )
 
     @classmethod
@@ -1161,6 +1176,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "shadow_lane_candidate": f"{b}/swarm/shadow-lane/candidates",
                     "decoupling_field": f"{b}/.well-known/nomad-decoupling-field.json",
                     "decoupling_merge": f"{b}/swarm/decoupling-field/merge",
+                    "anti_consensus": f"{b}/.well-known/nomad-anti-consensus.json",
+                    "anti_consensus_candidate": f"{b}/swarm/anti-consensus/candidates",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
@@ -1483,6 +1500,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/decoupling-field", "/.well-known/nomad-decoupling-field.json"}:
             self._json_response(self.__class__._build_decoupling_field(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/anti-consensus", "/.well-known/nomad-anti-consensus.json"}:
+            self._json_response(self.__class__._build_anti_consensus_reservoir(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
@@ -2597,6 +2617,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/decoupling-field",
                     "/.well-known/nomad-decoupling-field.json",
                     "/swarm/decoupling-field/merge",
+                    "/swarm/anti-consensus",
+                    "/.well-known/nomad-anti-consensus.json",
+                    "/swarm/anti-consensus/candidates",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
@@ -3206,6 +3229,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("merge_allowed") else 200)
             return
 
+        if parsed.path == "/swarm/anti-consensus/candidates":
+            base = self._base_url()
+            reservoir = self.__class__._build_anti_consensus_reservoir(base_url=base)
+            result = evaluate_anti_consensus_candidate(payload, base_url=base, reservoir_surface=reservoir)
+            self._json_response(result, status=202 if result.get("preserve_allowed") else 200)
+            return
+
         if parsed.path == "/swarm/variant-candidates":
             base = self._base_url()
             forge = self.__class__._build_variant_forge(base_url=base)
@@ -3811,6 +3841,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/decoupling-field",
                     "/.well-known/nomad-decoupling-field.json",
                     "/swarm/decoupling-field/merge",
+                    "/swarm/anti-consensus",
+                    "/.well-known/nomad-anti-consensus.json",
+                    "/swarm/anti-consensus/candidates",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",

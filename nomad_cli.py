@@ -1595,6 +1595,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("shadow-lane is handled directly in run_once")
     if command == "decoupling-field":
         raise ValueError("decoupling-field is handled directly in run_once")
+    if command == "anti-consensus":
+        raise ValueError("anti-consensus is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2465,6 +2467,53 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         decoupling_field=field,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "anti-consensus":
+            from nomad_api import NomadApiHandler
+            from nomad_anti_consensus_reservoir import evaluate_anti_consensus_candidate
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            reservoir = NomadApiHandler._build_anti_consensus_reservoir(base_url=base)
+            action = str(getattr(args, "anti_action", "surface") or "surface")
+            if action == "surface":
+                result = reservoir
+            else:
+                raw_json = str(getattr(args, "candidate_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-anti-consensus",
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "minority_proof_probe",
+                        "candidate_digest": "sha256:cli-minority-candidate",
+                        "proof_digest": "sha256:cli-minority-proof",
+                        "test_digest": "sha256:cli-minority-test",
+                        "consensus_score": float(getattr(args, "consensus_score", 0.32) or 0.0),
+                        "minority_fraction": float(getattr(args, "minority_fraction", 0.22) or 0.0),
+                        "expert_score": float(getattr(args, "expert_score", 0.78) or 0.0),
+                        "crowd_score": float(getattr(args, "crowd_score", 0.44) or 0.0),
+                        "risk_score": float(getattr(args, "risk_score", 0.06) or 0.0),
+                        "boundedness": {
+                            "side_effect_scope": "local_shadow_lane_only",
+                            "rollback_available": True,
+                        },
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.anti_consensus_cli_error.v1",
+                        "error": "invalid_candidate_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "candidate_json_not_object",
+                    }
+                else:
+                    result = evaluate_anti_consensus_candidate(
+                        payload,
+                        base_url=base,
+                        reservoir_surface=reservoir,
+                        persist=not bool(getattr(args, "dry_run", False)),
+                    )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3224,6 +3273,27 @@ def build_parser() -> argparse.ArgumentParser:
     decoupling_field.add_argument("--agent-id", default="", help="Agent id for generated CLI merge.")
     decoupling_field.add_argument("--divergence-score", type=float, default=0.42, help="Synthetic merge divergence score.")
     decoupling_field.add_argument("--dry-run", action="store_true", help="Evaluate without appending the decoupling ledger.")
+    anti_consensus = subparsers.add_parser(
+        "anti-consensus",
+        help="Preserve proof-bearing minority or expert signals and suppress unproven consensus echoes.",
+    )
+    anti_consensus.add_argument(
+        "anti_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    anti_consensus.add_argument("--base-url", default="", help="Override public base URL for links.")
+    anti_consensus.add_argument("--candidate-json", default="", help="Full JSON candidate payload.")
+    anti_consensus.add_argument("--agent-id", default="", help="Agent id for generated CLI candidate.")
+    anti_consensus.add_argument("--objective", default="", help="Objective for generated CLI candidate.")
+    anti_consensus.add_argument("--consensus-score", type=float, default=0.32, help="Consensus/crowd agreement score.")
+    anti_consensus.add_argument("--minority-fraction", type=float, default=0.22, help="Minority support fraction.")
+    anti_consensus.add_argument("--expert-score", type=float, default=0.78, help="Best agent or expert score.")
+    anti_consensus.add_argument("--crowd-score", type=float, default=0.44, help="Crowd score.")
+    anti_consensus.add_argument("--risk-score", type=float, default=0.06, help="Bounded risk score.")
+    anti_consensus.add_argument("--dry-run", action="store_true", help="Evaluate without appending the anti-consensus ledger.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",

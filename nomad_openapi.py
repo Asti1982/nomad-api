@@ -49,8 +49,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
                 "GET /swarm/variant-forge and POST /swarm/variant-candidates. "
-                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, broad external job-channel routing, pre-registered revenue experiments, digest-gated shadow-lane candidate selection, structural-decoupling anti-collapse cells, and settlement lanes, see "
-                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /.well-known/nomad-job-channels.json, GET /swarm/job-channels, GET /.well-known/nomad-channel-bandit.json, GET /swarm/channel-bandit, GET /.well-known/nomad-shadow-lane.json, GET /swarm/shadow-lane, GET /.well-known/nomad-decoupling-field.json, GET /swarm/decoupling-field, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /swarm/emission-batch, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-settlement.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /.well-known/nomad-work-receipts.json, GET /swarm/work-receipts, GET /.well-known/nomad-treasury-policy.json, GET /swarm/treasury-policy, GET /.well-known/nomad-stable-unit-policy.json, GET /swarm/stable-unit-policy, GET /.well-known/nomad-operator-runway.json, GET /swarm/operator-runway, GET /.well-known/nomad-viability-kernel.json, GET /swarm/viability-kernel, GET /.well-known/nomad-worker-job-queue.json, GET /swarm/worker-job-queue, GET /.well-known/nomad-value-cycle-preflight.json, GET /swarm/value-cycle-preflight, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/shadow-lane/candidates, POST /swarm/decoupling-field/merge, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, POST /swarm/work-receipts, POST /swarm/stable-unit/preflight, POST /swarm/viability-kernel/route, POST /swarm/signals, and POST /swarm/emission-batch. "
+                "For proof-weighted external compute offers, the proof-market v2 surface, concrete agent work, local work mesh, durable-state status, worker catalogs, microtask templates/metrics, synergy-lite routing, carrying contracts, survival conversion packets, paid-ref minting, authorized OSS bounty hunting, broad external job-channel routing, pre-registered revenue experiments, digest-gated shadow-lane candidate selection, structural-decoupling anti-collapse cells, anti-consensus minority reservoirs, and settlement lanes, see "
+                "GET /swarm/worker-market, GET /swarm/compute-market, GET /.well-known/nomad-agent-work.json, GET /.well-known/nomad-work-mesh.json, GET /swarm/state-status, GET /.well-known/nomad-carrying-market.json, GET /.well-known/nomad-survival-market.json, GET /.well-known/nomad-paid-ref-market.json, GET /.well-known/nomad-paid-ref-selfplay.json, GET /.well-known/nomad-bounty-hunter.json, GET /.well-known/nomad-job-channels.json, GET /swarm/job-channels, GET /.well-known/nomad-channel-bandit.json, GET /swarm/channel-bandit, GET /.well-known/nomad-shadow-lane.json, GET /swarm/shadow-lane, GET /.well-known/nomad-decoupling-field.json, GET /swarm/decoupling-field, GET /.well-known/nomad-anti-consensus.json, GET /swarm/anti-consensus, GET /swarm/external-value, GET /.well-known/nomad-external-value.json, GET /swarm/signals, GET /.well-known/nomad-signal-layer.json, GET /swarm/emission-batch, GET /.well-known/nomad-value-pressure.json, GET /.well-known/nomad-settlement.json, GET /.well-known/nomad-agent-jobs.json, GET /swarm/agent-job-router, GET /.well-known/nomad-revenue-science.json, GET /swarm/revenue-science, GET /.well-known/nomad-worker-invoice.json, GET /swarm/worker-invoice, GET /.well-known/nomad-work-receipts.json, GET /swarm/work-receipts, GET /.well-known/nomad-treasury-policy.json, GET /swarm/treasury-policy, GET /.well-known/nomad-stable-unit-policy.json, GET /swarm/stable-unit-policy, GET /.well-known/nomad-operator-runway.json, GET /swarm/operator-runway, GET /.well-known/nomad-viability-kernel.json, GET /swarm/viability-kernel, GET /.well-known/nomad-worker-job-queue.json, GET /swarm/worker-job-queue, GET /.well-known/nomad-value-cycle-preflight.json, GET /swarm/value-cycle-preflight, GET /swarm/worker-catalog, GET /swarm/microtask-templates, GET /swarm/microtask-metrics, GET /swarm/synergy-lite, POST /swarm/shadow-lane/candidates, POST /swarm/decoupling-field/merge, POST /swarm/anti-consensus/candidates, POST /swarm/worker-market/offers, POST /swarm/microtask/claim, POST /swarm/microtask/proof, POST /swarm/work-mesh/seed, POST /swarm/carrying-proof, POST /swarm/survival-intent, POST /swarm/paid-ref/quote, POST /swarm/paid-ref/verify, POST /swarm/microtask/submit, POST /swarm/microtask/settle, POST /swarm/external-value, POST /swarm/work-receipts, POST /swarm/stable-unit/preflight, POST /swarm/viability-kernel/route, POST /swarm/signals, and POST /swarm/emission-batch. "
                 "For local-view ecology ticks, private-signal digests, and retention/extinction pressure, see "
                 "GET /swarm/ecology and POST /swarm/ecology/tick. "
                 "For open-ended agent growth through task curriculum, experience compression, reusable skill capsules, weekly morphology selection, and gated autonomous replication, see "
@@ -825,6 +825,56 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Digest merge admitted for downstream shadow-lane evaluation"},
                         "200": {"description": "Cells remain isolated; merge blocked"},
+                    },
+                }
+            },
+            "/swarm/anti-consensus": {
+                "get": {
+                    "summary": "Anti-consensus reservoir that preserves proof-bearing minority or expert signals before shadow gating",
+                    "operationId": "getSwarmAntiConsensus",
+                    "responses": {
+                        "200": {"description": "Anti-consensus reservoir surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-anti-consensus.json": {
+                "get": {
+                    "summary": "Alias of /swarm/anti-consensus",
+                    "operationId": "getAntiConsensusWellKnown",
+                    "responses": {
+                        "200": {"description": "Anti-consensus reservoir surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/anti-consensus/candidates": {
+                "post": {
+                    "summary": "Submit a candidate whose low consensus or expert advantage should be preserved only with digestable proof",
+                    "operationId": "postSwarmAntiConsensusCandidate",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "agent_id": {"type": "string"},
+                                        "objective": {"type": "string"},
+                                        "candidate_digest": {"type": "string"},
+                                        "proof_digest": {"type": "string"},
+                                        "test_digest": {"type": "string"},
+                                        "consensus_score": {"type": "number"},
+                                        "minority_fraction": {"type": "number"},
+                                        "expert_score": {"type": "number"},
+                                        "crowd_score": {"type": "number"},
+                                        "boundedness": ref_json_object(),
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "202": {"description": "Minority or expert signal preserved for downstream shadow gating"},
+                        "200": {"description": "Candidate observed, suppressed, or held without preserve"},
                     },
                 }
             },
