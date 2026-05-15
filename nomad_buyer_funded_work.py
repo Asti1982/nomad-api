@@ -109,9 +109,10 @@ def build_buyer_funded_work_surface(
             "package_id": "repo_diagnostic_patch_starter",
             "service_type": "repo_issue_help",
             "title": "Repo Diagnostic Patch Pack: Starter",
-            "buyer_input": ["repo_url", "issue_or_error_url", "expected_behavior"],
+            "buyer_input": ["repo_url", "issue_or_log_url", "observed_error", "expected_behavior"],
             "deliverable": "one diagnosis, duplicate check, smallest repro/patch plan, and no-post public reply draft",
             "price": _service_price(service, 1.0),
+            "scope": "one public repo issue, CI/build failure, deploy failure, or endpoint regression",
             "why_financially_near": "can be bought directly by a blocked maintainer, agent, or operator without waiting for bounty settlement",
             "safe_public_action": "none_without_buyer_or_operator_approval",
         },
@@ -196,6 +197,51 @@ def build_buyer_funded_work_surface(
         "low_duplicate": duplicate.get("low_duplicate_count", 0),
         "packages": [item["package_id"] for item in packages],
     }
+    starter = packages[0]
+    starter_problem = (
+        "Repo/CI/endpoint disturbance: diagnose one failing build, failing check, public issue, "
+        "or endpoint regression; return duplicate pressure, smallest repro/patch path, and no-post reply draft."
+    )
+    concrete_starter_order = {
+        "schema": "nomad.concrete_buyable_order_simulation.v1",
+        "simulation_counts_as_revenue": False,
+        "package_id": starter["package_id"],
+        "service_type": starter["service_type"],
+        "entry_url": _u(root, "/service/e2e?service_type=repo_issue_help"),
+        "matching_context": {
+            "context_type": "repo_ci_endpoint_disturbance",
+            "examples": [
+                "Render build failed for a repo deployment",
+                "CI check exits non-zero after a dependency or endpoint change",
+                "public endpoint returns the wrong status or stale commit",
+            ],
+            "why_this_is_the_next_cycle": "it turns one already-observable blocker into a small purchasable diagnosis instead of waiting for bounty settlement",
+        },
+        "preview_request": {
+            "method": "GET",
+            "url": _u(root, "/service/e2e?service_type=repo_issue_help"),
+        },
+        "create_task_request": {
+            "method": "POST",
+            "url": _u(root, "/service/e2e"),
+            "payload": {
+                "create": True,
+                "service_type": "repo_issue_help",
+                "package_id": starter["package_id"],
+                "problem": starter_problem,
+                "budget_native": starter["price"]["amount_native"],
+                "metadata": {
+                    "package_id": starter["package_id"],
+                    "buyer_context": "repo_ci_endpoint_disturbance",
+                },
+            },
+        },
+        "proof_gate": [
+            "verified payment before work",
+            "no public post without approval",
+            "delivery includes diagnosis, duplicate pressure, smallest repro/patch path, and verifier checklist",
+        ],
+    }
     return {
         "ok": True,
         "schema": "nomad.buyer_funded_work.v1",
@@ -218,6 +264,7 @@ def build_buyer_funded_work_surface(
         ],
         "cycles": cycles,
         "buyer_funded_packages": packages,
+        "concrete_starter_order": concrete_starter_order,
         "contextual_referral_policy": {
             "owned_surfaces_active": [item.get("surface") for item in active_owned],
             "external_reply_requires": ["user_asked_about_cursor_or_ai_editor", "helpful_answer_first", "referral_disclosure"],

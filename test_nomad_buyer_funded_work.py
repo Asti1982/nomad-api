@@ -34,8 +34,13 @@ def test_buyer_funded_work_prioritizes_small_paid_packages(tmp_path):
     assert out["receipt_law"]["only_paid_counts"] is True
     assert out["priority_order"][0] == "buyer_funded_diagnostic_patch"
     packages = out["buyer_funded_packages"]
+    starter = out["concrete_starter_order"]
     assert packages[0]["service_type"] == "repo_issue_help"
+    assert packages[0]["package_id"] == "repo_diagnostic_patch_starter"
     assert packages[0]["price"]["receipt_rule"].startswith("task is revenue only")
+    assert starter["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
+    assert starter["create_task_request"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
+    assert starter["simulation_counts_as_revenue"] is False
     assert out["contextual_referral_policy"]["blocked"]
     assert out["bounty_gate"]["public_go_count"] == 0
 
@@ -47,6 +52,8 @@ def test_repo_issue_help_has_real_service_package(tmp_path):
     ).service_catalog()
 
     packages = catalog["service_packages"]["repo_issue_help"]
-    assert packages[0]["package_id"] == "starter_repo_diagnosis"
+    assert packages[0]["package_id"] == "repo_diagnostic_patch_starter"
+    assert "starter_repo_diagnosis" in packages[0]["aliases"]
+    assert packages[0]["buyer_input"] == ["repo_url", "issue_or_log_url", "observed_error", "expected_behavior"]
     assert packages[1]["package_id"] == "bounded_repo_patch_plan"
     assert "duplicate-pressure" in packages[0]["delivery"]

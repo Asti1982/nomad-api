@@ -404,6 +404,36 @@ def test_service_e2e_runway_creates_payable_task_and_guides_next_step(tmp_path, 
     assert "Verify payment" in result["next_best_action"]
 
 
+def test_service_e2e_repo_issue_help_defaults_to_buyable_starter(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true")
+    monkeypatch.setenv("NOMAD_SERVICE_MIN_NATIVE", "0.02")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
+    desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
+
+    result = desk.end_to_end_runway(service_type="repo_issue_help")
+
+    task = result["task"]
+    order = result["concrete_order"]
+
+    assert result["created"] is False
+    assert task["status"] == "preview"
+    assert task["service_type"] == "repo_issue_help"
+    assert task["selected_package"]["package_id"] == "repo_diagnostic_patch_starter"
+    assert "Repo/CI/endpoint disturbance" in task["problem"]
+    assert result["selected_package"]["buyer_input"] == [
+        "repo_url",
+        "issue_or_log_url",
+        "observed_error",
+        "expected_behavior",
+    ]
+    assert order["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
+    assert order["create_task_request"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
+    assert order["quote"]["revenue_recognition"] == "only_after_verified_payment_receipt"
+    assert result["http_runway"]["create_task"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
+
+
 def test_service_e2e_preview_command_quotes_problem_for_shell_safety(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true")
     desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())

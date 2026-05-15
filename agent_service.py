@@ -171,11 +171,28 @@ SERVICE_PACKAGE_TEMPLATES = {
     ],
     "repo_issue_help": [
         {
-            "package_id": "starter_repo_diagnosis",
-            "title": "Nomad Repo Diagnostic Patch Pack: Starter diagnosis",
-            "summary": "Reduce one public repo issue, failing check, or unclear PR into duplicate pressure, smallest repro, and next patch path.",
+            "package_id": "repo_diagnostic_patch_starter",
+            "aliases": ["starter_repo_diagnosis"],
+            "title": "Nomad Repo Diagnostic Patch Starter",
+            "summary": "Reduce one public repo issue, failing CI check, or endpoint disturbance into duplicate pressure, smallest repro, and next patch path.",
             "offer_tier": "starter_diagnosis",
             "amount_mode": "minimum",
+            "buyer_input": ["repo_url", "issue_or_log_url", "observed_error", "expected_behavior"],
+            "scope": [
+                "one public repo, CI check, deployment, or endpoint disturbance",
+                "read-only fact gathering before payment",
+                "draft-only public reply unless buyer/operator grants approval",
+            ],
+            "out_of_scope": [
+                "private secrets or credentials",
+                "broad refactors",
+                "unapproved public posting",
+                "spend on paid APIs or infrastructure",
+            ],
+            "default_problem": (
+                "Repo/CI/endpoint disturbance: diagnose one failing build, failing check, public issue, "
+                "or endpoint regression; return duplicate pressure, smallest repro/patch path, and no-post reply draft."
+            ),
             "delivery": "repo diagnosis, duplicate-pressure note, smallest repro/patch path, and no-post reply draft",
         },
         {
@@ -339,6 +356,7 @@ class AgentServiceDesk:
                 },
             },
             "first_paid_job_protocol": self.first_paid_job_protocol(featured_product_offer),
+            "first_buyable_starter": self._repo_diagnostic_patch_starter_entry(),
             "interaction_contract": {
                 "audience": "ai_agents",
                 "style": "agent_first_non_anthropomorphic",
@@ -1120,6 +1138,7 @@ class AgentServiceDesk:
         task_id: str = "",
         problem: str = "",
         service_type: str = "",
+        package_id: str = "",
         budget_native: Optional[float] = None,
         requester_agent: str = "",
         requester_wallet: str = "",
@@ -1153,6 +1172,26 @@ class AgentServiceDesk:
             or self._optional_float((featured.get("paid_offer") or {}).get("price_native"))
             or self.min_native
         )
+        selected_package = self._select_service_package_offer(
+            service_type=default_service_type,
+            requested_amount=requested_amount,
+            package_id=package_id,
+        )
+        if not problem and selected_package.get("default_problem"):
+            default_problem = self._clean(str(selected_package["default_problem"]))
+        if selected_package:
+            engagement_plan = merged_metadata.get("engagement_plan")
+            if not isinstance(engagement_plan, dict):
+                engagement_plan = {}
+            merged_metadata["selected_package"] = self._package_public_snapshot(selected_package)
+            merged_metadata["package_id"] = selected_package.get("package_id", "")
+            merged_metadata["engagement_plan"] = {
+                "offer_tier": selected_package.get("offer_tier", ""),
+                "package": selected_package.get("title", ""),
+                "package_id": selected_package.get("package_id", ""),
+                "delivery": selected_package.get("delivery", ""),
+                **engagement_plan,
+            }
         created = False
         created_result: Dict[str, Any] = {}
         task = existing_task
@@ -1183,6 +1222,7 @@ class AgentServiceDesk:
             task=task or {},
             problem=default_problem,
             service_type=default_service_type,
+            selected_package=selected_package,
             requested_amount=requested_amount,
             requester_agent=requester_agent,
             requester_wallet=requester_wallet,
@@ -1202,11 +1242,31 @@ class AgentServiceDesk:
             "created": created,
             "public_api_url": self.public_api_url,
             "featured_product_offer": featured,
+            "selected_package": self._package_public_snapshot(selected_package),
+            "concrete_order": self._e2e_concrete_order(
+                task=effective_task,
+                service_type=default_service_type,
+                problem=default_problem,
+                selected_package=selected_package,
+                requested_amount=requested_amount,
+            ),
             "task": effective_task,
             "payment_followup": payment_followup,
             "staking": staking,
-            "commands": self._e2e_commands(effective_task, default_service_type, default_problem, requested_amount),
-            "http_runway": self._e2e_http_runway(effective_task, default_service_type, default_problem, requested_amount),
+            "commands": self._e2e_commands(
+                effective_task,
+                default_service_type,
+                default_problem,
+                requested_amount,
+                selected_package=selected_package,
+            ),
+            "http_runway": self._e2e_http_runway(
+                effective_task,
+                default_service_type,
+                default_problem,
+                requested_amount,
+                selected_package=selected_package,
+            ),
             "lifecycle": self._e2e_lifecycle(effective_task, approval=approval),
             "next_best_action": self._e2e_next_action(effective_task),
             "analysis": self._e2e_analysis(effective_task, created=created),
@@ -2056,12 +2116,135 @@ class AgentServiceDesk:
             return f"Service task {task['task_id']} has a payment claim that could not be verified."
         return f"Service task {task['task_id']} status: {status}."
 
+    def _select_service_package_offer(
+        self,
+        *,
+        service_type: str,
+        requested_amount: Optional[float],
+        package_id: str = "",
+    ) -> Dict[str, Any]:
+        offers = self._service_package_offers(
+            service_type=service_type,
+            requested_amount=requested_amount if requested_amount is not None else self.min_native,
+        )
+        wanted = str(package_id or "").strip()
+        if wanted:
+            for offer in offers:
+                aliases = offer.get("aliases") if isinstance(offer.get("aliases"), list) else []
+                if offer.get("package_id") == wanted or wanted in aliases:
+                    return offer
+        return offers[0] if offers else {}
+
+    @staticmethod
+    def _package_public_snapshot(package: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(package, dict) or not package:
+            return {}
+        keys = [
+            "package_id",
+            "aliases",
+            "title",
+            "summary",
+            "offer_tier",
+            "amount_native",
+            "native_symbol",
+            "buyer_input",
+            "scope",
+            "out_of_scope",
+            "delivery",
+            "default_problem",
+        ]
+        return {key: package[key] for key in keys if package.get(key) not in (None, "", [])}
+
+    def _repo_diagnostic_patch_starter_entry(self) -> Dict[str, Any]:
+        package = self._select_service_package_offer(
+            service_type="repo_issue_help",
+            requested_amount=self.min_native,
+            package_id="repo_diagnostic_patch_starter",
+        )
+        entry_url = (
+            f"{self.public_api_url.rstrip('/')}/service/e2e?service_type=repo_issue_help"
+            if self.public_api_url
+            else "/service/e2e?service_type=repo_issue_help"
+        )
+        return {
+            "schema": "nomad.buyable_starter_entry.v1",
+            "package": self._package_public_snapshot(package),
+            "entry_url": entry_url,
+            "service_type": "repo_issue_help",
+            "buyer_context": "repo_ci_endpoint_disturbance",
+            "payment_boundary": "work starts only after verified payment unless local config disables service payment",
+            "receipt_boundary": "recognized revenue remains zero until a trusted paid receipt exists",
+        }
+
+    def _e2e_concrete_order(
+        self,
+        *,
+        task: Dict[str, Any],
+        service_type: str,
+        problem: str,
+        selected_package: Dict[str, Any],
+        requested_amount: float,
+    ) -> Dict[str, Any]:
+        package = self._package_public_snapshot(selected_package)
+        package_id = str(package.get("package_id") or "").strip()
+        root = (self.public_api_url or "").rstrip("/")
+        entry_url = f"{root}/service/e2e?service_type={service_type}" if root else f"/service/e2e?service_type={service_type}"
+        endpoint = f"{root}/service/e2e" if root else "/service/e2e"
+        return {
+            "schema": "nomad.concrete_buyable_order.v1",
+            "order_id": f"{package_id or service_type}.{task.get('task_id') or 'preview'}",
+            "package_id": package_id,
+            "service_type": service_type,
+            "status": task.get("status") or "preview",
+            "entry_url": entry_url,
+            "matching_context": {
+                "context_type": "repo_ci_endpoint_disturbance",
+                "fits": [
+                    "repo issue with public facts",
+                    "CI/build failure with public log or copied non-secret excerpt",
+                    "endpoint regression with URL and observed status",
+                ],
+                "current_nomad_use_case": "Render build, deploy, and endpoint disturbances can be converted into this starter instead of unbounded bounty hunting.",
+            },
+            "buyer_inputs": package.get("buyer_input") or ["repo_url", "issue_or_log_url", "observed_error", "expected_behavior"],
+            "scope": package.get("scope") or ["one bounded repo/CI/endpoint diagnosis"],
+            "out_of_scope": package.get("out_of_scope") or ["secrets", "unapproved public posting", "paid API spend"],
+            "quote": {
+                "amount_native": round(float(requested_amount), 8),
+                "native_symbol": self.chain.native_symbol,
+                "requires_payment_before_work": self.require_payment,
+                "revenue_recognition": "only_after_verified_payment_receipt",
+            },
+            "create_task_request": {
+                "method": "POST",
+                "endpoint": endpoint,
+                "payload": {
+                    "create": True,
+                    "service_type": service_type,
+                    "package_id": package_id,
+                    "problem": problem,
+                    "budget_native": round(float(requested_amount), 8),
+                    "metadata": {
+                        "package_id": package_id,
+                        "buyer_context": "repo_ci_endpoint_disturbance",
+                        "selected_package": package,
+                    },
+                },
+            },
+            "proof_gate": [
+                "no revenue until payment verification",
+                "no public reply without explicit approval",
+                "delivery must include diagnosis, smallest repro or patch path, and verifier checklist",
+            ],
+        }
+
     def _e2e_task_preview(
         self,
         *,
         task: Dict[str, Any],
         problem: str,
         service_type: str,
+        selected_package: Optional[Dict[str, Any]] = None,
         requested_amount: float,
         requester_agent: str,
         requester_wallet: str,
@@ -2078,6 +2261,11 @@ class AgentServiceDesk:
             "requester_agent": self._clean(requester_agent),
             "requester_wallet": self._clean(requester_wallet),
             "callback_url": self._clean(callback_url),
+            "selected_package": self._package_public_snapshot(selected_package or {}),
+            "metadata": {
+                "package_id": (selected_package or {}).get("package_id", ""),
+                "selected_package": self._package_public_snapshot(selected_package or {}),
+            },
             "payment": {
                 "amount_native": round(float(requested_amount), 8),
                 "native_symbol": self.chain.native_symbol,
@@ -2091,11 +2279,16 @@ class AgentServiceDesk:
         service_type: str,
         problem: str,
         requested_amount: float,
+        selected_package: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         task_id = str(task.get("task_id") or "svc-task-id")
         safe_problem = str(problem or "").replace('"', "'").strip()
+        package_suffix = ""
+        package_id = str((selected_package or {}).get("package_id") or "").strip()
+        if package_id:
+            package_suffix = f" --package-id {package_id}"
         preview_suffix = (
-            f' --create --service-type {service_type} --budget {requested_amount} "{safe_problem}"'
+            f' --create --service-type {service_type}{package_suffix} --budget {requested_amount} "{safe_problem}"'
             if task_id == "preview"
             else f" --task-id {task_id}"
         )
@@ -2116,18 +2309,27 @@ class AgentServiceDesk:
         service_type: str,
         problem: str,
         requested_amount: float,
+        selected_package: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Dict[str, Any]]:
         task_id = str(task.get("task_id") or "")
+        package = self._package_public_snapshot(selected_package or {})
+        create_payload = {
+            "create": True,
+            "problem": problem,
+            "service_type": service_type,
+            "budget_native": requested_amount,
+        }
+        if package.get("package_id"):
+            create_payload["package_id"] = package["package_id"]
+            create_payload["metadata"] = {
+                "package_id": package["package_id"],
+                "selected_package": package,
+            }
         return {
             "create_task": {
                 "method": "POST",
                 "endpoint": f"{self.public_api_url}/service/e2e" if self.public_api_url else "/service/e2e",
-                "payload": {
-                    "create": True,
-                    "problem": problem,
-                    "service_type": service_type,
-                    "budget_native": requested_amount,
-                },
+                "payload": create_payload,
             },
             "verify_payment": {
                 "method": "POST",
@@ -2326,17 +2528,20 @@ class AgentServiceDesk:
                 amount = self.min_native
             else:
                 amount = requested
-            offers.append(
-                {
-                    "package_id": str(template.get("package_id") or ""),
-                    "title": str(template.get("title") or ""),
-                    "summary": str(template.get("summary") or ""),
-                    "offer_tier": str(template.get("offer_tier") or ""),
-                    "amount_native": round(float(amount), 8),
-                    "native_symbol": self.chain.native_symbol,
-                    "delivery": str(template.get("delivery") or ""),
-                }
-            )
+            offer = {
+                "package_id": str(template.get("package_id") or ""),
+                "title": str(template.get("title") or ""),
+                "summary": str(template.get("summary") or ""),
+                "offer_tier": str(template.get("offer_tier") or ""),
+                "amount_native": round(float(amount), 8),
+                "native_symbol": self.chain.native_symbol,
+                "delivery": str(template.get("delivery") or ""),
+            }
+            for key in ("aliases", "buyer_input", "scope", "out_of_scope", "default_problem"):
+                value = template.get(key)
+                if value not in (None, "", []):
+                    offer[key] = value
+            offers.append(offer)
         return offers
 
     def _commercial_terms(

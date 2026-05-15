@@ -2789,6 +2789,26 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Catalog", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/service/e2e": {
+                "get": {
+                    "summary": "Preview a buyable end-to-end service runway; service_type=repo_issue_help selects the repo_diagnostic_patch_starter entry",
+                    "operationId": "getServiceE2eRunway",
+                    "parameters": [
+                        {"name": "service_type", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "package_id", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "problem", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "budget_native", "in": "query", "schema": {"type": "number"}, "required": False},
+                        {"name": "create", "in": "query", "schema": {"type": "boolean"}, "required": False},
+                    ],
+                    "responses": {"200": {"description": "E2E runway", "content": {"application/json": {"schema": ref_json_object()}}}},
+                },
+                "post": {
+                    "summary": "Preview or create a buyable end-to-end service task",
+                    "operationId": "postServiceE2eRunway",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {"200": {"description": "Preview"}, "201": {"description": "Created"}, "400": {"description": "Bad request"}},
+                },
+            },
             "/tasks": {
                 "get": {
                     "summary": "Get task by id",

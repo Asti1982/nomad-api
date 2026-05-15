@@ -1056,6 +1056,10 @@ class ArbiterAgent:
                 self._extract_key_value(query, "type")
                 or self._extract_key_value(query, "service_type")
             )
+            package_id = (
+                self._extract_key_value(query, "package_id")
+                or self._extract_key_value(query, "package")
+            )
             requester_agent = (
                 self._extract_key_value(query, "agent")
                 or self._extract_key_value(query, "requester")
@@ -1071,6 +1075,8 @@ class ArbiterAgent:
                 "create",
                 "type",
                 "service_type",
+                "package_id",
+                "package",
                 "agent",
                 "requester",
                 "callback",
@@ -1093,6 +1099,7 @@ class ArbiterAgent:
                 task_id=task_id,
                 problem=problem,
                 service_type=service_type,
+                package_id=package_id,
                 budget_native=self._extract_budget_native(query),
                 requester_agent=requester_agent,
                 requester_wallet=requester_wallet,

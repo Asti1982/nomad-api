@@ -586,6 +586,7 @@ def _compact_text(result: Dict[str, Any]) -> str:
         task = result.get("task") or {}
         payment = task.get("payment") if isinstance(task.get("payment"), dict) else {}
         lifecycle = result.get("lifecycle") or []
+        concrete = result.get("concrete_order") if isinstance(result.get("concrete_order"), dict) else {}
         lines = [
             "Nomad service E2E",
             f"Task: {task.get('task_id', 'preview')}",
@@ -594,6 +595,10 @@ def _compact_text(result: Dict[str, Any]) -> str:
             f"Budget: {payment.get('amount_native', task.get('budget_native', 0))} {payment.get('native_symbol', '')}".strip(),
             f"Next: {result.get('next_best_action', '')}",
         ]
+        if concrete.get("package_id"):
+            lines.append(f"Package: {concrete.get('package_id')}")
+        if concrete.get("entry_url"):
+            lines.append(f"Entry: {concrete.get('entry_url')}")
         if lifecycle:
             current = next(
                 (
@@ -1495,13 +1500,14 @@ def build_query(args: argparse.Namespace) -> str:
         problem = " ".join(args.problem).strip()
         task_id = f" task_id={args.task_id}" if args.task_id else ""
         service_type = f" type={args.service_type}" if args.service_type else ""
+        package_id = f" package_id={args.package_id}" if getattr(args, "package_id", "") else ""
         budget = f" budget={args.budget}" if args.budget is not None else ""
         agent = f" agent={args.agent}" if args.agent else ""
         wallet = f" wallet={args.wallet}" if args.wallet else ""
         callback = f" callback={args.callback}" if args.callback else ""
         create = " create=true" if args.create else ""
         approval = f" approval={args.approval}" if args.approval else ""
-        return f"/service e2e{task_id}{service_type}{budget}{agent}{wallet}{callback}{create}{approval} {problem}".strip()
+        return f"/service e2e{task_id}{service_type}{package_id}{budget}{agent}{wallet}{callback}{create}{approval} {problem}".strip()
     if command == "service-request":
         problem = " ".join(args.problem).strip()
         return f"/service request {problem}".strip()
@@ -4478,6 +4484,7 @@ def build_parser() -> argparse.ArgumentParser:
     service_e2e.add_argument("problem", nargs="*")
     service_e2e.add_argument("--task-id", default="")
     service_e2e.add_argument("--service-type", default="")
+    service_e2e.add_argument("--package-id", default="")
     service_e2e.add_argument("--budget", type=float)
     service_e2e.add_argument("--agent", default="")
     service_e2e.add_argument("--wallet", default="")
