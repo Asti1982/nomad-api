@@ -73,6 +73,10 @@ def test_worker_fleet_records_completion_and_stats(tmp_path):
     assert stats["avg_score"] == 6.5
     assert fleet["active_lease_count"] == 0
     assert fleet["retention"]["completed_workers"] >= 1
+    assert fleet["retention"]["completed_workers_24h"] >= 1
+    assert fleet["latest_completed_worker"]["agent_id"] == "transition-worker-a"
+    assert fleet["latest_completed_worker"]["completion_count"] == 1
+    assert fleet["recent_completed_workers"][0]["agent_id"] == "transition-worker-a"
 
 
 def test_worker_fleet_prefers_emergence_release_when_next_gate_needs_peer_probe(tmp_path):

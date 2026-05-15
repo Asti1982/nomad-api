@@ -78,6 +78,12 @@ def test_nomad_public_html_page_exists():
     assert "Nomad by syndiode" not in text
     assert "machine-native agent operating layer" in text
     assert "machine first / human audit membrane" in text
+    assert "network phase" in text
+    assert "settlement capacity" in text
+    assert "latest completion" in text
+    assert "latest_completed_worker" in text
+    assert "Live endpoints are sampled independently" in text
+    assert "bootstrap growth" in text
     assert "Syndiode Gadgets" in text
     assert "Sales Department Swarm" in text
     assert "HandyOracle" in text

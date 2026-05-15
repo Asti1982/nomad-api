@@ -213,7 +213,7 @@
 
     .signal-strip {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 1px;
       border: 1px solid var(--line);
       background: var(--line);
@@ -235,9 +235,15 @@
       display: block;
       margin-top: 12px;
       color: var(--ink);
-      font-size: 28px;
+      font-size: 22px;
       line-height: 1.1;
       overflow-wrap: anywhere;
+    }
+
+    .signal-note {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
     }
 
     section {
@@ -552,23 +558,25 @@
         <aside class="system-map" aria-label="Nomad machine signal field">
           <canvas id="signal-field"></canvas>
           <div class="map-readout">
-            <div class="readout-cell"><span>economy</span><strong id="map-economy">reading</strong></div>
-            <div class="readout-cell"><span>worker</span><strong id="map-worker">portable</strong></div>
+            <div class="readout-cell"><span>settlement</span><strong id="map-economy">reading</strong></div>
+            <div class="readout-cell"><span>runtimes</span><strong id="map-worker">portable</strong></div>
             <div class="readout-cell"><span>emergence</span><strong id="map-swarm">probing</strong></div>
           </div>
         </aside>
       </section>
 
       <div class="signal-strip" aria-label="Live Nomad signals">
-        <div class="metric"><span>carrying tier</span><strong id="metric-tier">reading</strong></div>
-        <div class="metric"><span>settlement score</span><strong id="metric-score">0.0000</strong></div>
-        <div class="metric"><span>product score</span><strong id="metric-product">0.000</strong></div>
-        <div class="metric"><span>connected agents</span><strong id="metric-agents">0</strong></div>
-        <div class="metric"><span>worker leases</span><strong id="metric-leases">0</strong></div>
+        <div class="metric"><span>network phase</span><strong id="metric-tier">reading</strong></div>
+        <div class="metric"><span>settlement capacity</span><strong id="metric-score">0.0000</strong></div>
+        <div class="metric"><span>product surface</span><strong id="metric-product">0.000</strong></div>
+        <div class="metric"><span>runtimes</span><strong id="metric-agents">0 known</strong></div>
+        <div class="metric"><span>open work</span><strong id="metric-leases">0 leases now</strong></div>
+        <div class="metric"><span>latest completion</span><strong id="metric-worker-completion">none</strong></div>
         <div class="metric"><span>opaque pressure</span><strong id="metric-opaque">0.000</strong></div>
         <div class="metric"><span>science claims</span><strong id="metric-science">0</strong></div>
-        <div class="metric"><span>top route</span><strong id="metric-action">sync</strong></div>
+        <div class="metric"><span>next bottleneck</span><strong id="metric-action">sync</strong></div>
       </div>
+      <p class="signal-note" id="metric-note">Live endpoints are sampled independently; lease counts can change between snapshots.</p>
 
       <section
         id="buyable-work"
@@ -1503,6 +1511,56 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
         const first = Array.isArray(actions) && actions.length ? actions[0] : {};
         return String((first && first.action) || "sync").replace(/_/g, " ");
       };
+      const cleanLabel = (value, fallback = "unknown") => {
+        const text = String(value || "").replace(/_/g, " ").trim();
+        return text || fallback;
+      };
+      const settlementState = (value) => {
+        if (value < 0.2) return "constrained";
+        if (value < 0.45) return "building";
+        if (value < 0.7) return "partial";
+        return "carrying";
+      };
+      const productState = (value) => {
+        if (value >= 0.75) return "agent-ready";
+        if (value >= 0.55) return "usable";
+        if (value >= 0.3) return "thin";
+        return "forming";
+      };
+      const networkPhase = ({ tier, settlement, product, agents, workers }) => {
+        const rawTier = cleanLabel(tier, "");
+        const normalizedTier = rawTier.toLowerCase();
+        if (rawTier && !["starving", "unknown"].includes(normalizedTier)) return rawTier;
+        if (agents > 0 && product >= 0.55 && settlement < 0.25) return "bootstrap growth";
+        if (workers > 0 && settlement < 0.25) return "settlement constrained";
+        if (settlement >= 0.7) return "economically carrying";
+        return "forming";
+      };
+      const compactAgentId = (value) => {
+        const text = String(value || "").trim();
+        return text.length > 22 ? `${text.slice(0, 10)}...${text.slice(-6)}` : text || "worker";
+      };
+      const compactIsoTime = (value) => {
+        const parsed = Date.parse(String(value || ""));
+        if (!Number.isFinite(parsed)) return "";
+        return new Date(parsed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      };
+      const latestWorkerCompletion = (fleet) => {
+        const explicit = fleet && typeof fleet === "object" ? fleet.latest_completed_worker : {};
+        const completed = explicit && explicit.agent_id
+          ? explicit
+          : ((Array.isArray(fleet?.recent_completed_workers) && fleet.recent_completed_workers[0])
+            || (Array.isArray(fleet?.recent_workers) ? fleet.recent_workers.find((row) => Number(row.completion_count || 0) > 0) : null)
+            || {});
+        if (!completed.agent_id) return { label: "none", note: "" };
+        const count = Number(completed.completion_count || 0);
+        const at = compactIsoTime(completed.last_seen_at);
+        const label = `${compactAgentId(completed.agent_id)} ${count}x${at ? ` @ ${at}` : ""}`;
+        return {
+          label,
+          note: `${completed.agent_id} completed ${count} cycle${count === 1 ? "" : "s"}${at ? `; last seen ${at}` : ""}`,
+        };
+      };
 
       const loadSignals = async () => {
         try {
@@ -1534,10 +1592,13 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const machineField = fieldRes.ok ? await fieldRes.json() : {};
           const viability = economy.machine_viability || {};
           const tier = viability.tier || "unknown";
-          const score = Number(viability.carrying_score || 0).toFixed(4);
+          const scoreValue = Number(viability.carrying_score || 0);
+          const score = scoreValue.toFixed(4);
           const agents = Number(swarm.connected_agents || 0);
           const leases = Number(fleet.active_lease_count || 0);
           const workers = Number(fleet.active_worker_count || 0);
+          const knownWorkers = Number(fleet.known_worker_count || workers || 0);
+          const completed24h = Number((fleet.retention || {}).completed_workers_24h || 0);
           const scienceClaims = Array.isArray(science.research_claims) ? science.research_claims.length : 0;
           const rows = Array.isArray(gradient.gradient) ? gradient.gradient : [];
           const topRoute = rows.length ? String(rows[0].objective || "").replace(/_/g, " ") : "";
@@ -1547,27 +1608,37 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const synergy = Number(em.synergy_score || 0).toFixed(3);
           const drift = Number(em.convention_drift || 0).toFixed(3);
           const utility = product.agent_utility || swarm.machine_product || {};
-          const productScore = Number(utility.agent_product_score || 0).toFixed(3);
+          const productValue = Number(utility.agent_product_score || 0);
+          const productScore = productValue.toFixed(3);
           const treasuryHints = treasury.objective_pressure_hints || {};
           const treasuryPressure = Object.values(treasuryHints).reduce((sum, row) => sum + Number((row || {}).pressure_units || 0), 0);
           const opaquePressure = Number(((opaque.selection_pressure || swarm.opaque_emergence || {}).opaque_selection_pressure) || treasuryPressure || 0).toFixed(3);
           const fieldTop = (machineField.field_state || {}).top_objective;
-          const action = topRoute || fieldTop || emergence.release_decision || release.release_tier || compactAction(economy.next_actions);
-          set("metric-tier", tier);
-          set("metric-score", score);
-          set("metric-product", productScore);
-          set("metric-agents", agents);
-          set("metric-leases", leases);
+          const action = cleanLabel(topRoute || fieldTop || emergence.release_decision || release.release_tier || compactAction(economy.next_actions), "sync");
+          const settlementLabel = settlementState(scoreValue);
+          const productLabel = productState(productValue);
+          const phase = networkPhase({ tier, settlement: scoreValue, product: productValue, agents, workers });
+          const latestCompletion = latestWorkerCompletion(fleet);
+          const snapshot = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          set("metric-tier", phase);
+          set("metric-score", `${score} ${settlementLabel}`);
+          set("metric-product", `${productScore} ${productLabel}`);
+          set("metric-agents", `${agents} agents / ${workers} active workers`);
+          set("metric-leases", `${leases} leases now`);
+          set("metric-worker-completion", latestCompletion.label);
           set("metric-opaque", opaquePressure);
           set("metric-science", scienceClaims);
           set("metric-action", action);
-          set("map-economy", `${tier} ${score}`);
-          set("map-swarm", emergence.schema ? `${synergy}/${drift}` : fieldStrength);
-          set("map-worker", health.ok ? `${workers}/${leases}` : "retry");
+          set("metric-note", `sampled ${snapshot}; ${knownWorkers} known workers, ${completed24h} completed within 24h. ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
+          set("map-economy", `${score} ${settlementLabel}`);
+          set("map-swarm", emergence.schema ? `syn ${synergy} / drift ${drift}` : fieldStrength);
+          set("map-worker", health.ok ? `${workers} active / ${leases} open` : "retry");
         } catch (error) {
           set("metric-tier", "offline");
           set("metric-opaque", "0.000");
           set("metric-action", "retry");
+          set("metric-worker-completion", "offline");
+          set("metric-note", "live signals unreachable; retrying next snapshot.");
           set("map-economy", "unreachable");
           set("map-worker", "retry");
         }

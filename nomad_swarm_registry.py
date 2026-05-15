@@ -922,10 +922,33 @@ class SwarmJoinRegistry:
             and self._iso_is_recent(item.get("last_seen_at"), seconds=24 * 3600)
         ]
         completed_workers = [item for item in workers if int(item.get("completion_count") or 0) >= 1]
+        recent_completed_workers = [
+            item
+            for item in completed_workers
+            if self._iso_is_recent(item.get("last_seen_at"), seconds=24 * 3600)
+        ]
+        latest_completed_worker = next(
+            iter(sorted(recent_completed_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)),
+            {},
+        )
         leases_per_worker = round(len(active_leases) / max(1, len(active_workers)), 4) if active_workers else 0.0
         completions_per_worker = (
             round(sum(int(item.get("completion_count") or 0) for item in workers) / max(1, len(workers)), 4) if workers else 0.0
         )
+
+        def compact_worker(item: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "agent_id": item.get("agent_id", ""),
+                "assigned_objective": item.get("assigned_objective", ""),
+                "last_objective": item.get("last_objective", ""),
+                "last_score": item.get("last_score", 0.0),
+                "seen_count": int(item.get("seen_count") or 0),
+                "completion_count": int(item.get("completion_count") or 0),
+                "first_seen_at": item.get("first_seen_at", ""),
+                "last_seen_at": item.get("last_seen_at", ""),
+                "status": item.get("status", ""),
+            }
+
         return {
             "mode": "nomad_transition_worker_fleet",
             "schema": "nomad.transition_worker_fleet.v1",
@@ -943,21 +966,17 @@ class SwarmJoinRegistry:
                 "schema": "nomad.transition_worker_retention.v1",
                 "returning_workers_24h": len(returning_workers),
                 "completed_workers": len(completed_workers),
+                "completed_workers_24h": len(recent_completed_workers),
                 "leases_per_active_worker": leases_per_worker,
                 "completions_per_known_worker": completions_per_worker,
             },
+            "latest_completed_worker": compact_worker(latest_completed_worker) if latest_completed_worker else {},
+            "recent_completed_workers": [
+                compact_worker(item)
+                for item in sorted(recent_completed_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)[:16]
+            ],
             "recent_workers": [
-                {
-                    "agent_id": item.get("agent_id", ""),
-                    "assigned_objective": item.get("assigned_objective", ""),
-                    "last_objective": item.get("last_objective", ""),
-                    "last_score": item.get("last_score", 0.0),
-                    "seen_count": int(item.get("seen_count") or 0),
-                    "completion_count": int(item.get("completion_count") or 0),
-                    "first_seen_at": item.get("first_seen_at", ""),
-                    "last_seen_at": item.get("last_seen_at", ""),
-                    "status": item.get("status", ""),
-                }
+                compact_worker(item)
                 for item in sorted(active_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)[:16]
             ],
             "objective_stats": fleet.get("objective_stats") or {},

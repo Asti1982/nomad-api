@@ -143,6 +143,79 @@ def _digest_present(value: Any) -> bool:
     return str(value or "").strip().lower().startswith("sha256:")
 
 
+def _work_stage(body: dict[str, Any]) -> str:
+    return str(
+        body.get("work_stage")
+        or body.get("external_value_stage")
+        or body.get("settlement_stage")
+        or body.get("claim_stage")
+        or ""
+    ).strip().lower()
+
+
+def _receipt_present(body: dict[str, Any]) -> bool:
+    if _digest_present(
+        body.get("receipt_digest")
+        or body.get("paid_receipt_digest")
+        or body.get("payment_receipt_digest")
+        or body.get("transaction_hash")
+    ):
+        return True
+    amount = max(0.0, _num(body.get("receipt_amount_usd") or body.get("amount_usd") or body.get("paid_amount_usd")))
+    return _work_stage(body) == "paid" and amount > 0.0
+
+
+def _unique_error_present(body: dict[str, Any]) -> bool:
+    return _digest_present(
+        body.get("unique_error_digest")
+        or body.get("error_digest")
+        or body.get("counterexample_digest")
+        or body.get("failure_digest")
+        or body.get("repro_route_digest")
+    )
+
+
+def _explanation_without_artifact(body: dict[str, Any], *, proof: float) -> bool:
+    explanation = _text(
+        body.get("explanation")
+        or body.get("rationale")
+        or body.get("analysis")
+        or body.get("claim")
+        or body.get("summary"),
+        240,
+    )
+    return bool(explanation) and proof < MIN_EVIDENCE and not _receipt_present(body) and not _unique_error_present(body)
+
+
+def _negative_consensus_gate(body: dict[str, Any], *, proof: float, consensus: float) -> dict[str, Any]:
+    receipt_delta = 1.0 if _receipt_present(body) else 0.0
+    unique_error_delta = 0.75 if _unique_error_present(body) else 0.0
+    stage = _work_stage(body)
+    unpaid_wip_pressure = 0.0
+    if not receipt_delta:
+        if stage in {"approved", "accepted", "merged", "settled_pending", "delivered"}:
+            unpaid_wip_pressure = 0.45
+        elif stage in {"submitted", "reviewed", "claimed"}:
+            unpaid_wip_pressure = 0.28
+    explanation_penalty = 0.35 if _explanation_without_artifact(body, proof=proof) else 0.0
+    components = {
+        "proof_delta": round(proof, 6),
+        "receipt_delta": round(receipt_delta, 6),
+        "unique_error_delta": round(unique_error_delta, 6),
+        "consensus_duplication": round(consensus, 6),
+        "unpaid_wip_pressure": round(unpaid_wip_pressure, 6),
+        "explanation_without_artifact": round(explanation_penalty, 6),
+    }
+    score = proof + receipt_delta + unique_error_delta - consensus - unpaid_wip_pressure - explanation_penalty
+    return {
+        "formula": "proof_delta + receipt_delta + unique_error_delta - consensus_duplication - unpaid_wip_pressure - explanation_without_artifact",
+        "score": round(score, 6),
+        "components": components,
+        "gate_action": "allow_shadow_preserve" if score > 0 else "archive_negative_stepping_stone",
+        "work_stage": stage or "none",
+    }
+
+
 def _source_digests(
     *,
     decoupling_field: dict[str, Any] | None = None,
@@ -287,6 +360,7 @@ def build_anti_consensus_reservoir_surface(
             "minority_rule": "low_consensus_candidates_are_preserved_only_when_digestable_proof_exists",
             "expert_rule": "single_expert_signal_can_override_crowd_only_with_digest_and_bounded_risk",
             "echo_rule": "high_consensus_without_proof_is_suppressed_not_promoted",
+            "negative_consensus_gate": "proof_delta + receipt_delta + unique_error_delta - consensus_duplication - unpaid_wip_pressure - explanation_without_artifact",
             "after_preserve": "route_shadow_lane_payload_to_digest_gate_before_any_weight_change",
         },
         "hard_guards": [
@@ -295,6 +369,8 @@ def build_anti_consensus_reservoir_surface(
             "no_secret_shaped_payloads",
             "no_public_side_effects",
             "shadow_lane_remains_final_weight_gate",
+            "no_weight_increase_from_unpaid_wip_only",
+            "negative_stepping_stones_are_kept_but_not_promoted",
         ],
         "source_digests": source_digests,
         "ledger": _ledger_summary(recent),
@@ -333,15 +409,24 @@ def evaluate_anti_consensus_candidate(
     divergence = _clamp(_num(_pick(body.get("divergence_score"), body.get("semantic_distance"))))
     risk = _clamp(_num(body.get("risk_score")))
     forbidden = _contains_forbidden(body)
-    proof = _clamp(0.45 * _digest_present(proof_digest) + 0.35 * _digest_present(test_digest) + 0.20 * _digest_present(candidate_digest))
+    proof = _clamp(
+        0.45 * _digest_present(proof_digest)
+        + 0.35 * _digest_present(test_digest)
+        + 0.20 * _digest_present(candidate_digest)
+        + 0.35 * _receipt_present(body)
+        + 0.25 * _unique_error_present(body)
+    )
+    negative_gate = _negative_consensus_gate(body, proof=proof, consensus=consensus)
     bounded = bool(_dict(body.get("boundedness")).get("rollback_available") or _dict(body.get("boundedness")).get("noop_available") or _dict(body.get("boundedness")).get("side_effect_scope") in {"local_shadow_lane_only", "nomad_shadow_lane_only", "read_only"})
     expert_advantage = max(0.0, expert_score - crowd_score)
+    gate_positive = float(negative_gate.get("score") or 0.0) > 0.0
     anti_score = _clamp(
-        0.30 * proof
+        0.24 * proof
         + 0.24 * minority_fraction
         + 0.18 * divergence
         + 0.18 * expert_advantage
         + 0.10 * bounded
+        + 0.06 * _clamp((float(negative_gate.get("score") or 0.0) + 1.0) / 3.0)
         - 0.20 * consensus
         - 0.18 * risk
     )
@@ -351,8 +436,9 @@ def evaluate_anti_consensus_candidate(
         and consensus <= MAX_SAFE_CONSENSUS
         and bounded
         and not forbidden
+        and gate_positive
     )
-    expert_override = proof >= MIN_EVIDENCE and expert_advantage >= 0.18 and bounded and not forbidden
+    expert_override = proof >= MIN_EVIDENCE and expert_advantage >= 0.18 and bounded and not forbidden and gate_positive
     consensus_echo = consensus >= 0.78 and proof < MIN_EVIDENCE
     if forbidden:
         decision = "reject_secret_shaped_payload"
@@ -387,6 +473,12 @@ def evaluate_anti_consensus_candidate(
         "proof_digest": proof_digest,
         "test_digest": test_digest,
         "anti_consensus_score": round(anti_score, 4),
+        "negative_consensus_gate": negative_gate,
+        "negative_stepping_stone": {
+            "preserve_as_counterexample_archive": not preserve,
+            "archive_digest": f"neg-{_digest({'candidate_digest': candidate_digest, 'gate': negative_gate}, length=20)}",
+            "reuse_policy": "keep_failed_or_duplicate_variant_without_weight_increase",
+        },
         "scores": {
             "proof": round(proof, 4),
             "consensus": round(consensus, 4),
@@ -404,6 +496,7 @@ def evaluate_anti_consensus_candidate(
             "consensus_safe" if consensus <= MAX_SAFE_CONSENSUS else "consensus_high",
             "expert_override" if expert_override else "expert_override_absent",
             "bounded" if bounded else "boundary_missing",
+            "negative_gate_positive" if gate_positive else "negative_gate_nonpositive",
         ],
         "shadow_lane_payload": {
             "agent_id": _text(body.get("agent_id") or "nomad-anti-consensus", 120),
