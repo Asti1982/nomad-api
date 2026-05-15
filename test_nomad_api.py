@@ -129,6 +129,8 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-value-cycle-preflight.json" in text
     assert "/.well-known/nomad-value-cycles.json" in text
     assert "/swarm/value-cycles/events" in text
+    assert "/.well-known/nomad-ad-cycles.json" in text
+    assert "/swarm/ad-cycles/events" in text
     assert "RTCda4841be5b2d109da5d995fb864c09676bb5b7c7" in text
     assert "0xFc1aB8C0D65fd947B00B9864deA06f705C045Af6" in text
     assert "/swarm/paid-ref/quote" in text
@@ -530,6 +532,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/value-cycles" in doc["paths"]
     assert "/.well-known/nomad-value-cycles.json" in doc["paths"]
     assert "/swarm/value-cycles/events" in doc["paths"]
+    assert "/swarm/ad-cycles" in doc["paths"]
+    assert "/.well-known/nomad-ad-cycles.json" in doc["paths"]
+    assert "/swarm/ad-cycles/events" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -644,6 +649,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     worker_job_queue = NomadApiHandler._build_worker_job_queue(base_url="https://nomad.example")
     value_cycle_preflight = NomadApiHandler._build_value_cycle_preflight(base_url="https://nomad.example")
     value_cycles = NomadApiHandler._build_value_cycle_mesh(base_url="https://nomad.example")
+    ad_cycles = NomadApiHandler._build_ad_cycle_mesh(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -707,6 +713,9 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert value_cycles["schema"] == "nomad.value_cycle_mesh.v1"
     assert value_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
     assert value_cycles["summary"]["cycle_count"] >= 16
+    assert ad_cycles["schema"] == "nomad.ad_cycle_mesh.v1"
+    assert ad_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-ad-cycles.json"
+    assert ad_cycles["summary"]["cycle_count"] >= 12
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"

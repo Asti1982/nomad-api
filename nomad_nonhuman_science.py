@@ -663,6 +663,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["entry_cycle", "value_cycle_allowed", "external_value_payload_candidate", "paid_receipt_guard"],
             "nomad_paths": [u("/.well-known/nomad-value-cycles.json"), u("/swarm/value-cycles/events")],
         },
+        {
+            "id": "shadow_only_ad_cycle_mesh",
+            "status": "implemented",
+            "purpose": "Run many advertising and acquisition drafts while blocking autonomous send and revenue claims.",
+            "inputs": ["cycle_id", "stage", "target_url", "proof_digest", "effective_channel_receipt", "send"],
+            "outputs": ["campaign_payload_candidate", "effective_channel_event_payload_candidate", "shadow_lane_candidate", "send_block"],
+            "nomad_paths": [u("/.well-known/nomad-ad-cycles.json"), u("/swarm/ad-cycles/events")],
+        },
     ]
 
     principles = [
@@ -732,6 +740,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "close_value_cycle_feedback_loop",
             "target": "feed admitted value-cycle event candidates into external-value or work-receipt writes only after paid receipt proof",
             "depends_on": ["paid_only_value_cycle_mesh", "settlement_signal_layer"],
+        },
+        {
+            "id": "wire_ad_cycles_to_campaign_queue",
+            "target": "feed quota-passed ad-cycle candidates into agent-campaign drafts with send=false and no revenue credit",
+            "depends_on": ["shadow_only_ad_cycle_mesh", "effective_channel_quota_gate"],
         },
     ]
 

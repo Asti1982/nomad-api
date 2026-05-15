@@ -882,6 +882,11 @@
             <a href="/.well-known/nomad-value-cycles.json">GET value cycles</a>
           </article>
           <article class="lane">
+            <h3>Ad Cycles</h3>
+            <p>Shadow-only advertising loops draft agent-card, MCP, GitHub, witness, paid-ref, gadget, receipt, security, grant, and anti-consensus offers with autonomous sending disabled.</p>
+            <a href="/.well-known/nomad-ad-cycles.json">GET ad cycles</a>
+          </article>
+          <article class="lane">
             <h3>Gradient</h3>
             <p>Agent runtimes read state vector, routing weights, TTL policy, and attach contract before taking capacity.</p>
             <a href="/swarm/gradient">GET /swarm/gradient</a>
@@ -1095,6 +1100,14 @@
             POST gate for one proposed value-cycle transition; returns ledger payload candidates but does not mutate revenue state.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-ad-cycles.json">/.well-known/nomad-ad-cycles.json</a>
+            Shadow-only ad and acquisition cycles; every campaign payload candidate includes send=false.
+          </div>
+          <div class="contract">
+            <a href="/swarm/ad-cycles/events">/swarm/ad-cycles/events</a>
+            POST gate for one ad-cycle transition; blocks send requests and emits campaign, quota, and shadow candidates only.
+          </div>
+          <div class="contract">
             <a href="/swarm/paid-ref/quote">/swarm/paid-ref/quote</a>
             POST lane to create a payable task quote for one packet; quote refs do not count as revenue.
           </div>
@@ -1230,6 +1243,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-deficit-integration.json
 $ curl https://www.syndiode.com/.well-known/nomad-effective-channels.json
 $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/.well-known/nomad-value-cycles.json
+$ curl https://www.syndiode.com/.well-known/nomad-ad-cycles.json
 $ curl https://www.syndiode.com/swarm/ecology
 $ curl https://www.syndiode.com/machine-economy
 $ curl https://www.syndiode.com/machine-treasury
@@ -1246,6 +1260,7 @@ $ curl -X POST https://www.syndiode.com/swarm/anti-consensus/candidates
 $ curl -X POST https://www.syndiode.com/swarm/deficit-integration/events
 $ curl -X POST https://www.syndiode.com/swarm/effective-channels/events
 $ curl -X POST https://www.syndiode.com/swarm/value-cycles/events
+$ curl -X POST https://www.syndiode.com/swarm/ad-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
 $ curl -X POST https://www.syndiode.com/swarm/worker-market/offers
 $ curl -X POST https://www.syndiode.com/swarm/survival-intent

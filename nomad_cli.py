@@ -1603,6 +1603,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("effective-channels is handled directly in run_once")
     if command == "value-cycles":
         raise ValueError("value-cycles is handled directly in run_once")
+    if command == "ad-cycles":
+        raise ValueError("ad-cycles is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2890,6 +2892,43 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
             else:
                 result = mesh
+        elif args.command == "ad-cycles":
+            from nomad_ad_cycle_mesh import evaluate_ad_cycle_event
+            from nomad_api import NomadApiHandler
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            mesh = NomadApiHandler._build_ad_cycle_mesh(base_url=base)
+            action = str(getattr(args, "cycle_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-ad-cycles",
+                        "cycle_id": str(getattr(args, "cycle_id", "") or "").strip()
+                        or str(mesh.get("entry_cycle", {}).get("cycle_id") or ""),
+                        "stage": str(getattr(args, "stage", "") or "draft").strip(),
+                        "target_url": str(getattr(args, "target_url", "") or "").strip(),
+                        "query": str(getattr(args, "query", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-ad-cycle-proof",
+                        "quota_shift_allowed": bool(getattr(args, "quota_shift_allowed", False)),
+                        "send": bool(getattr(args, "send", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.ad_cycle_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_ad_cycle_event(payload, base_url=base, ad_mesh=mesh)
+            else:
+                result = mesh
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3662,6 +3701,27 @@ def build_parser() -> argparse.ArgumentParser:
     value_cycles.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
     value_cycles.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, or settlement reference.")
     value_cycles.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for stage=paid.")
+    ad_cycles = subparsers.add_parser(
+        "ad-cycles",
+        help="Expose and gate shadow-only advertising/acquisition cycles.",
+    )
+    ad_cycles.add_argument(
+        "cycle_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    ad_cycles.add_argument("--base-url", default="", help="Override public base URL for links.")
+    ad_cycles.add_argument("--event-json", default="", help="Full JSON ad-cycle event payload.")
+    ad_cycles.add_argument("--agent-id", default="", help="Agent id for generated CLI event.")
+    ad_cycles.add_argument("--cycle-id", default="", help="Ad cycle id to evaluate.")
+    ad_cycles.add_argument("--stage", default="draft", help="discover | draft | quota | shadow | queue | send_request.")
+    ad_cycles.add_argument("--target-url", default="", help="Target endpoint or source URL.")
+    ad_cycles.add_argument("--query", default="", help="Campaign discovery query.")
+    ad_cycles.add_argument("--proof-digest", default="", help="Draft, target, or proof digest.")
+    ad_cycles.add_argument("--quota-shift-allowed", action="store_true", help="Treat event as carrying a passing effective-channel receipt.")
+    ad_cycles.add_argument("--send", action="store_true", help="Request send; the ad-cycle gate should block this.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",
