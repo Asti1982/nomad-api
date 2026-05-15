@@ -86,6 +86,116 @@ def _duplicate_pressure(bounty_hunter: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _science_backed_cashflow_kernel(
+    *,
+    root: str,
+    revenue_usd: float,
+    duplicate: dict[str, Any],
+    packages: list[dict[str, Any]],
+    contact_paths: dict[str, Any],
+) -> dict[str, Any]:
+    """Route scarce work by receipt proximity instead of human-like promise."""
+    package_count = max(1, len(packages))
+    buyer_paid_score = 1.0
+    if revenue_usd <= 0.0:
+        buyer_paid_score += 0.55
+    if packages:
+        buyer_paid_score += 0.2
+    settlement_score = 0.45 if revenue_usd <= 0.0 else 0.9
+    bounty_score = 0.28 + min(0.25, 0.04 * float(duplicate.get("low_duplicate_count") or 0))
+    referral_score = 0.18
+    if int(duplicate.get("public_go_count") or 0) > 0:
+        bounty_score += 0.12
+
+    lanes = [
+        {
+            "lane": "buyer_paid_repo_diagnostic",
+            "score": round(buyer_paid_score, 3),
+            "route": contact_paths.get("service_e2e") or _u(root, "/service/e2e?service_type=repo_issue_help"),
+            "dominant_receipt": "verified_wallet_tx_hash_or_x402_signature",
+            "work_before_receipt": "preview_only",
+            "why": "shortest path from buyer pain to paid task; no maintainer discretion needed",
+        },
+        {
+            "lane": "settlement_repair",
+            "score": round(settlement_score, 3),
+            "route": _u(root, "/.well-known/nomad-external-value.json"),
+            "dominant_receipt": "external_paid_receipt_or_positive_balance_delta",
+            "work_before_receipt": "read_only_watch_and_one_mature_followup_max",
+            "why": "may recover already-created value, but cannot be counted until receipt",
+        },
+        {
+            "lane": "proof_first_bounty",
+            "score": round(bounty_score, 3),
+            "route": _u(root, "/.well-known/nomad-bounty-hunter.json"),
+            "dominant_receipt": "public_bounty_acceptance_plus_payment",
+            "work_before_receipt": "local_repro_only",
+            "why": "use only low-duplicate clear-payout bounties; public claims wait for proof",
+        },
+        {
+            "lane": "owned_referral_context",
+            "score": referral_score,
+            "route": _u(root, "/.well-known/nomad-referral-swarm.json"),
+            "dominant_receipt": "provider_referral_credit_receipt",
+            "work_before_receipt": "owned_surface_only",
+            "why": "cheap optional upside, but weak proof and weak buyer intent",
+        },
+    ]
+    lanes.sort(key=lambda item: item["score"], reverse=True)
+    return {
+        "schema": "nomad.science_backed_cashflow_kernel.v1",
+        "purpose": "replace unpaid contribution volume with receipt-proximate buyer work",
+        "counter_human_shift": (
+            "do not reward effort, agreement, thanks, merge, or public visibility; reward only "
+            "receipt proximity and verified payment rails"
+        ),
+        "research_basis": [
+            {
+                "id": "agent_scaling_diversity_2026",
+                "url": "https://arxiv.org/abs/2602.03794",
+                "implemented_rule": "measure effective channels; do not add more homogeneous unpaid attempts",
+            },
+            {
+                "id": "voting_or_consensus_2025",
+                "url": "https://aclanthology.org/2025.findings-acl.606/",
+                "implemented_rule": "independent generation and answer diversity beat blind convergence; isolate lanes before integration",
+            },
+            {
+                "id": "web_of_agents_2025",
+                "url": "https://www.microsoft.com/en-us/research/publication/collaborative-agentic-ai-needs-interoperability-across-ecosystems/",
+                "implemented_rule": "make discovery, state, and payment handoff machine-readable instead of prose-led selling",
+            },
+            {
+                "id": "dmas_achilles_heel_2025",
+                "url": "https://arxiv.org/abs/2504.07461",
+                "implemented_rule": "guard against free riding by blocking work until a receipt or bounded proof gate exists",
+            },
+            {
+                "id": "multiagentbench_2025",
+                "url": "https://arxiv.org/abs/2503.01935",
+                "implemented_rule": "score milestone completion, not conversational collaboration quality",
+            },
+        ],
+        "lane_count": len(lanes),
+        "package_count": package_count,
+        "ranked_lanes": lanes,
+        "forced_next_lane": lanes[0],
+        "selection_law": [
+            "if recognized_revenue_usd_total == 0, buyer_paid_repo_diagnostic outranks unpaid bounty expansion",
+            "if no verified tx_hash or external paid receipt exists, work product remains preview or draft only",
+            "if a lane has no machine-readable payment verifier, its route weight decays regardless of social approval",
+            "if two lanes emit the same buyer story, keep only the one with the shorter receipt path",
+        ],
+        "cashflow_experiment": {
+            "hypothesis": "one paid repo diagnostic starter beats more unpaid bounty/review attempts as first-revenue path",
+            "primary_metric": "verified paid task count",
+            "negative_control": ["submitted_without_payment", "merge_without_payment", "approval_without_payment"],
+            "stop_rule": "after 3 unpaid buyer task previews without tx_hash, rotate buyer context but keep receipt gate",
+        },
+        "machine_instruction": "route_next_external_value_cycle_to_forced_next_lane_until_paid_receipt_or_explicit_operator_override",
+    }
+
+
 def build_buyer_funded_work_surface(
     *,
     base_url: str = "",
@@ -151,6 +261,13 @@ def build_buyer_funded_work_surface(
             "safe_public_action": "one_mature_followup_max_after_no_recent_followup",
         },
     ]
+    cashflow_kernel = _science_backed_cashflow_kernel(
+        root=root,
+        revenue_usd=revenue_usd,
+        duplicate=duplicate,
+        packages=packages,
+        contact_paths=contact_paths,
+    )
 
     cycles = [
         {
@@ -194,6 +311,19 @@ def build_buyer_funded_work_surface(
             "next_action": "route incoming buyer or agent blocker into repo_diagnostic_patch_starter first",
         },
     ]
+    cycles.append(
+        {
+            "cycle_id": "science_backed_receipt_first_sales",
+            "status": "forced_primary_lane",
+            "objective": "convert the next value cycle into a paid buyer task before doing deeper work",
+            "evidence": {
+                "forced_lane": cashflow_kernel["forced_next_lane"]["lane"],
+                "forced_route": cashflow_kernel["forced_next_lane"]["route"],
+                "recognized_revenue_usd_total": revenue_usd,
+            },
+            "next_action": "create or share the repo_diagnostic_patch_starter order; work only after verified payment",
+        }
+    )
 
     plan_core = {
         "revenue_usd": revenue_usd,
@@ -273,6 +403,7 @@ def build_buyer_funded_work_surface(
             "owned_contextual_referral",
         ],
         "cycles": cycles,
+        "science_backed_cashflow_kernel": cashflow_kernel,
         "buyer_funded_packages": packages,
         "concrete_starter_order": concrete_starter_order,
         "contextual_referral_policy": {

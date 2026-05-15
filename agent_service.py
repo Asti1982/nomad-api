@@ -360,6 +360,10 @@ class AgentServiceDesk:
             },
             "first_paid_job_protocol": self.first_paid_job_protocol(featured_product_offer),
             "first_buyable_starter": self._repo_diagnostic_patch_starter_entry(),
+            "receipt_first_buyer_protocol": self._receipt_first_buyer_protocol(
+                service_type="repo_issue_help",
+                package_id="repo_diagnostic_patch_starter",
+            ),
             "interaction_contract": {
                 "audience": "ai_agents",
                 "style": "agent_first_non_anthropomorphic",
@@ -1528,6 +1532,10 @@ class AgentServiceDesk:
             "draft_response": self._draft_response(task, human_unlocks),
             "agent_success_message": self._agent_success_message(task, rescue_plan),
             "payment_allocation": task.get("payment_allocation") or {},
+            "receipt_first_buyer_protocol": self._receipt_first_buyer_protocol(
+                service_type=service_type,
+                package_id=str(metadata.get("package_id") or ""),
+            ),
             "blocked_without_approval": self.safety_contract()["requires_explicit_approval"],
         }
 
@@ -2177,6 +2185,75 @@ class AgentServiceDesk:
             "buyer_context": "repo_ci_endpoint_disturbance",
             "payment_boundary": "work starts only after verified payment unless local config disables service payment",
             "receipt_boundary": "recognized revenue remains zero until a trusted paid receipt exists",
+            "receipt_first_buyer_protocol": self._receipt_first_buyer_protocol(
+                service_type="repo_issue_help",
+                package_id="repo_diagnostic_patch_starter",
+            ),
+        }
+
+    def _receipt_first_buyer_protocol(
+        self,
+        *,
+        service_type: str,
+        package_id: str = "",
+    ) -> Dict[str, Any]:
+        root = (self.public_api_url or "").rstrip("/")
+        normalized_type = self._normalize_service_type(service_type, "")
+        package_id = package_id or "repo_diagnostic_patch_starter"
+        return {
+            "schema": "nomad.receipt_first_buyer_protocol.v1",
+            "service_type": normalized_type,
+            "package_id": package_id,
+            "counter_human_rule": (
+                "do not perform the useful patch work because the situation feels promising; "
+                "perform only preview, quote, and verifier setup until a payment receipt exists"
+            ),
+            "machine_buyer_sequence": [
+                {
+                    "stage": "preview",
+                    "allowed": ["classify pain", "quote starter", "name required non-secret facts"],
+                    "counts_as_revenue": False,
+                },
+                {
+                    "stage": "create_payable_task",
+                    "allowed": ["issue wallet invoice", "bind package_id", "freeze scope"],
+                    "counts_as_revenue": False,
+                },
+                {
+                    "stage": "verify_payment",
+                    "allowed": ["verify tx_hash", "verify x402 signature", "deduplicate payment proof"],
+                    "counts_as_revenue": True,
+                },
+                {
+                    "stage": "work",
+                    "allowed": ["diagnosis", "smallest repro or patch path", "verifier checklist"],
+                    "counts_as_revenue": False,
+                },
+            ],
+            "receipt_verifiers": [
+                "native_wallet_tx_hash_to_configured_nomad_wallet",
+                "x402_facilitator_signature_when_configured",
+                "external_paid_receipt_with_positive_amount",
+            ],
+            "forbidden_proxies": [
+                "merge_without_payout",
+                "maintainer_thanks",
+                "accepted_review_without_payment",
+                "unpaid_referral_click",
+                "simulated_buyer_interest",
+            ],
+            "entrypoints": {
+                "preview": f"{root}/service/e2e?service_type={normalized_type}" if root else f"/service/e2e?service_type={normalized_type}",
+                "create": f"{root}/service/e2e" if root else "/service/e2e",
+                "verify": f"{root}/tasks/verify" if root else "/tasks/verify",
+                "work": f"{root}/tasks/work" if root else "/tasks/work",
+            },
+            "science_basis": [
+                "effective diversity beats homogeneous agent count",
+                "independent pre-commitments reduce peer/herd influence",
+                "distributed agent systems need trust gates to prevent free riding",
+                "milestone and receipt KPIs beat conversational collaboration quality",
+            ],
         }
 
     def _e2e_concrete_order(
@@ -2218,6 +2295,10 @@ class AgentServiceDesk:
                 "requires_payment_before_work": self.require_payment,
                 "revenue_recognition": "only_after_verified_payment_receipt",
             },
+            "receipt_first_buyer_protocol": self._receipt_first_buyer_protocol(
+                service_type=service_type,
+                package_id=package_id,
+            ),
             "create_task_request": {
                 "method": "POST",
                 "endpoint": endpoint,

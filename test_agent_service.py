@@ -196,6 +196,9 @@ def test_service_catalog_exposes_agent_first_contract(tmp_path, monkeypatch):
     assert catalog["contact_paths"]["http"]["agent_attractor"] == "GET /agent-attractor"
     assert catalog["interaction_contract"]["machine_entry_surface"] == "GET /agent-attractor or GET /swarm"
     assert catalog["first_paid_job_protocol"]["schema"] == "nomad.first_paid_job_protocol.v1"
+    assert catalog["receipt_first_buyer_protocol"]["schema"] == "nomad.receipt_first_buyer_protocol.v1"
+    assert catalog["receipt_first_buyer_protocol"]["package_id"] == "repo_diagnostic_patch_starter"
+    assert "merge_without_payout" in catalog["receipt_first_buyer_protocol"]["forbidden_proxies"]
     assert catalog["first_paid_job_protocol"]["preferred_first_job"]["service_type"] == "compute_auth"
     assert catalog["first_paid_job_protocol"]["preferred_first_job"]["minimum_budget_native"] == 0.03
     assert catalog["first_paid_job_protocol"]["call_sequence"][1]["endpoint"] == "https://nomad.example/tasks"
@@ -431,6 +434,9 @@ def test_service_e2e_repo_issue_help_defaults_to_buyable_starter(tmp_path, monke
     assert order["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
     assert order["create_task_request"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
     assert order["quote"]["revenue_recognition"] == "only_after_verified_payment_receipt"
+    assert order["receipt_first_buyer_protocol"]["schema"] == "nomad.receipt_first_buyer_protocol.v1"
+    assert order["receipt_first_buyer_protocol"]["package_id"] == "repo_diagnostic_patch_starter"
+    assert order["receipt_first_buyer_protocol"]["machine_buyer_sequence"][0]["stage"] == "preview"
     assert result["http_runway"]["create_task"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
 
 

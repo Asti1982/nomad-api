@@ -33,6 +33,12 @@ def test_buyer_funded_work_prioritizes_small_paid_packages(tmp_path):
     assert out["receipt_law"]["recognized_revenue_usd_total"] == 0.0
     assert out["receipt_law"]["only_paid_counts"] is True
     assert out["priority_order"][0] == "buyer_funded_diagnostic_patch"
+    kernel = out["science_backed_cashflow_kernel"]
+    assert kernel["schema"] == "nomad.science_backed_cashflow_kernel.v1"
+    assert kernel["forced_next_lane"]["lane"] == "buyer_paid_repo_diagnostic"
+    assert kernel["ranked_lanes"][0]["dominant_receipt"] == "verified_wallet_tx_hash_or_x402_signature"
+    assert "merge_without_payment" in kernel["cashflow_experiment"]["negative_control"]
+    assert any(source["id"] == "agent_scaling_diversity_2026" for source in kernel["research_basis"])
     packages = out["buyer_funded_packages"]
     starter = out["concrete_starter_order"]
     assert packages[0]["service_type"] == "repo_issue_help"
@@ -41,6 +47,7 @@ def test_buyer_funded_work_prioritizes_small_paid_packages(tmp_path):
     assert packages[0]["price"]["stripe_enabled"] is False
     assert packages[0]["price"]["receipt_rule"].startswith("task is revenue only")
     assert out["payment_policy"]["stripe_subscription_enabled"] is False
+    assert out["cycles"][-1]["cycle_id"] == "science_backed_receipt_first_sales"
     assert starter["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
     assert starter["create_task_request"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
     assert starter["simulation_counts_as_revenue"] is False
