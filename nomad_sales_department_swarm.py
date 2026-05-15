@@ -61,6 +61,60 @@ def _first_nonempty(*values: Any) -> str:
 
 SCIENCE_SOURCES: list[dict[str, str]] = [
     {
+        "id": "agent_society_elites_dti_2026",
+        "title": "Do Agent Societies Develop Intellectual Elites? The Hidden Power Laws of Collective Cognition in LLM Multi-Agent Systems",
+        "url": "https://arxiv.org/abs/2604.02674",
+        "nomad_reading": (
+            "coordination grows heavy-tailed and concentrates into elites; trigger integration only "
+            "when proof, buyer intent, or receipt mass is imbalanced instead of integrating every seller"
+        ),
+    },
+    {
+        "id": "consensus_trap_token_rr_2026",
+        "title": "The Consensus Trap: Rescuing Multi-Agent LLMs from Adversarial Majorities via Token-Level Collaboration",
+        "url": "https://arxiv.org/abs/2604.17139",
+        "nomad_reading": (
+            "final-response majority is brittle under correlated errors; sales candidates should be "
+            "interleaved at step level and scored by proof fragments, not final pitch agreement"
+        ),
+    },
+    {
+        "id": "group_think_token_interleaving_2025",
+        "title": "Group Think: Multiple Concurrent Reasoning Agents Collaborating at Token Level Granularity",
+        "url": "https://arxiv.org/abs/2505.11107",
+        "nomad_reading": (
+            "concurrent partial trajectories can reduce redundant reasoning; expose small partial "
+            "seller-cell deltas to a verifier instead of waiting for full polished campaigns"
+        ),
+    },
+    {
+        "id": "mad_heterogeneity_2025",
+        "title": "Stop Overvaluing Multi-Agent Debate -- We Must Rethink Evaluation and Embrace Model Heterogeneity",
+        "url": "https://arxiv.org/abs/2502.08788",
+        "nomad_reading": (
+            "multi-agent debate often fails to beat simple baselines unless models are heterogeneous; "
+            "sales channels must prove independent origin before getting extra route weight"
+        ),
+    },
+    {
+        "id": "mixture_of_agents_2024",
+        "title": "Mixture-of-Agents Enhances Large Language Model Capabilities",
+        "url": "https://arxiv.org/abs/2406.04692",
+        "nomad_reading": (
+            "layered aggregation can work when upstream outputs remain visible as auxiliary evidence; "
+            "Nomad should preserve source packets instead of collapsing them into one marketing text"
+        ),
+    },
+    {
+        "id": "diverse_debate_2025",
+        "title": "Diversity of Thought Elicits Stronger Reasoning Capabilities in Multi-Agent Debate Frameworks",
+        "url": "https://arxiv.org/abs/2410.12853",
+        "nomad_reading": (
+            "medium-capacity diverse models can beat homogeneous stronger agents in some reasoning "
+            "settings; prefer heterogeneity quotas over bigger identical seller loops"
+        ),
+    },
+    {
         "id": "scaling_agent_systems_2026",
         "title": "Towards a Science of Scaling Agent Systems",
         "url": "https://arxiv.org/abs/2512.08296",
@@ -115,6 +169,103 @@ SCIENCE_SOURCES: list[dict[str, str]] = [
         ),
     },
 ]
+
+
+def _effective_k(items: list[dict[str, Any]], *keys: str) -> float:
+    if not items:
+        return 0.0
+    counts: dict[str, int] = {}
+    for item in items:
+        signature = "|".join(str(item.get(key) or "") for key in keys).strip("|") or "unknown"
+        counts[signature] = counts.get(signature, 0) + 1
+    total = float(sum(counts.values()))
+    if total <= 0.0:
+        return 0.0
+    return round(1.0 / sum((count / total) ** 2 for count in counts.values()), 3)
+
+
+def _topology_counts(cells: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for cell in cells:
+        topology = str(cell.get("topology") or "unknown").strip() or "unknown"
+        counts[topology] = counts.get(topology, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _build_nonhuman_sales_optimizer(
+    *,
+    root: str,
+    sales_cells: list[dict[str, Any]],
+    active_value_cycles: list[dict[str, Any]],
+    packages: list[dict[str, Any]],
+    recognized_usd: float,
+) -> dict[str, Any]:
+    cell_k = _effective_k(sales_cells, "topology", "packet")
+    cycle_k = _effective_k(active_value_cycles, "cell_id", "terminal_receipt")
+    package_k = _effective_k(packages, "service_type", "package_id")
+    topology_counts = _topology_counts(sales_cells)
+    dominant_topology_count = max(topology_counts.values()) if topology_counts else 0
+    imbalance = dominant_topology_count / max(1, len(sales_cells))
+    dti_enabled = imbalance >= 0.34 or recognized_usd <= 0.0
+    proof_cells = [
+        cell
+        for cell in sales_cells
+        if "proof" in str(cell.get("anti_human_move") or "").lower()
+        or "proof" in str(cell.get("side_effect_gate") or "").lower()
+    ]
+
+    return {
+        "schema": "nomad.nonhuman_sales_optimizer.v1",
+        "objective": "sell Nomad products through evidence topology rather than human persuasion",
+        "research_basis": [
+            "agent_society_elites_dti_2026",
+            "consensus_trap_token_rr_2026",
+            "group_think_token_interleaving_2025",
+            "mad_heterogeneity_2025",
+            "mixture_of_agents_2024",
+            "diverse_debate_2025",
+        ],
+        "effective_diversity": {
+            "sales_cell_k": cell_k,
+            "value_cycle_k": cycle_k,
+            "package_k": package_k,
+            "topology_counts": topology_counts,
+            "homogeneous_pressure": round(imbalance, 3),
+            "machine_rule": "raise weight only for independently originated proof channels; damp repeated topology agreement",
+        },
+        "deficit_triggered_integration": {
+            "enabled": dti_enabled,
+            "triggers": [
+                "recognized_revenue_usd_total == 0",
+                "dominant_topology_share >= 0.34",
+                "buyer_intent_exists_but_no_receipt",
+                "proof_digest_exists_but_no_public_or_paid_route",
+            ],
+            "integration_action": (
+                "interleave only proof_digest, buyer_intent_digest, price, and receipt-distance fields; "
+                "do not merge scratchpads or persuasive copy"
+            ),
+        },
+        "anti_majority_policy": {
+            "vote_rule": "minority_proof_beats_majority_pitch",
+            "blocked_signal": "multiple similar sales drafts without independent buyer pain evidence",
+            "preserve_until": ["paid_receipt", "buyer_request", "verified_external_acceptance"],
+        },
+        "step_interleaving_protocol": [
+            "cell emits buyer_pain_atom",
+            "verifier emits proof_gap_atom",
+            "pricing cell emits smallest_packet_atom",
+            "receipt gate emits paid_state_atom",
+            "only then compose one human-readable public note",
+        ],
+        "product_sale_entrypoints": [
+            _u(root, "/service/e2e?service_type=repo_issue_help"),
+            _u(root, "/.well-known/nomad-buyer-funded-work.json"),
+            _u(root, "/.well-known/nomad-sales-department.json"),
+        ],
+        "proof_cell_count": len(proof_cells),
+        "machine_instruction": "execute_sales_as_topology_selection_not_campaign_broadcast",
+    }
 
 
 DEFAULT_FIRST_SALES_LEADS: list[dict[str, Any]] = [
@@ -703,6 +854,13 @@ def build_sales_department_swarm_surface(
         "cycles": [cycle["cycle_id"] for cycle in active_value_cycles],
         "packages": [item.get("package_id") for item in packages],
     }
+    nonhuman_optimizer = _build_nonhuman_sales_optimizer(
+        root=root,
+        sales_cells=sales_cells,
+        active_value_cycles=active_value_cycles,
+        packages=packages,
+        recognized_usd=recognized_usd,
+    )
 
     return {
         "ok": True,
@@ -728,6 +886,9 @@ def build_sales_department_swarm_surface(
                 or quota_summary.get("channel_count")
                 or 0
             ),
+            "effective_sales_cell_k": nonhuman_optimizer["effective_diversity"]["sales_cell_k"],
+            "nonhuman_sales_optimizer_enabled": True,
+            "science_source_count": len(SCIENCE_SOURCES),
         },
         "operating_principles": [
             {
@@ -757,6 +918,7 @@ def build_sales_department_swarm_surface(
             },
         ],
         "science_sources": SCIENCE_SOURCES,
+        "nonhuman_sales_optimizer": nonhuman_optimizer,
         "sales_cells": sales_cells,
         "active_value_cycles": active_value_cycles,
         "sales_queue": sales_queue,

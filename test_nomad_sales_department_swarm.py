@@ -31,9 +31,16 @@ def test_sales_department_surface_routes_buyer_work_and_science_sources():
     assert surface["summary"]["sales_cell_count"] >= 8
     assert surface["summary"]["active_value_cycle_count"] >= 10
     assert surface["summary"]["recognized_revenue_usd_total"] == 0.0
+    assert surface["summary"]["nonhuman_sales_optimizer_enabled"] is True
+    assert surface["summary"]["effective_sales_cell_k"] > 1.0
     assert surface["top_active_route"]["route"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
     assert surface["guards"]["no_public_send_without_proof_and_approval"] is True
     assert any(source["id"] == "silo_bench_2026" for source in surface["science_sources"])
+    optimizer = surface["nonhuman_sales_optimizer"]
+    assert optimizer["anti_majority_policy"]["vote_rule"] == "minority_proof_beats_majority_pitch"
+    assert optimizer["deficit_triggered_integration"]["enabled"] is True
+    assert optimizer["effective_diversity"]["sales_cell_k"] == surface["summary"]["effective_sales_cell_k"]
+    assert "group_think_token_interleaving_2025" in optimizer["research_basis"]
 
 
 def test_sales_department_event_blocks_public_send_without_proof_and_approval():
