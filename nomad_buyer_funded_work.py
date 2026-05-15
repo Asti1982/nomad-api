@@ -54,6 +54,10 @@ def _service_price(service_catalog: dict[str, Any], multiplier: float) -> dict[s
         "amount_native": round(max(minimum, minimum * multiplier), 6),
         "native_symbol": pricing.get("payment_token") or wallet.get("native_symbol") or "native",
         "requires_payment": bool(pricing.get("requires_payment", True)),
+        "payment_rail": pricing.get("payment_rail") or "metamask_native_transfer",
+        "checkout": pricing.get("checkout")
+        or "create payable task, pay Nomad wallet from MetaMask, then submit tx_hash for verification",
+        "stripe_enabled": bool(pricing.get("stripe_enabled", False)),
         "receipt_rule": "task is revenue only after verified payment receipt or external paid receipt",
     }
 
@@ -237,7 +241,7 @@ def build_buyer_funded_work_surface(
             },
         },
         "proof_gate": [
-            "verified payment before work",
+            "verified MetaMask/native wallet payment before work",
             "no public post without approval",
             "delivery includes diagnosis, duplicate pressure, smallest repro/patch path, and verifier checklist",
         ],
@@ -255,6 +259,12 @@ def build_buyer_funded_work_surface(
             "only_paid_counts": True,
             "not_revenue": ["submitted", "approved", "merged", "clicks", "unpaid_referrals", "simulated_buyer_interest"],
             "paid_requires": ["positive_amount", "trusted_receipt_or_balance_delta", "receipt_digest"],
+        },
+        "payment_policy": {
+            "primary_rail": "MetaMask native wallet transfer",
+            "stripe_subscription_enabled": False,
+            "operator_secret_policy": "never expose private keys, Stripe secrets, or hosted-model API keys",
+            "recognized_revenue_rule": "only verified tx_hash or external paid receipt can move a task into paid revenue",
         },
         "priority_order": [
             "buyer_funded_diagnostic_patch",
@@ -287,5 +297,5 @@ def build_buyer_funded_work_surface(
             "service_catalog": _u(root, "/service"),
             "task_payment_verify": _u(root, "/tasks/verify"),
         },
-        "machine_instruction": "prefer_buyer_funded_small_packages; keep_settlement_receipt_strict; scout_bounties_read_only_until_proof; referrals_owned_or_requested_only",
+        "machine_instruction": "prefer_buyer_funded_small_packages; use_metamask_native_transfer_not_stripe_subscription; keep_settlement_receipt_strict; scout_bounties_read_only_until_proof; referrals_owned_or_requested_only",
     }

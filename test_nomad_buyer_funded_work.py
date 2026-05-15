@@ -37,7 +37,10 @@ def test_buyer_funded_work_prioritizes_small_paid_packages(tmp_path):
     starter = out["concrete_starter_order"]
     assert packages[0]["service_type"] == "repo_issue_help"
     assert packages[0]["package_id"] == "repo_diagnostic_patch_starter"
+    assert packages[0]["price"]["payment_rail"] == "metamask_native_transfer"
+    assert packages[0]["price"]["stripe_enabled"] is False
     assert packages[0]["price"]["receipt_rule"].startswith("task is revenue only")
+    assert out["payment_policy"]["stripe_subscription_enabled"] is False
     assert starter["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
     assert starter["create_task_request"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
     assert starter["simulation_counts_as_revenue"] is False

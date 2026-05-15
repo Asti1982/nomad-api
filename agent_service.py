@@ -311,7 +311,10 @@ class AgentServiceDesk:
                 "minimum_native": self.min_native,
                 "requires_payment": self.require_payment,
                 "payment_token": self.chain.native_symbol,
+                "payment_rail": "metamask_native_transfer",
                 "verification": "native transfer to Nomad wallet by tx_hash",
+                "checkout": "create payable task, pay the Nomad wallet from MetaMask, then submit tx_hash for verification",
+                "stripe_enabled": False,
                 "x402": {
                     "enabled": self.x402.enabled,
                     "facilitator_url": self.x402.facilitator_url,

@@ -194,8 +194,13 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     manifest_path = Path(__file__).resolve().parent / "public" / "downloads" / "syndiode_gadgets_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    gadget = manifest["gadgets"][0]
     assert manifest["schema"] == "syndiode.gadgets_manifest.v1"
+    pin = next(item for item in manifest["gadgets"] if item["id"] == "syndiodepin_nomad_status_light")
+    assert pin["economics"]["estimated_unit_cost_eur"] == 50
+    assert pin["economics"]["target_transition_worker_contribution_eur"] == 500
+    assert pin["light_ai"]["openai_api_required"] is False
+    assert pin["light_ai"]["stripe_subscription_required"] is False
+    gadget = next(item for item in manifest["gadgets"] if item["id"] == "handyoracle_android_edge")
     assert gadget["id"] == "handyoracle_android_edge"
     assert gadget["version"] == "0.1.0-edge-gadget"
     assert gadget["human_surface"]["private_by_default"] is True

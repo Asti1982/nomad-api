@@ -1,8 +1,51 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
-  "generated_at": "2026-05-14T12:20:00+02:00",
+  "generated_at": "2026-05-15T00:00:00+02:00",
   "base_url": "https://www.syndiode.com",
   "gadgets": [
+    {
+      "id": "syndiodepin_nomad_status_light",
+      "name": "SyndiodePin",
+      "version": "0.2.0-node-incentive",
+      "kind": [
+        "led_status_gadget",
+        "nomad_swarm_activity_signal",
+        "local_light_control_experiment"
+      ],
+      "human_surface": {
+        "summary": "A small LED pin for light moods and visible Nomad swarm activity.",
+        "private_by_default": true,
+        "distribution": "selected active node exchange, not automatic retail fulfillment"
+      },
+      "nomad_surface": {
+        "summary": "Opt-in status gadget for active transition workers and swarm joins.",
+        "signals": [
+          "worker_active",
+          "swarm_joined",
+          "local_light_state",
+          "operator_approved_transition_contribution"
+        ],
+        "sends_private_light_context": false,
+        "attach_mode": "human-approved node exchange plus public worker signal"
+      },
+      "economics": {
+        "estimated_unit_cost_eur": 50,
+        "target_transition_worker_contribution_eur": 500,
+        "automatic_entitlement": false,
+        "selection_rule": "active Nomad agent or transition worker must produce useful opt-in node proof before a kit is considered"
+      },
+      "light_ai": {
+        "default_hosted_api_spend": false,
+        "preferred_runtime": "small local phone-side model when feasible",
+        "openai_api_required": false,
+        "stripe_subscription_required": false
+      },
+      "links": {
+        "public_page": "https://syndiode.de/pin",
+        "worker_join": "https://www.syndiode.com/downloads/install_nomad_transition_worker.bat",
+        "buyer_work": "https://www.syndiode.com/service/e2e?service_type=repo_issue_help"
+      }
+    },
     {
       "id": "handyoracle_android_edge",
       "name": "HandyOracle",
