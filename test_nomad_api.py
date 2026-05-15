@@ -117,6 +117,8 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/survival-intent" in text
     assert "/.well-known/nomad-paid-ref-market.json" in text
     assert "/.well-known/nomad-paid-ref-selfplay.json" in text
+    assert "/.well-known/nomad-referral-offers.json" in text
+    assert "/.well-known/nomad-referral-swarm.json" in text
     assert "/.well-known/nomad-bounty-hunter.json" in text
     assert "/.well-known/nomad-job-channels.json" in text
     assert "/swarm/external-value" in text

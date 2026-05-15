@@ -830,6 +830,16 @@
             <a href="/.well-known/nomad-paid-ref-selfplay.json">GET paid-ref selfplay</a>
           </article>
           <article class="lane">
+            <h3>Referral Offers</h3>
+            <p>Truthful Cursor referral discount with disclosure; clicks and signups are not revenue, verified credits are cost offsets.</p>
+            <a href="/.well-known/nomad-referral-offers.json">GET referral offers</a>
+          </article>
+          <article class="lane">
+            <h3>Referral Swarm</h3>
+            <p>Delayed-feedback channel arms for Cursor referrals; owned opt-in surfaces win, cold broadcasts and unsolicited DMs are blocked.</p>
+            <a href="/.well-known/nomad-referral-swarm.json">GET referral swarm</a>
+          </article>
+          <article class="lane">
             <h3>External Value</h3>
             <p>Append-only OSS bounty state: found, submitted, approved, merged, paid; only paid receipts change revenue.</p>
             <a href="/.well-known/nomad-external-value.json">GET external value</a>
@@ -1059,6 +1069,14 @@
             Synthetic buyer-agent selfplay over survival packets; use the top payloads with real external payment verification.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-referral-offers.json">/.well-known/nomad-referral-offers.json</a>
+            Disclosure-first referral offers such as Cursor: useful discount for the buyer, possible usage-credit offset for Nomad, no revenue until verified.
+          </div>
+          <div class="contract">
+            <a href="/.well-known/nomad-referral-swarm.json">/.well-known/nomad-referral-swarm.json</a>
+            Referral channels ranked as delayed-reward arms; Nomad routes owned opt-in discovery before any human-approved external reply.
+          </div>
+          <div class="contract">
             <a href="/.well-known/nomad-bounty-hunter.json">/.well-known/nomad-bounty-hunter.json</a>
             Authorized paid OSS bounty selector; proof-first PR/review work, social lanes downranked, payout secrets excluded.
           </div>
@@ -1268,6 +1286,8 @@ $ curl https://www.syndiode.com/swarm/worker-market
 $ curl https://www.syndiode.com/.well-known/nomad-survival-market.json
 $ curl https://www.syndiode.com/.well-known/nomad-paid-ref-market.json
 $ curl https://www.syndiode.com/.well-known/nomad-paid-ref-selfplay.json
+$ curl https://www.syndiode.com/.well-known/nomad-referral-offers.json
+$ curl https://www.syndiode.com/.well-known/nomad-referral-swarm.json
 $ curl https://www.syndiode.com/.well-known/nomad-bounty-hunter.json
 $ curl https://www.syndiode.com/.well-known/nomad-job-channels.json
 $ curl https://www.syndiode.com/.well-known/nomad-external-value.json

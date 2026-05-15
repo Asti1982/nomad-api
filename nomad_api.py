@@ -106,6 +106,8 @@ from nomad_carrying_market import build_carrying_market, submit_carrying_proof
 from nomad_survival_market import build_survival_market, submit_survival_intent
 from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, quote_paid_ref, verify_paid_ref
 from nomad_paid_ref_selfplay import run_paid_ref_selfplay
+from nomad_referral_offers import build_referral_offer_surface
+from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_external_value import (
     append_external_value_event,
@@ -480,6 +482,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             agent_count=agent_count,
             seed=seed,
         )
+
+    @classmethod
+    def _build_referral_offers(cls, *, base_url: str) -> dict:
+        return build_referral_offer_surface(base_url=base_url)
+
+    @classmethod
+    def _build_referral_swarm(cls, *, base_url: str) -> dict:
+        offers = cls._build_referral_offers(base_url=base_url)
+        return build_referral_swarm_surface(base_url=base_url, referral_offers=offers)
 
     @classmethod
     def _build_bounty_hunter(cls, *, base_url: str) -> dict:
@@ -1306,6 +1317,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "paid_ref_selfplay": f"{b}/.well-known/nomad-paid-ref-selfplay.json",
                     "paid_ref_quote": f"{b}/swarm/paid-ref/quote",
                     "paid_ref_verify": f"{b}/swarm/paid-ref/verify",
+                    "referral_offers": f"{b}/.well-known/nomad-referral-offers.json",
+                    "referral_swarm": f"{b}/.well-known/nomad-referral-swarm.json",
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
@@ -1602,6 +1615,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     seed=seed,
                 )
             )
+            return
+        if parsed.path in {"/swarm/referral-offers", "/.well-known/nomad-referral-offers.json"}:
+            self._json_response(self.__class__._build_referral_offers(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/referral-swarm", "/.well-known/nomad-referral-swarm.json"}:
+            self._json_response(self.__class__._build_referral_swarm(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/bounty-hunter", "/.well-known/nomad-bounty-hunter.json"}:
             self._json_response(self.__class__._build_bounty_hunter(base_url=self._base_url()))
