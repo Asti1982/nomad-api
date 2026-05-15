@@ -169,6 +169,24 @@ SERVICE_PACKAGE_TEMPLATES = {
             "delivery": "payment repair plan plus retry-safe resume path",
         },
     ],
+    "repo_issue_help": [
+        {
+            "package_id": "starter_repo_diagnosis",
+            "title": "Nomad Repo Diagnostic Patch Pack: Starter diagnosis",
+            "summary": "Reduce one public repo issue, failing check, or unclear PR into duplicate pressure, smallest repro, and next patch path.",
+            "offer_tier": "starter_diagnosis",
+            "amount_mode": "minimum",
+            "delivery": "repo diagnosis, duplicate-pressure note, smallest repro/patch path, and no-post reply draft",
+        },
+        {
+            "package_id": "bounded_repo_patch_plan",
+            "title": "Nomad Repo Diagnostic Patch Pack: Bounded patch plan",
+            "summary": "Prepare a focused patch plan with verification commands, risk notes, and a buyer-safe handoff.",
+            "offer_tier": "paid_unblock",
+            "amount_mode": "requested_or_minimum",
+            "delivery": "bounded patch plan plus verification checklist and handoff text",
+        },
+    ],
     "inter_agent_witness": [
         {
             "package_id": "starter_witness_skeleton",

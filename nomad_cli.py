@@ -269,6 +269,27 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"Next read-only target: {qtop.get('channel_id', '')} state={qtop.get('state', '')}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.buyer_funded_work.v1":
+        receipt = result.get("receipt_law") or {}
+        cycles = result.get("cycles") or []
+        packages = result.get("buyer_funded_packages") or []
+        lines = [
+            "Nomad buyer-funded work",
+            f"Recognized revenue USD: {receipt.get('recognized_revenue_usd_total', 0)}",
+            f"Top priority: {(result.get('priority_order') or [''])[0]}",
+            f"Packages: {len(packages)}",
+        ]
+        for cycle in cycles[:4]:
+            lines.append(f"- {cycle.get('cycle_id', '')}: {cycle.get('status', '')}")
+        if packages:
+            first = packages[0]
+            price = first.get("price") or {}
+            lines.append(
+                f"First package: {first.get('title', '')} "
+                f"({price.get('amount_native', '')} {price.get('native_symbol', '')})"
+            )
+        return "\n".join(line for line in lines if line)
+
     if result.get("schema") == "nomad.worker_invoice.v1":
         payout = result.get("payout") or {}
         accounting = result.get("revenue_accounting") or {}
@@ -1982,6 +2003,23 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=(getattr(args, "base_url", None) or "").strip(),
                 discoveries=discoveries,
             )
+        elif args.command == "buyer-funded-work":
+            from agent_service import AgentServiceDesk
+            from nomad_bounty_hunter import build_bounty_hunter_surface
+            from nomad_buyer_funded_work import build_buyer_funded_work_surface
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_referral_offers import build_referral_offer_surface
+            from nomad_referral_swarm import build_referral_swarm_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            offers = build_referral_offer_surface(base_url=base)
+            result = build_buyer_funded_work_surface(
+                base_url=base,
+                external_value_summary=summarize_external_value_ledger(),
+                bounty_hunter=build_bounty_hunter_surface(base_url=base),
+                referral_swarm=build_referral_swarm_surface(base_url=base, referral_offers=offers),
+                service_catalog=AgentServiceDesk().service_catalog(),
+            )
         elif args.command == "external-value":
             from nomad_external_value import (
                 agent_selection_bonus,
@@ -3481,6 +3519,11 @@ def build_parser() -> argparse.ArgumentParser:
     bounty_hunter.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
     bounty_hunter.add_argument("--discover-gh", action="store_true", help="Read-only local GitHub bounty discovery through gh.")
     bounty_hunter.add_argument("--limit", type=int, default=10, help="Per-repo GitHub discovery limit when --discover-gh is set.")
+    buyer_funded_work = subparsers.add_parser(
+        "buyer-funded-work",
+        help="Compile settlement, referral, bounty, and direct paid packages into one receipt-strict value plan.",
+    )
+    buyer_funded_work.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
     external_value = subparsers.add_parser(
         "external-value",
         help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",

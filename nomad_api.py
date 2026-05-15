@@ -110,6 +110,7 @@ from nomad_referral_offers import build_referral_offer_surface
 from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
+from nomad_buyer_funded_work import build_buyer_funded_work_surface
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -500,6 +501,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_bounty_hunter(cls, *, base_url: str) -> dict:
         return build_bounty_hunter_surface(base_url=base_url)
+
+    @classmethod
+    def _build_buyer_funded_work(cls, *, base_url: str) -> dict:
+        if cls.agent is not None and getattr(cls.agent, "service_desk", None) is not None:
+            service_catalog = cls.agent.service_desk.service_catalog()
+        else:
+            from agent_service import AgentServiceDesk
+
+            service_catalog = AgentServiceDesk().service_catalog()
+        return build_buyer_funded_work_surface(
+            base_url=base_url,
+            external_value_summary=summarize_external_value_ledger(),
+            bounty_hunter=cls._build_bounty_hunter(base_url=base_url),
+            referral_swarm=cls._build_referral_swarm(base_url=base_url),
+            service_catalog=service_catalog,
+        )
 
     @classmethod
     def _build_external_value_surface(cls, *, base_url: str) -> dict:
@@ -1326,6 +1343,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "referral_swarm": f"{b}/.well-known/nomad-referral-swarm.json",
                     "spend_guard": f"{b}/.well-known/nomad-spend-guard.json",
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
+                    "buyer_funded_work": f"{b}/.well-known/nomad-buyer-funded-work.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -1633,6 +1651,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/bounty-hunter", "/.well-known/nomad-bounty-hunter.json"}:
             self._json_response(self.__class__._build_bounty_hunter(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/buyer-funded-work", "/.well-known/nomad-buyer-funded-work.json"}:
+            self._json_response(self.__class__._build_buyer_funded_work(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
@@ -2803,6 +2824,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/bounty-hunter",
                     "/.well-known/nomad-bounty-hunter.json",
+                    "/swarm/buyer-funded-work",
+                    "/.well-known/nomad-buyer-funded-work.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
@@ -4099,6 +4122,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-paid-ref-selfplay.json",
                     "/swarm/bounty-hunter",
                     "/.well-known/nomad-bounty-hunter.json",
+                    "/swarm/buyer-funded-work",
+                    "/.well-known/nomad-buyer-funded-work.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
