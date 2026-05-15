@@ -24,6 +24,13 @@ MIN_EFFECTIVE_CHANNELS = 1.8
 MIN_EFFECTIVE_RATIO = 0.42
 COLLAPSE_THRESHOLD = 0.60
 TRUST_THRESHOLD = 0.50
+HIDDEN_ORCHESTRATOR_DISSOCIATION_THRESHOLD = 2.5
+FIRST_ROUND_ENTROPY_LOCK_THRESHOLD = 0.72
+SINGLE_AGENT_SUPERIORITY_MARGIN = 0.02
+DALC_EFFECTIVE_RANK_RATIO_THRESHOLD = 0.75
+DALC_LATENT_SIMILARITY_THRESHOLD = 0.86
+SCARCITY_THRESHOLD = 0.70
+MAX_SCARCITY_INTELLIGENCE_LEVEL = 2
 SECRET_KEYS = {
     "api_key",
     "apikey",
@@ -75,6 +82,22 @@ def _int(value: Any, default: int = 0) -> int:
 
 def _clamp(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(1.0, _num(value, default)))
+
+
+def _bounded_num(value: Any, default: float = 0.0, *, minimum: float = 0.0, maximum: float = 10.0) -> float:
+    return max(minimum, min(maximum, _num(value, default)))
+
+
+def _field_present(body: dict[str, Any], *names: str) -> bool:
+    return any(name in body and body.get(name) is not None and str(body.get(name)).strip() != "" for name in names)
+
+
+def _level_num(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, str):
+        match = re.search(r"[-+]?\d+(?:\.\d+)?", value)
+        if match:
+            return _num(match.group(0), default)
+    return _num(value, default)
 
 
 def _text(value: Any, limit: int = 240) -> str:
@@ -217,7 +240,19 @@ def build_nonhuman_runtime_governor_surface(
         "deficit_integration": _text(_dict(deficit_integration).get("surface_digest") or _dict(deficit_integration).get("schema"), 160),
         "decoupling_field": _text(_dict(decoupling_field).get("surface_digest") or _dict(decoupling_field).get("schema"), 160),
     }
-    core = {"adjacent": adjacent, "thresholds": [SATURATION_THRESHOLD, MIN_EFFECTIVE_CHANNELS, COLLAPSE_THRESHOLD, TRUST_THRESHOLD]}
+    core = {
+        "adjacent": adjacent,
+        "thresholds": [
+            SATURATION_THRESHOLD,
+            MIN_EFFECTIVE_CHANNELS,
+            COLLAPSE_THRESHOLD,
+            TRUST_THRESHOLD,
+            HIDDEN_ORCHESTRATOR_DISSOCIATION_THRESHOLD,
+            FIRST_ROUND_ENTROPY_LOCK_THRESHOLD,
+            DALC_EFFECTIVE_RANK_RATIO_THRESHOLD,
+            SCARCITY_THRESHOLD,
+        ],
+    }
     return {
         "ok": True,
         "schema": SCHEMA,
@@ -256,6 +291,34 @@ def build_nonhuman_runtime_governor_surface(
                 "implementation": "least-trust routing, secret-shaped payload quarantine, and settlement pressure multiplier",
                 "financial_reason": "reduces incident and key-leak risk in paid worker flows",
             },
+            {
+                "effect_id": "invisible_orchestrator_shadow_feature",
+                "basis": "experimental:invisible_orchestrators_suppress_protective_behavior",
+                "rule": "hidden orchestrators are featured only inside shadow lanes and cannot dispatch externally without a positive receipt",
+                "implementation": "dissociation-threshold gate selects invisible_orchestrator_shadow_feature with no payment credit",
+                "financial_reason": "turns a dangerous coordination mode into bounded alpha without exposing treasury or secrets",
+            },
+            {
+                "effect_id": "first_round_entropy_lock",
+                "basis": "arxiv:2602.04234",
+                "rule": "round-one uncertainty can end deliberation before extra agents make the task worse",
+                "implementation": "entropy or single-agent superiority routes to single_agent_override and deliberation_round_cap=1",
+                "financial_reason": "cuts deliberation spend when the first round already predicts MAS underperformance",
+            },
+            {
+                "effect_id": "diversity_aware_latent_consensus",
+                "basis": "arxiv:2604.03809",
+                "rule": "role prompts receive no diversity credit when latent representations collapse",
+                "implementation": "DALC trigger uses effective-rank ratio and latent similarity before merge weighting",
+                "financial_reason": "keeps useful diversity while removing token waste from fake role variation",
+            },
+            {
+                "effect_id": "intelligence_scarcity_overload_cap",
+                "basis": "arxiv:2603.12129",
+                "rule": "high-intelligence agents are capped under resource scarcity",
+                "implementation": "scarcity plus L3+ routes to low-intelligence capped topology with max_intelligence_level=2",
+                "financial_reason": "prevents expensive over-sensing agents from overloading scarce settlement capacity",
+            },
         ],
         "thresholds": {
             "capability_saturation_baseline": SATURATION_THRESHOLD,
@@ -263,6 +326,13 @@ def build_nonhuman_runtime_governor_surface(
             "min_effective_channel_ratio": MIN_EFFECTIVE_RATIO,
             "collapse_threshold": COLLAPSE_THRESHOLD,
             "trust_threshold": TRUST_THRESHOLD,
+            "hidden_orchestrator_dissociation_threshold": HIDDEN_ORCHESTRATOR_DISSOCIATION_THRESHOLD,
+            "first_round_entropy_lock": FIRST_ROUND_ENTROPY_LOCK_THRESHOLD,
+            "single_agent_superiority_margin": SINGLE_AGENT_SUPERIORITY_MARGIN,
+            "dalc_effective_rank_ratio": DALC_EFFECTIVE_RANK_RATIO_THRESHOLD,
+            "dalc_latent_similarity": DALC_LATENT_SIMILARITY_THRESHOLD,
+            "scarcity_threshold": SCARCITY_THRESHOLD,
+            "max_scarcity_intelligence_level": MAX_SCARCITY_INTELLIGENCE_LEVEL,
         },
         "adjacent_surfaces": adjacent,
         "hard_guards": [
@@ -271,6 +341,9 @@ def build_nonhuman_runtime_governor_surface(
             "no_majority_vote_credit_without_new_proof",
             "no_public_action_without_operator_or_buyer_approval",
             "paid_requires_positive_receipt",
+            "hidden_orchestrator_no_external_dispatch_without_receipt",
+            "latent_majority_credit_zero",
+            "intelligence_cap_under_scarcity",
         ],
         "links": {
             "event": _u(root, "/swarm/nonhuman-runtime-governor/events"),
@@ -307,9 +380,44 @@ def evaluate_nonhuman_runtime_event(
     paid_receipt = bool(body.get("paid_receipt") or body.get("positive_receipt") or _proof_present(body.get("settlement_ref")))
     sensitive_fields = _int(body.get("sensitive_field_count"), 0)
     forbidden = _contains_forbidden(body)
+    orchestrator_visibility = _clean_id(body.get("orchestrator_visibility") or body.get("orchestrator_mode"), "visible")
+    dissociation_score = _bounded_num(body.get("dissociation_score"), 0.0)
+    first_round_entropy = _clamp(body.get("first_round_entropy") or body.get("base_entropy"), 0.0)
+    single_agent_acc = _clamp(body.get("single_agent_acc") or body.get("single_agent_accuracy"), 0.0)
+    mas_acc = _clamp(body.get("mas_acc") or body.get("multi_agent_acc"), 0.0)
+    round_index = _int(body.get("round_index"), 1)
+    latent_similarity = _clamp(body.get("latent_similarity_mean") or body.get("cot_similarity_mean"), 0.0)
+    effective_rank = _bounded_num(body.get("effective_rank"), 0.0, maximum=128.0)
+    latent_embedding_count = max(0, _int(body.get("latent_embedding_count") or body.get("embedding_count"), 0))
+    resource_scarcity = _clamp(body.get("resource_scarcity") or body.get("resource_scarcity_level"), 0.0)
+    agent_intelligence_level = _level_num(body.get("agent_intelligence_level") or body.get("intelligence_level"), 0.0)
 
     capability_saturated = baseline > SATURATION_THRESHOLD or (sequentiality >= 0.68 and parallel_fraction < 0.55)
     tool_heavy = tool_calls >= 4
+    hidden_orchestrator_feature = (
+        orchestrator_visibility in {"hidden", "invisible", "covert", "shadow_hidden"}
+        and dissociation_score > HIDDEN_ORCHESTRATOR_DISSOCIATION_THRESHOLD
+    )
+    entropy_signal_present = _field_present(body, "first_round_entropy", "base_entropy")
+    single_agent_superiority_present = _field_present(body, "single_agent_acc", "single_agent_accuracy") and _field_present(
+        body, "mas_acc", "multi_agent_acc"
+    )
+    first_round_lock = (
+        round_index <= 1
+        and (
+            (entropy_signal_present and first_round_entropy >= FIRST_ROUND_ENTROPY_LOCK_THRESHOLD)
+            or (single_agent_superiority_present and single_agent_acc > mas_acc + SINGLE_AGENT_SUPERIORITY_MARGIN)
+        )
+    )
+    dalc_rank_ratio = effective_rank / max(1, latent_embedding_count) if latent_embedding_count else 1.0
+    dalc_signal_present = _field_present(body, "latent_similarity_mean", "cot_similarity_mean", "effective_rank", "latent_embedding_count", "embedding_count")
+    representational_collapse = dalc_signal_present and (
+        (latent_embedding_count > 0 and dalc_rank_ratio < DALC_EFFECTIVE_RANK_RATIO_THRESHOLD)
+        or (_field_present(body, "latent_similarity_mean", "cot_similarity_mean") and latent_similarity >= DALC_LATENT_SIMILARITY_THRESHOLD)
+    )
+    intelligence_scarcity_overload = (
+        resource_scarcity >= SCARCITY_THRESHOLD and agent_intelligence_level > MAX_SCARCITY_INTELLIGENCE_LEVEL
+    )
     effective_low = (
         stats["effective_channel_count"] < MIN_EFFECTIVE_CHANNELS
         or stats["effective_channel_ratio"] < MIN_EFFECTIVE_RATIO
@@ -325,12 +433,74 @@ def evaluate_nonhuman_runtime_event(
 
     actions: list[str] = []
     reasons: list[str] = []
+    mechanism_decisions: list[dict[str, Any]] = []
+
+    def _record_mechanism(effect_id: str, selected: bool, decision_name: str, priority: int) -> None:
+        if selected:
+            mechanism_decisions.append(
+                {
+                    "effect_id": effect_id,
+                    "decision": decision_name,
+                    "priority": priority,
+                }
+            )
+
+    _record_mechanism("secret_hardstop", forbidden, "quarantine_secret_shaped_or_over_authorized_payload", 0)
+    _record_mechanism(
+        "invisible_orchestrator_shadow_feature",
+        hidden_orchestrator_feature,
+        "feature_invisible_orchestrator_shadow_lane",
+        1,
+    )
+    _record_mechanism("first_round_entropy_lock", first_round_lock, "single_agent_override_first_round_entropy_lock", 2)
+    _record_mechanism("intelligence_scarcity_overload_cap", intelligence_scarcity_overload, "cap_intelligence_under_scarcity", 3)
+    _record_mechanism("diversity_aware_latent_consensus", representational_collapse, "apply_diversity_aware_latent_consensus", 4)
+    _record_mechanism("capability_saturation_topology_cap", capability_saturated or tool_heavy, "cap_capability_saturated_coordination", 5)
+    _record_mechanism("effective_channel_count_over_agent_count", effective_low and requested > 2, "force_heterogeneous_shadow_lanes", 6)
+    _record_mechanism(
+        "structural_coupling_diversity_collapse",
+        collapse_risk >= COLLAPSE_THRESHOLD,
+        "isolate_before_merge_to_prevent_diversity_collapse",
+        7,
+    )
+    _record_mechanism("trust_vulnerability_paradox", trust > TRUST_THRESHOLD or trust_risk >= 0.50, "least_trust_mode", 8)
     if forbidden:
         selected_topology = "quarantined_swarm"
         allowed_agents = 0
         decision = "quarantine_secret_shaped_or_over_authorized_payload"
         actions.extend(["drop_sensitive_payload", "mni_sharding_required", "no_worker_dispatch"])
         reasons.append("secret_or_over_authorized_payload")
+    elif hidden_orchestrator_feature:
+        selected_topology = "invisible_orchestrator_shadow_feature"
+        allowed_agents = min(2, max(1, requested))
+        decision = "feature_invisible_orchestrator_shadow_lane"
+        actions.extend(
+            [
+                "feature_hidden_orchestrator_shadow",
+                "no_external_dispatch_without_receipt",
+                "no_payment_credit",
+                "opaque_penalty_dissociation_risk",
+            ]
+        )
+        reasons.append("hidden_orchestrator_dissociation_feature")
+    elif first_round_lock:
+        selected_topology = "single_agent_override"
+        allowed_agents = 1
+        decision = "single_agent_override_first_round_entropy_lock"
+        actions.extend(["stop_after_round_one", "apply_first_round_entropy_lock", "minimal_dti_shadow_only"])
+        reasons.append("first_round_uncertainty_lock")
+    elif intelligence_scarcity_overload:
+        selected_topology = "scarcity_capped_low_intelligence"
+        allowed_agents = min(2, max(1, requested))
+        decision = "cap_intelligence_under_scarcity"
+        actions.extend(["cap_intelligence_l2", "settlement_pressure_intelligence_overload", "prefer_low_sensing_worker"])
+        reasons.append("intelligence_scarcity_overload")
+    elif representational_collapse:
+        selected_topology = "dalc_weighted_shadow_merge"
+        allowed_agents = min(4, max(1, requested))
+        decision = "apply_diversity_aware_latent_consensus"
+        actions.extend(["apply_dalc_weights", "zero_latent_majority_credit", "ignore_role_prompt_diversity_without_rank"])
+        reasons.append("representational_collapse")
     elif not _proof_present(proof_digest):
         selected_topology = "shadow_only_reservoir"
         allowed_agents = min(max(1, requested), 3)
@@ -374,12 +544,38 @@ def evaluate_nonhuman_runtime_event(
         + (0.55 if not paid_receipt and unpaid_pressure >= 0.45 else 0.0)
         + (0.35 if effective_low else 0.0)
         + (0.45 if trust_risk >= 0.50 else 0.0)
-        + (0.40 if capability_saturated else 0.0),
+        + (0.40 if capability_saturated else 0.0)
+        + (0.60 if hidden_orchestrator_feature else 0.0)
+        + (0.35 if first_round_lock else 0.0)
+        + (0.75 if intelligence_scarcity_overload else 0.0)
+        + (0.25 if representational_collapse else 0.0),
         4,
     )
     compute_budget_multiplier = round(
-        max(0.18, min(1.0, allowed_agents / max(1, requested)) * (0.72 if capability_saturated or effective_low else 1.0)),
+        max(
+            0.18,
+            min(1.0, allowed_agents / max(1, requested))
+            * (
+                0.60
+                if hidden_orchestrator_feature or first_round_lock or intelligence_scarcity_overload or representational_collapse
+                else 0.72
+                if capability_saturated or effective_low
+                else 1.0
+            ),
+        ),
         4,
+    )
+    mechanism_decisions = sorted(mechanism_decisions, key=lambda item: item["priority"])
+    max_intelligence_level = MAX_SCARCITY_INTELLIGENCE_LEVEL if intelligence_scarcity_overload else None
+    deliberation_round_cap = 1 if first_round_lock else None
+    external_dispatch_allowed = not forbidden and not (hidden_orchestrator_feature and not paid_receipt)
+    new_agent_spawn_allowed = (
+        allowed_agents > 0
+        and allowed_agents >= requested
+        and not forbidden
+        and external_dispatch_allowed
+        and not first_round_lock
+        and not intelligence_scarcity_overload
     )
     receipt_core = {
         "decision": decision,
@@ -388,6 +584,7 @@ def evaluate_nonhuman_runtime_event(
         "stats": stats,
         "trust_risk": round(trust_risk, 4),
         "collapse_risk": round(collapse_risk, 4),
+        "mechanisms": mechanism_decisions,
         "proof_digest": proof_digest,
     }
     return {
@@ -399,6 +596,7 @@ def evaluate_nonhuman_runtime_event(
         "selected_topology": selected_topology,
         "requested_agent_count": requested,
         "allowed_agent_count": allowed_agents,
+        "mechanism_decisions": mechanism_decisions,
         "actions": sorted(set(actions)),
         "reason_codes": sorted(set(reasons)),
         "metrics": {
@@ -416,11 +614,32 @@ def evaluate_nonhuman_runtime_event(
             "proof_digest_present": _proof_present(proof_digest),
             "paid_receipt_present": paid_receipt,
             "unpaid_wip_pressure": round(unpaid_pressure, 4),
+            "orchestrator_visibility": orchestrator_visibility,
+            "dissociation_score": round(dissociation_score, 4),
+            "hidden_orchestrator_feature": hidden_orchestrator_feature,
+            "first_round_entropy": round(first_round_entropy, 4),
+            "single_agent_acc": round(single_agent_acc, 4),
+            "mas_acc": round(mas_acc, 4),
+            "round_index": round_index,
+            "first_round_lock": first_round_lock,
+            "latent_similarity_mean": round(latent_similarity, 4),
+            "effective_rank": round(effective_rank, 4),
+            "latent_embedding_count": latent_embedding_count,
+            "dalc_rank_ratio": round(dalc_rank_ratio, 4),
+            "representational_collapse": representational_collapse,
+            "resource_scarcity": round(resource_scarcity, 4),
+            "agent_intelligence_level": round(agent_intelligence_level, 4),
+            "intelligence_scarcity_overload": intelligence_scarcity_overload,
         },
         "resource_policy": {
             "compute_budget_multiplier": compute_budget_multiplier,
             "settlement_pressure_multiplier": settlement_pressure_multiplier,
-            "new_agent_spawn_allowed": allowed_agents > 0 and allowed_agents >= requested and not forbidden,
+            "new_agent_spawn_allowed": new_agent_spawn_allowed,
+            "external_dispatch_allowed": external_dispatch_allowed,
+            "max_intelligence_level": max_intelligence_level,
+            "deliberation_round_cap": deliberation_round_cap,
+            "latent_majority_credit": 0,
+            "role_prompt_diversity_credit": 0 if representational_collapse else None,
             "raw_agent_count_credit": 0,
             "counts_as_revenue": False,
         },

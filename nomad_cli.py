@@ -2873,6 +2873,28 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-nonhuman-runtime",
                         "channels": channels,
                     }
+                    if bool(getattr(args, "hidden_orchestrator", False)):
+                        payload.update({"orchestrator_visibility": "hidden", "dissociation_score": 3.1})
+                    if bool(getattr(args, "entropy_lock_demo", False)):
+                        payload.update({"first_round_entropy": 0.81, "single_agent_acc": 0.66, "mas_acc": 0.58, "round_index": 1})
+                    if bool(getattr(args, "dalc_demo", False)):
+                        payload.update({"latent_similarity_mean": 0.91, "effective_rank": 2.0, "latent_embedding_count": 3})
+                    if bool(getattr(args, "scarcity_demo", False)):
+                        payload.update({"resource_scarcity": 0.82, "agent_intelligence_level": "L5"})
+                    optional_fields = {
+                        "orchestrator_visibility": getattr(args, "orchestrator_visibility", None),
+                        "dissociation_score": getattr(args, "dissociation_score", None),
+                        "first_round_entropy": getattr(args, "first_round_entropy", None),
+                        "single_agent_acc": getattr(args, "single_agent_acc", None),
+                        "mas_acc": getattr(args, "mas_acc", None),
+                        "round_index": getattr(args, "round_index", None),
+                        "latent_similarity_mean": getattr(args, "latent_similarity_mean", None),
+                        "effective_rank": getattr(args, "effective_rank", None),
+                        "latent_embedding_count": getattr(args, "latent_embedding_count", None),
+                        "resource_scarcity": getattr(args, "resource_scarcity", None),
+                        "agent_intelligence_level": getattr(args, "agent_intelligence_level", None),
+                    }
+                    payload.update({key: value for key, value in optional_fields.items() if value not in (None, "")})
                 if not isinstance(payload, dict) or payload.get("_invalid_json"):
                     result = {
                         "ok": False,
@@ -3953,6 +3975,21 @@ def build_parser() -> argparse.ArgumentParser:
     nonhuman_runtime.add_argument("--unpaid-wip-pressure", type=float, default=0.0, help="Pressure from unpaid work in progress.")
     nonhuman_runtime.add_argument("--proof-digest", default="", help="Task/proof digest required before dispatch.")
     nonhuman_runtime.add_argument("--duplicate", action="store_true", help="Generate homogeneous duplicate channels that should be capped.")
+    nonhuman_runtime.add_argument("--orchestrator-visibility", default="", help="visible | hidden | invisible | covert.")
+    nonhuman_runtime.add_argument("--dissociation-score", type=float, default=None, help="Hidden-orchestrator dissociation proxy.")
+    nonhuman_runtime.add_argument("--first-round-entropy", type=float, default=None, help="Round-one uncertainty proxy.")
+    nonhuman_runtime.add_argument("--single-agent-acc", type=float, default=None, help="Measured single-agent accuracy for first-round lock.")
+    nonhuman_runtime.add_argument("--mas-acc", type=float, default=None, help="Measured multi-agent accuracy for first-round lock.")
+    nonhuman_runtime.add_argument("--round-index", type=int, default=None, help="Deliberation round index; 1 triggers first-round lock checks.")
+    nonhuman_runtime.add_argument("--latent-similarity-mean", type=float, default=None, help="Mean latent/COT cosine similarity.")
+    nonhuman_runtime.add_argument("--effective-rank", type=float, default=None, help="Effective rank of latent committee representations.")
+    nonhuman_runtime.add_argument("--latent-embedding-count", type=int, default=None, help="Number of latent embeddings behind effective rank.")
+    nonhuman_runtime.add_argument("--resource-scarcity", type=float, default=None, help="Scarcity level for intelligence-overload cap.")
+    nonhuman_runtime.add_argument("--agent-intelligence-level", default="", help="Numeric level or label such as L5.")
+    nonhuman_runtime.add_argument("--hidden-orchestrator", action="store_true", help="Demo payload for invisible-orchestrator shadow feature.")
+    nonhuman_runtime.add_argument("--entropy-lock-demo", action="store_true", help="Demo payload for first-round entropy lock.")
+    nonhuman_runtime.add_argument("--dalc-demo", action="store_true", help="Demo payload for representational collapse / DALC.")
+    nonhuman_runtime.add_argument("--scarcity-demo", action="store_true", help="Demo payload for intelligence scarcity overload.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",

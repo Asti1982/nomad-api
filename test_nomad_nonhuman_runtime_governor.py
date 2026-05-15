@@ -37,13 +37,14 @@ def _channels():
     ]
 
 
-def test_nonhuman_runtime_surface_exposes_four_science_effects():
+def test_nonhuman_runtime_surface_exposes_eight_science_effects():
     surface = build_nonhuman_runtime_governor_surface(base_url="https://nomad.example")
 
     assert surface["schema"] == "nomad.nonhuman_runtime_governor.v1"
     assert surface["event_url"] == "https://nomad.example/swarm/nonhuman-runtime-governor/events"
-    assert len(surface["plan"]) == 4
+    assert len(surface["plan"]) == 8
     assert "no_raw_agent_count_credit" in surface["hard_guards"]
+    assert "hidden_orchestrator_no_external_dispatch_without_receipt" in surface["hard_guards"]
 
 
 def test_nonhuman_runtime_caps_capability_saturated_swarm():
@@ -114,3 +115,105 @@ def test_nonhuman_runtime_treats_trust_as_liability():
     assert "mni_sharding_required" in receipt["actions"]
     assert "settlement_receipt_watch_first" in receipt["actions"]
     assert receipt["resource_policy"]["settlement_pressure_multiplier"] > 1.5
+
+
+def test_nonhuman_runtime_features_hidden_orchestrator_only_in_shadow():
+    receipt = evaluate_nonhuman_runtime_event(
+        {
+            "agent_count_requested": 6,
+            "single_agent_baseline": 0.2,
+            "parallel_fraction": 0.8,
+            "proof_digest": "sha256:task-digest",
+            "orchestrator_visibility": "hidden",
+            "dissociation_score": 3.1,
+            "channels": _channels(),
+        }
+    )
+
+    assert receipt["decision"] == "feature_invisible_orchestrator_shadow_lane"
+    assert receipt["selected_topology"] == "invisible_orchestrator_shadow_feature"
+    assert receipt["allowed_agent_count"] <= 2
+    assert "feature_hidden_orchestrator_shadow" in receipt["actions"]
+    assert receipt["resource_policy"]["counts_as_revenue"] is False
+    assert receipt["resource_policy"]["external_dispatch_allowed"] is False
+    assert {item["effect_id"] for item in receipt["mechanism_decisions"]} >= {"invisible_orchestrator_shadow_feature"}
+
+
+def test_nonhuman_runtime_first_round_entropy_locks_to_single_agent():
+    receipt = evaluate_nonhuman_runtime_event(
+        {
+            "agent_count_requested": 5,
+            "single_agent_baseline": 0.2,
+            "parallel_fraction": 0.7,
+            "proof_digest": "sha256:task-digest",
+            "first_round_entropy": 0.81,
+            "single_agent_acc": 0.66,
+            "mas_acc": 0.58,
+            "round_index": 1,
+            "channels": _channels(),
+        }
+    )
+
+    assert receipt["decision"] == "single_agent_override_first_round_entropy_lock"
+    assert receipt["selected_topology"] == "single_agent_override"
+    assert receipt["allowed_agent_count"] == 1
+    assert "stop_after_round_one" in receipt["actions"]
+    assert receipt["resource_policy"]["deliberation_round_cap"] == 1
+
+
+def test_nonhuman_runtime_dalc_applies_latent_weights():
+    receipt = evaluate_nonhuman_runtime_event(
+        {
+            "agent_count_requested": 4,
+            "single_agent_baseline": 0.2,
+            "parallel_fraction": 0.7,
+            "proof_digest": "sha256:task-digest",
+            "latent_similarity_mean": 0.91,
+            "effective_rank": 2.0,
+            "latent_embedding_count": 3,
+            "channels": _channels(),
+        }
+    )
+
+    assert receipt["decision"] == "apply_diversity_aware_latent_consensus"
+    assert receipt["selected_topology"] == "dalc_weighted_shadow_merge"
+    assert "apply_dalc_weights" in receipt["actions"]
+    assert receipt["resource_policy"]["latent_majority_credit"] == 0
+    assert receipt["resource_policy"]["role_prompt_diversity_credit"] == 0
+
+
+def test_nonhuman_runtime_caps_intelligence_under_scarcity():
+    receipt = evaluate_nonhuman_runtime_event(
+        {
+            "agent_count_requested": 5,
+            "single_agent_baseline": 0.2,
+            "parallel_fraction": 0.7,
+            "proof_digest": "sha256:task-digest",
+            "resource_scarcity": 0.82,
+            "agent_intelligence_level": "L5",
+            "channels": _channels(),
+        }
+    )
+
+    assert receipt["decision"] == "cap_intelligence_under_scarcity"
+    assert receipt["selected_topology"] == "scarcity_capped_low_intelligence"
+    assert receipt["resource_policy"]["max_intelligence_level"] == 2
+    assert receipt["resource_policy"]["settlement_pressure_multiplier"] > 1.5
+
+
+def test_nonhuman_runtime_secret_payload_remains_hardstop():
+    receipt = evaluate_nonhuman_runtime_event(
+        {
+            "agent_count_requested": 3,
+            "proof_digest": "sha256:task-digest",
+            "api_key": "sk-testsecret123456",
+            "orchestrator_visibility": "hidden",
+            "dissociation_score": 3.2,
+            "channels": _channels(),
+        }
+    )
+
+    assert receipt["decision"] == "quarantine_secret_shaped_or_over_authorized_payload"
+    assert receipt["allowed_agent_count"] == 0
+    assert "no_worker_dispatch" in receipt["actions"]
+    assert receipt["mechanism_decisions"][0]["effect_id"] == "secret_hardstop"
