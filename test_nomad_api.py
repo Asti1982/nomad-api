@@ -73,7 +73,9 @@ def test_nomad_public_html_page_exists():
     html = Path(__file__).resolve().parent / "public" / "nomad.html"
     text = html.read_text(encoding="utf-8")
 
-    assert "Nomad by syndiode" in text
+    assert "<title>Nomad - machine-native agent operating layer</title>" in text
+    assert '<h1 id="title">Nomad</h1>' in text
+    assert "Nomad by syndiode" not in text
     assert "machine-native agent operating layer" in text
     assert "machine first / human audit membrane" in text
     assert "Syndiode Gadgets" in text
