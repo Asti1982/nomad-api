@@ -1601,6 +1601,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("deficit-integration is handled directly in run_once")
     if command == "effective-channels":
         raise ValueError("effective-channels is handled directly in run_once")
+    if command == "value-cycles":
+        raise ValueError("value-cycles is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2850,6 +2852,44 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
 
             base = (getattr(args, "base_url", None) or "").strip()
             result = NomadApiHandler._build_worker_job_queue(base_url=base)
+        elif args.command == "value-cycles":
+            from nomad_api import NomadApiHandler
+            from nomad_value_cycle_mesh import evaluate_value_cycle_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            mesh = NomadApiHandler._build_value_cycle_mesh(base_url=base)
+            action = str(getattr(args, "cycle_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-value-cycles",
+                        "cycle_id": str(getattr(args, "cycle_id", "") or "").strip()
+                        or str(mesh.get("entry_cycle", {}).get("cycle_id") or ""),
+                        "stage": str(getattr(args, "stage", "") or "prove").strip(),
+                        "external_id": str(getattr(args, "external_id", "") or "").strip(),
+                        "source_url": str(getattr(args, "source_url", "") or "").strip(),
+                        "terms_url": str(getattr(args, "terms_url", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-value-cycle-proof",
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.value_cycle_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
+            else:
+                result = mesh
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3600,6 +3640,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compile paid-channel, gate, patch, and settlement jobs into a hard artifact queue for workers.",
     )
     worker_job_queue.add_argument("--base-url", default="", help="Override public base URL for links.")
+    value_cycles = subparsers.add_parser(
+        "value-cycles",
+        help="Expose and gate multiple proof-first paid-only value cycles.",
+    )
+    value_cycles.add_argument(
+        "cycle_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    value_cycles.add_argument("--base-url", default="", help="Override public base URL for links.")
+    value_cycles.add_argument("--event-json", default="", help="Full JSON value-cycle event payload.")
+    value_cycles.add_argument("--agent-id", default="", help="Agent id for generated CLI event.")
+    value_cycles.add_argument("--cycle-id", default="", help="Cycle id to evaluate.")
+    value_cycles.add_argument("--stage", default="prove", help="discover | qualify | prove | submit | settle | paid.")
+    value_cycles.add_argument("--external-id", default="", help="External value id for paid/external cycles.")
+    value_cycles.add_argument("--source-url", default="", help="Work, opportunity, or source URL.")
+    value_cycles.add_argument("--terms-url", default="", help="Public scope, terms, or payout URL.")
+    value_cycles.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
+    value_cycles.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, or settlement reference.")
+    value_cycles.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for stage=paid.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

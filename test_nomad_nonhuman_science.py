@@ -57,6 +57,7 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "anti_consensus_expert_reservoir" in lanes
     assert "deficit_triggered_integration_gate" in lanes
     assert "effective_channel_quota_gate" in lanes
+    assert "paid_only_value_cycle_mesh" in lanes
     assert lanes["machine_exchange_contracts"]["nomad_paths"][0] == "https://nomad.example/machine-economy"
     assert lanes["capability_self_allocation_attractor"]["nomad_paths"][0] == "https://nomad.example/swarm/attractor"
 
@@ -64,6 +65,7 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert any(step["id"] == "expand_swarm_attractor_trials" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_dti_to_shadow_queue" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_effective_channel_quota_to_campaigns" for step in out["next_nomad_build_steps"])
+    assert any(step["id"] == "close_value_cycle_feedback_loop" for step in out["next_nomad_build_steps"])
 
     compiler = out["literature_runtime_compiler"]
     assert compiler["schema"] == "nomad.literature_runtime_compiler.v1"

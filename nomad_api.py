@@ -121,6 +121,7 @@ from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
 from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
+from nomad_value_cycle_mesh import build_value_cycle_mesh_surface, evaluate_value_cycle_event
 from nomad_stable_unit_policy import build_stable_unit_policy_surface, evaluate_stable_unit_preflight
 from nomad_viability_kernel import build_viability_kernel_surface, route_viability_action
 from nomad_work_receipts import (
@@ -708,6 +709,36 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_value_cycle_mesh(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        preflight = build_value_cycle_preflight_surface(
+            base_url=base_url,
+            external_value_summary=external_summary,
+        )
+        worker_queue = build_worker_job_queue_surface(
+            base_url=base_url,
+            agent_job_router=cls._build_agent_job_router(base_url=base_url, swarm_summary=summary),
+            job_channels=cls._build_job_channels(base_url=base_url),
+            value_cycle_preflight=preflight,
+            external_value_summary=external_summary,
+        )
+        return build_value_cycle_mesh_surface(
+            base_url=base_url,
+            external_value_summary=external_summary,
+            worker_job_queue=worker_queue,
+            value_cycle_preflight=preflight,
+            revenue_science=cls._build_revenue_science(base_url=base_url, swarm_summary=summary),
+            effective_channels=cls._build_effective_channel_quota(base_url=base_url, swarm_summary=summary),
+            job_channels=cls._build_job_channels(base_url=base_url),
+        )
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -1223,6 +1254,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "viability_route": f"{b}/swarm/viability-kernel/route",
                     "worker_job_queue": f"{b}/.well-known/nomad-worker-job-queue.json",
                     "value_cycle_preflight": f"{b}/.well-known/nomad-value-cycle-preflight.json",
+                    "value_cycles": f"{b}/.well-known/nomad-value-cycles.json",
+                    "value_cycle_event": f"{b}/swarm/value-cycles/events",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1570,6 +1603,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/value-cycle-preflight", "/.well-known/nomad-value-cycle-preflight.json"}:
             self._json_response(self.__class__._build_value_cycle_preflight(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/value-cycles", "/.well-known/nomad-value-cycles.json"}:
+            self._json_response(self.__class__._build_value_cycle_mesh(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2684,6 +2720,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
                     "/.well-known/nomad-value-cycle-preflight.json",
+                    "/swarm/value-cycles",
+                    "/.well-known/nomad-value-cycles.json",
+                    "/swarm/value-cycles/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3294,6 +3333,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             quota = self.__class__._build_effective_channel_quota(base_url=base)
             result = evaluate_effective_channel_event(payload, base_url=base, quota_surface=quota)
             self._json_response(result, status=202 if result.get("quota_shift_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/value-cycles/events":
+            base = self._base_url()
+            mesh = self.__class__._build_value_cycle_mesh(base_url=base)
+            result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
+            self._json_response(result, status=202 if result.get("value_cycle_allowed") else 200)
             return
 
         if parsed.path == "/swarm/variant-candidates":
@@ -3928,6 +3974,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-job-queue.json",
                     "/swarm/value-cycle-preflight",
                     "/.well-known/nomad-value-cycle-preflight.json",
+                    "/swarm/value-cycles",
+                    "/.well-known/nomad-value-cycles.json",
+                    "/swarm/value-cycles/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

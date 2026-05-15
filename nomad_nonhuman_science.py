@@ -655,6 +655,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["effective_channel_count", "duplicate_pressure", "quota_actions", "ad_cycle_candidate"],
             "nomad_paths": [u("/.well-known/nomad-effective-channels.json"), u("/swarm/effective-channels/events")],
         },
+        {
+            "id": "paid_only_value_cycle_mesh",
+            "status": "implemented",
+            "purpose": "Expose many small value loops while assigning reward only at verified paid settlement.",
+            "inputs": ["cycle_id", "stage", "proof_digest", "scope_terms_url", "settlement_ref", "amount_usd"],
+            "outputs": ["entry_cycle", "value_cycle_allowed", "external_value_payload_candidate", "paid_receipt_guard"],
+            "nomad_paths": [u("/.well-known/nomad-value-cycles.json"), u("/swarm/value-cycles/events")],
+        },
     ]
 
     principles = [
@@ -719,6 +727,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "wire_effective_channel_quota_to_campaigns",
             "target": "let only shadow-passed, effective-channel ad-cycle candidates create queued campaign drafts with send=false",
             "depends_on": ["effective_channel_quota_gate", "proof_validated_variant_archive"],
+        },
+        {
+            "id": "close_value_cycle_feedback_loop",
+            "target": "feed admitted value-cycle event candidates into external-value or work-receipt writes only after paid receipt proof",
+            "depends_on": ["paid_only_value_cycle_mesh", "settlement_signal_layer"],
         },
     ]
 
