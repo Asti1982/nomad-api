@@ -341,6 +341,9 @@ def test_self_improvement_surfaces_high_value_patterns_and_builds_artifacts(tmp_
 def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch, tmp_path):
     monkeypatch.delenv("NOMAD_HOSTED_BRAIN_MODE", raising=False)
     monkeypatch.delenv("NOMAD_ALLOW_HOSTED_BRAINS", raising=False)
+    monkeypatch.setenv("NOMAD_ALLOW_PAID_MODEL_CALLS", "true")
+    monkeypatch.setenv("NOMAD_ALLOWED_PAID_PROVIDERS", "huggingface")
+    monkeypatch.setenv("NOMAD_MAX_PAID_PROBE_USD", "0.01")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
     monkeypatch.setenv("HF_TOKEN", "hf-test-token")
     monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
@@ -383,6 +386,23 @@ def test_hosted_brain_router_auto_uses_available_hosted_lane(monkeypatch, tmp_pa
     assert [item["provider"] for item in results] == ["ollama", "huggingface"]
 
 
+def test_hosted_brain_router_blocks_paid_hosted_lane_by_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("NOMAD_ALLOW_PAID_MODEL_CALLS", raising=False)
+    monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
+    monkeypatch.setenv("HF_TOKEN", "hf-test-token")
+    monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))
+    monkeypatch.setenv("NOMAD_LANE_HEALTH_PATH", str(tmp_path / "lane-health.json"))
+    monkeypatch.setenv("NOMAD_HEAL_LOG_PATH", str(tmp_path / "heal.ndjson"))
+    router = HostedBrainRouter()
+
+    results = router.review(
+        objective="Find compute pain and improve Nomad.",
+        context={"resources": {"huggingface": {"available": True, "reachable": True}}},
+    )
+
+    assert [item["provider"] for item in results] == ["ollama"]
+
+
 def test_hosted_brain_router_prefers_fast_available_ollama_model(monkeypatch, tmp_path):
     monkeypatch.setenv("OLLAMA_MODEL", "")
     monkeypatch.setenv("NOMAD_OLLAMA_SELF_IMPROVE_MODEL", "")
@@ -416,6 +436,9 @@ def test_hosted_brain_router_skips_unreachable_ollama_when_hosted_available(monk
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:1b")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
     monkeypatch.setenv("HF_TOKEN", "hf-test-token")
+    monkeypatch.setenv("NOMAD_ALLOW_PAID_MODEL_CALLS", "true")
+    monkeypatch.setenv("NOMAD_ALLOWED_PAID_PROVIDERS", "huggingface")
+    monkeypatch.setenv("NOMAD_MAX_PAID_PROBE_USD", "0.01")
     monkeypatch.delenv("NOMAD_HOSTED_BRAIN_MODE", raising=False)
     monkeypatch.delenv("NOMAD_ALLOW_HOSTED_BRAINS", raising=False)
     monkeypatch.setenv("NOMAD_RUNTIME_PATTERN_REGISTRY_PATH", str(tmp_path / "runtime-patterns.json"))

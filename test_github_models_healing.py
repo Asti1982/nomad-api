@@ -14,7 +14,14 @@ class FakeResponse:
         return self._payload
 
 
+def _allow_paid_provider(monkeypatch, provider: str):
+    monkeypatch.setenv("NOMAD_ALLOW_PAID_MODEL_CALLS", "true")
+    monkeypatch.setenv("NOMAD_ALLOWED_PAID_PROVIDERS", provider)
+    monkeypatch.setenv("NOMAD_MAX_PAID_PROBE_USD", "0.01")
+
+
 def test_github_models_probe_diagnoses_missing_models_read(monkeypatch, tmp_path):
+    _allow_paid_provider(monkeypatch, "github_models")
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "secret-test-token")
     monkeypatch.setenv("NOMAD_GITHUB_MODELS_API_VERSION", "2026-03-10")
     monkeypatch.setenv("NOMAD_GITHUB_MODEL", "openai/gpt-4.1-mini")
@@ -41,6 +48,7 @@ def test_github_models_probe_diagnoses_missing_models_read(monkeypatch, tmp_path
 
 
 def test_github_models_probe_falls_back_to_working_model_candidate(monkeypatch, tmp_path):
+    _allow_paid_provider(monkeypatch, "github_models")
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "secret-test-token")
     monkeypatch.setenv("NOMAD_GITHUB_MODELS_API_VERSION", "2026-03-10")
     monkeypatch.setenv("NOMAD_GITHUB_MODEL", "unknown/model")
@@ -69,6 +77,7 @@ def test_github_models_probe_falls_back_to_working_model_candidate(monkeypatch, 
 
 
 def test_hosted_brain_router_returns_github_models_healing_hint(monkeypatch):
+    _allow_paid_provider(monkeypatch, "github_models")
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "secret-test-token")
     monkeypatch.setenv("NOMAD_GITHUB_MODELS_API_VERSION", "2026-03-10")
     monkeypatch.setenv("NOMAD_OLLAMA_AUTO_SELECT_SELF_IMPROVE_MODEL", "false")
@@ -101,6 +110,7 @@ def test_xai_grok_probe_reports_missing_key_without_leaking_env(monkeypatch):
 
 
 def test_xai_grok_probe_falls_back_to_working_model_candidate(monkeypatch):
+    _allow_paid_provider(monkeypatch, "xai_grok")
     monkeypatch.setenv("XAI_API_KEY", "xai-secret-test-token")
     monkeypatch.setenv("NOMAD_XAI_MODEL", "unknown-grok-model")
     monkeypatch.delenv("NOMAD_XAI_MODEL_CANDIDATES", raising=False)
@@ -123,6 +133,7 @@ def test_xai_grok_probe_falls_back_to_working_model_candidate(monkeypatch):
 
 
 def test_hosted_brain_router_uses_xai_grok_review(monkeypatch):
+    _allow_paid_provider(monkeypatch, "xai_grok")
     monkeypatch.setenv("XAI_API_KEY", "xai-secret-test-token")
     monkeypatch.setenv("NOMAD_XAI_MODEL", "grok-4.20-reasoning")
     monkeypatch.setenv("NOMAD_HOSTED_BRAIN_MODE", "always")
@@ -158,6 +169,7 @@ def test_openrouter_probe_reports_missing_key_without_leaking_env(monkeypatch):
 
 
 def test_openrouter_probe_falls_back_to_working_model_candidate(monkeypatch):
+    _allow_paid_provider(monkeypatch, "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-token")
     monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "unknown-openrouter-model")
     monkeypatch.delenv("NOMAD_OPENROUTER_MODEL_CANDIDATES", raising=False)
@@ -180,6 +192,7 @@ def test_openrouter_probe_falls_back_to_working_model_candidate(monkeypatch):
 
 
 def test_hosted_brain_router_uses_openrouter_review(monkeypatch):
+    _allow_paid_provider(monkeypatch, "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-token")
     monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "openai/gpt-4o-mini")
     monkeypatch.setenv("NOMAD_HOSTED_BRAIN_MODE", "always")

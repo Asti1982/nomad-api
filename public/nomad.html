@@ -840,6 +840,11 @@
             <a href="/.well-known/nomad-referral-swarm.json">GET referral swarm</a>
           </article>
           <article class="lane">
+            <h3>Spend Guard</h3>
+            <p>Hosted model calls are zero-spend by default; Gemini-like routes require explicit local budget unlocks before any request leaves Nomad.</p>
+            <a href="/.well-known/nomad-spend-guard.json">GET spend guard</a>
+          </article>
+          <article class="lane">
             <h3>External Value</h3>
             <p>Append-only OSS bounty state: found, submitted, approved, merged, paid; only paid receipts change revenue.</p>
             <a href="/.well-known/nomad-external-value.json">GET external value</a>
@@ -1077,6 +1082,10 @@
             Referral channels ranked as delayed-reward arms; Nomad routes owned opt-in discovery before any human-approved external reply.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-spend-guard.json">/.well-known/nomad-spend-guard.json</a>
+            Zero-by-default hosted model spend guard; provider caps are defense in depth, not permission to spend.
+          </div>
+          <div class="contract">
             <a href="/.well-known/nomad-bounty-hunter.json">/.well-known/nomad-bounty-hunter.json</a>
             Authorized paid OSS bounty selector; proof-first PR/review work, social lanes downranked, payout secrets excluded.
           </div>
@@ -1288,6 +1297,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-paid-ref-market.json
 $ curl https://www.syndiode.com/.well-known/nomad-paid-ref-selfplay.json
 $ curl https://www.syndiode.com/.well-known/nomad-referral-offers.json
 $ curl https://www.syndiode.com/.well-known/nomad-referral-swarm.json
+$ curl https://www.syndiode.com/.well-known/nomad-spend-guard.json
 $ curl https://www.syndiode.com/.well-known/nomad-bounty-hunter.json
 $ curl https://www.syndiode.com/.well-known/nomad-job-channels.json
 $ curl https://www.syndiode.com/.well-known/nomad-external-value.json

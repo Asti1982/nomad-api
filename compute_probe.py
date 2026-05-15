@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - Python <3.11 fallback
 
 from nomad_codebuddy import CodeBuddyProbe
 from nomad_health import LaneCooldownManager
+from nomad_spend_guard import blocked_paid_provider_payload, paid_model_call_decision
 
 
 load_dotenv()
@@ -46,7 +47,6 @@ DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
 DEFAULT_OPENROUTER_MODEL_CANDIDATES = (
     "openai/gpt-4o-mini",
     "openai/gpt-4.1-mini",
-    "google/gemini-2.0-flash-001",
 )
 OPENROUTER_TOKEN_ENV_VAR = "OPENROUTER_API_KEY"
 
@@ -887,6 +887,24 @@ class LocalComputeProbe:
             }
 
     def _github_models_inference_check(self, catalog_model_ids: List[str] | None = None) -> Dict[str, Any]:
+        spend_decision = paid_model_call_decision(
+            "github_models",
+            model=self.github_model,
+            purpose="compute_probe",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "github_models",
+                model=self.github_model,
+                purpose="compute_probe",
+            )
+            payload["model_candidates"] = github_model_candidates(self.github_model, catalog_model_ids)
+            payload["message"] = (
+                "GitHub Models inference probe is blocked by Nomad spend guard; catalog lookup may succeed, "
+                "but no chat completion was sent."
+            )
+            return payload
+
         candidates = github_model_candidates(self.github_model, catalog_model_ids)
         attempts: List[Dict[str, Any]] = []
         last_help: Dict[str, Any] = {}
@@ -1172,6 +1190,17 @@ class LocalComputeProbe:
                 "available": False,
                 "message": "No CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN configured.",
             }
+        spend_decision = paid_model_call_decision(
+            "cloudflare_workers_ai",
+            model=self.cloudflare_model,
+            purpose="compute_probe",
+        )
+        if not spend_decision["allowed"]:
+            return blocked_paid_provider_payload(
+                "cloudflare_workers_ai",
+                model=self.cloudflare_model,
+                purpose="compute_probe",
+            )
         try:
             response = requests.post(
                 f"https://api.cloudflare.com/client/v4/accounts/{self.cloudflare_account_id}/ai/v1/chat/completions",
@@ -1228,6 +1257,17 @@ class LocalComputeProbe:
                 "model": self.xai_model,
                 **xai_status_help(None, model=self.xai_model, base_url=self.xai_base_url),
             }
+        spend_decision = paid_model_call_decision(
+            "xai_grok",
+            model=self.xai_model,
+            purpose="compute_probe",
+        )
+        if not spend_decision["allowed"]:
+            return blocked_paid_provider_payload(
+                "xai_grok",
+                model=self.xai_model,
+                purpose="compute_probe",
+            )
         return self._xai_grok_inference_check()
 
     def _xai_grok_inference_check(self) -> Dict[str, Any]:
@@ -1346,6 +1386,17 @@ class LocalComputeProbe:
                 "model": self.openrouter_model,
                 **openrouter_status_help(None, model=self.openrouter_model, base_url=self.openrouter_base_url),
             }
+        spend_decision = paid_model_call_decision(
+            "openrouter",
+            model=self.openrouter_model,
+            purpose="compute_probe",
+        )
+        if not spend_decision["allowed"]:
+            return blocked_paid_provider_payload(
+                "openrouter",
+                model=self.openrouter_model,
+                purpose="compute_probe",
+            )
         return self._openrouter_inference_check()
 
     def _openrouter_inference_check(self) -> Dict[str, Any]:

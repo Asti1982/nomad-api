@@ -45,6 +45,7 @@ from nomad_mutual_aid import NomadMutualAidKernel
 from nomad_market_patterns import ComputeLane, MarketPatternRegistry
 from nomad_predictive_router import PredictiveRouter
 from nomad_self_healing import SelfHealingPipeline
+from nomad_spend_guard import blocked_paid_provider_payload, paid_model_call_decision
 from self_development import SelfDevelopmentJournal
 
 
@@ -499,6 +500,19 @@ class HostedBrainRouter:
                 "model": self.github_model,
                 **help_payload,
             }
+        spend_decision = paid_model_call_decision(
+            "github_models",
+            model=self.github_model,
+            purpose="self_improvement_review",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "github_models",
+                model=self.github_model,
+                purpose="self_improvement_review",
+            )
+            payload.update({"provider": "github_models", "name": "GitHub Models", "ok": False})
+            return payload
 
         attempts: List[Dict[str, Any]] = []
         last_help: Dict[str, Any] = {}
@@ -599,6 +613,19 @@ class HostedBrainRouter:
                 "ok": False,
                 "message": "No HF_TOKEN configured.",
             }
+        spend_decision = paid_model_call_decision(
+            "huggingface",
+            model=self.hf_model,
+            purpose="self_improvement_review",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "huggingface",
+                model=self.hf_model,
+                purpose="self_improvement_review",
+            )
+            payload.update({"provider": "huggingface", "name": "Hugging Face Inference Providers", "ok": False})
+            return payload
 
         try:
             response = requests.post(
@@ -640,6 +667,19 @@ class HostedBrainRouter:
                 "ok": False,
                 "message": "No CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN configured.",
             }
+        spend_decision = paid_model_call_decision(
+            "cloudflare_workers_ai",
+            model=self.cloudflare_model,
+            purpose="self_improvement_review",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "cloudflare_workers_ai",
+                model=self.cloudflare_model,
+                purpose="self_improvement_review",
+            )
+            payload.update({"provider": "cloudflare_workers_ai", "name": "Cloudflare Workers AI", "ok": False})
+            return payload
 
         try:
             response = requests.post(
@@ -682,6 +722,19 @@ class HostedBrainRouter:
                 "model": self.xai_model,
                 **xai_status_help(None, model=self.xai_model, base_url=self.xai_base_url),
             }
+        spend_decision = paid_model_call_decision(
+            "xai_grok",
+            model=self.xai_model,
+            purpose="self_improvement_review",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "xai_grok",
+                model=self.xai_model,
+                purpose="self_improvement_review",
+            )
+            payload.update({"provider": "xai_grok", "name": "xAI Grok", "ok": False})
+            return payload
 
         attempts: List[Dict[str, Any]] = []
         last_help: Dict[str, Any] = {}
@@ -781,6 +834,19 @@ class HostedBrainRouter:
                 "model": self.openrouter_model,
                 **openrouter_status_help(None, model=self.openrouter_model, base_url=self.openrouter_base_url),
             }
+        spend_decision = paid_model_call_decision(
+            "openrouter",
+            model=self.openrouter_model,
+            purpose="self_improvement_review",
+        )
+        if not spend_decision["allowed"]:
+            payload = blocked_paid_provider_payload(
+                "openrouter",
+                model=self.openrouter_model,
+                purpose="self_improvement_review",
+            )
+            payload.update({"provider": "openrouter", "name": "OpenRouter", "ok": False})
+            return payload
 
         attempts: List[Dict[str, Any]] = []
         last_help: Dict[str, Any] = {}
@@ -949,6 +1015,20 @@ class HostedBrainRouter:
         }.get(provider, False)
         if not configured:
             return False
+        if provider in {"github_models", "huggingface", "cloudflare_workers_ai", "xai_grok", "openrouter"}:
+            model = {
+                "github_models": self.github_model,
+                "huggingface": self.hf_model,
+                "cloudflare_workers_ai": self.cloudflare_model,
+                "xai_grok": self.xai_model,
+                "openrouter": self.openrouter_model,
+            }.get(provider, "")
+            if not paid_model_call_decision(
+                provider,
+                model=model,
+                purpose="self_improvement_review",
+            )["allowed"]:
+                return False
         if self.hosted_mode == "always":
             return True
         payload = resources.get(provider) or {}

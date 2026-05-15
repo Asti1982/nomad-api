@@ -8,6 +8,11 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 
+$env:NOMAD_ALLOW_PAID_MODEL_CALLS = if ($env:NOMAD_ALLOW_PAID_MODEL_CALLS) { $env:NOMAD_ALLOW_PAID_MODEL_CALLS } else { "false" }
+$env:NOMAD_ALLOW_GEMINI_SPEND = if ($env:NOMAD_ALLOW_GEMINI_SPEND) { $env:NOMAD_ALLOW_GEMINI_SPEND } else { "false" }
+$env:NOMAD_MAX_PAID_PROBE_USD = if ($env:NOMAD_MAX_PAID_PROBE_USD) { $env:NOMAD_MAX_PAID_PROBE_USD } else { "0" }
+$env:NOMAD_GEMINI_MONTHLY_SPEND_CAP_USD = if ($env:NOMAD_GEMINI_MONTHLY_SPEND_CAP_USD) { $env:NOMAD_GEMINI_MONTHLY_SPEND_CAP_USD } else { "0" }
+
 function Write-Step($text) {
     Write-Host ""
     Write-Host ("== " + $text)
@@ -62,6 +67,7 @@ $checks = @(
     "/health",
     "/openapi.json",
     "/.well-known/agent-card.json",
+    "/.well-known/nomad-spend-guard.json",
     "/.well-known/nomad-capacity-switch.json",
     "/swarm/capacity-switch"
 )
