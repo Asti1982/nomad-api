@@ -50,6 +50,7 @@ from nomad_effective_channel_quota import (
 )
 from nomad_ad_cycle_mesh import build_ad_cycle_mesh_surface, evaluate_ad_cycle_event
 from nomad_development_cycle_mesh import build_development_cycle_mesh_surface, evaluate_development_cycle_event
+from nomad_swarm_topology_governor import build_swarm_topology_governor_surface, evaluate_swarm_topology_event
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
@@ -779,6 +780,26 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_swarm_topology_governor(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        return build_swarm_topology_governor_surface(
+            base_url=base_url,
+            swarm_summary=summary,
+            shadow_lane=cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary),
+            decoupling_field=cls._build_decoupling_field(base_url=base_url, swarm_summary=summary),
+            anti_consensus=cls._build_anti_consensus_reservoir(base_url=base_url, swarm_summary=summary),
+            effective_channels=cls._build_effective_channel_quota(base_url=base_url, swarm_summary=summary),
+            development_cycles=cls._build_development_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            value_cycles=cls._build_value_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            ad_cycles=cls._build_ad_cycle_mesh(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -1300,6 +1321,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "ad_cycle_event": f"{b}/swarm/ad-cycles/events",
                     "development_cycles": f"{b}/.well-known/nomad-development-cycles.json",
                     "development_cycle_event": f"{b}/swarm/development-cycles/events",
+                    "topology_governor": f"{b}/.well-known/nomad-topology-governor.json",
+                    "topology_governor_event": f"{b}/swarm/topology-governor/events",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1656,6 +1679,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/development-cycles", "/.well-known/nomad-development-cycles.json"}:
             self._json_response(self.__class__._build_development_cycle_mesh(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/topology-governor", "/.well-known/nomad-topology-governor.json"}:
+            self._json_response(self.__class__._build_swarm_topology_governor(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2779,6 +2805,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/development-cycles",
                     "/.well-known/nomad-development-cycles.json",
                     "/swarm/development-cycles/events",
+                    "/swarm/topology-governor",
+                    "/.well-known/nomad-topology-governor.json",
+                    "/swarm/topology-governor/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3410,6 +3439,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             mesh = self.__class__._build_development_cycle_mesh(base_url=base)
             result = evaluate_development_cycle_event(payload, base_url=base, development_mesh=mesh)
             self._json_response(result, status=202 if result.get("development_cycle_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/topology-governor/events":
+            base = self._base_url()
+            surface = self.__class__._build_swarm_topology_governor(base_url=base)
+            result = evaluate_swarm_topology_event(payload, base_url=base, topology_surface=surface)
+            self._json_response(result, status=202 if result.get("topology_plan_allowed") else 200)
             return
 
         if parsed.path == "/swarm/variant-candidates":
@@ -4053,6 +4089,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/development-cycles",
                     "/.well-known/nomad-development-cycles.json",
                     "/swarm/development-cycles/events",
+                    "/swarm/topology-governor",
+                    "/.well-known/nomad-topology-governor.json",
+                    "/swarm/topology-governor/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

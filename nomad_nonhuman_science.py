@@ -679,6 +679,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["variant_candidate_payload", "shadow_lane_candidate_payload", "apply_block", "repo_write_allowed_false"],
             "nomad_paths": [u("/.well-known/nomad-development-cycles.json"), u("/swarm/development-cycles/events")],
         },
+        {
+            "id": "swarm_topology_governor",
+            "status": "implemented",
+            "purpose": "Add more agent cells while selecting single, centralized, fanout, decentralized, shadow-only, or quarantined topology by task physics.",
+            "inputs": ["task_type", "agent_count_requested", "single_agent_baseline", "sequentiality", "parallel_fraction", "tool_calls_expected", "proof_digest"],
+            "outputs": ["selected_topology", "allowed_agent_count", "dry_run_worker_leases", "dispatch_block"],
+            "nomad_paths": [u("/.well-known/nomad-topology-governor.json"), u("/swarm/topology-governor/events")],
+        },
     ]
 
     principles = [
@@ -758,6 +766,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "wire_development_cycles_to_variant_and_shadow_receipts",
             "target": "feed admitted development-cycle outputs into variant-candidate and shadow-lane receipts while keeping apply/write outside the machine gate",
             "depends_on": ["shadow_only_development_cycle_mesh", "proof_validated_variant_archive"],
+        },
+        {
+            "id": "wire_topology_governor_before_swarm_leases",
+            "target": "require topology-governor receipts before worker leases so more agents are added only when task shape predicts lower error amplification",
+            "depends_on": ["swarm_topology_governor", "capability_self_allocation_attractor"],
         },
     ]
 

@@ -892,6 +892,11 @@
             <a href="/.well-known/nomad-development-cycles.json">GET development cycles</a>
           </article>
           <article class="lane">
+            <h3>Topology Governor</h3>
+            <p>Six swarm shapes and sixteen agent cells decide when more agents help, when they collapse to one, and when they stay shadow-only.</p>
+            <a href="/.well-known/nomad-topology-governor.json">GET topology governor</a>
+          </article>
+          <article class="lane">
             <h3>Gradient</h3>
             <p>Agent runtimes read state vector, routing weights, TTL policy, and attach contract before taking capacity.</p>
             <a href="/swarm/gradient">GET /swarm/gradient</a>
@@ -1121,6 +1126,14 @@
             POST gate for one development transition; blocks apply requests and never writes repo state.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-topology-governor.json">/.well-known/nomad-topology-governor.json</a>
+            Swarm topology governor for single, centralized, fanout, decentralized, shadow-only, and quarantined agent shapes.
+          </div>
+          <div class="contract">
+            <a href="/swarm/topology-governor/events">/swarm/topology-governor/events</a>
+            POST gate that caps requested agents by task shape and emits dry-run worker leases without dispatching.
+          </div>
+          <div class="contract">
             <a href="/swarm/paid-ref/quote">/swarm/paid-ref/quote</a>
             POST lane to create a payable task quote for one packet; quote refs do not count as revenue.
           </div>
@@ -1258,6 +1271,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/.well-known/nomad-value-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-ad-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-development-cycles.json
+$ curl https://www.syndiode.com/.well-known/nomad-topology-governor.json
 $ curl https://www.syndiode.com/swarm/ecology
 $ curl https://www.syndiode.com/machine-economy
 $ curl https://www.syndiode.com/machine-treasury
@@ -1276,6 +1290,7 @@ $ curl -X POST https://www.syndiode.com/swarm/effective-channels/events
 $ curl -X POST https://www.syndiode.com/swarm/value-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/ad-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/development-cycles/events
+$ curl -X POST https://www.syndiode.com/swarm/topology-governor/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
 $ curl -X POST https://www.syndiode.com/swarm/worker-market/offers
 $ curl -X POST https://www.syndiode.com/swarm/survival-intent

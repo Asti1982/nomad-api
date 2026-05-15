@@ -1607,6 +1607,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("ad-cycles is handled directly in run_once")
     if command == "development-cycles":
         raise ValueError("development-cycles is handled directly in run_once")
+    if command == "topology-governor":
+        raise ValueError("topology-governor is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2975,6 +2977,45 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_development_cycle_event(payload, base_url=base, development_mesh=mesh)
             else:
                 result = mesh
+        elif args.command == "topology-governor":
+            from nomad_api import NomadApiHandler
+            from nomad_swarm_topology_governor import evaluate_swarm_topology_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = NomadApiHandler._build_swarm_topology_governor(base_url=base)
+            action = str(getattr(args, "governor_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "task_type": str(getattr(args, "task_type", "") or "").strip() or "parallel_proof_search",
+                        "objective": str(getattr(args, "objective", "") or "").strip(),
+                        "agent_count_requested": int(getattr(args, "agent_count_requested", 1) or 1),
+                        "single_agent_baseline": float(getattr(args, "single_agent_baseline", 0.0) or 0.0),
+                        "sequentiality": float(getattr(args, "sequentiality", 0.0) or 0.0),
+                        "parallel_fraction": float(getattr(args, "parallel_fraction", 0.0) or 0.0),
+                        "tool_calls_expected": int(getattr(args, "tool_calls_expected", 0) or 0),
+                        "error_risk": float(getattr(args, "error_risk", 0.0) or 0.0),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-topology-proof",
+                        "dispatch": bool(getattr(args, "dispatch", False)),
+                        "apply": bool(getattr(args, "apply", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.topology_governor_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_swarm_topology_event(payload, base_url=base, topology_surface=surface)
+            else:
+                result = surface
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3793,6 +3834,30 @@ def build_parser() -> argparse.ArgumentParser:
     development_cycles.add_argument("--tests-total", type=int, default=0, help="Focused tests total for shadow/promote stages.")
     development_cycles.add_argument("--risk-score", type=float, default=0.08, help="Risk score in [0, 1].")
     development_cycles.add_argument("--apply", action="store_true", help="Request code application; the gate should block this.")
+    topology_governor = subparsers.add_parser(
+        "topology-governor",
+        help="Choose safe swarm topology and dry-run agent cells before adding more agents.",
+    )
+    topology_governor.add_argument(
+        "governor_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    topology_governor.add_argument("--base-url", default="", help="Override public base URL for links.")
+    topology_governor.add_argument("--event-json", default="", help="Full JSON topology-governor event payload.")
+    topology_governor.add_argument("--task-type", default="", help="Task class, such as sequential_refactor, web_navigation, or parallel_proof_search.")
+    topology_governor.add_argument("--objective", default="", help="Objective for generated dry-run lease payloads.")
+    topology_governor.add_argument("--agent-count-requested", type=int, default=1, help="Requested number of agents.")
+    topology_governor.add_argument("--single-agent-baseline", type=float, default=0.0, help="Estimated single-agent success in [0, 1].")
+    topology_governor.add_argument("--sequentiality", type=float, default=0.0, help="Sequential task pressure in [0, 1].")
+    topology_governor.add_argument("--parallel-fraction", type=float, default=0.0, help="Parallel/decomposable fraction in [0, 1].")
+    topology_governor.add_argument("--tool-calls-expected", type=int, default=0, help="Expected tool calls for the task.")
+    topology_governor.add_argument("--error-risk", type=float, default=0.0, help="Estimated error propagation risk in [0, 1].")
+    topology_governor.add_argument("--proof-digest", default="", help="Task/proof digest for topology admission.")
+    topology_governor.add_argument("--dispatch", action="store_true", help="Request dispatch; the gate should block this.")
+    topology_governor.add_argument("--apply", action="store_true", help="Request code application; the gate should block this.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

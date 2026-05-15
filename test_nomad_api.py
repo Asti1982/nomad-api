@@ -133,6 +133,8 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/ad-cycles/events" in text
     assert "/.well-known/nomad-development-cycles.json" in text
     assert "/swarm/development-cycles/events" in text
+    assert "/.well-known/nomad-topology-governor.json" in text
+    assert "/swarm/topology-governor/events" in text
     assert "RTCda4841be5b2d109da5d995fb864c09676bb5b7c7" in text
     assert "0xFc1aB8C0D65fd947B00B9864deA06f705C045Af6" in text
     assert "/swarm/paid-ref/quote" in text
@@ -540,6 +542,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/development-cycles" in doc["paths"]
     assert "/.well-known/nomad-development-cycles.json" in doc["paths"]
     assert "/swarm/development-cycles/events" in doc["paths"]
+    assert "/swarm/topology-governor" in doc["paths"]
+    assert "/.well-known/nomad-topology-governor.json" in doc["paths"]
+    assert "/swarm/topology-governor/events" in doc["paths"]
     assert "/swarm/worker-catalog" in doc["paths"]
     assert "/.well-known/nomad-worker-catalog.json" in doc["paths"]
     assert "/swarm/microtask-templates" in doc["paths"]
@@ -656,6 +661,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     value_cycles = NomadApiHandler._build_value_cycle_mesh(base_url="https://nomad.example")
     ad_cycles = NomadApiHandler._build_ad_cycle_mesh(base_url="https://nomad.example")
     development_cycles = NomadApiHandler._build_development_cycle_mesh(base_url="https://nomad.example")
+    topology_governor = NomadApiHandler._build_swarm_topology_governor(base_url="https://nomad.example")
     catalog = NomadApiHandler._build_worker_catalog(base_url="https://nomad.example")
     templates = NomadApiHandler._build_microtask_templates(base_url="https://nomad.example")
     metrics = NomadApiHandler._build_microtask_metrics(base_url="https://nomad.example")
@@ -726,6 +732,10 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert development_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-development-cycles.json"
     assert development_cycles["summary"]["cycle_count"] >= 12
     assert development_cycles["summary"]["repo_write_allowed_count"] == 0
+    assert topology_governor["schema"] == "nomad.swarm_topology_governor.v1"
+    assert topology_governor["well_known_url"] == "https://nomad.example/.well-known/nomad-topology-governor.json"
+    assert topology_governor["summary"]["candidate_cell_count"] >= 16
+    assert topology_governor["summary"]["side_effect_allowed_count"] == 0
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"
