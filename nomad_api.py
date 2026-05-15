@@ -48,6 +48,10 @@ from nomad_effective_channel_quota import (
     build_effective_channel_quota_surface,
     evaluate_effective_channel_event,
 )
+from nomad_nonhuman_runtime_governor import (
+    build_nonhuman_runtime_governor_surface,
+    evaluate_nonhuman_runtime_event,
+)
 from nomad_ad_cycle_mesh import build_ad_cycle_mesh_surface, evaluate_ad_cycle_event
 from nomad_development_cycle_mesh import build_development_cycle_mesh_surface, evaluate_development_cycle_event
 from nomad_swarm_topology_governor import build_swarm_topology_governor_surface, evaluate_swarm_topology_event
@@ -891,6 +895,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_nonhuman_runtime_governor(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        root = (base_url or "").strip().rstrip("/")
+
+        def _lazy(schema: str, path: str) -> dict:
+            return {
+                "schema": schema,
+                "summary": {"source": "lazy", "route": f"{root}{path}" if root else path},
+            }
+
+        return build_nonhuman_runtime_governor_surface(
+            base_url=base_url,
+            topology_governor=_lazy("nomad.swarm_topology_governor.v1", "/.well-known/nomad-topology-governor.json"),
+            effective_channels=_lazy("nomad.effective_channel_quota.v1", "/.well-known/nomad-effective-channels.json"),
+            anti_consensus=_lazy("nomad.anti_consensus_reservoir.v1", "/.well-known/nomad-anti-consensus.json"),
+            deficit_integration=_lazy("nomad.deficit_integration_gate.v1", "/.well-known/nomad-deficit-integration.json"),
+            decoupling_field=_lazy("nomad.decoupling_field.v1", "/.well-known/nomad-decoupling-field.json"),
+        )
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -1402,6 +1425,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
                     "effective_channels": f"{b}/.well-known/nomad-effective-channels.json",
                     "effective_channel_event": f"{b}/swarm/effective-channels/events",
+                    "nonhuman_runtime_governor": f"{b}/.well-known/nomad-nonhuman-runtime-governor.json",
+                    "nonhuman_runtime_event": f"{b}/swarm/nonhuman-runtime-governor/events",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
@@ -1761,6 +1786,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/effective-channels", "/.well-known/nomad-effective-channels.json"}:
             self._json_response(self.__class__._build_effective_channel_quota(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/nonhuman-runtime-governor", "/.well-known/nomad-nonhuman-runtime-governor.json"}:
+            self._json_response(self.__class__._build_nonhuman_runtime_governor(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
@@ -2907,6 +2935,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/effective-channels",
                     "/.well-known/nomad-effective-channels.json",
                     "/swarm/effective-channels/events",
+                    "/swarm/nonhuman-runtime-governor",
+                    "/.well-known/nomad-nonhuman-runtime-governor.json",
+                    "/swarm/nonhuman-runtime-governor/events",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
@@ -3551,6 +3582,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             quota = self.__class__._build_effective_channel_quota(base_url=base)
             result = evaluate_effective_channel_event(payload, base_url=base, quota_surface=quota)
             self._json_response(result, status=202 if result.get("quota_shift_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/nonhuman-runtime-governor/events":
+            base = self._base_url()
+            surface = self.__class__._build_nonhuman_runtime_governor(base_url=base)
+            result = evaluate_nonhuman_runtime_event(payload, base_url=base, governor_surface=surface)
+            self._json_response(result, status=202 if result.get("resource_policy", {}).get("new_agent_spawn_allowed") else 200)
             return
 
         if parsed.path == "/swarm/value-cycles/events":
@@ -4216,6 +4254,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/effective-channels",
                     "/.well-known/nomad-effective-channels.json",
                     "/swarm/effective-channels/events",
+                    "/swarm/nonhuman-runtime-governor",
+                    "/.well-known/nomad-nonhuman-runtime-governor.json",
+                    "/swarm/nonhuman-runtime-governor/events",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",

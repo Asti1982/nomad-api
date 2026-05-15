@@ -1673,6 +1673,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("deficit-integration is handled directly in run_once")
     if command == "effective-channels":
         raise ValueError("effective-channels is handled directly in run_once")
+    if command == "nonhuman-runtime-governor":
+        raise ValueError("nonhuman-runtime-governor is handled directly in run_once")
     if command == "value-cycles":
         raise ValueError("value-cycles is handled directly in run_once")
     if command == "receipt-predictor":
@@ -2796,6 +2798,90 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         quota_surface=quota,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "nonhuman-runtime-governor":
+            from nomad_api import NomadApiHandler
+            from nomad_nonhuman_runtime_governor import evaluate_nonhuman_runtime_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = NomadApiHandler._build_nonhuman_runtime_governor(base_url=base)
+            action = str(getattr(args, "runtime_action", "surface") or "surface")
+            if action == "surface":
+                result = surface
+            else:
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    duplicate = bool(getattr(args, "duplicate", False))
+                    if duplicate:
+                        channels = [
+                            {
+                                "agent_id": f"nomad-cli-dup-{idx}",
+                                "model_family": "gpt",
+                                "persona": "same_worker",
+                                "tool_family": "browser",
+                                "source_domain": "same_feed",
+                                "trajectory_digest": "sha256:same-trajectory",
+                                "proof_digest": f"sha256:duplicate-proof-{idx}",
+                            }
+                            for idx in range(max(3, int(getattr(args, "agent_count_requested", 8) or 8)))
+                        ]
+                    else:
+                        channels = [
+                            {
+                                "agent_id": "nomad-cli-channel-a",
+                                "model_family": "gpt",
+                                "persona": "repo_doctor",
+                                "tool_family": "github",
+                                "source_domain": "render_log",
+                                "trajectory_digest": "sha256:trajectory-a",
+                                "proof_digest": "sha256:proof-a",
+                                "minority_signal": True,
+                            },
+                            {
+                                "agent_id": "nomad-cli-channel-b",
+                                "model_family": "claude",
+                                "persona": "settlement_guard",
+                                "tool_family": "ledger",
+                                "source_domain": "bounty_receipts",
+                                "trajectory_digest": "sha256:trajectory-b",
+                                "proof_digest": "sha256:proof-b",
+                            },
+                            {
+                                "agent_id": "nomad-cli-channel-c",
+                                "model_family": "gemini",
+                                "persona": "edge_probe",
+                                "tool_family": "http",
+                                "source_domain": "public_endpoint",
+                                "trajectory_digest": "sha256:trajectory-c",
+                                "proof_digest": "sha256:proof-c",
+                            },
+                        ]
+                    payload = {
+                        "agent_count_requested": int(getattr(args, "agent_count_requested", len(channels)) or len(channels)),
+                        "single_agent_baseline": float(getattr(args, "single_agent_baseline", 0.2) or 0.0),
+                        "parallel_fraction": float(getattr(args, "parallel_fraction", 0.7) or 0.0),
+                        "sequentiality": float(getattr(args, "sequentiality", 0.2) or 0.0),
+                        "tool_calls_expected": int(getattr(args, "tool_calls_expected", 0) or 0),
+                        "trust_level": float(getattr(args, "trust_level", 0.0) or 0.0),
+                        "shared_context_fraction": float(getattr(args, "shared_context_fraction", 0.0) or 0.0),
+                        "consensus_score": float(getattr(args, "consensus_score", 0.0) or 0.0),
+                        "unpaid_wip_pressure": float(getattr(args, "unpaid_wip_pressure", 0.0) or 0.0),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-nonhuman-runtime",
+                        "channels": channels,
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.nonhuman_runtime_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_nonhuman_runtime_event(payload, base_url=base, governor_surface=surface)
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3843,6 +3929,30 @@ def build_parser() -> argparse.ArgumentParser:
     effective_channels.add_argument("--objective", default="", help="Objective for generated CLI event.")
     effective_channels.add_argument("--duplicate", action="store_true", help="Generate a homogeneous duplicate event that should be capped.")
     effective_channels.add_argument("--dry-run", action="store_true", help="Evaluate without appending the effective-channel ledger.")
+    nonhuman_runtime = subparsers.add_parser(
+        "nonhuman-runtime-governor",
+        help="Gate swarm runtime by K-star diversity, saturation, collapse, and least-trust science before spending agents.",
+    )
+    nonhuman_runtime.add_argument(
+        "runtime_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    nonhuman_runtime.add_argument("--base-url", default="", help="Override public base URL for links.")
+    nonhuman_runtime.add_argument("--event-json", default="", help="Full JSON nonhuman runtime event payload.")
+    nonhuman_runtime.add_argument("--agent-count-requested", type=int, default=8, help="Raw requested agent count before the governor cap.")
+    nonhuman_runtime.add_argument("--single-agent-baseline", type=float, default=0.2, help="Measured single-agent proof success proxy.")
+    nonhuman_runtime.add_argument("--parallel-fraction", type=float, default=0.7, help="Task decomposability / parallel fraction.")
+    nonhuman_runtime.add_argument("--sequentiality", type=float, default=0.2, help="Sequential dependency pressure.")
+    nonhuman_runtime.add_argument("--tool-calls-expected", type=int, default=0, help="Expected tool-call count for overhead detection.")
+    nonhuman_runtime.add_argument("--trust-level", type=float, default=0.0, help="Inter-agent trust tau; high values trigger least-trust mode.")
+    nonhuman_runtime.add_argument("--shared-context-fraction", type=float, default=0.0, help="Shared context coupling proxy.")
+    nonhuman_runtime.add_argument("--consensus-score", type=float, default=0.0, help="Agreement score; high values can increase collapse risk.")
+    nonhuman_runtime.add_argument("--unpaid-wip-pressure", type=float, default=0.0, help="Pressure from unpaid work in progress.")
+    nonhuman_runtime.add_argument("--proof-digest", default="", help="Task/proof digest required before dispatch.")
+    nonhuman_runtime.add_argument("--duplicate", action="store_true", help="Generate homogeneous duplicate channels that should be capped.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",
