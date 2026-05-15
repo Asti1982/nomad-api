@@ -129,6 +129,8 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-value-cycle-preflight.json" in text
     assert "/.well-known/nomad-value-cycles.json" in text
     assert "/swarm/value-cycles/events" in text
+    assert "/.well-known/nomad-receipt-predictor.json" in text
+    assert "/swarm/receipt-predictor/events" in text
     assert "/.well-known/nomad-ad-cycles.json" in text
     assert "/swarm/ad-cycles/events" in text
     assert "/.well-known/nomad-development-cycles.json" in text
@@ -536,6 +538,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/value-cycles" in doc["paths"]
     assert "/.well-known/nomad-value-cycles.json" in doc["paths"]
     assert "/swarm/value-cycles/events" in doc["paths"]
+    assert "/swarm/receipt-predictor" in doc["paths"]
+    assert "/.well-known/nomad-receipt-predictor.json" in doc["paths"]
+    assert "/swarm/receipt-predictor/events" in doc["paths"]
     assert "/swarm/ad-cycles" in doc["paths"]
     assert "/.well-known/nomad-ad-cycles.json" in doc["paths"]
     assert "/swarm/ad-cycles/events" in doc["paths"]
@@ -659,6 +664,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     worker_job_queue = NomadApiHandler._build_worker_job_queue(base_url="https://nomad.example")
     value_cycle_preflight = NomadApiHandler._build_value_cycle_preflight(base_url="https://nomad.example")
     value_cycles = NomadApiHandler._build_value_cycle_mesh(base_url="https://nomad.example")
+    receipt_predictor = NomadApiHandler._build_receipt_predictor(base_url="https://nomad.example")
     ad_cycles = NomadApiHandler._build_ad_cycle_mesh(base_url="https://nomad.example")
     development_cycles = NomadApiHandler._build_development_cycle_mesh(base_url="https://nomad.example")
     topology_governor = NomadApiHandler._build_swarm_topology_governor(base_url="https://nomad.example")
@@ -725,6 +731,10 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert value_cycles["schema"] == "nomad.value_cycle_mesh.v1"
     assert value_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
     assert value_cycles["summary"]["cycle_count"] >= 32
+    assert receipt_predictor["schema"] == "nomad.receipt_predictor.v1"
+    assert receipt_predictor["well_known_url"] == "https://nomad.example/.well-known/nomad-receipt-predictor.json"
+    assert receipt_predictor["summary"]["cycle_count"] >= 32
+    assert receipt_predictor["now_queue"]
     assert ad_cycles["schema"] == "nomad.ad_cycle_mesh.v1"
     assert ad_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-ad-cycles.json"
     assert ad_cycles["summary"]["cycle_count"] >= 12

@@ -1603,6 +1603,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("effective-channels is handled directly in run_once")
     if command == "value-cycles":
         raise ValueError("value-cycles is handled directly in run_once")
+    if command == "receipt-predictor":
+        raise ValueError("receipt-predictor is handled directly in run_once")
     if command == "ad-cycles":
         raise ValueError("ad-cycles is handled directly in run_once")
     if command == "development-cycles":
@@ -2896,6 +2898,41 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
             else:
                 result = mesh
+        elif args.command == "receipt-predictor":
+            from nomad_api import NomadApiHandler
+            from nomad_receipt_predictor import evaluate_receipt_prediction_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            predictor = NomadApiHandler._build_receipt_predictor(base_url=base)
+            action = str(getattr(args, "predictor_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "cycle_id": str(getattr(args, "cycle_id", "") or "").strip()
+                        or str(predictor.get("summary", {}).get("top_cycle_id") or ""),
+                        "intent": str(getattr(args, "intent", "") or "select").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip(),
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "execute": bool(getattr(args, "execute", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.receipt_predictor_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_receipt_prediction_event(payload, base_url=base, predictor_surface=predictor)
+            else:
+                result = predictor
         elif args.command == "ad-cycles":
             from nomad_ad_cycle_mesh import evaluate_ad_cycle_event
             from nomad_api import NomadApiHandler
@@ -3788,6 +3825,25 @@ def build_parser() -> argparse.ArgumentParser:
     value_cycles.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
     value_cycles.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, or settlement reference.")
     value_cycles.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for stage=paid.")
+    receipt_predictor = subparsers.add_parser(
+        "receipt-predictor",
+        help="Rank value cycles by proximity to real paid receipt and operator survival usefulness.",
+    )
+    receipt_predictor.add_argument(
+        "predictor_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    receipt_predictor.add_argument("--base-url", default="", help="Override public base URL for links.")
+    receipt_predictor.add_argument("--event-json", default="", help="Full JSON receipt-predictor event payload.")
+    receipt_predictor.add_argument("--cycle-id", default="", help="Cycle id to select; defaults to predictor top cycle.")
+    receipt_predictor.add_argument("--intent", default="select", help="select | prove | commit | paid.")
+    receipt_predictor.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
+    receipt_predictor.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, or settlement reference.")
+    receipt_predictor.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for intent=paid.")
+    receipt_predictor.add_argument("--execute", action="store_true", help="Request execution; the predictor gate should block this.")
     ad_cycles = subparsers.add_parser(
         "ad-cycles",
         help="Expose and gate shadow-only advertising/acquisition cycles.",

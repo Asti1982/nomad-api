@@ -58,6 +58,7 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "deficit_triggered_integration_gate" in lanes
     assert "effective_channel_quota_gate" in lanes
     assert "paid_only_value_cycle_mesh" in lanes
+    assert "receipt_predictor_survival_selector" in lanes
     assert "shadow_only_ad_cycle_mesh" in lanes
     assert "shadow_only_development_cycle_mesh" in lanes
     assert "swarm_topology_governor" in lanes
@@ -65,12 +66,14 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert lanes["capability_self_allocation_attractor"]["nomad_paths"][0] == "https://nomad.example/swarm/attractor"
     assert lanes["shadow_only_development_cycle_mesh"]["nomad_paths"][0] == "https://nomad.example/.well-known/nomad-development-cycles.json"
     assert lanes["swarm_topology_governor"]["nomad_paths"][0] == "https://nomad.example/.well-known/nomad-topology-governor.json"
+    assert lanes["receipt_predictor_survival_selector"]["nomad_paths"][0] == "https://nomad.example/.well-known/nomad-receipt-predictor.json"
 
     assert any(step["id"] == "implement_agency_meter" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "expand_swarm_attractor_trials" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_dti_to_shadow_queue" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_effective_channel_quota_to_campaigns" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "close_value_cycle_feedback_loop" for step in out["next_nomad_build_steps"])
+    assert any(step["id"] == "breed_receipt_predictor_evaluators" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_ad_cycles_to_campaign_queue" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_development_cycles_to_variant_and_shadow_receipts" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "wire_topology_governor_before_swarm_leases" for step in out["next_nomad_build_steps"])

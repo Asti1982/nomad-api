@@ -115,6 +115,7 @@ from nomad_external_value import (
 )
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
+from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
@@ -742,6 +743,29 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_receipt_predictor(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        work_summary = summarize_work_receipts()
+        return build_receipt_predictor_surface(
+            base_url=base_url,
+            value_cycles=cls._build_value_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+            operator_runway=build_operator_runway_surface(
+                base_url=base_url,
+                external_value_summary=external_summary,
+                work_receipt_summary=work_summary,
+            ),
+            value_pressure=cls._build_value_pressure(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
     def _build_ad_cycle_mesh(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         if isinstance(swarm_summary, dict):
             summary = swarm_summary
@@ -1317,6 +1341,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "value_cycle_preflight": f"{b}/.well-known/nomad-value-cycle-preflight.json",
                     "value_cycles": f"{b}/.well-known/nomad-value-cycles.json",
                     "value_cycle_event": f"{b}/swarm/value-cycles/events",
+                    "receipt_predictor": f"{b}/.well-known/nomad-receipt-predictor.json",
+                    "receipt_predictor_event": f"{b}/swarm/receipt-predictor/events",
                     "ad_cycles": f"{b}/.well-known/nomad-ad-cycles.json",
                     "ad_cycle_event": f"{b}/swarm/ad-cycles/events",
                     "development_cycles": f"{b}/.well-known/nomad-development-cycles.json",
@@ -1673,6 +1699,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/value-cycles", "/.well-known/nomad-value-cycles.json"}:
             self._json_response(self.__class__._build_value_cycle_mesh(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/receipt-predictor", "/.well-known/nomad-receipt-predictor.json"}:
+            self._json_response(self.__class__._build_receipt_predictor(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/ad-cycles", "/.well-known/nomad-ad-cycles.json"}:
             self._json_response(self.__class__._build_ad_cycle_mesh(base_url=self._base_url()))
@@ -2799,6 +2828,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/value-cycles",
                     "/.well-known/nomad-value-cycles.json",
                     "/swarm/value-cycles/events",
+                    "/swarm/receipt-predictor",
+                    "/.well-known/nomad-receipt-predictor.json",
+                    "/swarm/receipt-predictor/events",
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",
@@ -3425,6 +3457,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             mesh = self.__class__._build_value_cycle_mesh(base_url=base)
             result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
             self._json_response(result, status=202 if result.get("value_cycle_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/receipt-predictor/events":
+            base = self._base_url()
+            predictor = self.__class__._build_receipt_predictor(base_url=base)
+            result = evaluate_receipt_prediction_event(payload, base_url=base, predictor_surface=predictor)
+            self._json_response(result, status=202 if result.get("prediction_allowed") else 200)
             return
 
         if parsed.path == "/swarm/ad-cycles/events":
@@ -4083,6 +4122,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/value-cycles",
                     "/.well-known/nomad-value-cycles.json",
                     "/swarm/value-cycles/events",
+                    "/swarm/receipt-predictor",
+                    "/.well-known/nomad-receipt-predictor.json",
+                    "/swarm/receipt-predictor/events",
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",

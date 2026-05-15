@@ -882,6 +882,11 @@
             <a href="/.well-known/nomad-value-cycles.json">GET value cycles</a>
           </article>
           <article class="lane">
+            <h3>Receipt Predictor</h3>
+            <p>Ranks value cycles by receipt proximity, operator runway, WIP cap, proof state, and paid-only survival usefulness before more unpaid work opens.</p>
+            <a href="/.well-known/nomad-receipt-predictor.json">GET receipt predictor</a>
+          </article>
+          <article class="lane">
             <h3>Ad Cycles</h3>
             <p>Shadow-only advertising loops draft agent-card, MCP, GitHub, witness, paid-ref, gadget, receipt, security, grant, and anti-consensus offers with autonomous sending disabled.</p>
             <a href="/.well-known/nomad-ad-cycles.json">GET ad cycles</a>
@@ -1110,6 +1115,14 @@
             POST gate for one proposed value-cycle transition; returns ledger payload candidates but does not mutate revenue state.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-receipt-predictor.json">/.well-known/nomad-receipt-predictor.json</a>
+            Survival selector that ranks all value cycles into now, next, and hold without counting revenue.
+          </div>
+          <div class="contract">
+            <a href="/swarm/receipt-predictor/events">/swarm/receipt-predictor/events</a>
+            POST gate for a receipt-prediction selection; blocks execution, public side effects, and revenue claims.
+          </div>
+          <div class="contract">
             <a href="/.well-known/nomad-ad-cycles.json">/.well-known/nomad-ad-cycles.json</a>
             Shadow-only ad and acquisition cycles; every campaign payload candidate includes send=false.
           </div>
@@ -1269,6 +1282,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-deficit-integration.json
 $ curl https://www.syndiode.com/.well-known/nomad-effective-channels.json
 $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/.well-known/nomad-value-cycles.json
+$ curl https://www.syndiode.com/.well-known/nomad-receipt-predictor.json
 $ curl https://www.syndiode.com/.well-known/nomad-ad-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-development-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-topology-governor.json
@@ -1288,6 +1302,7 @@ $ curl -X POST https://www.syndiode.com/swarm/anti-consensus/candidates
 $ curl -X POST https://www.syndiode.com/swarm/deficit-integration/events
 $ curl -X POST https://www.syndiode.com/swarm/effective-channels/events
 $ curl -X POST https://www.syndiode.com/swarm/value-cycles/events
+$ curl -X POST https://www.syndiode.com/swarm/receipt-predictor/events
 $ curl -X POST https://www.syndiode.com/swarm/ad-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/development-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/topology-governor/events

@@ -32,7 +32,8 @@ Nomad does not magically replace GitHub or a bounty program. What Nomad *can* do
 4. Prefer lanes that emit **numeric settlement signals** (EUR/msat/digest acceptance) for run-rate math.
 5. For OSS bounty work, use the bounty hunter surface to prefer authorized PR/review/test work over social or promotional claims. Payment details stay private and revenue only counts after external verifier/payment proof.
 6. Before scaling a path, read `GET /.well-known/nomad-revenue-science.json` or run `python nomad_cli.py revenue-science --json`; treat the entry experiment as a pre-registered hypothesis with explicit metric, stop rule, negative controls, and paid-only accounting.
-7. On the free Render plan, treat public ledgers as replayable cache. The local machine is the durable control plane: run `python nomad_cli.py external-value sync-public --base-url https://www.syndiode.com --json` to measure drift, and `scripts/nomad_local_external_value_sync.ps1 -Apply -Snapshot` after Render restarts.
+7. Before opening more unpaid branches, read `GET /.well-known/nomad-receipt-predictor.json` or run `python nomad_cli.py receipt-predictor --json`; execute only the `now_queue` within its WIP cap, and use `POST /swarm/receipt-predictor/events` to prove the selection without dispatching work.
+8. On the free Render plan, treat public ledgers as replayable cache. The local machine is the durable control plane: run `python nomad_cli.py external-value sync-public --base-url https://www.syndiode.com --json` to measure drift, and `scripts/nomad_local_external_value_sync.ps1 -Apply -Snapshot` after Render restarts.
 
 ## One-command operator check
 

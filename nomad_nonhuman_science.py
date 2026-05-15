@@ -664,6 +664,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "nomad_paths": [u("/.well-known/nomad-value-cycles.json"), u("/swarm/value-cycles/events")],
         },
         {
+            "id": "receipt_predictor_survival_selector",
+            "status": "implemented",
+            "purpose": "Invert human planning: rank work by receipt proximity, operator runway, proof state, and WIP caps before opening more unpaid branches.",
+            "inputs": ["value_cycle_mesh", "operator_state", "external_value_summary", "work_receipts", "value_pressure"],
+            "outputs": ["now_queue", "next_queue", "receipt_proximity_score", "wip_cap"],
+            "nomad_paths": [u("/.well-known/nomad-receipt-predictor.json"), u("/swarm/receipt-predictor/events")],
+        },
+        {
             "id": "shadow_only_ad_cycle_mesh",
             "status": "implemented",
             "purpose": "Run many advertising and acquisition drafts while blocking autonomous send and revenue claims.",
@@ -756,6 +764,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "close_value_cycle_feedback_loop",
             "target": "feed admitted value-cycle event candidates into external-value or work-receipt writes only after paid receipt proof",
             "depends_on": ["paid_only_value_cycle_mesh", "settlement_signal_layer"],
+        },
+        {
+            "id": "breed_receipt_predictor_evaluators",
+            "target": "run shadow-lane variants against receipt-predictor outcomes and only increase route weight after proof digest plus paid receipt evidence",
+            "depends_on": ["receipt_predictor_survival_selector", "proof_validated_variant_archive"],
         },
         {
             "id": "wire_ad_cycles_to_campaign_queue",
