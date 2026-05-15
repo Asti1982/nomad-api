@@ -290,6 +290,35 @@ def _compact_text(result: Dict[str, Any]) -> str:
             )
         return "\n".join(line for line in lines if line)
 
+    if result.get("schema") == "nomad.sales_department_swarm.v1":
+        summary = result.get("summary") or {}
+        top = result.get("top_active_route") or {}
+        guards = result.get("guards") or {}
+        lines = [
+            "Nomad sales department swarm",
+            f"Cells: {summary.get('sales_cell_count', 0)} cycles={summary.get('active_value_cycle_count', 0)}",
+            f"Recognized revenue USD: {summary.get('recognized_revenue_usd_total', 0)}",
+            f"Top route: {top.get('action', '')}",
+            f"Entry: {top.get('route', '')}",
+            f"No cold spam: {bool(guards.get('no_cold_spam'))}",
+        ]
+        for item in (result.get("sales_cells") or [])[:4]:
+            lines.append(f"- {item.get('cell_id', '')}: {item.get('cashflow_proximity', '')}")
+        return "\n".join(line for line in lines if line)
+
+    if result.get("schema") == "nomad.sales_department_event_decision.v1":
+        blockers = result.get("blockers") or []
+        return "\n".join(
+            [
+                "Nomad sales event decision",
+                f"Allowed: {bool(result.get('sales_cycle_allowed'))}",
+                f"Stage: {result.get('stage_kind', '')}",
+                f"Side effect allowed: {bool(result.get('side_effect_allowed'))}",
+                f"Paid receipt candidate: {bool(result.get('paid_receipt_candidate'))}",
+                f"Blockers: {', '.join(blockers) if blockers else 'none'}",
+            ]
+        )
+
     if result.get("schema") == "nomad.worker_invoice.v1":
         payout = result.get("payout") or {}
         accounting = result.get("revenue_accounting") or {}
@@ -2026,6 +2055,34 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 referral_swarm=build_referral_swarm_surface(base_url=base, referral_offers=offers),
                 service_catalog=AgentServiceDesk().service_catalog(),
             )
+        elif args.command == "sales-department":
+            from nomad_api import NomadApiHandler
+            from nomad_sales_department_swarm import evaluate_sales_department_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            action = str(getattr(args, "sales_action", "surface") or "surface").strip().lower()
+            surface = NomadApiHandler._build_sales_department_swarm(base_url=base)
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "cell_id": str(getattr(args, "cell_id", "") or "").strip() or "repo_rescue_cell",
+                        "stage": str(getattr(args, "stage", "") or "").strip() or "draft",
+                        "buyer_intent_digest": str(getattr(args, "buyer_intent_digest", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip(),
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "send": bool(getattr(args, "send", False)),
+                        "human_approved": bool(getattr(args, "human_approved", False)),
+                    }
+                result = evaluate_sales_department_event(payload, base_url=base, sales_surface=surface)
+            else:
+                result = surface
         elif args.command == "external-value":
             from nomad_external_value import (
                 agent_selection_bonus,
@@ -3530,6 +3587,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compile settlement, referral, bounty, and direct paid packages into one receipt-strict value plan.",
     )
     buyer_funded_work.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    sales_department = subparsers.add_parser(
+        "sales-department",
+        help="Compile or gate Nomad's proof-first sales department swarm over buyer-funded packets.",
+    )
+    sales_department.add_argument(
+        "sales_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    sales_department.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    sales_department.add_argument("--event-json", default="", help="Full JSON sales event payload.")
+    sales_department.add_argument("--cell-id", default="", help="Sales cell id for generated CLI event.")
+    sales_department.add_argument("--stage", default="draft", help="observe | draft | send_request | paid.")
+    sales_department.add_argument("--buyer-intent-digest", default="", help="Buyer intent digest required before public send.")
+    sales_department.add_argument("--proof-digest", default="", help="Proof, diagnostic, or verifier digest.")
+    sales_department.add_argument("--settlement-ref", default="", help="Receipt, paid ref, or tx hash for paid candidate.")
+    sales_department.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for stage=paid.")
+    sales_department.add_argument("--send", action="store_true", help="Request public send gate evaluation.")
+    sales_department.add_argument("--human-approved", action="store_true", help="Mark the public send as approved.")
     external_value = subparsers.add_parser(
         "external-value",
         help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",

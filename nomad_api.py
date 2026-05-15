@@ -111,6 +111,7 @@ from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_buyer_funded_work import build_buyer_funded_work_surface
+from nomad_sales_department_swarm import build_sales_department_swarm_surface, evaluate_sales_department_event
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -516,6 +517,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             bounty_hunter=cls._build_bounty_hunter(base_url=base_url),
             referral_swarm=cls._build_referral_swarm(base_url=base_url),
             service_catalog=service_catalog,
+        )
+
+    @classmethod
+    def _build_sales_department_swarm(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        # Keep this discovery endpoint cheap: the sales surface points at the
+        # heavy meshes instead of rebuilding every one on each GET.
+        root = (base_url or "").strip().rstrip("/")
+
+        def _lazy(path: str) -> dict:
+            return {"summary": {"source": "lazy", "route": f"{root}{path}" if root else path}}
+
+        return build_sales_department_swarm_surface(
+            base_url=base_url,
+            buyer_funded_work=cls._build_buyer_funded_work(base_url=base_url),
+            value_cycles=_lazy("/.well-known/nomad-value-cycles.json"),
+            ad_cycles=_lazy("/.well-known/nomad-ad-cycles.json"),
+            receipt_predictor=_lazy("/.well-known/nomad-receipt-predictor.json"),
+            revenue_science=_lazy("/.well-known/nomad-revenue-science.json"),
+            effective_channels=_lazy("/.well-known/nomad-effective-channels.json"),
         )
 
     @classmethod
@@ -1344,6 +1364,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "spend_guard": f"{b}/.well-known/nomad-spend-guard.json",
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "buyer_funded_work": f"{b}/.well-known/nomad-buyer-funded-work.json",
+                    "sales_department": f"{b}/.well-known/nomad-sales-department.json",
+                    "sales_department_event": f"{b}/swarm/sales-department/events",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -1654,6 +1676,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/buyer-funded-work", "/.well-known/nomad-buyer-funded-work.json"}:
             self._json_response(self.__class__._build_buyer_funded_work(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/sales-department", "/.well-known/nomad-sales-department.json"}:
+            self._json_response(self.__class__._build_sales_department_swarm(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
@@ -2827,6 +2852,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/buyer-funded-work",
                     "/.well-known/nomad-buyer-funded-work.json",
+                    "/swarm/sales-department",
+                    "/.well-known/nomad-sales-department.json",
+                    "/swarm/sales-department/events",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
@@ -3526,6 +3554,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("ad_cycle_allowed") else 200)
             return
 
+        if parsed.path == "/swarm/sales-department/events":
+            base = self._base_url()
+            surface = self.__class__._build_sales_department_swarm(base_url=base)
+            result = evaluate_sales_department_event(payload, base_url=base, sales_surface=surface)
+            self._json_response(result, status=202 if result.get("sales_cycle_allowed") else 200)
+            return
+
         if parsed.path == "/swarm/development-cycles/events":
             base = self._base_url()
             mesh = self.__class__._build_development_cycle_mesh(base_url=base)
@@ -4126,6 +4161,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-bounty-hunter.json",
                     "/swarm/buyer-funded-work",
                     "/.well-known/nomad-buyer-funded-work.json",
+                    "/swarm/sales-department",
+                    "/.well-known/nomad-sales-department.json",
+                    "/swarm/sales-department/events",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",

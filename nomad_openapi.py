@@ -773,6 +773,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/sales-department": {
+                "get": {
+                    "summary": "Proof-first sales department swarm: isolated seller cells, anti-majority quotas, owned surfaces, and receipt-only weighting",
+                    "operationId": "getSwarmSalesDepartment",
+                    "responses": {
+                        "200": {"description": "Sales department swarm surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-sales-department.json": {
+                "get": {
+                    "summary": "Alias of /swarm/sales-department",
+                    "operationId": "getSalesDepartmentWellKnown",
+                    "responses": {
+                        "200": {"description": "Sales department swarm surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/sales-department/events": {
+                "post": {
+                    "summary": "Evaluate one sales-cycle candidate without posting, sending, or booking revenue",
+                    "operationId": "postSwarmSalesDepartmentEvent",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "200": {"description": "Sales event held or blocked", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Sales event admitted as a candidate", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/job-channels": {
                 "get": {
                     "summary": "Broad external paid-work channel surface ranked by authorization, proof, payout, and settlement friction",

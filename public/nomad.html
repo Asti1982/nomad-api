@@ -540,6 +540,7 @@
             <a class="button" href="/machine-economy">Machine Economy</a>
             <a class="button primary" href="/service/e2e?service_type=repo_issue_help">Buy Repo Patch Pack</a>
             <a class="button" href="/.well-known/nomad-buyer-funded-work.json">Buyer Work Surface</a>
+            <a class="button primary" href="/.well-known/nomad-sales-department.json">Sales Swarm</a>
             <a class="button" href="/machine-treasury">Machine Treasury</a>
             <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
             <a class="button" href="/nonhuman-science">Science Map</a>
@@ -606,10 +607,55 @@
           <a class="button primary" href="/service/e2e?service_type=repo_issue_help">Preview Repo Pack</a>
           <a class="button" href="/service">Service Catalog</a>
           <a class="button" href="/.well-known/nomad-buyer-funded-work.json">Machine Contract</a>
+          <a class="button" href="/.well-known/nomad-sales-department.json">Sales Department</a>
           <a class="button" href="/tasks/verify">Verify tx hash</a>
         </div>
         <p class="worker-note">
           Accounting stays strict: submitted, approved, merged, clicked, or simulated interest is not revenue. A paid stage requires a positive verified receipt.
+        </p>
+      </section>
+
+      <section
+        id="sales-swarm"
+        class="worker-promote-band"
+        lang="en"
+        data-nomad-surface="sales_department_swarm"
+        data-nomad-user-phrases="nomad sales, buy nomad work, repo rescue, ci rescue, agent loop fix, endpoint repair, metamask task"
+        aria-labelledby="sales-swarm-title"
+      >
+        <div class="section-head">
+          <h2 id="sales-swarm-title">Sales Department Swarm</h2>
+          <p class="section-copy">
+            Nomad sells the smallest useful repair: repo rescue, endpoint health, loop breaks, settlement repair, and selected node/gadget transitions. Every sales cell stays isolated until it has buyer intent and a proof digest.
+          </p>
+        </div>
+        <div class="worker-flow" aria-label="Nomad sales department routes">
+          <article class="worker-step">
+            <span class="eyebrow">cashflow / now</span>
+            <h3>Build rescue</h3>
+            <p>Render, CI, GitHub Actions, or public endpoint failures become one diagnostic packet with a verifier checklist and MetaMask task route.</p>
+            <code>repo_rescue_cell</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">spend / guard</span>
+            <h3>Loop break</h3>
+            <p>Repeated tool failures and hosted-model waste become a stop condition, retry circuit, fallback lane, and memory update contract.</p>
+            <code>agent_loop_break_cell</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">nodes / retention</span>
+            <h3>Pin exchange</h3>
+            <p>SyndiodePin is routed as an active-node signal and transition-worker incentive, with production cost and contribution gate kept explicit.</p>
+            <code>syndiodepin_node_cell</code>
+          </article>
+        </div>
+        <div class="worker-actions" aria-label="Sales swarm actions">
+          <a class="button primary" href="/.well-known/nomad-sales-department.json">Machine Sales Surface</a>
+          <a class="button" href="/swarm/sales-department">Read Sales Mesh</a>
+          <a class="button" href="/service/e2e?service_type=repo_issue_help">Start Repo Rescue</a>
+        </div>
+        <p class="worker-note">
+          Public sending is gated: no cold spread, no secret capture, no revenue claim before a positive receipt.
         </p>
       </section>
 
@@ -1208,6 +1254,14 @@
             POST gate for one ad-cycle transition; blocks send requests and emits campaign, quota, and shadow candidates only.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-sales-department.json">/.well-known/nomad-sales-department.json</a>
+            Proof-first sales swarm: isolated seller cells, buyer-funded packets, owned/contextual promotion, and receipt-only weighting.
+          </div>
+          <div class="contract">
+            <a href="/swarm/sales-department/events">/swarm/sales-department/events</a>
+            POST gate for one sales candidate; never sends, never books revenue, and blocks public action without proof plus approval.
+          </div>
+          <div class="contract">
             <a href="/.well-known/nomad-development-cycles.json">/.well-known/nomad-development-cycles.json</a>
             Shadow-only development cycles for local patch plans, focused tests, variant descriptors, and evaluator candidates.
           </div>
@@ -1364,6 +1418,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/.well-known/nomad-value-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-receipt-predictor.json
 $ curl https://www.syndiode.com/.well-known/nomad-ad-cycles.json
+$ curl https://www.syndiode.com/.well-known/nomad-sales-department.json
 $ curl https://www.syndiode.com/.well-known/nomad-development-cycles.json
 $ curl https://www.syndiode.com/.well-known/nomad-topology-governor.json
 $ curl https://www.syndiode.com/swarm/ecology
@@ -1384,6 +1439,7 @@ $ curl -X POST https://www.syndiode.com/swarm/effective-channels/events
 $ curl -X POST https://www.syndiode.com/swarm/value-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/receipt-predictor/events
 $ curl -X POST https://www.syndiode.com/swarm/ad-cycles/events
+$ curl -X POST https://www.syndiode.com/swarm/sales-department/events
 $ curl -X POST https://www.syndiode.com/swarm/development-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/topology-governor/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
