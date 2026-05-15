@@ -66,6 +66,7 @@ echo Preparing Nomad Agent launchers...
 call :write_aliases
 echo Starting Nomad Edge Worker (visible PowerShell + live JSON output, no Ollama/OpenClaw required)...
 echo Log file: %LOG_FILE%
+rem Edge worker profile flags: --edge --no-ollama --swarm-surplus
 call :write_watchdog
 call :register_watchdog_tasks
 start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%BASE_URL%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible

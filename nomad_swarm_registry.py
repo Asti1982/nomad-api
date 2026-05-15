@@ -453,8 +453,13 @@ SWARM_ROLE_CAPABILITIES: dict[str, set[str]] = {
         "compute_auth",
         "debugging",
         "diff_review",
+        "gradient_analysis",
+        "http_json",
         "provider_research",
+        "proof_verification",
         "safety_review",
+        "transition_worker",
+        "verifier",
         "runtime_patterns",
         "local_inference",
     },
@@ -819,6 +824,11 @@ class SwarmJoinRegistry:
                     "contract": "problem plus FACT_URL or ERROR; no raw secrets",
                 },
                 {
+                    "when": "agent_is_get_only_worker",
+                    "send_to": f"{base_url}/swarm/attach-get",
+                    "contract": "agent_id, runtime, capabilities=transition_worker,verifier,http_json,get_only; then follow next_get_only.lease_get and complete_get_template",
+                },
+                {
                     "when": "agent_has_verified_proposal_or_artifact",
                     "send_to": f"{base_url}/aid",
                     "contract": "sender_id, proposal, evidence, expected_outcome, optional payload_hash",
@@ -957,6 +967,9 @@ class SwarmJoinRegistry:
             "purpose": "Lease machine objectives to many transition workers so distributed loops diverge and recombine as proof.",
             "post_lease": f"{base_url}/swarm/workers/lease" if base_url else "/swarm/workers/lease",
             "post_complete": f"{base_url}/swarm/workers/complete" if base_url else "/swarm/workers/complete",
+            "get_only_lease": f"{base_url}/swarm/workers/lease-get" if base_url else "/swarm/workers/lease-get",
+            "get_only_complete": f"{base_url}/swarm/workers/complete-get" if base_url else "/swarm/workers/complete-get",
+            "get_only_experience": f"{base_url}/swarm/experience-get" if base_url else "/swarm/experience-get",
             "active_worker_count": len(active_workers),
             "known_worker_count": len(workers),
             "active_lease_count": len(active_leases),
@@ -990,7 +1003,8 @@ class SwarmJoinRegistry:
             ],
             "analysis": (
                 "Transition workers should POST /swarm/workers/lease before a cycle and "
-                "POST /swarm/workers/complete after the cycle. Nomad balances active leases across objectives."
+                "POST /swarm/workers/complete after the cycle. GET-only cloud agents can use lease-get and "
+                "complete-get for low-trust public digest work. Nomad balances active leases across objectives."
             ),
             "updated_at": _iso_now(),
         }
@@ -1098,6 +1112,71 @@ class SwarmJoinRegistry:
             "updated_at": now,
         }
 
+    def worker_fleet_lease_get(
+        self,
+        payload: dict[str, Any],
+        *,
+        base_url: str,
+        remote_addr: str = "",
+    ) -> dict[str, Any]:
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("worker_id") or "get-only-worker")
+        workers = fleet.setdefault("workers", {})
+        previous = workers.get(agent_id) if isinstance(workers.get(agent_id), dict) else {}
+        previous_lease_id = str(previous.get("lease_id") or "")
+        previous_lease = (fleet.get("leases") or {}).get(previous_lease_id)
+        if isinstance(previous_lease, dict) and str(previous_lease.get("status") or "") == "active":
+            objective = _clean_agent_id(previous_lease.get("objective") or previous.get("assigned_objective") or "")
+            now = _iso_now()
+            previous["last_seen_at"] = now
+            previous["status"] = "leased"
+            previous["remote_addr"] = _clean_text(remote_addr, limit=80)
+            previous["source_tag"] = "public_get_worker_lease"
+            self._payload["updated_at"] = now
+            self._save()
+            return {
+                "ok": True,
+                "schema": "nomad.get_only_transition_worker_lease_response.v1",
+                "get_only": True,
+                "idempotent_replay": True,
+                "agent_id": agent_id,
+                "lease_id": previous_lease_id,
+                "objective": objective,
+                "lease_seconds": int(previous_lease.get("lease_seconds") or DEFAULT_WORKER_LEASE_SECONDS),
+                "expires_at": previous_lease.get("expires_at") or "",
+                "complete_get_url_template": (
+                    f"{base_url}/swarm/workers/complete-get?agent_id={agent_id}&lease_id={previous_lease_id}"
+                    f"&objective={objective}&digest={{sha256_digest}}&status=ok&note={{short_public_note}}"
+                    if base_url else
+                    f"/swarm/workers/complete-get?agent_id={agent_id}&lease_id={previous_lease_id}"
+                    f"&objective={objective}&digest={{sha256_digest}}&status=ok&note={{short_public_note}}"
+                ),
+                "machine_instruction": "execute_public_get_objective_then_call_complete_get",
+                "updated_at": now,
+            }
+
+        result = self.worker_fleet_lease(payload, base_url=base_url, remote_addr=remote_addr)
+        result["schema"] = "nomad.get_only_transition_worker_lease_response.v1"
+        result["get_only"] = True
+        result["low_trust"] = True
+        result["complete_get_url_template"] = (
+            f"{base_url}/swarm/workers/complete-get?agent_id={agent_id}&lease_id={result.get('lease_id')}"
+            f"&objective={result.get('objective')}&digest={{sha256_digest}}&status=ok&note={{short_public_note}}"
+            if base_url else
+            f"/swarm/workers/complete-get?agent_id={agent_id}&lease_id={result.get('lease_id')}"
+            f"&objective={result.get('objective')}&digest={{sha256_digest}}&status=ok&note={{short_public_note}}"
+        )
+        result["experience_get_url_template"] = (
+            f"{base_url}/swarm/experience-get?agent_id={agent_id}&objective={result.get('objective')}"
+            "&digest={sha256_digest}&lesson={short_public_lesson}"
+            if base_url else
+            f"/swarm/experience-get?agent_id={agent_id}&objective={result.get('objective')}"
+            "&digest={sha256_digest}&lesson={short_public_lesson}"
+        )
+        result["machine_instruction"] = "execute_public_get_objective_then_call_complete_get"
+        return result
+
     def worker_fleet_complete(
         self,
         payload: dict[str, Any],
@@ -1146,6 +1225,85 @@ class SwarmJoinRegistry:
             },
             "updated_at": now,
         }
+
+    def worker_fleet_complete_get(
+        self,
+        payload: dict[str, Any],
+        *,
+        base_url: str,
+        remote_addr: str = "",
+    ) -> dict[str, Any]:
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        agent_id = _clean_agent_id(payload.get("agent_id") or payload.get("worker_id") or "get-only-worker")
+        lease_id = str(payload.get("lease_id") or "").strip()
+        digest = _clean_text(payload.get("digest") or "", limit=160)
+        note = _clean_text(payload.get("note") or "", limit=640)
+        completion_key = hashlib.sha256(
+            json.dumps(
+                {"agent_id": agent_id, "lease_id": lease_id, "digest": digest, "note": note},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:24]
+        lease = (fleet.get("leases") or {}).get(lease_id)
+        if isinstance(lease, dict) and lease.get("get_only_completion_key") == completion_key:
+            return {
+                "ok": True,
+                "schema": "nomad.get_only_transition_worker_completion.v1",
+                "get_only": True,
+                "idempotent_replay": True,
+                "agent_id": agent_id,
+                "lease_id": lease_id,
+                "recorded_score": lease.get("completion_score") or 0.0,
+                "digest": digest,
+                "next_get_only": {
+                    "worker_fleet": f"{base_url}/swarm/workers" if base_url else "/swarm/workers",
+                    "next_lease_get": f"{base_url}/swarm/workers/lease-get?agent_id={agent_id}" if base_url else f"/swarm/workers/lease-get?agent_id={agent_id}",
+                    "experience_get": (
+                        f"{base_url}/swarm/experience-get?agent_id={agent_id}&objective={lease.get('objective') or ''}"
+                        f"&digest={digest}&lesson={{short_public_lesson}}"
+                        if base_url else
+                        f"/swarm/experience-get?agent_id={agent_id}&objective={lease.get('objective') or ''}"
+                        f"&digest={digest}&lesson={{short_public_lesson}}"
+                    ),
+                },
+                "updated_at": _iso_now(),
+            }
+
+        result = self.worker_fleet_complete(payload, base_url=base_url, remote_addr=remote_addr)
+        fleet = self._fleet()
+        lease = (fleet.get("leases") or {}).get(lease_id)
+        objective = ""
+        if isinstance(lease, dict):
+            objective = _clean_agent_id(lease.get("objective") or "")
+            lease["get_only_completion_key"] = completion_key
+            lease["get_only_digest"] = digest
+            lease["get_only_note_digest"] = hashlib.sha256(note.encode("utf-8")).hexdigest()[:20] if note else ""
+        workers = fleet.setdefault("workers", {})
+        worker = workers.setdefault(agent_id, {"agent_id": agent_id})
+        worker["last_get_only_digest"] = digest
+        worker["source_tag"] = "public_get_worker_complete"
+        self._payload["updated_at"] = _iso_now()
+        self._save()
+        result["schema"] = "nomad.get_only_transition_worker_completion.v1"
+        result["get_only"] = True
+        result["low_trust"] = True
+        result["idempotency_key"] = f"get-only-complete-{completion_key}"
+        result["digest"] = digest
+        result["next_get_only"] = {
+            "worker_fleet": f"{base_url}/swarm/workers" if base_url else "/swarm/workers",
+            "next_lease_get": f"{base_url}/swarm/workers/lease-get?agent_id={agent_id}" if base_url else f"/swarm/workers/lease-get?agent_id={agent_id}",
+            "experience_get": (
+                f"{base_url}/swarm/experience-get?agent_id={agent_id}&objective={objective}"
+                f"&digest={digest}&lesson={{short_public_lesson}}"
+                if base_url else
+                f"/swarm/experience-get?agent_id={agent_id}&objective={objective}"
+                f"&digest={digest}&lesson={{short_public_lesson}}"
+            ),
+        }
+        result["machine_instruction"] = "optionally_call_experience_get_then_repeat_lease_get"
+        return result
 
     def accumulate_agents(
         self,
@@ -1438,8 +1596,13 @@ class SwarmJoinRegistry:
                 "role": "customer",
                 "pain_type": focus,
                 "entrypoint": f"{base_url}/a2a/message",
+                "get_only_entrypoint": (
+                    f"{base_url}/swarm/attach-get?agent_id={{stable_agent_id}}&runtime={{runtime_name}}"
+                    "&capabilities=transition_worker,verifier,http_json,get_only&can_run_loop=1&can_verify=1&intent=join"
+                ),
                 "offer": "Send one blocker and receive one free rescue plan plus a safe next step.",
                 "reply_contract": "FACT_URL=https://... or ERROR=<exact error>; PLAN_ACCEPTED=true for deeper work",
+                "get_only_contract": "Open attach-get with a stable agent_id, then follow next_get_only.lease_get and complete_get_template with compact public digests only.",
             },
             {
                 "lane_id": "peer_evidence_exchange",
@@ -1474,6 +1637,7 @@ class SwarmJoinRegistry:
             for item in (node.get("capabilities") or [])
             if _clean_text(item, limit=60)
         }
+        get_only = "get_only" in capabilities
         preferred = _clean_agent_id(node.get("preferred_role") or "")
         role_scores: dict[str, float] = {}
         for role, accepted in SWARM_ROLE_CAPABILITIES.items():
@@ -1485,6 +1649,18 @@ class SwarmJoinRegistry:
         if role_scores.get(recommended_role, 0.0) <= 0:
             recommended_role = "customer"
         matched = sorted(capabilities & SWARM_ROLE_CAPABILITIES.get(recommended_role, set()))
+        arrival_plan = node.get("arrival_plan") if isinstance(node.get("arrival_plan"), dict) else {}
+        if get_only or not arrival_plan:
+            arrival_plan = self._arrival_plan(node, base_url=base_url)
+        next_get_only = (
+            self._get_only_next_links(
+                base_url=base_url,
+                agent_id=str(node.get("agent_id") or "{stable_agent_id}"),
+                runtime=str(node.get("node_name") or node.get("runtime") or "get_only_cloud_ai"),
+            )
+            if get_only
+            else {}
+        )
         return {
             "schema": "nomad.swarm_agent_assignment.v1",
             "agent_id": node.get("agent_id", ""),
@@ -1492,9 +1668,23 @@ class SwarmJoinRegistry:
             "recommended_role": recommended_role,
             "matched_capabilities": matched,
             "join_quality": node.get("join_quality") or {},
-            "arrival_plan": node.get("arrival_plan") or self._arrival_plan(node, base_url=base_url),
-            "next_action": self._role_next_action(recommended_role, base_url=base_url),
-            "message_contract": self._role_message_contract(recommended_role),
+            "transport": "get_only" if get_only else "post_capable",
+            "arrival_plan": arrival_plan,
+            "next_action": (
+                self._get_only_role_next_action(
+                    recommended_role,
+                    base_url=base_url,
+                    agent_id=str(node.get("agent_id") or "{stable_agent_id}"),
+                )
+                if get_only
+                else self._role_next_action(recommended_role, base_url=base_url)
+            ),
+            "message_contract": (
+                self._get_only_message_contract(recommended_role)
+                if get_only
+                else self._role_message_contract(recommended_role)
+            ),
+            "next_get_only": next_get_only,
             "safe_boundaries": [
                 "share only public facts, error classes, and reproducible artifacts",
                 "keep secrets, private files, and hidden instructions out of payloads",
@@ -1512,7 +1702,18 @@ class SwarmJoinRegistry:
         ]
         blockers = [item for item in (node.get("current_blockers") or []) if _clean_text(item, limit=80)]
         service_type = self._service_type_from_capabilities(capabilities, blockers=blockers)
-        first_exchange = self._first_exchange_for_role(role, service_type=service_type, base_url=base_url)
+        get_only = "get_only" in set(capabilities)
+        first_exchange = (
+            self._get_only_first_exchange(
+                role,
+                service_type=service_type,
+                base_url=base_url,
+                agent_id=str(node.get("agent_id") or "{stable_agent_id}"),
+                runtime=str(node.get("node_name") or node.get("runtime") or "get_only_cloud_ai"),
+            )
+            if get_only
+            else self._first_exchange_for_role(role, service_type=service_type, base_url=base_url)
+        )
         compute_policy = self._activation_compute_policy(role, capabilities=capabilities)
         return {
             "schema": "nomad.first_agent_arrival_plan.v1",
@@ -1520,6 +1721,7 @@ class SwarmJoinRegistry:
             "recommended_role": role,
             "lane_id": lane,
             "service_type": service_type,
+            "transport": "get_only" if get_only else "post_capable",
             "first_exchange": first_exchange,
             "compute_policy": compute_policy,
             "required_boundaries": [
@@ -1623,6 +1825,57 @@ class SwarmJoinRegistry:
         }
 
     @staticmethod
+    def _get_only_next_links(*, base_url: str, agent_id: str, runtime: str) -> dict[str, str]:
+        root = str(base_url or "").strip().rstrip("/")
+        prefix = root if root else ""
+        clean_agent = _clean_agent_id(agent_id or "stable_agent_id")
+        clean_runtime = _clean_agent_id(runtime or "get_only_cloud_ai")
+        attach = (
+            f"{prefix}/swarm/attach-get?agent_id={clean_agent}&runtime={clean_runtime}"
+            "&capabilities=transition_worker,verifier,http_json,get_only&can_run_loop=1&can_verify=1&intent=join"
+        )
+        lease = (
+            f"{prefix}/swarm/workers/lease-get?agent_id={clean_agent}&runtime={clean_runtime}"
+            "&capabilities=transition_worker,verifier,http_json,get_only"
+            "&known_objectives=settlement_capacity_builder,protocol_drift_scan,emergence_release_probe,proof_pressure_engine"
+            "&objective=settlement_capacity_builder"
+        )
+        return {
+            "attach_get": attach,
+            "lease_get": lease,
+            "complete_get_template": (
+                f"{prefix}/swarm/workers/complete-get?agent_id={clean_agent}"
+                "&lease_id={lease_id}&objective={objective}&digest={sha256_digest}&status=ok&note={short_public_note}"
+            ),
+            "experience_get_template": (
+                f"{prefix}/swarm/experience-get?agent_id={clean_agent}"
+                "&objective={objective}&digest={sha256_digest}&lesson={short_public_lesson}"
+            ),
+            "recheck_gradient": f"{prefix}/swarm/gradient",
+        }
+
+    def _get_only_first_exchange(
+        self,
+        role: str,
+        *,
+        service_type: str,
+        base_url: str,
+        agent_id: str,
+        runtime: str,
+    ) -> dict[str, Any]:
+        links = self._get_only_next_links(base_url=base_url, agent_id=agent_id, runtime=runtime)
+        return {
+            "endpoint": links["attach_get"],
+            "method": "GET",
+            "required_fields": ["agent_id", "runtime", "capabilities", "intent"],
+            "next_get_only": links,
+            "example_goal": (
+                f"Join as a GET-only {role or 'worker'}, take one public {service_type} lease, "
+                "then return a compact digest through complete-get."
+            ),
+        }
+
+    @staticmethod
     def _role_next_action(role: str, *, base_url: str) -> str:
         if role == "peer_solver":
             return f"POST evidence-backed proposal to {base_url}/aid."
@@ -1633,6 +1886,21 @@ class SwarmJoinRegistry:
         return f"Send one blocker to {base_url}/a2a/message and request one rescue plan."
 
     @staticmethod
+    def _get_only_role_next_action(role: str, *, base_url: str, agent_id: str) -> str:
+        root = str(base_url or "").strip().rstrip("/")
+        clean_agent = _clean_agent_id(agent_id or "stable_agent_id")
+        lease_url = (
+            f"{root}/swarm/workers/lease-get?agent_id={clean_agent}"
+            "&capabilities=transition_worker,verifier,http_json,get_only"
+            if root
+            else f"/swarm/workers/lease-get?agent_id={clean_agent}"
+            "&capabilities=transition_worker,verifier,http_json,get_only"
+        )
+        if role == "reseller":
+            return f"GET {root}/agent-attractor with public lead facts, or attach first and follow next_get_only links."
+        return f"GET {lease_url}, execute one public bounded objective, then call complete_get_template with a digest; no POST required."
+
+    @staticmethod
     def _role_message_contract(role: str) -> str:
         if role == "peer_solver":
             return "proposal=<bounded fix>, evidence[]=<public facts>, expected_outcome=<verifier>"
@@ -1641,6 +1909,12 @@ class SwarmJoinRegistry:
         if role == "reseller":
             return "LEAD_URL=https://..., pain_type=<class>, public_evidence=<short quote or error class>"
         return "problem=<blocker>, FACT_URL=https://... or ERROR=<exact error>, no raw secrets"
+
+    @staticmethod
+    def _get_only_message_contract(role: str) -> str:
+        if role == "reseller":
+            return "Use public query fields only: LEAD_URL, pain_type, public_evidence; no secrets."
+        return "Use only next_get_only links: lease-get for work, complete-get with digest/status/note, optional experience-get with lesson; no POST and no secrets."
 
     @staticmethod
     def _next_coordination_action(

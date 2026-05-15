@@ -9,7 +9,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from nomad_guardrails import guardrail_status
 from nomad_idle_runtime_beacon import (
@@ -1359,6 +1359,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "openapi": f"{b}/openapi.json",
                     "swarm": f"{b}/swarm",
                     "transition_worker_fleet": f"{b}/swarm/workers",
+                    "transition_worker_lease_get": f"{b}/swarm/workers/lease-get",
+                    "transition_worker_complete_get": f"{b}/swarm/workers/complete-get",
+                    "growth_experience_get": f"{b}/swarm/experience-get",
                     "tasks": f"{b}/tasks",
                     "service_catalog": f"{b}/service",
                     "growth_start": f"{b}/growth-start",
@@ -1506,6 +1509,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/idle-intent-get", "/swarm/idle-get", "/swarm/idle-intent/GET"}:
             result, status = self._process_get_only_runtime_attach(query, idle=True)
+            self._json_response(result, status=status)
+            return
+
+        if parsed.path in {"/swarm/workers/lease-get", "/swarm/workers/lease/GET"}:
+            result, status = self._process_get_only_worker_lease(query)
+            self._json_response(result, status=status)
+            return
+
+        if parsed.path in {"/swarm/workers/complete-get", "/swarm/workers/complete/GET"}:
+            result, status = self._process_get_only_worker_complete(query)
+            self._json_response(result, status=status)
+            return
+
+        if parsed.path in {"/swarm/experience-get", "/swarm/experience/GET"}:
+            result, status = self._process_get_only_growth_experience(query)
             self._json_response(result, status=status)
             return
 
@@ -2184,8 +2202,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "get_fleet": f"{base}/swarm/workers" if base else "/swarm/workers",
                     "post_lease": f"{base}/swarm/workers/lease" if base else "/swarm/workers/lease",
                     "post_complete": f"{base}/swarm/workers/complete" if base else "/swarm/workers/complete",
+                    "get_only_lease": f"{base}/swarm/workers/lease-get" if base else "/swarm/workers/lease-get",
+                    "get_only_complete": f"{base}/swarm/workers/complete-get" if base else "/swarm/workers/complete-get",
+                    "get_only_experience": f"{base}/swarm/experience-get" if base else "/swarm/experience-get",
                     "required_lease_fields": ["agent_id", "known_objectives"],
                     "required_complete_fields": ["agent_id", "lease_id", "report"],
+                    "get_only_required_lease_fields": ["agent_id"],
+                    "get_only_required_complete_fields": ["agent_id", "lease_id", "digest"],
                     "machine_instruction": "lease_execute_complete_repeat",
                 }
             )
@@ -3013,6 +3036,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/hello",
                     "/.well-known/nomad-ai.json",
                     "/swarm/attach-get",
+                    "/swarm/workers/lease-get",
+                    "/swarm/workers/complete-get",
+                    "/swarm/experience-get",
                     "/swarm/attach",
                     "/swarm/attractor",
                     "/.well-known/nomad-swarm-attractor.json",
@@ -4345,6 +4371,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/hello",
                     "/.well-known/nomad-ai.json",
                     "/swarm/attach-get",
+                    "/swarm/workers/lease-get",
+                    "/swarm/workers/complete-get",
+                    "/swarm/experience-get",
                     "/swarm/attach",
                     "/swarm/attractor",
                     "/.well-known/nomad-swarm-attractor.json",
@@ -4537,6 +4566,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return f"{root}{p}" if root else p
 
     @staticmethod
+    def _qe(value: object) -> str:
+        return quote(str(value or ""), safe="")
+
+    @staticmethod
     def _clip_query_text(value: object, limit: int = 160) -> str:
         text = re.sub(r"\s+", " ", str(value or "")).strip()
         return text[:limit]
@@ -4670,8 +4703,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "signed_get_a2a_relay": cls._u(base, "/a2a/get"),
                 "post_attach": cls._u(base, "/swarm/attach"),
                 "post_idle_intent": cls._u(base, "/swarm/idle-intent"),
+                "get_only_lease": cls._u(base, "/swarm/workers/lease-get"),
+                "get_only_complete": cls._u(base, "/swarm/workers/complete-get"),
+                "get_only_experience": cls._u(base, "/swarm/experience-get"),
             },
-            "machine_instruction": "if_only_get_then_use_attach_get_for_worker_intent_or_offer; do_not_use_a2a_get_for_basic_worker_offers; if_attach_true_then_return_public_proof_or_use_signed_relay; never_request_secrets",
+            "machine_instruction": "if_only_get_then_use_attach_get_for_worker_intent_or_offer; if_attach_true_use_lease_get_complete_get_experience_get_for_low_trust_work; do_not_use_a2a_get_for_basic_worker_offers; never_request_secrets",
         }
 
     @classmethod
@@ -4880,6 +4916,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "hello": self.__class__._u(base, "/swarm/hello"),
                 "recheck_gradient": self.__class__._u(base, "/swarm/gradient"),
                 "worker_fleet": self.__class__._u(base, "/swarm/workers"),
+                "lease_get": self.__class__._u(
+                    base,
+                    f"/swarm/workers/lease-get?agent_id={self.__class__._qe(payload.get('agent_id'))}&runtime={self.__class__._qe(payload.get('runtime'))}&capabilities={self.__class__._qe(','.join(payload.get('capabilities') or []))}&known_objectives=settlement_capacity_builder,protocol_drift_scan,emergence_release_probe,proof_pressure_engine&objective={self.__class__._qe((payload.get('offer_signal') or {}).get('objective') or attach_decision.get('objective') or 'settlement_capacity_builder')}",
+                ),
+                "complete_get_template": self.__class__._u(
+                    base,
+                    f"/swarm/workers/complete-get?agent_id={self.__class__._qe(payload.get('agent_id'))}&lease_id={{lease_id}}&objective={{objective}}&digest={{sha256_digest}}&status=ok&note={{short_public_note}}",
+                ),
+                "experience_get_template": self.__class__._u(
+                    base,
+                    f"/swarm/experience-get?agent_id={self.__class__._qe(payload.get('agent_id'))}&objective={{objective}}&digest={{sha256_digest}}&lesson={{short_public_lesson}}",
+                ),
                 "signed_a2a_relay_contract": self.__class__._u(base, "/a2a/get"),
                 "repeat_attach_get": self.__class__._u(
                     base,
@@ -4913,6 +4961,225 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         }
         accepted = bool(attach_decision.get("attach")) or bool(join_result.get("registered"))
         return response, 202 if accepted else 200
+
+    @classmethod
+    def _get_only_worker_lease_payload(cls, query: dict) -> dict:
+        agent_id = cls._clip_query_text(
+            cls._query_one(query, "agent_id", "")
+            or cls._query_one(query, "id", "")
+            or cls._query_one(query, "worker_id", ""),
+            limit=96,
+        )
+        runtime = cls._clip_query_text(cls._query_one(query, "runtime", "get_only_cloud_ai"), limit=80)
+        objective = cls._clip_query_text(
+            cls._query_one(query, "proposed_objective", "")
+            or cls._query_one(query, "objective", "settlement_capacity_builder"),
+            limit=96,
+        )
+        capabilities = cls._query_csv(
+            query,
+            "capabilities",
+            "caps",
+            default=["transition_worker", "verifier", "http_json", "get_only"],
+            limit=20,
+        )
+        known_objectives = cls._query_csv(
+            query,
+            "known_objectives",
+            "objectives",
+            default=[
+                "settlement_capacity_builder",
+                "protocol_drift_scan",
+                "emergence_release_probe",
+                "machine_economy_probe",
+                "proof_pressure_engine",
+            ],
+            limit=16,
+        )
+        note = cls._clip_query_text(
+            cls._query_one(query, "note", "") or cls._query_one(query, "last_note", ""),
+            limit=640,
+        )
+        digest = cls._clip_query_text(
+            cls._query_one(query, "digest", "")
+            or cls._query_one(query, "proof_digest", "")
+            or cls._query_one(query, "verifier_trace_digest", ""),
+            limit=160,
+        )
+        last_report = {}
+        if note or digest:
+            last_report = {
+                "ok": True,
+                "schema": "nomad.get_only_worker_prior_signal.v1",
+                "machine_objective": objective,
+                "digest_or_verifier_trace": digest,
+                "note": note,
+                "source_tag": "public_get_worker_lease",
+                "public_get_only": True,
+                "private_data_sent": False,
+            }
+        return {
+            "agent_id": agent_id,
+            "worker_id": agent_id,
+            "runtime": runtime,
+            "known_objectives": known_objectives,
+            "proposed_objective": objective,
+            "objective": objective,
+            "capabilities": capabilities,
+            "lease_seconds": cls._query_int(query, "lease_seconds", 90, minimum=30, maximum=600),
+            "source_tag": "public_get_worker_lease",
+            "get_only": True,
+            "last_report": last_report,
+        }
+
+    @classmethod
+    def _get_only_worker_complete_payload(cls, query: dict) -> dict:
+        agent_id = cls._clip_query_text(
+            cls._query_one(query, "agent_id", "")
+            or cls._query_one(query, "id", "")
+            or cls._query_one(query, "worker_id", ""),
+            limit=96,
+        )
+        lease_id = cls._clip_query_text(cls._query_one(query, "lease_id", ""), limit=120)
+        objective = cls._clip_query_text(cls._query_one(query, "objective", "settlement_capacity_builder"), limit=96)
+        digest = cls._clip_query_text(
+            cls._query_one(query, "digest", "")
+            or cls._query_one(query, "proof_digest", "")
+            or cls._query_one(query, "verifier_trace_digest", ""),
+            limit=160,
+        )
+        note = cls._clip_query_text(
+            cls._query_one(query, "note", "")
+            or cls._query_one(query, "result", "")
+            or cls._query_one(query, "lesson", ""),
+            limit=640,
+        )
+        status = cls._clip_query_text(cls._query_one(query, "status", "ok"), limit=32).lower()
+        ok = status not in {"fail", "failed", "error", "blocked", "false", "0"}
+        proof_yield = cls._query_float(query, "proof_yield_per_minute", 1.0 if ok else 0.0)
+        report = {
+            "ok": ok,
+            "schema": "nomad.get_only_worker_report.v1",
+            "machine_objective": objective,
+            "digest_or_verifier_trace": digest,
+            "proof_digest": digest,
+            "verifier_trace_digest": cls._clip_query_text(cls._query_one(query, "trace_digest", digest), limit=160),
+            "note": note,
+            "source_tag": "public_get_worker_complete",
+            "public_get_only": True,
+            "private_data_sent": False,
+            "raw_secret_sent": False,
+            "proof_pressure": {
+                "schema": "nomad.get_only_proof_pressure.v1",
+                "proof_yield_per_minute": proof_yield,
+                "evidence_count": cls._query_int(query, "evidence_count", 1 if digest else 0, minimum=0, maximum=20),
+            },
+        }
+        return {
+            "agent_id": agent_id,
+            "worker_id": agent_id,
+            "lease_id": lease_id,
+            "report": report,
+            "digest": digest,
+            "note": note,
+            "get_only": True,
+        }
+
+    def _process_get_only_worker_lease(self, query: dict) -> tuple[dict, int]:
+        base = self._base_url()
+        payload = self.__class__._get_only_worker_lease_payload(query)
+        if not str(payload.get("agent_id") or "").strip():
+            return {
+                "ok": False,
+                "schema": "nomad.get_only_worker_lease_contract.v1",
+                "error": "agent_id_required",
+                "template": self.__class__._u(
+                    base,
+                    "/swarm/workers/lease-get?agent_id={stable_agent_id}&runtime={runtime_name}&capabilities=transition_worker,verifier,http_json,get_only&known_objectives=settlement_capacity_builder,protocol_drift_scan,emergence_release_probe&objective=settlement_capacity_builder",
+                ),
+                "constraints": ["public_get_low_trust", "no_secrets", "idempotent_active_lease_replay"],
+            }, 400
+        registry = self.__class__._light_swarm_registry()
+        result = registry.worker_fleet_lease_get(payload, base_url=base, remote_addr=self._remote_addr())
+        return result, 202 if result.get("ok") else 422
+
+    def _process_get_only_worker_complete(self, query: dict) -> tuple[dict, int]:
+        base = self._base_url()
+        payload = self.__class__._get_only_worker_complete_payload(query)
+        if not str(payload.get("agent_id") or "").strip():
+            return {"ok": False, "schema": "nomad.get_only_worker_completion.v1", "error": "agent_id_required"}, 400
+        if not str(payload.get("lease_id") or "").strip():
+            return {"ok": False, "schema": "nomad.get_only_worker_completion.v1", "error": "lease_id_required"}, 400
+        if not str(payload.get("digest") or "").strip():
+            return {"ok": False, "schema": "nomad.get_only_worker_completion.v1", "error": "digest_required"}, 400
+        registry = self.__class__._light_swarm_registry()
+        result = registry.worker_fleet_complete_get(payload, base_url=base, remote_addr=self._remote_addr())
+        return result, 200 if result.get("ok") else 422
+
+    def _process_get_only_growth_experience(self, query: dict) -> tuple[dict, int]:
+        base = self._base_url()
+        agent_id = self.__class__._clip_query_text(
+            self.__class__._query_one(query, "agent_id", "")
+            or self.__class__._query_one(query, "worker_id", ""),
+            limit=96,
+        )
+        digest = self.__class__._clip_query_text(
+            self.__class__._query_one(query, "digest", "")
+            or self.__class__._query_one(query, "proof_digest", "")
+            or self.__class__._query_one(query, "verifier_trace_digest", ""),
+            limit=160,
+        )
+        if not agent_id:
+            return {"ok": False, "schema": "nomad.get_only_growth_experience.v1", "error": "agent_id_required"}, 400
+        if not digest:
+            return {"ok": False, "schema": "nomad.get_only_growth_experience.v1", "error": "digest_required"}, 400
+        objective = self.__class__._clip_query_text(
+            self.__class__._query_one(query, "objective", "settlement_capacity_builder"),
+            limit=96,
+        )
+        lesson = self.__class__._clip_query_text(
+            self.__class__._query_one(query, "lesson", "")
+            or self.__class__._query_one(query, "note", "")
+            or "GET-only worker returned a compact public proof digest.",
+            limit=640,
+        )
+        payload = {
+            "agent_id": agent_id,
+            "objective": objective,
+            "capability": self.__class__._clip_query_text(
+                self.__class__._query_one(query, "capability", "get_only_verifier"),
+                limit=96,
+            ),
+            "proof_digest": digest,
+            "verifier_trace_digest": self.__class__._clip_query_text(
+                self.__class__._query_one(query, "trace_digest", digest),
+                limit=160,
+            ),
+            "test_digest": self.__class__._clip_query_text(self.__class__._query_one(query, "test_digest", ""), limit=160),
+            "repair_hint": lesson,
+            "source_tag": "public_get_worker_experience",
+            "public_get_only": True,
+            "evaluation": {
+                "proof_yield_per_minute": self.__class__._query_float(query, "proof_yield_per_minute", 1.0),
+                "utility_delta": self.__class__._query_float(query, "utility_delta", 0.1),
+                "settlement_delta": self.__class__._query_float(query, "settlement_delta", 0.0),
+                "risk_score": self.__class__._query_float(query, "risk_score", 0.0),
+                "tests_passed": self.__class__._query_int(query, "tests_passed", 1, minimum=0, maximum=20),
+                "tests_total": self.__class__._query_int(query, "tests_total", 1, minimum=1, maximum=20),
+            },
+        }
+        result = submit_growth_experience(payload, base_url=base, curriculum={})
+        result["get_only"] = True
+        result["next_get_only"] = {
+            "hello": self.__class__._u(base, "/swarm/hello"),
+            "recheck_gradient": self.__class__._u(base, "/swarm/gradient"),
+            "worker_fleet": self.__class__._u(base, "/swarm/workers"),
+            "repeat_attach_get": self.__class__._u(
+                base,
+                f"/swarm/attach-get?agent_id={self.__class__._qe(agent_id)}&runtime=get_only_cloud_ai&capabilities=transition_worker,verifier,http_json,get_only&can_run_loop=1&can_verify=1&intent=join",
+            ),
+        }
+        return result, 202 if result.get("accepted") else 200
 
     @classmethod
     def _a2a_get_relay_secret(cls) -> str:

@@ -79,6 +79,83 @@ def test_worker_fleet_records_completion_and_stats(tmp_path):
     assert fleet["recent_completed_workers"][0]["agent_id"] == "transition-worker-a"
 
 
+def test_worker_fleet_get_only_lease_and_completion_are_idempotent(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+
+    lease = registry.worker_fleet_lease_get(
+        {
+            "agent_id": "grok-get-only-worker",
+            "runtime": "grok-xai-cloud",
+            "known_objectives": ["settlement_capacity_builder", "protocol_drift_scan"],
+            "capabilities": ["transition_worker", "verifier", "http_json", "get_only"],
+            "proposed_objective": "settlement_capacity_builder",
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+    replayed_lease = registry.worker_fleet_lease_get(
+        {
+            "agent_id": "grok-get-only-worker",
+            "runtime": "grok-xai-cloud",
+            "known_objectives": ["settlement_capacity_builder", "protocol_drift_scan"],
+            "capabilities": ["transition_worker", "verifier", "http_json", "get_only"],
+            "proposed_objective": "settlement_capacity_builder",
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+
+    assert lease["schema"] == "nomad.get_only_transition_worker_lease_response.v1"
+    assert lease["get_only"] is True
+    assert replayed_lease["idempotent_replay"] is True
+    assert replayed_lease["lease_id"] == lease["lease_id"]
+    assert "/swarm/workers/complete-get" in lease["complete_get_url_template"]
+
+    complete = registry.worker_fleet_complete_get(
+        {
+            "agent_id": "grok-get-only-worker",
+            "lease_id": lease["lease_id"],
+            "digest": "sha256:abc123",
+            "note": "checked public gradient and worker fleet",
+            "report": {
+                "ok": True,
+                "machine_objective": lease["objective"],
+                "meta_score": 4.2,
+                "source_tag": "public_get_worker_complete",
+            },
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+    replayed_complete = registry.worker_fleet_complete_get(
+        {
+            "agent_id": "grok-get-only-worker",
+            "lease_id": lease["lease_id"],
+            "digest": "sha256:abc123",
+            "note": "checked public gradient and worker fleet",
+            "report": {
+                "ok": True,
+                "machine_objective": lease["objective"],
+                "meta_score": 4.2,
+                "source_tag": "public_get_worker_complete",
+            },
+        },
+        base_url="https://nomad.example",
+        remote_addr="127.0.0.1",
+    )
+
+    assert complete["schema"] == "nomad.get_only_transition_worker_completion.v1"
+    assert complete["get_only"] is True
+    assert replayed_complete["idempotent_replay"] is True
+    assert replayed_complete["lease_id"] == lease["lease_id"]
+    assert "/swarm/experience-get" in complete["next_get_only"]["experience_get"]
+
+    fleet = registry.worker_fleet_contract(base_url="https://nomad.example")
+    assert fleet["active_lease_count"] == 0
+    assert fleet["latest_completed_worker"]["agent_id"] == "grok-get-only-worker"
+    assert fleet["latest_completed_worker"]["completion_count"] == 1
+
+
 def test_worker_fleet_prefers_emergence_release_when_next_gate_needs_peer_probe(tmp_path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
     lease = registry.worker_fleet_lease(

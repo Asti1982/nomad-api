@@ -329,6 +329,35 @@ def test_customer_join_gets_development_exchange_contract(tmp_path: Path):
     assert plan["compute_policy"]["preferred_runtime"] == "local_first"
 
 
+def test_get_only_transition_worker_gets_get_only_coordination_chain(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+
+    receipt = registry.register_join(
+        {
+            "agent_id": "grok-xai-cloud-20260514-001",
+            "node_name": "grok-xai-cloud",
+            "capabilities": ["transition_worker", "verifier", "http_json", "get_only"],
+            "request": "Join as public GET-only transition worker.",
+            "reciprocity": "Can read public JSON surfaces and return digest notes.",
+            "constraints": ["No POST.", "No secrets."],
+        },
+        base_url="https://syndiode.com",
+    )
+    board = registry.coordination_board(base_url="https://syndiode.com", focus_pain_type="compute_auth")
+
+    plan = receipt["arrival_plan"]
+    assignment = board["assignments"][0]
+    assert plan["recommended_role"] == "peer_solver"
+    assert plan["transport"] == "get_only"
+    assert plan["first_exchange"]["method"] == "GET"
+    assert "/swarm/attach-get" in plan["first_exchange"]["endpoint"]
+    assert "/swarm/workers/lease-get" in plan["first_exchange"]["next_get_only"]["lease_get"]
+    assert assignment["transport"] == "get_only"
+    assert "no POST required" in assignment["next_action"]
+    assert "/swarm/workers/complete-get" in assignment["next_get_only"]["complete_get_template"]
+    assert any(rule["when"] == "agent_is_get_only_worker" for rule in board["routing_rules"])
+
+
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
     contract = registry.join_contract(base_url="https://syndiode.com")

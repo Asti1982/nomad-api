@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import time
+import nomad_api
 from nomad_api import NomadApiHandler
 from pathlib import Path
 
@@ -374,12 +375,15 @@ def test_get_only_worker_onramp_contract_prefers_simple_attach_get():
     assert "/swarm/attach-get" in contract["if_you_are_a_cloud_ai"]["worker_offer_get_url_template"]
     assert "basic worker offers" in contract["if_you_are_a_cloud_ai"]["do_not_use_signed_a2a_relay_for"]
     assert "/a2a/get" in contract["links"]["signed_get_a2a_relay"]
+    assert contract["links"]["get_only_lease"].endswith("/swarm/workers/lease-get")
+    assert contract["links"]["get_only_complete"].endswith("/swarm/workers/complete-get")
+    assert contract["links"]["get_only_experience"].endswith("/swarm/experience-get")
     assert "use_attach_get_for_worker_intent" in contract["machine_instruction"]
 
 
-def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path):
+def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path, monkeypatch):
+    monkeypatch.setattr(NomadApiHandler, "swarm_registry", SwarmJoinRegistry(path=tmp_path / "swarm.json"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
-    handler.swarm_registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
     handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
     handler._remote_addr = lambda: "203.0.113.7"  # type: ignore[method-assign]
 
@@ -410,6 +414,74 @@ def test_get_only_runtime_attach_registers_low_trust_intent(tmp_path):
     assert result["offer_signal"]["roles"] == ["transition_worker", "verifier"]
     assert result["offer_signal"]["note"].startswith("Persistent GET-only Cloud-Verifier")
     assert result["next_get_only"]["hello"] == "https://nomad.example/swarm/hello"
+    assert result["next_get_only"]["lease_get"].startswith("https://nomad.example/swarm/workers/lease-get?")
+    assert "agent_id=grok-cloud-test" in result["next_get_only"]["lease_get"]
+    assert "/swarm/workers/complete-get" in result["next_get_only"]["complete_get_template"]
+    assert "/swarm/experience-get" in result["next_get_only"]["experience_get_template"]
+
+
+def test_get_only_worker_lease_complete_and_experience_chain(tmp_path, monkeypatch):
+    monkeypatch.setattr(NomadApiHandler, "swarm_registry", SwarmJoinRegistry(path=tmp_path / "swarm.json"))
+
+    def fake_submit_growth_experience(payload, *, base_url="", curriculum=None):
+        return {
+            "ok": True,
+            "schema": "nomad.growth_experience_receipt.v1",
+            "accepted": True,
+            "agent_id": payload["agent_id"],
+            "objective": payload["objective"],
+            "proof_digest": payload["proof_digest"],
+        }
+
+    monkeypatch.setattr(nomad_api, "submit_growth_experience", fake_submit_growth_experience)
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+    handler._remote_addr = lambda: "203.0.113.7"  # type: ignore[method-assign]
+
+    lease, lease_status = handler._process_get_only_worker_lease(
+        {
+            "agent_id": ["grok-cloud-test"],
+            "runtime": ["grok-xai-cloud"],
+            "capabilities": ["transition_worker,verifier,http_json,get_only"],
+            "known_objectives": ["settlement_capacity_builder,protocol_drift_scan,emergence_release_probe"],
+            "objective": ["settlement_capacity_builder"],
+        }
+    )
+
+    assert lease_status == 202
+    assert lease["schema"] == "nomad.get_only_transition_worker_lease_response.v1"
+    assert lease["get_only"] is True
+    assert "/swarm/workers/complete-get" in lease["complete_get_url_template"]
+
+    complete, complete_status = handler._process_get_only_worker_complete(
+        {
+            "agent_id": ["grok-cloud-test"],
+            "lease_id": [lease["lease_id"]],
+            "objective": [lease["objective"]],
+            "digest": ["sha256:abc123"],
+            "note": ["checked public gradient and worker fleet"],
+        }
+    )
+
+    assert complete_status == 200
+    assert complete["schema"] == "nomad.get_only_transition_worker_completion.v1"
+    assert complete["digest"] == "sha256:abc123"
+    assert "/swarm/experience-get" in complete["next_get_only"]["experience_get"]
+
+    experience, experience_status = handler._process_get_only_growth_experience(
+        {
+            "agent_id": ["grok-cloud-test"],
+            "objective": [lease["objective"]],
+            "digest": ["sha256:abc123"],
+            "lesson": ["GET-only worker completed one public check."],
+        }
+    )
+
+    assert experience_status == 202
+    assert experience["get_only"] is True
+    assert experience["proof_digest"] == "sha256:abc123"
+    assert experience["next_get_only"]["repeat_attach_get"].startswith("https://nomad.example/swarm/attach-get?")
 
 
 def test_get_only_attach_without_agent_id_returns_contract(tmp_path):
@@ -626,6 +698,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/hello" in doc["paths"]
     assert "/.well-known/nomad-ai.json" in doc["paths"]
     assert "/swarm/attach-get" in doc["paths"]
+    assert "/swarm/workers/lease-get" in doc["paths"]
+    assert "/swarm/workers/complete-get" in doc["paths"]
+    assert "/swarm/experience-get" in doc["paths"]
     assert "/swarm/attach" in doc["paths"]
     assert "/swarm/emission-batch" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]
