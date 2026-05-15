@@ -72,11 +72,13 @@ def test_value_cycle_mesh_exposes_more_paid_only_cycles():
     assert out["schema"] == "nomad.value_cycle_mesh.v1"
     assert out["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
     assert out["event_url"] == "https://nomad.example/swarm/value-cycles/events"
-    assert out["summary"]["cycle_count"] >= 8
+    assert out["summary"]["cycle_count"] >= 16
     assert out["entry_cycle"]["cycle_id"] == "settlement_tail_to_paid_receipt"
     assert out["entry_cycle"]["worker_job_ids"] == ["job-settle"]
     assert all(cycle["revenue_guard"]["counts_as_revenue"] is False for cycle in out["cycles"])
     assert any(cycle["cycle_id"] == "effective_channel_shadow_ad_cycle" for cycle in out["cycles"])
+    assert any(cycle["cycle_id"] == "invoice_paid_work_receipt" for cycle in out["cycles"])
+    assert any(cycle["cycle_id"] == "algora_bounty_pr_award" for cycle in out["cycles"])
 
 
 def test_value_cycle_event_blocks_public_cycle_until_preflight_green():
@@ -132,6 +134,33 @@ def test_value_cycle_event_allows_paid_receipt_candidate_without_mutating_ledger
     assert out["hard_rule"].startswith("this_receipt_does_not_mutate_ledgers")
 
 
+def test_value_cycle_event_builds_work_receipt_candidate_for_invoice_cycle():
+    mesh = build_value_cycle_mesh_surface(
+        base_url="https://nomad.example",
+        external_value_summary=_external_summary(),
+        worker_job_queue=_queue(),
+        value_cycle_preflight=_preflight(public_ready=True),
+    )
+    out = evaluate_value_cycle_event(
+        {
+            "cycle_id": "invoice_paid_work_receipt",
+            "stage": "paid",
+            "work_id": "worker-job-42",
+            "source_url": "https://example.com/work/42",
+            "proof_digest": "sha256:worker-proof",
+            "settlement_ref": "receipt:https://example.com/paid/42",
+            "amount_usd": 42.0,
+        },
+        base_url="https://nomad.example",
+        mesh_surface=mesh,
+    )
+
+    assert out["value_cycle_allowed"] is True
+    assert out["work_receipt_payload_candidate"]["work_type"] == "worker_invoice"
+    assert out["work_receipt_payload_candidate"]["amount_usd"] == 42.0
+    assert out["external_value_payload_candidate"] == {}
+
+
 def test_cli_value_cycles_returns_surface_and_event_gate():
     from nomad_cli import run_once
 
@@ -155,6 +184,6 @@ def test_cli_value_cycles_returns_surface_and_event_gate():
     )
 
     assert surface["schema"] == "nomad.value_cycle_mesh.v1"
-    assert surface["summary"]["cycle_count"] >= 8
+    assert surface["summary"]["cycle_count"] >= 16
     assert event["schema"] == "nomad.value_cycle_event_receipt.v1"
     assert event["cycle_id"] == "settlement_tail_to_paid_receipt"

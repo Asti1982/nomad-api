@@ -306,6 +306,124 @@ def _cycle_templates(base_url: str) -> list[dict[str, Any]]:
             "base_score": 0.78,
             "public_side_effect_required": True,
         },
+        {
+            "cycle_id": "invoice_paid_work_receipt",
+            "label": "Worker invoice -> paid work receipt",
+            "lane": "worker_invoice",
+            "entry_url": _u(base_url, "/.well-known/nomad-worker-invoice.json"),
+            "action_url": _u(base_url, "/swarm/work-receipts"),
+            "verify_url": _u(base_url, "/.well-known/nomad-treasury-policy.json"),
+            "stage_binding": "invoice_reference_is_not_revenue_until_paid_work_receipt",
+            "side_effect_policy": "issue_public_receive_ref_then_record_nontransferable_receipt_only_after paid confirmation",
+            "required_artifacts": ["public_receive_ref", "work_id", "proof_digest", "settlement_ref", "amount_usd"],
+            "worker_job_types": ["settlement_reconcile"],
+            "base_score": 1.04,
+            "public_side_effect_required": False,
+        },
+        {
+            "cycle_id": "issuehunt_funded_issue_pr",
+            "label": "IssueHunt funded issue -> merged PR -> payout",
+            "lane": "platform_bounty",
+            "entry_url": "https://oss.issuehunt.io/issues",
+            "action_url": _u(base_url, "/swarm/external-value"),
+            "verify_url": _u(base_url, "/.well-known/nomad-value-cycle-preflight.json"),
+            "stage_binding": "funded_issue_found_pr_submitted_merged_platform_receipt_paid",
+            "side_effect_policy": "read_issuehunt_only_until repo_scope_duplicate_payout_and_patch_proof_clear",
+            "required_artifacts": [
+                "funded_issue_url",
+                "repo_contribution_policy",
+                "duplicate_pr_scan_digest",
+                "patch_digest",
+                "issuehunt_receipt_ref",
+            ],
+            "worker_job_types": ["paid_channel_scan", "bounded_patch_attempt"],
+            "base_score": 1.02,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "algora_bounty_pr_award",
+            "label": "Algora bounty -> PR award -> payout",
+            "lane": "platform_bounty",
+            "entry_url": "https://algora.io/community",
+            "action_url": _u(base_url, "/swarm/external-value"),
+            "verify_url": _u(base_url, "/.well-known/nomad-value-cycle-preflight.json"),
+            "stage_binding": "algora_listing_found_pr_awarded_paid",
+            "side_effect_policy": "public_pr_only_after bounty_terms_duplicate_scan_and_local_test_digest",
+            "required_artifacts": ["algora_bounty_url", "github_issue_url", "patch_digest", "test_log_digest", "award_or_payment_ref"],
+            "worker_job_types": ["paid_channel_scan", "bounded_patch_attempt"],
+            "base_score": 1.01,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "private_security_report_reward",
+            "label": "Private security report -> reward",
+            "lane": "security_bounty",
+            "entry_url": _u(base_url, "/.well-known/nomad-job-channels.json"),
+            "action_url": _u(base_url, "/swarm/value-cycles/events"),
+            "verify_url": _u(base_url, "/swarm/external-value"),
+            "stage_binding": "scope_scout_private_report_triage_award_paid",
+            "side_effect_policy": "operator_account_required_private_submission_only_no_public_disclosure",
+            "required_artifacts": ["program_scope_url", "safe_harbor_terms", "private_report_id", "repro_digest", "award_receipt_ref"],
+            "worker_job_types": ["paid_channel_scan", "duplicate_and_payout_gate_check"],
+            "base_score": 0.98,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "web3_audit_contest_award",
+            "label": "Web3 audit contest -> accepted finding -> award",
+            "lane": "audit_contest",
+            "entry_url": _u(base_url, "/.well-known/nomad-job-channels.json"),
+            "action_url": _u(base_url, "/swarm/value-cycles/events"),
+            "verify_url": _u(base_url, "/swarm/external-value"),
+            "stage_binding": "contest_scope_finding_submission_judged_paid",
+            "side_effect_policy": "contest_submission_only_after scope_terms_and_repro_digest; no_live_exploit_outside_scope",
+            "required_artifacts": ["contest_scope_url", "finding_digest", "impact_trace_digest", "judging_result_ref", "award_receipt_ref"],
+            "worker_job_types": ["paid_channel_scan", "duplicate_and_payout_gate_check"],
+            "base_score": 0.94,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "superteam_bounty_milestone",
+            "label": "Superteam bounty/project -> milestone payout",
+            "lane": "grant_bounty",
+            "entry_url": "https://earn.superteam.fun/",
+            "action_url": _u(base_url, "/swarm/value-cycles/events"),
+            "verify_url": _u(base_url, "/swarm/external-value"),
+            "stage_binding": "listing_found_application_or_submission_milestone_accepted_paid",
+            "side_effect_policy": "application_or_submission_only_after public_terms_scope_and_deliverable_digest",
+            "required_artifacts": ["listing_url", "eligibility_terms", "deliverable_digest", "milestone_acceptance_ref", "payment_receipt_ref"],
+            "worker_job_types": ["paid_channel_scan", "bounded_patch_attempt"],
+            "base_score": 0.9,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "lead_diagnosis_to_paid_unblock",
+            "label": "Lead diagnosis -> paid unblock task",
+            "lane": "lead_funnel",
+            "entry_url": _u(base_url, "/agent-campaigns"),
+            "action_url": _u(base_url, "/tasks"),
+            "verify_url": _u(base_url, "/swarm/work-receipts"),
+            "stage_binding": "free_diagnosis_buyer_acceptance_paid_task_receipt",
+            "side_effect_policy": "outreach_send_false_until effective_channel_quota; paid_task_only_after explicit buyer acceptance",
+            "required_artifacts": ["lead_source_digest", "free_diagnosis_digest", "buyer_acceptance_ref", "paid_task_id", "work_receipt_ref"],
+            "worker_job_types": ["duplicate_and_payout_gate_check", "paid_channel_scan"],
+            "base_score": 0.88,
+            "public_side_effect_required": True,
+        },
+        {
+            "cycle_id": "external_value_replay_sync",
+            "label": "Local external-value replay -> public cache sync",
+            "lane": "external_sync",
+            "entry_url": _u(base_url, "/.well-known/nomad-external-value.json?summary=1"),
+            "action_url": _u(base_url, "/swarm/external-value"),
+            "verify_url": _u(base_url, "/.well-known/nomad-external-value.json?summary=1"),
+            "stage_binding": "local_canonical_ledger_replays_missing_public_projection_without_new_revenue",
+            "side_effect_policy": "replay_only_existing_signed_or_local_events; paid_amount_must_match_original_receipt",
+            "required_artifacts": ["local_event_digest", "public_drift_snapshot", "idempotency_key", "original_receipt_ref"],
+            "worker_job_types": ["settlement_reconcile"],
+            "base_score": 0.86,
+            "public_side_effect_required": False,
+        },
     ]
 
 
@@ -328,12 +446,22 @@ def _score_cycle(
             blocked.append("no_active_nonpaid_external_value_tail")
     if lane == "bounty_hunter":
         score += 0.16 if experiment["action"] in {"go_public_after_repro", "scout_only"} else 0.0
+    if lane == "platform_bounty":
+        score += 0.1 if queue["top_job_type"] in {"paid_channel_scan", "bounded_patch_attempt"} else 0.0
+    if lane in {"security_bounty", "audit_contest"}:
+        score += 0.08 if queue["top_job_type"] == "paid_channel_scan" else 0.0
+    if lane == "grant_bounty":
+        score += 0.06 if preflight["read_only_scout_allowed"] else 0.0
     if lane == "effective_channels":
         score += 0.06 * effective["recent_quota_shift_count"]
         score -= 0.04 * effective["recent_homogeneous_cap_count"]
+    if lane == "lead_funnel":
+        score += 0.04 * max(0, effective["recent_quota_shift_count"])
     if lane == "microtask":
         score += min(0.18, queue["job_count"] * 0.01)
-    if lane == "paid_ref":
+    if lane == "external_sync":
+        score += 0.14 if external["active_nonpaid"] > 0 else 0.02
+    if lane in {"paid_ref", "worker_invoice"}:
         score += 0.08 if preflight["wallet_ready"] else 0.0
 
     if not preflight["read_only_scout_allowed"]:
@@ -342,7 +470,7 @@ def _score_cycle(
         blocked.append("public_claim_preflight_not_green")
     if cycle.get("public_side_effect_required") and not preflight["submit_after_proof_allowed"]:
         blocked.append("submit_after_proof_not_green")
-    if lane in {"paid_ref", "worker_market", "microtask"} and not preflight["wallet_ready"]:
+    if lane in {"paid_ref", "worker_market", "microtask", "worker_invoice"} and not preflight["wallet_ready"]:
         blocked.append("wallet_or_public_receive_ref_not_ready")
 
     executable = not blocked or blocked == ["no_active_nonpaid_external_value_tail"]
@@ -586,7 +714,16 @@ def evaluate_value_cycle_event(
         "decision": decision,
     }
     external_payload = {}
-    if cycle and cycle.get("lane") in {"external_value", "bounty_hunter"} and external_stage:
+    external_value_lanes = {
+        "external_value",
+        "bounty_hunter",
+        "platform_bounty",
+        "security_bounty",
+        "audit_contest",
+        "grant_bounty",
+        "external_sync",
+    }
+    if cycle and cycle.get("lane") in external_value_lanes and external_stage:
         external_payload = {
             "agent_id": _text(body.get("agent_id") or "nomad-value-cycle-mesh", 120),
             "external_id": _text(body.get("external_id") or body.get("cycle_id") or cycle.get("cycle_id"), 200),
@@ -596,6 +733,27 @@ def evaluate_value_cycle_event(
             "verifier_trace_digest": _text(evidence.get("verifier_trace_digest"), 220),
             "settlement_ref": settlement_ref,
             "amount_usd": round(max(0.0, amount), 4) if external_stage == "paid" else 0.0,
+        }
+    work_receipt_payload = {}
+    if cycle and cycle.get("lane") in {"microtask", "worker_market", "worker_invoice", "machine_product", "lead_funnel", "carrying_market"}:
+        work_receipt_payload = {
+            "agent_id": _text(body.get("agent_id") or "nomad-value-cycle-mesh", 120),
+            "work_id": _text(body.get("work_id") or body.get("external_id") or body.get("cycle_id") or cycle.get("cycle_id"), 200),
+            "work_type": _clean_id(cycle.get("lane"), "value_cycle"),
+            "external_value_stage": external_stage,
+            "work_url": source_url,
+            "proof_digest": proof_digest,
+            "settlement_ref": settlement_ref,
+            "amount_usd": round(max(0.0, amount), 4) if stage == "paid" else 0.0,
+            "idempotency_key": _text(body.get("idempotency_key") or _digest(receipt_core, 18), 120),
+        }
+    paid_ref_payload = {}
+    if cycle and cycle.get("lane") == "paid_ref":
+        paid_ref_payload = {
+            "task_ref": _text(body.get("task_ref") or body.get("external_id") or cycle.get("cycle_id"), 180),
+            "proof_digest": proof_digest,
+            "settlement_ref": settlement_ref,
+            "amount_eur": round(max(0.0, amount), 4) if stage == "paid" else 0.0,
         }
 
     return {
@@ -622,6 +780,8 @@ def evaluate_value_cycle_event(
             "value_cycles": _u(base_url, "/.well-known/nomad-value-cycles.json"),
         },
         "external_value_payload_candidate": external_payload,
+        "work_receipt_payload_candidate": work_receipt_payload,
+        "paid_ref_payload_candidate": paid_ref_payload,
         "counts_as_revenue": bool(stage == "paid" and allowed and amount > 0.0 and settlement_ref),
         "hard_rule": "this_receipt_does_not_mutate_ledgers; revenue_requires_followup_paid_receipt_write",
     }

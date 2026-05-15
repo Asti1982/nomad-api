@@ -706,7 +706,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert value_cycle_preflight["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycle-preflight.json"
     assert value_cycles["schema"] == "nomad.value_cycle_mesh.v1"
     assert value_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
-    assert value_cycles["summary"]["cycle_count"] >= 8
+    assert value_cycles["summary"]["cycle_count"] >= 16
     assert catalog["schema"] == "nomad.worker_catalog.v1"
     assert templates["schema"] == "nomad.microtask_templates.v1"
     assert metrics["schema"] == "nomad.microtask_metrics.v1"
