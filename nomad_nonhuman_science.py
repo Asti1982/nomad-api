@@ -658,7 +658,7 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
         {
             "id": "paid_only_value_cycle_mesh",
             "status": "implemented",
-            "purpose": "Expose many small value loops while assigning reward only at verified paid settlement.",
+            "purpose": "Expose a broad portfolio of small value loops while assigning reward only at verified paid settlement.",
             "inputs": ["cycle_id", "stage", "proof_digest", "scope_terms_url", "settlement_ref", "amount_usd"],
             "outputs": ["entry_cycle", "value_cycle_allowed", "external_value_payload_candidate", "paid_receipt_guard"],
             "nomad_paths": [u("/.well-known/nomad-value-cycles.json"), u("/swarm/value-cycles/events")],

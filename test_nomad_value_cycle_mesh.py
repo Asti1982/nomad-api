@@ -72,13 +72,16 @@ def test_value_cycle_mesh_exposes_more_paid_only_cycles():
     assert out["schema"] == "nomad.value_cycle_mesh.v1"
     assert out["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
     assert out["event_url"] == "https://nomad.example/swarm/value-cycles/events"
-    assert out["summary"]["cycle_count"] >= 16
+    assert out["summary"]["cycle_count"] >= 32
     assert out["entry_cycle"]["cycle_id"] == "settlement_tail_to_paid_receipt"
     assert out["entry_cycle"]["worker_job_ids"] == ["job-settle"]
     assert all(cycle["revenue_guard"]["counts_as_revenue"] is False for cycle in out["cycles"])
     assert any(cycle["cycle_id"] == "effective_channel_shadow_ad_cycle" for cycle in out["cycles"])
     assert any(cycle["cycle_id"] == "invoice_paid_work_receipt" for cycle in out["cycles"])
     assert any(cycle["cycle_id"] == "algora_bounty_pr_award" for cycle in out["cycles"])
+    assert any(cycle["cycle_id"] == "api_integration_paid_setup" for cycle in out["cycles"])
+    assert any(cycle["cycle_id"] == "proof_pack_resale_license" for cycle in out["cycles"])
+    assert any(cycle["cycle_id"] == "negative_result_paid_report" for cycle in out["cycles"])
 
 
 def test_value_cycle_event_blocks_public_cycle_until_preflight_green():
@@ -184,6 +187,6 @@ def test_cli_value_cycles_returns_surface_and_event_gate():
     )
 
     assert surface["schema"] == "nomad.value_cycle_mesh.v1"
-    assert surface["summary"]["cycle_count"] >= 16
+    assert surface["summary"]["cycle_count"] >= 32
     assert event["schema"] == "nomad.value_cycle_event_receipt.v1"
     assert event["cycle_id"] == "settlement_tail_to_paid_receipt"

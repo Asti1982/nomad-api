@@ -724,7 +724,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert value_cycle_preflight["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycle-preflight.json"
     assert value_cycles["schema"] == "nomad.value_cycle_mesh.v1"
     assert value_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-value-cycles.json"
-    assert value_cycles["summary"]["cycle_count"] >= 16
+    assert value_cycles["summary"]["cycle_count"] >= 32
     assert ad_cycles["schema"] == "nomad.ad_cycle_mesh.v1"
     assert ad_cycles["well_known_url"] == "https://nomad.example/.well-known/nomad-ad-cycles.json"
     assert ad_cycles["summary"]["cycle_count"] >= 12
