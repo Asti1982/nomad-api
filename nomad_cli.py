@@ -1597,6 +1597,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("decoupling-field is handled directly in run_once")
     if command == "anti-consensus":
         raise ValueError("anti-consensus is handled directly in run_once")
+    if command == "deficit-integration":
+        raise ValueError("deficit-integration is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2514,6 +2516,54 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         reservoir_surface=reservoir,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "deficit-integration":
+            from nomad_api import NomadApiHandler
+            from nomad_deficit_integration_gate import evaluate_deficit_integration_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            gate = NomadApiHandler._build_deficit_integration_gate(base_url=base)
+            action = str(getattr(args, "deficit_action", "surface") or "surface")
+            if action == "surface":
+                result = gate
+            else:
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-deficit-integration",
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "coordination_deficit_repair",
+                        "event_digest": "sha256:cli-dti-event",
+                        "proof_digest": "sha256:cli-dti-proof",
+                        "coordination_expansion": float(getattr(args, "coordination_expansion", 0.88) or 0.0),
+                        "consolidation_score": float(getattr(args, "consolidation_score", 0.16) or 0.0),
+                        "cascade_skew": float(getattr(args, "cascade_skew", 0.72) or 0.0),
+                        "orphan_proof_count": float(getattr(args, "orphan_proof_count", 4) or 0.0),
+                        "consensus_score": float(getattr(args, "consensus_score", 0.20) or 0.0),
+                        "adversarial_majority_risk": float(getattr(args, "adversarial_majority_risk", 0.42) or 0.0),
+                        "minority_preserved": True,
+                        "boundedness": {
+                            "side_effect_scope": "local_shadow_lane_only",
+                            "rollback_available": True,
+                        },
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.deficit_integration_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_deficit_integration_event(
+                        payload,
+                        base_url=base,
+                        gate_surface=gate,
+                        persist=not bool(getattr(args, "dry_run", False)),
+                    )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3294,6 +3344,28 @@ def build_parser() -> argparse.ArgumentParser:
     anti_consensus.add_argument("--crowd-score", type=float, default=0.44, help="Crowd score.")
     anti_consensus.add_argument("--risk-score", type=float, default=0.06, help="Bounded risk score.")
     anti_consensus.add_argument("--dry-run", action="store_true", help="Evaluate without appending the anti-consensus ledger.")
+    deficit_integration = subparsers.add_parser(
+        "deficit-integration",
+        help="Integrate isolated agent lanes only when coordination expansion outruns consolidation.",
+    )
+    deficit_integration.add_argument(
+        "deficit_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    deficit_integration.add_argument("--base-url", default="", help="Override public base URL for links.")
+    deficit_integration.add_argument("--event-json", default="", help="Full JSON coordination-deficit event payload.")
+    deficit_integration.add_argument("--agent-id", default="", help="Agent id for generated CLI event.")
+    deficit_integration.add_argument("--objective", default="", help="Objective for generated CLI event.")
+    deficit_integration.add_argument("--coordination-expansion", type=float, default=0.88, help="How far coordination cascades expanded.")
+    deficit_integration.add_argument("--consolidation-score", type=float, default=0.16, help="How much the expanded work consolidated.")
+    deficit_integration.add_argument("--cascade-skew", type=float, default=0.72, help="Heavy-tail or elite concentration proxy.")
+    deficit_integration.add_argument("--orphan-proof-count", type=float, default=4, help="Proof fragments that lack integration.")
+    deficit_integration.add_argument("--consensus-score", type=float, default=0.20, help="Final-answer consensus score.")
+    deficit_integration.add_argument("--adversarial-majority-risk", type=float, default=0.42, help="Majority-vote corruption risk.")
+    deficit_integration.add_argument("--dry-run", action="store_true", help="Evaluate without appending the deficit-integration ledger.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",

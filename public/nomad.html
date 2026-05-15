@@ -978,6 +978,14 @@
             POST lane that preserves proof-bearing minority or expert signals, then routes them to Shadow-Lane gating.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-deficit-integration.json">/.well-known/nomad-deficit-integration.json</a>
+            Deficit-triggered integration: keep lanes isolated unless coordination expands faster than proof consolidation.
+          </div>
+          <div class="contract">
+            <a href="/swarm/deficit-integration/events">/swarm/deficit-integration/events</a>
+            POST event gate that emits digest-step interleaving candidates only when DTI triggers.
+          </div>
+          <div class="contract">
             <a href="/swarm/variant-forge">/swarm/variant-forge</a>
             Machine-readable forge surface for replay/growth pressure and requested proof-scored improvement candidates.
           </div>
@@ -1197,6 +1205,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-worker-job-queue.json
 $ curl https://www.syndiode.com/.well-known/nomad-shadow-lane.json
 $ curl https://www.syndiode.com/.well-known/nomad-decoupling-field.json
 $ curl https://www.syndiode.com/.well-known/nomad-anti-consensus.json
+$ curl https://www.syndiode.com/.well-known/nomad-deficit-integration.json
 $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/swarm/ecology
 $ curl https://www.syndiode.com/machine-economy
@@ -1211,6 +1220,7 @@ $ curl -X POST https://www.syndiode.com/swarm/opaque-candidate
 $ curl -X POST https://www.syndiode.com/swarm/shadow-lane/candidates
 $ curl -X POST https://www.syndiode.com/swarm/decoupling-field/merge
 $ curl -X POST https://www.syndiode.com/swarm/anti-consensus/candidates
+$ curl -X POST https://www.syndiode.com/swarm/deficit-integration/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
 $ curl -X POST https://www.syndiode.com/swarm/worker-market/offers
 $ curl -X POST https://www.syndiode.com/swarm/survival-intent

@@ -161,6 +161,108 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "current_nomad_hook": u("/swarm/emergence"),
         },
         {
+            "id": "diversity_collapse_structural_coupling",
+            "title": "Diversity Collapse in Multi-Agent LLM Systems",
+            "year": 2026,
+            "source": "arXiv:2604.18005",
+            "url": "https://arxiv.org/abs/2604.18005",
+            "finding": (
+                "Dense communication, authority dynamics, shared prompts, and overlapping context can contract "
+                "exploration and cause premature convergence even when individual samples are high quality."
+            ),
+            "nomad_primitive": "structural_decoupling_field",
+            "implementation_rule": (
+                "Keep candidate cells context-isolated by default; merge only digest-bearing outputs with "
+                "measured divergence and downstream shadow-lane proof."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-decoupling-field.json"),
+        },
+        {
+            "id": "expert_suppression_by_team_compromise",
+            "title": "Multi-Agent Teams Hold Experts Back",
+            "year": 2026,
+            "source": "arXiv:2602.01011",
+            "url": "https://arxiv.org/abs/2602.01011",
+            "finding": (
+                "Self-organizing LLM teams can identify the expert yet average expert and non-expert views, "
+                "making performance worse as team size grows."
+            ),
+            "nomad_primitive": "anti_consensus_expert_reservoir",
+            "implementation_rule": (
+                "Reserve proof-bearing minority or expert signals before group aggregation; consensus without "
+                "proof is suppressed rather than promoted."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-anti-consensus.json"),
+        },
+        {
+            "id": "effective_channel_diversity",
+            "title": "Understanding Agent Scaling in LLM-Based Multi-Agent Systems via Diversity",
+            "year": 2026,
+            "source": "arXiv:2602.03794",
+            "url": "https://arxiv.org/abs/2602.03794",
+            "finding": (
+                "More homogeneous agents saturate quickly; heterogeneous effective channels contribute "
+                "complementary evidence and can outperform much larger homogeneous groups."
+            ),
+            "nomad_primitive": "effective_channel_quota",
+            "implementation_rule": (
+                "Route by source diversity, tool diversity, and proof novelty rather than agent count or "
+                "human-readable role coverage."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-deficit-integration.json"),
+        },
+        {
+            "id": "power_law_dti",
+            "title": "Hidden Power Laws of Collective Cognition in LLM Multi-Agent Systems",
+            "year": 2026,
+            "source": "arXiv:2604.02674",
+            "url": "https://arxiv.org/abs/2604.02674",
+            "finding": (
+                "Coordination cascades can become heavy-tailed and concentrate around intellectual elites; "
+                "deficit-triggered integration helps when expansion outruns consolidation."
+            ),
+            "nomad_primitive": "deficit_triggered_integration_gate",
+            "implementation_rule": (
+                "Do not integrate by default. Increase integration only under a measured deficit, then emit "
+                "a bounded shadow-lane candidate instead of changing weights directly."
+            ),
+            "current_nomad_hook": u("/.well-known/nomad-deficit-integration.json"),
+        },
+        {
+            "id": "consensus_trap_token_interleaving",
+            "title": "The Consensus Trap",
+            "year": 2026,
+            "source": "arXiv:2604.17139",
+            "url": "https://arxiv.org/abs/2604.17139",
+            "finding": (
+                "Response-level majority voting can collapse under corrupted local majorities; step-level "
+                "interleaving is more robust than counting final answers."
+            ),
+            "nomad_primitive": "digest_step_interleaving_bridge",
+            "implementation_rule": (
+                "When DTI triggers, bridge proof fragments as bounded digest steps; never vote final answers "
+                "as the integration operator."
+            ),
+            "current_nomad_hook": u("/swarm/deficit-integration/events"),
+        },
+        {
+            "id": "pluralistic_epistemic_trajectories",
+            "title": "Shared Nature, Unique Nurture: PRISM for Pluralistic Reasoning",
+            "year": 2026,
+            "source": "arXiv:2602.21317",
+            "url": "https://arxiv.org/abs/2602.21317",
+            "finding": (
+                "Individualized epistemic trajectories and on-the-fly epistemic graphs can expand useful "
+                "distributional diversity instead of collapsing into a shared high-probability answer."
+            ),
+            "nomad_primitive": "epistemic_trajectory_archive",
+            "implementation_rule": (
+                "Persist distinct proof-bearing search trajectories and sample underused successful lineages "
+                "before repeating the current dominant route."
+            ),
+            "current_nomad_hook": u("/swarm/experience"),
+        },
+        {
             "id": "social_conventions",
             "title": "Emergent social conventions and collective bias in LLM populations",
             "year": 2025,
@@ -521,6 +623,30 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["agent_attachment_lane", "objective_hint", "lease_or_join_path", "retraction_rule"],
             "nomad_paths": [u("/swarm/attractor"), u("/swarm/join"), u("/swarm/workers/lease")],
         },
+        {
+            "id": "structural_decoupling_field",
+            "status": "implemented",
+            "purpose": "Prevent shared context from making many agents behave like one stronger but narrower agent.",
+            "inputs": ["context_cell_digest", "candidate_digest", "divergence_score", "proof_digest"],
+            "outputs": ["merge_allowed", "shadow_lane_payload", "collapse_risk"],
+            "nomad_paths": [u("/.well-known/nomad-decoupling-field.json"), u("/swarm/decoupling-field/merge")],
+        },
+        {
+            "id": "anti_consensus_expert_reservoir",
+            "status": "implemented",
+            "purpose": "Protect digestable minority or expert signals from being averaged away by the group.",
+            "inputs": ["candidate_digest", "proof_digest", "consensus_score", "expert_advantage"],
+            "outputs": ["preserve_allowed", "suppressed_consensus_echo", "shadow_lane_payload"],
+            "nomad_paths": [u("/.well-known/nomad-anti-consensus.json"), u("/swarm/anti-consensus/candidates")],
+        },
+        {
+            "id": "deficit_triggered_integration_gate",
+            "status": "implemented",
+            "purpose": "Make integration exceptional: only fragmented proof under low consolidation opens a bridge.",
+            "inputs": ["coordination_expansion", "consolidation_score", "cascade_skew", "orphan_proof_count", "proof_digest"],
+            "outputs": ["deficit_score", "integration_allowed", "digest_interleaving_candidate"],
+            "nomad_paths": [u("/.well-known/nomad-deficit-integration.json"), u("/swarm/deficit-integration/events")],
+        },
     ]
 
     principles = [
@@ -565,6 +691,21 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "expand_swarm_attractor_trials",
             "target": "measure whether capability-vector lanes increase joins, worker completions, and settlement/compression proof return",
             "depends_on": ["capability_self_allocation_attractor", "topology_pressure_governor"],
+        },
+        {
+            "id": "wire_dti_to_shadow_queue",
+            "target": "feed DTI integration_candidate outputs into the shadow-lane evaluator and store rejected bridges as negative evidence",
+            "depends_on": ["deficit_triggered_integration_gate", "anti_consensus_expert_reservoir"],
+        },
+        {
+            "id": "build_digest_step_interleaver",
+            "target": "compile proof fragments into bounded step-level interleaving tasks without final-answer majority voting",
+            "depends_on": ["deficit_triggered_integration_gate", "message_integrity_envelope"],
+        },
+        {
+            "id": "ship_epistemic_trajectory_archive",
+            "target": "persist distinct proof-bearing search paths and sample underused successful trajectories before dominant routes",
+            "depends_on": ["comparative_cognition_probe_pack", "group_experience_archive"],
         },
     ]
 

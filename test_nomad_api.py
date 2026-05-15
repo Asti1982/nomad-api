@@ -101,6 +101,8 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/decoupling-field/merge" in text
     assert "/.well-known/nomad-anti-consensus.json" in text
     assert "/swarm/anti-consensus/candidates" in text
+    assert "/.well-known/nomad-deficit-integration.json" in text
+    assert "/swarm/deficit-integration/events" in text
     assert "/swarm/variant-forge" in text
     assert "/swarm/variant-candidates" in text
     assert "/swarm/worker-market" in text

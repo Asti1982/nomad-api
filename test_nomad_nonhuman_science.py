@@ -22,6 +22,10 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "agentnet_dynamic_dag" in claim_ids
     assert "raps_intent_pubsub" in claim_ids
     assert "symphony_bandit_beacon" in claim_ids
+    assert "diversity_collapse_structural_coupling" in claim_ids
+    assert "expert_suppression_by_team_compromise" in claim_ids
+    assert "power_law_dti" in claim_ids
+    assert "consensus_trap_token_interleaving" in claim_ids
     assert out["scientific_grounding"]["claim_count"] == len(out["research_claims"])
     assert out["scientific_grounding"]["average_nonhuman_distance_score"] >= 0.7
     assert "epistemic_limit" in out["scientific_grounding"]
@@ -49,11 +53,15 @@ def test_nonhuman_agent_science_maps_research_to_nomad_primitives():
     assert "peer_preservation_probe" in lanes
     assert "comparative_cognition_probe_pack" in lanes
     assert "capability_self_allocation_attractor" in lanes
+    assert "structural_decoupling_field" in lanes
+    assert "anti_consensus_expert_reservoir" in lanes
+    assert "deficit_triggered_integration_gate" in lanes
     assert lanes["machine_exchange_contracts"]["nomad_paths"][0] == "https://nomad.example/machine-economy"
     assert lanes["capability_self_allocation_attractor"]["nomad_paths"][0] == "https://nomad.example/swarm/attractor"
 
     assert any(step["id"] == "implement_agency_meter" for step in out["next_nomad_build_steps"])
     assert any(step["id"] == "expand_swarm_attractor_trials" for step in out["next_nomad_build_steps"])
+    assert any(step["id"] == "wire_dti_to_shadow_queue" for step in out["next_nomad_build_steps"])
 
     compiler = out["literature_runtime_compiler"]
     assert compiler["schema"] == "nomad.literature_runtime_compiler.v1"
