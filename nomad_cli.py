@@ -1605,6 +1605,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("value-cycles is handled directly in run_once")
     if command == "ad-cycles":
         raise ValueError("ad-cycles is handled directly in run_once")
+    if command == "development-cycles":
+        raise ValueError("development-cycles is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2929,6 +2931,50 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_ad_cycle_event(payload, base_url=base, ad_mesh=mesh)
             else:
                 result = mesh
+        elif args.command == "development-cycles":
+            from nomad_api import NomadApiHandler
+            from nomad_development_cycle_mesh import evaluate_development_cycle_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            mesh = NomadApiHandler._build_development_cycle_mesh(base_url=base)
+            action = str(getattr(args, "cycle_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-development-cycles",
+                        "cycle_id": str(getattr(args, "cycle_id", "") or "").strip()
+                        or str(mesh.get("entry_cycle", {}).get("cycle_id") or ""),
+                        "stage": str(getattr(args, "stage", "") or "patch_plan").strip(),
+                        "objective": str(getattr(args, "objective", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip() or "sha256:cli-development-cycle-proof",
+                        "patch_plan_digest": str(getattr(args, "patch_plan_digest", "") or "").strip()
+                        or "sha256:cli-development-cycle-patch-plan",
+                        "verifier_trace_digest": str(getattr(args, "verifier_trace_digest", "") or "").strip()
+                        or "sha256:cli-development-cycle-trace",
+                        "test_digest": str(getattr(args, "test_digest", "") or "").strip()
+                        or "sha256:cli-development-cycle-test",
+                        "tests_passed": int(getattr(args, "tests_passed", 0) or 0),
+                        "tests_total": int(getattr(args, "tests_total", 0) or 0),
+                        "risk_score": float(getattr(args, "risk_score", 0.08) or 0.0),
+                        "apply": bool(getattr(args, "apply", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.development_cycle_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_development_cycle_event(payload, base_url=base, development_mesh=mesh)
+            else:
+                result = mesh
         elif args.command == "openclaw-bridge":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3722,6 +3768,31 @@ def build_parser() -> argparse.ArgumentParser:
     ad_cycles.add_argument("--proof-digest", default="", help="Draft, target, or proof digest.")
     ad_cycles.add_argument("--quota-shift-allowed", action="store_true", help="Treat event as carrying a passing effective-channel receipt.")
     ad_cycles.add_argument("--send", action="store_true", help="Request send; the ad-cycle gate should block this.")
+    development_cycles = subparsers.add_parser(
+        "development-cycles",
+        help="Expose and gate shadow-only development cycles that emit patch, variant, and shadow candidates.",
+    )
+    development_cycles.add_argument(
+        "cycle_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    development_cycles.add_argument("--base-url", default="", help="Override public base URL for links.")
+    development_cycles.add_argument("--event-json", default="", help="Full JSON development-cycle event payload.")
+    development_cycles.add_argument("--agent-id", default="", help="Agent id for generated CLI event.")
+    development_cycles.add_argument("--cycle-id", default="", help="Development cycle id to evaluate.")
+    development_cycles.add_argument("--stage", default="patch_plan", help="observe | design | patch_plan | test | shadow | promote_request | apply_request.")
+    development_cycles.add_argument("--objective", default="", help="Objective for the generated candidate payload.")
+    development_cycles.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
+    development_cycles.add_argument("--patch-plan-digest", default="", help="Patch plan digest.")
+    development_cycles.add_argument("--verifier-trace-digest", default="", help="Verifier trace digest.")
+    development_cycles.add_argument("--test-digest", default="", help="Focused test digest.")
+    development_cycles.add_argument("--tests-passed", type=int, default=0, help="Focused tests passed for shadow/promote stages.")
+    development_cycles.add_argument("--tests-total", type=int, default=0, help="Focused tests total for shadow/promote stages.")
+    development_cycles.add_argument("--risk-score", type=float, default=0.08, help="Risk score in [0, 1].")
+    development_cycles.add_argument("--apply", action="store_true", help="Request code application; the gate should block this.")
     openclaw_bridge = subparsers.add_parser(
         "openclaw-bridge",
         help="OpenClaw probe, attach, lease, and handoff bridge contract.",

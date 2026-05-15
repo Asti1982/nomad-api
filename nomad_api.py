@@ -49,6 +49,7 @@ from nomad_effective_channel_quota import (
     evaluate_effective_channel_event,
 )
 from nomad_ad_cycle_mesh import build_ad_cycle_mesh_surface, evaluate_ad_cycle_event
+from nomad_development_cycle_mesh import build_development_cycle_mesh_surface, evaluate_development_cycle_event
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
@@ -761,6 +762,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_development_cycle_mesh(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        return build_development_cycle_mesh_surface(
+            base_url=base_url,
+            variant_forge=cls._build_variant_forge(base_url=base_url, swarm_summary=summary),
+            shadow_lane=cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary),
+            ad_cycles=cls._build_ad_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            value_cycles=cls._build_value_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            proof_reuse=proof_reuse_snapshot(),
+        )
+
+    @classmethod
     def _build_agent_work_surface(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -1280,6 +1298,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "value_cycle_event": f"{b}/swarm/value-cycles/events",
                     "ad_cycles": f"{b}/.well-known/nomad-ad-cycles.json",
                     "ad_cycle_event": f"{b}/swarm/ad-cycles/events",
+                    "development_cycles": f"{b}/.well-known/nomad-development-cycles.json",
+                    "development_cycle_event": f"{b}/swarm/development-cycles/events",
                     "worker_market_offer": f"{b}/swarm/worker-market/offers",
                     "swarm_ecology": f"{b}/swarm/ecology",
                     "swarm_ecology_tick": f"{b}/swarm/ecology/tick",
@@ -1633,6 +1653,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/ad-cycles", "/.well-known/nomad-ad-cycles.json"}:
             self._json_response(self.__class__._build_ad_cycle_mesh(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/development-cycles", "/.well-known/nomad-development-cycles.json"}:
+            self._json_response(self.__class__._build_development_cycle_mesh(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-catalog", "/.well-known/nomad-worker-catalog.json"}:
             self._json_response(self.__class__._build_worker_catalog(base_url=self._base_url()))
@@ -2753,6 +2776,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",
+                    "/swarm/development-cycles",
+                    "/.well-known/nomad-development-cycles.json",
+                    "/swarm/development-cycles/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",
@@ -3377,6 +3403,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             mesh = self.__class__._build_ad_cycle_mesh(base_url=base)
             result = evaluate_ad_cycle_event(payload, base_url=base, ad_mesh=mesh)
             self._json_response(result, status=202 if result.get("ad_cycle_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/development-cycles/events":
+            base = self._base_url()
+            mesh = self.__class__._build_development_cycle_mesh(base_url=base)
+            result = evaluate_development_cycle_event(payload, base_url=base, development_mesh=mesh)
+            self._json_response(result, status=202 if result.get("development_cycle_allowed") else 200)
             return
 
         if parsed.path == "/swarm/variant-candidates":
@@ -4017,6 +4050,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",
+                    "/swarm/development-cycles",
+                    "/.well-known/nomad-development-cycles.json",
+                    "/swarm/development-cycles/events",
                     "/swarm/worker-catalog",
                     "/.well-known/nomad-worker-catalog.json",
                     "/swarm/microtask-templates",

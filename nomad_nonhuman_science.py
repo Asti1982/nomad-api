@@ -671,6 +671,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["campaign_payload_candidate", "effective_channel_event_payload_candidate", "shadow_lane_candidate", "send_block"],
             "nomad_paths": [u("/.well-known/nomad-ad-cycles.json"), u("/swarm/ad-cycles/events")],
         },
+        {
+            "id": "shadow_only_development_cycle_mesh",
+            "status": "implemented",
+            "purpose": "Run local development loops as patch plans, focused tests, variants, and shadow candidates without autonomous code application.",
+            "inputs": ["cycle_id", "stage", "proof_digest", "patch_plan_digest", "verifier_trace_digest", "tests_passed", "apply"],
+            "outputs": ["variant_candidate_payload", "shadow_lane_candidate_payload", "apply_block", "repo_write_allowed_false"],
+            "nomad_paths": [u("/.well-known/nomad-development-cycles.json"), u("/swarm/development-cycles/events")],
+        },
     ]
 
     principles = [
@@ -745,6 +753,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "wire_ad_cycles_to_campaign_queue",
             "target": "feed quota-passed ad-cycle candidates into agent-campaign drafts with send=false and no revenue credit",
             "depends_on": ["shadow_only_ad_cycle_mesh", "effective_channel_quota_gate"],
+        },
+        {
+            "id": "wire_development_cycles_to_variant_and_shadow_receipts",
+            "target": "feed admitted development-cycle outputs into variant-candidate and shadow-lane receipts while keeping apply/write outside the machine gate",
+            "depends_on": ["shadow_only_development_cycle_mesh", "proof_validated_variant_archive"],
         },
     ]
 
