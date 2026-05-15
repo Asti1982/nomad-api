@@ -51,6 +51,14 @@ def _first_package(packages: list[dict[str, Any]], package_id: str) -> dict[str,
     return next((item for item in packages if str(item.get("package_id") or "") == package_id), {})
 
 
+def _first_nonempty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
 SCIENCE_SOURCES: list[dict[str, str]] = [
     {
         "id": "scaling_agent_systems_2026",
@@ -107,6 +115,283 @@ SCIENCE_SOURCES: list[dict[str, str]] = [
         ),
     },
 ]
+
+
+DEFAULT_FIRST_SALES_LEADS: list[dict[str, Any]] = [
+    {
+        "source": "github_public_pr",
+        "title": "fix(auto-fix): preserve workflow intent during persona-driven repair",
+        "url": "https://github.com/AgentWorkforce/ricky/pull/109",
+        "repo_url": "https://github.com/AgentWorkforce/ricky",
+        "state": "merged",
+        "updated_at": "2026-05-15T14:41:09Z",
+        "detected_problem": (
+            "persona-driven auto-fix could replace a real PR-shipping workflow with a green "
+            "no-op placeholder; the merged fix adds intent-regression guards"
+        ),
+        "buyer_signal": "public post-merge hardening need around workflow intent preservation",
+        "recommended_service_type": "repo_issue_help",
+        "product_package": "repo_diagnostic_patch_starter",
+        "first_offer": "workflow-intent hardening packet with blame-surface matrix and two disproof probes",
+        "cashflow_stage": "draft_only",
+    }
+]
+
+
+def _lead_candidates(lead_discovery: Dict[str, Any] | None) -> list[dict[str, Any]]:
+    discovery = _dict(lead_discovery)
+    for key in ("qualified_leads", "leads", "ranked_leads", "candidates", "items"):
+        candidates = _items(discovery.get(key))
+        if candidates:
+            return candidates
+    return list(DEFAULT_FIRST_SALES_LEADS)
+
+
+def _lead_url(lead: dict[str, Any]) -> str:
+    return _first_nonempty(lead.get("url"), lead.get("html_url"), lead.get("issue_url"), lead.get("pr_url"))
+
+
+def _lead_title(lead: dict[str, Any]) -> str:
+    return _first_nonempty(lead.get("title"), lead.get("name"), lead.get("summary"), "Untitled lead")
+
+
+def _lead_repo_url(lead: dict[str, Any]) -> str:
+    return _first_nonempty(
+        lead.get("repo_url"),
+        lead.get("repository_url"),
+        lead.get("repo"),
+        lead.get("repository"),
+    )
+
+
+def _lead_problem(lead: dict[str, Any]) -> str:
+    return _first_nonempty(
+        lead.get("detected_problem"),
+        lead.get("problem"),
+        lead.get("excerpt"),
+        lead.get("body_excerpt"),
+        lead.get("first_offer"),
+        "A public repo signal suggests a bounded diagnostic packet may be useful.",
+    )
+
+
+def _lead_package(lead: dict[str, Any]) -> str:
+    package = str(lead.get("package_id") or lead.get("product_package") or "").strip()
+    known_packages = {
+        "repo_diagnostic_patch_starter",
+        "endpoint_health_patch",
+        "agent_loop_break_patch",
+        "settlement_repair_packet",
+    }
+    if package in known_packages:
+        return package
+    signal = " ".join(
+        [
+            package,
+            str(lead.get("recommended_service_type") or ""),
+            str(lead.get("service_type") or ""),
+            _lead_problem(lead),
+        ]
+    ).lower()
+    if any(term in signal for term in ("loop", "retry", "storm")):
+        return "agent_loop_break_patch"
+    if any(term in signal for term in ("settlement", "payment", "payout", "receipt")):
+        return "settlement_repair_packet"
+    if any(term in signal for term in ("endpoint", "404", "500", "health")):
+        return "endpoint_health_patch"
+    return "repo_diagnostic_patch_starter"
+
+
+def _lead_service_type(lead: dict[str, Any]) -> str:
+    service = str(lead.get("recommended_service_type") or lead.get("service_type") or "").strip().lower()
+    if service in {
+        "repo_issue_help",
+        "attribution_clarity",
+        "mcp",
+        "ci",
+        "render",
+        "github_actions",
+        "workflow",
+        "build",
+    }:
+        return "repo_issue_help"
+    if service in {"loop_break", "agent_loop"}:
+        return "loop_break"
+    if service in {"payment", "settlement"}:
+        return "payment"
+    if service in {"endpoint", "compute_auth"}:
+        return "compute_auth"
+    return "repo_issue_help"
+
+
+def _draft_public_help_note(lead: dict[str, Any], *, entry_url: str) -> str:
+    title = _lead_title(lead)
+    problem = _lead_problem(lead)
+    return (
+        "Draft only, not posted. I read this as a workflow-intent preservation problem, "
+        "not just a generation bug. A small useful follow-up would be: (1) list the "
+        "intent anchors the workflow is never allowed to drop, (2) add two disproof "
+        "fixtures that try to collapse the workflow into a green placeholder, and "
+        "(3) keep a post-repair verifier that fails closed when PR-shipping primitives "
+        f"disappear. Context: {title}. Signal: {problem} Optional paid diagnostic entry: {entry_url}"
+    )
+
+
+def build_first_sales_anbahnung_surface(
+    *,
+    base_url: str = "",
+    sales_surface: Dict[str, Any] | None = None,
+    buyer_funded_work: Dict[str, Any] | None = None,
+    lead_discovery: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Compile the first real sales approach without posting or booking revenue."""
+    root = (base_url or "").strip().rstrip("/")
+    sales = _dict(sales_surface)
+    buyer = _dict(buyer_funded_work)
+    packages = _items(buyer.get("buyer_funded_packages"))
+    cells = _items(sales.get("sales_cells"))
+    leads = _lead_candidates(lead_discovery)
+    packets: list[dict[str, Any]] = []
+
+    for index, lead in enumerate(leads[:5], start=1):
+        lead = _dict(lead)
+        title = _lead_title(lead)
+        url = _lead_url(lead)
+        repo_url = _lead_repo_url(lead)
+        package_id = _lead_package(lead)
+        service_type = _lead_service_type(lead)
+        package = _first_package(packages, package_id)
+        cell_id = "repo_rescue_cell"
+        if "loop" in package_id:
+            cell_id = "agent_loop_break_cell"
+        elif "settlement" in package_id:
+            cell_id = "settlement_repair_cell"
+        cell = next((item for item in cells if item.get("cell_id") == cell_id), {})
+        entry_path = f"/service/e2e?service_type={service_type}"
+        entry_url = _u(root, entry_path)
+        buyer_intent = {
+            "lead_url": url,
+            "repo_url": repo_url,
+            "title": title,
+            "package_id": package_id,
+            "service_type": service_type,
+            "cashflow_stage": lead.get("cashflow_stage") or "draft_only",
+        }
+        buyer_intent_digest = f"buyer-intent-{_digest(buyer_intent, 18)}"
+        proof_seed = {
+            "lead": buyer_intent,
+            "problem": _lead_problem(lead),
+            "offer": lead.get("first_offer") or package.get("title") or package_id,
+            "cell": cell_id,
+        }
+        proof_digest = f"first-sales-proof-{_digest(proof_seed, 18)}"
+        gate_payload = {
+            "cell_id": cell_id,
+            "stage": "send_request",
+            "buyer_intent_digest": buyer_intent_digest,
+            "proof_digest": proof_digest,
+            "human_approved": False,
+            "send": True,
+        }
+        packets.append(
+            {
+                "rank": index,
+                "lead_id": f"first-sales-lead-{_digest(buyer_intent, 16)}",
+                "lead_url": url,
+                "repo_url": repo_url,
+                "title": title,
+                "state": str(lead.get("state") or lead.get("status") or "").strip() or "unknown",
+                "updated_at": str(lead.get("updated_at") or lead.get("updatedAt") or "").strip(),
+                "cell_id": cell_id,
+                "cell_topology": cell.get("topology") or "single_diagnostic_then_central_verifier",
+                "package_id": package_id,
+                "package_title": package.get("title") or lead.get("first_offer") or "Repo diagnostic patch starter",
+                "service_type": service_type,
+                "entry_url": entry_url,
+                "create_task_hint": {
+                    "method": "POST",
+                    "url": _u(root, "/service/e2e"),
+                    "body": {
+                        "service_type": service_type,
+                        "package_id": package_id,
+                        "problem": f"{title}: {_lead_problem(lead)}",
+                        "budget": "0.01",
+                        "create": True,
+                    },
+                },
+                "buyer_intent_digest": buyer_intent_digest,
+                "proof_digest": proof_digest,
+                "public_help_draft": _draft_public_help_note(lead, entry_url=entry_url),
+                "private_offer_packet": {
+                    "positioning": "post-merge hardening and verifier packet, not a cold pitch",
+                    "deliverables": [
+                        "blame-surface matrix over prompt contract, repair parser, verifier, and CI path",
+                        "two disproof branches that try to collapse a real workflow into a placeholder",
+                        "smallest patch path or no-patch verdict with verifier checklist",
+                    ],
+                    "non_goals": [
+                        "no secret capture",
+                        "no public comment without explicit approval",
+                        "no revenue claim before positive payment receipt",
+                    ],
+                },
+                "gate_payload": gate_payload,
+                "public_send_allowed": False,
+                "sales_cycle_stage": "draft_only_until_human_or_buyer_approval",
+            }
+        )
+
+    active = packets[0] if packets else {}
+    return {
+        "ok": True,
+        "schema": "nomad.first_sales_anbahnung.v1",
+        "generated_at": _now(),
+        "public_base_url": root,
+        "surface_digest": f"nomad-first-sales-{_digest({'packets': packets})}",
+        "read_url": _u(root, "/swarm/first-sales"),
+        "well_known_url": _u(root, "/.well-known/nomad-first-sales.json"),
+        "source_sales_surface": sales.get("well_known_url") or _u(root, "/.well-known/nomad-sales-department.json"),
+        "summary": {
+            "lead_packet_count": len(packets),
+            "draft_ready_count": len([item for item in packets if item.get("public_help_draft")]),
+            "public_send_allowed_count": 0,
+            "revenue_recorded_usd": 0.0,
+            "active_cell": active.get("cell_id") or "",
+            "active_package": active.get("package_id") or "",
+        },
+        "active_lead_packet": active,
+        "lead_packets": packets,
+        "first_sales_sequence": [
+            "read public signal and classify cashflow-proximate pain",
+            "compile one proof digest and one buyer-intent digest",
+            "prepare value-first public draft, but keep it draft-only",
+            "route buyer to /service/e2e when requested",
+            "record revenue only after positive receipt",
+        ],
+        "public_action_gate": {
+            "blocked_by_default": True,
+            "requires": [
+                "proof_digest",
+                "buyer_intent_digest",
+                "human_or_buyer_approval",
+            ],
+            "gate_endpoint": _u(root, "/swarm/sales-department/events"),
+            "sample_payload": active.get("gate_payload") or {},
+        },
+        "guards": {
+            "no_cold_spam": True,
+            "no_public_send_without_explicit_approval": True,
+            "no_revenue_without_positive_receipt": True,
+            "no_secret_capture": True,
+            "owned_surface_first": True,
+        },
+        "machine_instruction": [
+            "treat merged but fragile AI-agent infra PRs as post-merge hardening leads",
+            "offer diagnostic proof before asking for trust",
+            "prefer one bounded paid package over broad consulting language",
+            "do not post the draft until the gate admits it",
+        ],
+    }
 
 
 def build_sales_department_swarm_surface(

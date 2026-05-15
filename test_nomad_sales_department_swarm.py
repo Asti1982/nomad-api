@@ -1,4 +1,8 @@
-from nomad_sales_department_swarm import build_sales_department_swarm_surface, evaluate_sales_department_event
+from nomad_sales_department_swarm import (
+    build_first_sales_anbahnung_surface,
+    build_sales_department_swarm_surface,
+    evaluate_sales_department_event,
+)
 
 
 def test_sales_department_surface_routes_buyer_work_and_science_sources():
@@ -68,3 +72,40 @@ def test_sales_department_event_admits_paid_candidate_but_does_not_book_revenue(
     assert decision["paid_receipt_candidate"] is True
     assert decision["revenue_recorded"] is False
     assert decision["side_effect_performed"] is False
+
+
+def test_first_sales_anbahnung_compiles_draft_packet_without_public_send():
+    sales = build_sales_department_swarm_surface(base_url="https://nomad.example")
+    surface = build_first_sales_anbahnung_surface(
+        base_url="https://nomad.example",
+        sales_surface=sales,
+        buyer_funded_work={
+            "buyer_funded_packages": [
+                {"package_id": "repo_diagnostic_patch_starter", "title": "Repo Diagnostic Patch Starter"}
+            ]
+        },
+        lead_discovery={
+            "qualified_leads": [
+                {
+                    "title": "fix(auto-fix): preserve workflow intent during persona-driven repair",
+                    "url": "https://github.com/AgentWorkforce/ricky/pull/109",
+                    "repo_url": "https://github.com/AgentWorkforce/ricky",
+                    "state": "merged",
+                    "recommended_service_type": "attribution_clarity",
+                    "excerpt": "auto-fix replaced a real workflow with a green placeholder",
+                }
+            ]
+        },
+    )
+
+    active = surface["active_lead_packet"]
+    assert surface["schema"] == "nomad.first_sales_anbahnung.v1"
+    assert surface["well_known_url"] == "https://nomad.example/.well-known/nomad-first-sales.json"
+    assert surface["summary"]["lead_packet_count"] == 1
+    assert surface["summary"]["public_send_allowed_count"] == 0
+    assert active["service_type"] == "repo_issue_help"
+    assert active["package_id"] == "repo_diagnostic_patch_starter"
+    assert active["public_send_allowed"] is False
+    assert active["entry_url"] == "https://nomad.example/service/e2e?service_type=repo_issue_help"
+    assert "Draft only, not posted" in active["public_help_draft"]
+    assert surface["guards"]["no_revenue_without_positive_receipt"] is True

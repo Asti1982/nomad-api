@@ -802,6 +802,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/first-sales": {
+                "get": {
+                    "summary": "First sales approach packet: proof-gated lead drafts and buyer-funded repo diagnostic route without public posting",
+                    "operationId": "getSwarmFirstSales",
+                    "responses": {
+                        "200": {"description": "First sales anbahnung surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-first-sales.json": {
+                "get": {
+                    "summary": "Alias of /swarm/first-sales",
+                    "operationId": "getFirstSalesWellKnown",
+                    "responses": {
+                        "200": {"description": "First sales anbahnung surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/job-channels": {
                 "get": {
                     "summary": "Broad external paid-work channel surface ranked by authorization, proof, payout, and settlement friction",

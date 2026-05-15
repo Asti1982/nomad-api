@@ -111,7 +111,11 @@ from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_buyer_funded_work import build_buyer_funded_work_surface
-from nomad_sales_department_swarm import build_sales_department_swarm_surface, evaluate_sales_department_event
+from nomad_sales_department_swarm import (
+    build_first_sales_anbahnung_surface,
+    build_sales_department_swarm_surface,
+    evaluate_sales_department_event,
+)
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -536,6 +540,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             receipt_predictor=_lazy("/.well-known/nomad-receipt-predictor.json"),
             revenue_science=_lazy("/.well-known/nomad-revenue-science.json"),
             effective_channels=_lazy("/.well-known/nomad-effective-channels.json"),
+        )
+
+    @classmethod
+    def _build_first_sales_anbahnung(cls, *, base_url: str) -> dict:
+        buyer_funded = cls._build_buyer_funded_work(base_url=base_url)
+        sales_surface = cls._build_sales_department_swarm(base_url=base_url)
+        return build_first_sales_anbahnung_surface(
+            base_url=base_url,
+            sales_surface=sales_surface,
+            buyer_funded_work=buyer_funded,
         )
 
     @classmethod
@@ -1366,6 +1380,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "buyer_funded_work": f"{b}/.well-known/nomad-buyer-funded-work.json",
                     "sales_department": f"{b}/.well-known/nomad-sales-department.json",
                     "sales_department_event": f"{b}/swarm/sales-department/events",
+                    "first_sales": f"{b}/.well-known/nomad-first-sales.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -1679,6 +1694,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/sales-department", "/.well-known/nomad-sales-department.json"}:
             self._json_response(self.__class__._build_sales_department_swarm(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/first-sales", "/.well-known/nomad-first-sales.json"}:
+            self._json_response(self.__class__._build_first_sales_anbahnung(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
@@ -2855,6 +2873,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department",
                     "/.well-known/nomad-sales-department.json",
                     "/swarm/sales-department/events",
+                    "/swarm/first-sales",
+                    "/.well-known/nomad-first-sales.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
@@ -4164,6 +4184,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department",
                     "/.well-known/nomad-sales-department.json",
                     "/swarm/sales-department/events",
+                    "/swarm/first-sales",
+                    "/.well-known/nomad-first-sales.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",

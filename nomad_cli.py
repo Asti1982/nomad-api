@@ -306,6 +306,20 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"- {item.get('cell_id', '')}: {item.get('cashflow_proximity', '')}")
         return "\n".join(line for line in lines if line)
 
+    if result.get("schema") == "nomad.first_sales_anbahnung.v1":
+        summary = result.get("summary") or {}
+        active = result.get("active_lead_packet") or {}
+        lines = [
+            "Nomad first sales anbahnung",
+            f"Lead packets: {summary.get('lead_packet_count', 0)} draft_ready={summary.get('draft_ready_count', 0)}",
+            f"Public sends allowed: {summary.get('public_send_allowed_count', 0)}",
+            f"Active lead: {active.get('title', '')}",
+            f"Route: {active.get('entry_url', '')}",
+            f"Package: {active.get('package_id', '')}",
+            f"Proof: {active.get('proof_digest', '')}",
+        ]
+        return "\n".join(line for line in lines if line)
+
     if result.get("schema") == "nomad.sales_department_event_decision.v1":
         blockers = result.get("blockers") or []
         return "\n".join(
@@ -1639,6 +1653,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("paid-ref-selfplay is handled directly in run_once")
     if command == "bounty-hunter":
         raise ValueError("bounty-hunter is handled directly in run_once")
+    if command == "first-sales":
+        raise ValueError("first-sales is handled directly in run_once")
     if command == "external-value":
         raise ValueError("external-value is handled directly in run_once")
     if command == "value-pressure":
@@ -2083,6 +2099,27 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 result = evaluate_sales_department_event(payload, base_url=base, sales_surface=surface)
             else:
                 result = surface
+        elif args.command == "first-sales":
+            from nomad_api import NomadApiHandler
+            from nomad_sales_department_swarm import build_first_sales_anbahnung_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            lead_discovery = None
+            if bool(getattr(args, "discover", False)):
+                from lead_discovery import LeadDiscoveryScout
+
+                query = " ".join(getattr(args, "query", []) or []).strip() or "AI agent workflow CI repair"
+                lead_discovery = LeadDiscoveryScout().scout_public_leads(
+                    query=query,
+                    focus=str(getattr(args, "focus", "") or "agent_infra_prime").strip(),
+                    limit=int(getattr(args, "limit", 5) or 5),
+                )
+            result = build_first_sales_anbahnung_surface(
+                base_url=base,
+                sales_surface=NomadApiHandler._build_sales_department_swarm(base_url=base),
+                buyer_funded_work=NomadApiHandler._build_buyer_funded_work(base_url=base),
+                lead_discovery=lead_discovery,
+            )
         elif args.command == "external-value":
             from nomad_external_value import (
                 agent_selection_bonus,
@@ -3608,6 +3645,15 @@ def build_parser() -> argparse.ArgumentParser:
     sales_department.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for stage=paid.")
     sales_department.add_argument("--send", action="store_true", help="Request public send gate evaluation.")
     sales_department.add_argument("--human-approved", action="store_true", help="Mark the public send as approved.")
+    first_sales = subparsers.add_parser(
+        "first-sales",
+        help="Compile the first proof-gated sales approach packet without posting or booking revenue.",
+    )
+    first_sales.add_argument("query", nargs="*", help="Optional discovery query when --discover is set.")
+    first_sales.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    first_sales.add_argument("--discover", action="store_true", help="Run read-only public lead scout before compiling packets.")
+    first_sales.add_argument("--focus", default="agent_infra_prime", help="Lead focus used with --discover.")
+    first_sales.add_argument("--limit", type=int, default=5, help="Lead limit used with --discover.")
     external_value = subparsers.add_parser(
         "external-value",
         help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",
