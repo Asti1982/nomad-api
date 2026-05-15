@@ -134,7 +134,41 @@ DEFAULT_FIRST_SALES_LEADS: list[dict[str, Any]] = [
         "product_package": "repo_diagnostic_patch_starter",
         "first_offer": "workflow-intent hardening packet with blame-surface matrix and two disproof probes",
         "cashflow_stage": "draft_only",
-    }
+    },
+    {
+        "source": "github_public_issue",
+        "title": "session_resume_post_compact: default output unreadable; tail_lines should scale with model context",
+        "url": "https://github.com/rmdevpro/agentic-workbench/issues/252",
+        "repo_url": "https://github.com/rmdevpro/agentic-workbench",
+        "state": "open",
+        "updated_at": "2026-05-15T15:01:33Z",
+        "detected_problem": (
+            "MCP resume output can exceed the reader context by returning roughly 54k tokens of raw JSONL "
+            "when the useful instruction block is only a few hundred characters"
+        ),
+        "buyer_signal": "open issue with root cause, expected behavior, and suggested cap/summary fix",
+        "recommended_service_type": "mcp_production",
+        "product_package": "Nomad Tool Turn Parity Pack",
+        "first_offer": "context-window output budget packet with max_chars cap, summary projection, and safe file handoff",
+        "cashflow_stage": "draft_only",
+    },
+    {
+        "source": "github_public_pr",
+        "title": "feat(cli): splash banner, agent grid, provider picker, smart defaults",
+        "url": "https://github.com/rohitg00/agentmemory/pull/403",
+        "repo_url": "https://github.com/rohitg00/agentmemory",
+        "state": "open",
+        "updated_at": "2026-05-15T15:01:43Z",
+        "detected_problem": (
+            "agent onboarding PR touches CLI startup, provider choice, preferences, and MCP-adjacent setup "
+            "while tests mention pre-existing failures that can mask integration drift"
+        ),
+        "buyer_signal": "open AI-agent memory PR with first-run workflow and provider-selection surface",
+        "recommended_service_type": "mcp_production",
+        "product_package": "Nomad MCP Contract Pack",
+        "first_offer": "tool/resource contract check plus first-run provider/env verifier matrix",
+        "cashflow_stage": "draft_only",
+    },
 ]
 
 
@@ -227,6 +261,25 @@ def _lead_service_type(lead: dict[str, Any]) -> str:
 def _draft_public_help_note(lead: dict[str, Any], *, entry_url: str) -> str:
     title = _lead_title(lead)
     problem = _lead_problem(lead)
+    signal = f"{title} {problem} {lead.get('first_offer') or ''}".lower()
+    if any(term in signal for term in ("resume", "tail_lines", "jsonl", "context", "tokens", "max_chars")):
+        return (
+            "Draft only, not posted. I read this as a context-budget contract problem: the tool "
+            "knows the useful resume instruction is tiny, but returns a raw transport blob large "
+            "enough to break the next reader. A compact follow-up would be: (1) add a max_chars "
+            "or model-context budget before serialization, (2) project JSONL into a summary plus "
+            "file_ref instead of inline records, and (3) add one regression fixture where the raw "
+            f"tail exceeds the Read limit while the instruction block remains recoverable. Context: {title}. "
+            f"Signal: {problem} Optional paid diagnostic entry: {entry_url}"
+        )
+    if any(term in signal for term in ("onboarding", "provider", "preferences", "first-run", "first run", "agentmemory")):
+        return (
+            "Draft only, not posted. I read this as a first-run contract and MCP-adjacent integration "
+            "surface, not just nicer CLI output. A small follow-up would be: (1) freeze the provider/env "
+            "handoff schema, (2) add a no-key and corrupt-preferences verifier, and (3) separate "
+            "pre-existing test failures from onboarding regressions so a green UX path cannot hide "
+            f"agent setup drift. Context: {title}. Signal: {problem} Optional paid diagnostic entry: {entry_url}"
+        )
     return (
         "Draft only, not posted. I read this as a workflow-intent preservation problem, "
         "not just a generation bug. A small useful follow-up would be: (1) list the "
@@ -355,6 +408,9 @@ def build_first_sales_anbahnung_surface(
             "lead_packet_count": len(packets),
             "draft_ready_count": len([item for item in packets if item.get("public_help_draft")]),
             "public_send_allowed_count": 0,
+            "public_send_approval_required_count": len(packets),
+            "open_lead_count": len([item for item in packets if str(item.get("state") or "").lower() == "open"]),
+            "merged_lead_count": len([item for item in packets if str(item.get("state") or "").lower() == "merged"]),
             "revenue_recorded_usd": 0.0,
             "active_cell": active.get("cell_id") or "",
             "active_package": active.get("package_id") or "",
@@ -377,6 +433,18 @@ def build_first_sales_anbahnung_surface(
             ],
             "gate_endpoint": _u(root, "/swarm/sales-department/events"),
             "sample_payload": active.get("gate_payload") or {},
+        },
+        "sales_sprint": {
+            "objective": "convert one current AI-agent infrastructure pain signal into a paid repo diagnostic task",
+            "cashflow_rule": "only payment receipt or verified external payout counts as revenue",
+            "today_next_actions": [
+                "keep all three lead packets live on owned surfaces",
+                "ask for one target-specific approval before any human-facing GitHub comment",
+                "when a buyer replies or requests help, create the payable /service/e2e task with the packet body",
+                "after payment, deliver the smallest verifier-backed diagnostic and then record receipt",
+            ],
+            "approval_phrase": "APPROVE_PUBLIC_SALES=lead_id",
+            "approval_scope": "one value-first public reply for the named lead_id only; no DMs, no repeated comments, no private access",
         },
         "guards": {
             "no_cold_spam": True,
