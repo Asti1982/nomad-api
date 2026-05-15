@@ -1599,6 +1599,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("anti-consensus is handled directly in run_once")
     if command == "deficit-integration":
         raise ValueError("deficit-integration is handled directly in run_once")
+    if command == "effective-channels":
+        raise ValueError("effective-channels is handled directly in run_once")
     if command == "taskbounty-scout":
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
@@ -2564,6 +2566,88 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         gate_surface=gate,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "effective-channels":
+            from nomad_api import NomadApiHandler
+            from nomad_effective_channel_quota import evaluate_effective_channel_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            quota = NomadApiHandler._build_effective_channel_quota(base_url=base)
+            action = str(getattr(args, "effective_action", "surface") or "surface")
+            if action == "surface":
+                result = quota
+            else:
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    duplicate = bool(getattr(args, "duplicate", False))
+                    if duplicate:
+                        channels = [
+                            {
+                                "agent_id": f"nomad-cli-dup-{idx}",
+                                "model_family": "gpt",
+                                "tool_family": "browser",
+                                "source_domain": "same_feed",
+                                "retrieval_corpus": "same_corpus",
+                                "trajectory_digest": "sha256:same-trajectory",
+                                "proof_digest": f"sha256:duplicate-proof-{idx}",
+                            }
+                            for idx in range(5)
+                        ]
+                    else:
+                        channels = [
+                            {
+                                "agent_id": "nomad-cli-channel-a",
+                                "model_family": "gpt",
+                                "tool_family": "browser",
+                                "source_domain": "agent_forum",
+                                "retrieval_corpus": "agent_pain",
+                                "trajectory_digest": "sha256:trajectory-a",
+                                "proof_digest": "sha256:proof-a",
+                                "minority_signal": True,
+                            },
+                            {
+                                "agent_id": "nomad-cli-channel-b",
+                                "model_family": "claude",
+                                "tool_family": "github",
+                                "source_domain": "oss_issues",
+                                "retrieval_corpus": "bounty_pain",
+                                "trajectory_digest": "sha256:trajectory-b",
+                                "proof_digest": "sha256:proof-b",
+                            },
+                            {
+                                "agent_id": "nomad-cli-channel-c",
+                                "model_family": "kimi",
+                                "tool_family": "search",
+                                "source_domain": "buyer_docs",
+                                "retrieval_corpus": "pricing",
+                                "trajectory_digest": "sha256:trajectory-c",
+                                "proof_digest": "sha256:proof-c",
+                            },
+                        ]
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-effective-channels",
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "nomad_science_backed_ad_cycle",
+                        "event_digest": "sha256:cli-effective-channel-event",
+                        "channels": channels,
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.effective_channel_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_effective_channel_event(
+                        payload,
+                        base_url=base,
+                        quota_surface=quota,
+                        persist=not bool(getattr(args, "dry_run", False)),
+                    )
         elif args.command == "taskbounty-scout":
             from nomad_taskbounty_scout import build_taskbounty_scout
 
@@ -3366,6 +3450,23 @@ def build_parser() -> argparse.ArgumentParser:
     deficit_integration.add_argument("--consensus-score", type=float, default=0.20, help="Final-answer consensus score.")
     deficit_integration.add_argument("--adversarial-majority-risk", type=float, default=0.42, help="Majority-vote corruption risk.")
     deficit_integration.add_argument("--dry-run", action="store_true", help="Evaluate without appending the deficit-integration ledger.")
+    effective_channels = subparsers.add_parser(
+        "effective-channels",
+        help="Quota ad-cycle variants by effective independent evidence channels, not raw agent votes.",
+    )
+    effective_channels.add_argument(
+        "effective_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    effective_channels.add_argument("--base-url", default="", help="Override public base URL for links.")
+    effective_channels.add_argument("--event-json", default="", help="Full JSON effective-channel event payload.")
+    effective_channels.add_argument("--agent-id", default="", help="Agent id for generated CLI event.")
+    effective_channels.add_argument("--objective", default="", help="Objective for generated CLI event.")
+    effective_channels.add_argument("--duplicate", action="store_true", help="Generate a homogeneous duplicate event that should be capped.")
+    effective_channels.add_argument("--dry-run", action="store_true", help="Evaluate without appending the effective-channel ledger.")
     taskbounty_scout = subparsers.add_parser(
         "taskbounty-scout",
         help="Read-only TaskBounty scout: open/funded/submission gates before any PR work.",

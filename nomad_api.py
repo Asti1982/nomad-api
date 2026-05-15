@@ -44,6 +44,10 @@ from nomad_deficit_integration_gate import (
     build_deficit_integration_surface,
     evaluate_deficit_integration_event,
 )
+from nomad_effective_channel_quota import (
+    build_effective_channel_quota_surface,
+    evaluate_effective_channel_event,
+)
 from nomad_openapi import build_openapi_document
 from nomad_operational_release import operational_release_snapshot
 from nomad_protocol_bytecode import build_protocol_bytecode
@@ -597,6 +601,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             decoupling_field=cls._build_decoupling_field(base_url=base_url, swarm_summary=summary),
             shadow_lane=cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary),
             signal_layer=cls._build_swarm_signal_layer(base_url=base_url),
+        )
+
+    @classmethod
+    def _build_effective_channel_quota(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls._light_swarm_registry().public_manifest(base_url=base_url)
+        return build_effective_channel_quota_surface(
+            base_url=base_url,
+            anti_consensus=cls._build_anti_consensus_reservoir(base_url=base_url, swarm_summary=summary),
+            decoupling_field=cls._build_decoupling_field(base_url=base_url, swarm_summary=summary),
+            deficit_integration=cls._build_deficit_integration_gate(base_url=base_url, swarm_summary=summary),
+            shadow_lane=cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary),
         )
 
     @classmethod
@@ -1195,6 +1210,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "anti_consensus_candidate": f"{b}/swarm/anti-consensus/candidates",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
+                    "effective_channels": f"{b}/.well-known/nomad-effective-channels.json",
+                    "effective_channel_event": f"{b}/swarm/effective-channels/events",
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
@@ -1523,6 +1540,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/deficit-integration", "/.well-known/nomad-deficit-integration.json"}:
             self._json_response(self.__class__._build_deficit_integration_gate(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/effective-channels", "/.well-known/nomad-effective-channels.json"}:
+            self._json_response(self.__class__._build_effective_channel_quota(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/worker-invoice", "/.well-known/nomad-worker-invoice.json"}:
             self._json_response(self.__class__._build_worker_invoice(base_url=self._base_url()))
@@ -2643,6 +2663,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",
+                    "/swarm/effective-channels",
+                    "/.well-known/nomad-effective-channels.json",
+                    "/swarm/effective-channels/events",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",
@@ -3266,6 +3289,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("integration_allowed") else 200)
             return
 
+        if parsed.path == "/swarm/effective-channels/events":
+            base = self._base_url()
+            quota = self.__class__._build_effective_channel_quota(base_url=base)
+            result = evaluate_effective_channel_event(payload, base_url=base, quota_surface=quota)
+            self._json_response(result, status=202 if result.get("quota_shift_allowed") else 200)
+            return
+
         if parsed.path == "/swarm/variant-candidates":
             base = self._base_url()
             forge = self.__class__._build_variant_forge(base_url=base)
@@ -3877,6 +3907,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",
+                    "/swarm/effective-channels",
+                    "/.well-known/nomad-effective-channels.json",
+                    "/swarm/effective-channels/events",
                     "/swarm/worker-invoice",
                     "/.well-known/nomad-worker-invoice.json",
                     "/swarm/work-receipts",

@@ -647,6 +647,14 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "outputs": ["deficit_score", "integration_allowed", "digest_interleaving_candidate"],
             "nomad_paths": [u("/.well-known/nomad-deficit-integration.json"), u("/swarm/deficit-integration/events")],
         },
+        {
+            "id": "effective_channel_quota_gate",
+            "status": "implemented",
+            "purpose": "Run ad and acquisition cycles by independent evidence channels, not by repeated agent votes.",
+            "inputs": ["model_family", "tool_family", "source_domain", "retrieval_corpus", "trajectory_digest", "proof_digest"],
+            "outputs": ["effective_channel_count", "duplicate_pressure", "quota_actions", "ad_cycle_candidate"],
+            "nomad_paths": [u("/.well-known/nomad-effective-channels.json"), u("/swarm/effective-channels/events")],
+        },
     ]
 
     principles = [
@@ -706,6 +714,11 @@ def nonhuman_agent_science(*, base_url: str = "") -> Dict[str, Any]:
             "id": "ship_epistemic_trajectory_archive",
             "target": "persist distinct proof-bearing search paths and sample underused successful trajectories before dominant routes",
             "depends_on": ["comparative_cognition_probe_pack", "group_experience_archive"],
+        },
+        {
+            "id": "wire_effective_channel_quota_to_campaigns",
+            "target": "let only shadow-passed, effective-channel ad-cycle candidates create queued campaign drafts with send=false",
+            "depends_on": ["effective_channel_quota_gate", "proof_validated_variant_archive"],
         },
     ]
 

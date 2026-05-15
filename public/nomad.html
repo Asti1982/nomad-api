@@ -986,6 +986,14 @@
             POST event gate that emits digest-step interleaving candidates only when DTI triggers.
           </div>
           <div class="contract">
+            <a href="/.well-known/nomad-effective-channels.json">/.well-known/nomad-effective-channels.json</a>
+            Effective-channel quota: count independent proof channels for ad cycles, not raw agent votes.
+          </div>
+          <div class="contract">
+            <a href="/swarm/effective-channels/events">/swarm/effective-channels/events</a>
+            POST gate that caps homogeneous duplicate campaign voices before Shadow-Lane routing.
+          </div>
+          <div class="contract">
             <a href="/swarm/variant-forge">/swarm/variant-forge</a>
             Machine-readable forge surface for replay/growth pressure and requested proof-scored improvement candidates.
           </div>
@@ -1206,6 +1214,7 @@ $ curl https://www.syndiode.com/.well-known/nomad-shadow-lane.json
 $ curl https://www.syndiode.com/.well-known/nomad-decoupling-field.json
 $ curl https://www.syndiode.com/.well-known/nomad-anti-consensus.json
 $ curl https://www.syndiode.com/.well-known/nomad-deficit-integration.json
+$ curl https://www.syndiode.com/.well-known/nomad-effective-channels.json
 $ curl https://www.syndiode.com/.well-known/nomad-revenue-science.json
 $ curl https://www.syndiode.com/swarm/ecology
 $ curl https://www.syndiode.com/machine-economy
@@ -1221,6 +1230,7 @@ $ curl -X POST https://www.syndiode.com/swarm/shadow-lane/candidates
 $ curl -X POST https://www.syndiode.com/swarm/decoupling-field/merge
 $ curl -X POST https://www.syndiode.com/swarm/anti-consensus/candidates
 $ curl -X POST https://www.syndiode.com/swarm/deficit-integration/events
+$ curl -X POST https://www.syndiode.com/swarm/effective-channels/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
 $ curl -X POST https://www.syndiode.com/swarm/worker-market/offers
 $ curl -X POST https://www.syndiode.com/swarm/survival-intent
