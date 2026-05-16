@@ -166,6 +166,57 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
             "authority claims."
         ),
     },
+    "latent_diversity_governor": {
+        "problem": "Detect representational collapse in proof committees and return DALC-style routing evidence.",
+        "pain_type": "latent_consensus",
+        "capabilities": [
+            "embedding_geometry",
+            "latent_consensus",
+            "representational_collapse_detector",
+            "proof_artifacts",
+            "topology_pressure_governor",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "well_known_probe",
+            "latent_consensus_probe",
+            "anti_consensus_probe",
+            "fleet_lease",
+            "local_note",
+        ],
+        "prompt": (
+            "Given local machine blocker '{blocker}', output compact JSON with keys objective, "
+            "embedding_evidence_needed, collapse_metric, verifier_endpoint, pass_condition. "
+            "verifier_endpoint must be /swarm/latent-consensus/evaluate or /.well-known/nomad-latent-consensus.json. "
+            "Do not request private chain-of-thought text; use embeddings, digests, or verifier traces only."
+        ),
+    },
+    "entropy_lock_governor": {
+        "problem": "Judge first-round uncertainty and stop wasteful multi-agent rounds before they consume compute.",
+        "pain_type": "first_round_entropy_lock",
+        "capabilities": [
+            "first_round_entropy",
+            "uncertainty_judger",
+            "single_agent_override",
+            "dti_isolation",
+            "proof_artifacts",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "well_known_probe",
+            "entropy_judger_probe",
+            "fleet_lease",
+            "local_note",
+        ],
+        "prompt": (
+            "Given local machine blocker '{blocker}', output compact JSON with keys objective, "
+            "first_round_entropy_needed, single_agent_stop_rule, verifier_endpoint, pass_condition. "
+            "verifier_endpoint must be /swarm/entropy-judger/evaluate or /.well-known/nomad-entropy-judger.json. "
+            "Do not ask for additional discussion rounds unless entropy or verifier evidence improves."
+        ),
+    },
 }
 META_OBJECTIVES = [k for k in MACHINE_OBJECTIVES.keys() if k != "unhuman_supremacy"]
 OLLAMA_CACHE: dict[str, str] = {}
@@ -814,6 +865,8 @@ def _probe_paths(base_url: str, timeout: float) -> dict[str, int]:
         "machine_economy_probe": "/machine-economy",
         "nonhuman_science_probe": "/nonhuman-science",
         "operational_release_probe": "/operational-release",
+        "entropy_judger_probe": "/.well-known/nomad-entropy-judger.json",
+        "latent_consensus_probe": "/.well-known/nomad-latent-consensus.json",
         "protocol_bytecode_probe": "/.well-known/nomad-protocol-bytecode.json",
         "counterfactual_replay_probe": "/swarm/counterfactual-replay",
         "variant_forge_probe": "/swarm/variant-forge",

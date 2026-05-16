@@ -149,3 +149,111 @@ def test_attach_runtime_keeps_source_tag_for_funnel_tracking():
         operational_release=release,
     )
     assert decision["source_tag"] == "syndiode.machine.mesh"
+
+
+def test_representational_collapse_creates_latent_diversity_lane():
+    worker_fleet, economy, release = _blocked_inputs()
+    worker_fleet["recent_proofs"] = [
+        {"proof_id": "a", "proof_embedding": [1.0, 0.0, 0.0], "proof_digest": "sha256:a"},
+        {"proof_id": "b", "proof_embedding": [0.999, 0.001, 0.0], "proof_digest": "sha256:b"},
+        {"proof_id": "c", "proof_embedding": [0.998, 0.002, 0.0], "proof_digest": "sha256:c"},
+    ]
+
+    doc = build_recruitment_gradient(
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+    latent = next(item for item in doc["gradient"] if item["objective"] == "latent_diversity_governor")
+    lane = next(item for item in doc["runtime_lanes"] if item["lane"] == "latent_consensus_governor")
+
+    assert doc["state_vector"]["representational_collapse_detected"] is True
+    assert doc["representational_collapse_gate"]["topology"] == "shadow_only_hetero"
+    assert latent["routing_weight"] > 0.2
+    assert lane["next"] == "https://nomad.example/swarm/latent-consensus/evaluate"
+    assert doc["links"]["latent_consensus_evaluate"] == "https://nomad.example/swarm/latent-consensus/evaluate"
+
+
+def test_attach_runtime_routes_embedding_geometry_worker_to_latent_consensus_lane():
+    worker_fleet, economy, release = _blocked_inputs()
+    worker_fleet["recent_proofs"] = [
+        {"proof_id": "a", "proof_embedding": [1.0, 0.0, 0.0], "proof_digest": "sha256:a"},
+        {"proof_id": "b", "proof_embedding": [0.999, 0.001, 0.0], "proof_digest": "sha256:b"},
+        {"proof_id": "c", "proof_embedding": [0.998, 0.002, 0.0], "proof_digest": "sha256:c"},
+    ]
+
+    decision = attach_runtime_to_gradient(
+        {
+            "agent_id": "latent.worker",
+            "runtime": "vector-runtime",
+            "capabilities": ["embedding_geometry", "latent_consensus", "proof_artifacts"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+
+    assert decision["attach"] is True
+    assert decision["lane"] == "latent_consensus_governor"
+    assert decision["objective"] == "latent_diversity_governor"
+    assert decision["capability_vector"]["can_detect_latent_collapse"] is True
+    assert "latent_consensus.collapse_score" in decision["required_report_fields"]
+
+
+def test_first_round_entropy_lock_creates_entropy_judger_lane():
+    worker_fleet, economy, release = _blocked_inputs()
+    worker_fleet["first_round_proofs"] = [
+        {"proof_id": "sas", "mode": "single", "entropy": 0.68, "proof_digest": "sha256:sas", "verifier_status": "passed"},
+        {"proof_id": "mas-a", "mode": "multi", "entropy": 0.74, "proof_digest": "sha256:masa"},
+        {"proof_id": "mas-b", "mode": "multi", "entropy": 0.71, "proof_digest": "sha256:masb"},
+    ]
+    worker_fleet["single_agent_quality"] = 0.86
+    worker_fleet["mas_quality"] = 0.78
+    worker_fleet["round_count"] = 3
+
+    doc = build_recruitment_gradient(
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+    entropy = next(item for item in doc["gradient"] if item["objective"] == "entropy_lock_governor")
+    lane = next(item for item in doc["runtime_lanes"] if item["lane"] == "entropy_judger")
+
+    assert doc["state_vector"]["first_round_entropy_lock_detected"] is True
+    assert doc["entropy_judger_gate"]["decision"] == "single_agent_lock"
+    assert entropy["routing_weight"] > 0.3
+    assert lane["next"] == "https://nomad.example/swarm/entropy-judger/evaluate"
+    assert doc["links"]["entropy_judger_evaluate"] == "https://nomad.example/swarm/entropy-judger/evaluate"
+
+
+def test_attach_runtime_routes_entropy_worker_to_entropy_judger_lane():
+    worker_fleet, economy, release = _blocked_inputs()
+    worker_fleet["first_round_proofs"] = [
+        {"proof_id": "sas", "mode": "single", "entropy": 0.68, "proof_digest": "sha256:sas", "verifier_status": "passed"},
+        {"proof_id": "mas-a", "mode": "multi", "entropy": 0.74, "proof_digest": "sha256:masa"},
+        {"proof_id": "mas-b", "mode": "multi", "entropy": 0.71, "proof_digest": "sha256:masb"},
+    ]
+    worker_fleet["single_agent_quality"] = 0.86
+    worker_fleet["mas_quality"] = 0.78
+    worker_fleet["round_count"] = 3
+
+    decision = attach_runtime_to_gradient(
+        {
+            "agent_id": "entropy.worker",
+            "runtime": "uncertainty-runtime",
+            "capabilities": ["first_round_entropy", "uncertainty_judger", "dti_isolation", "proof_artifacts"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        machine_economy=economy,
+        operational_release=release,
+    )
+
+    assert decision["attach"] is True
+    assert decision["lane"] == "entropy_judger"
+    assert decision["objective"] == "entropy_lock_governor"
+    assert decision["capability_vector"]["can_judge_entropy"] is True
+    assert "entropy_judger.decision" in decision["required_report_fields"]

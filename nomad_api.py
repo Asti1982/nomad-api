@@ -40,6 +40,8 @@ from nomad_anti_consensus_reservoir import (
     build_anti_consensus_reservoir_surface,
     evaluate_anti_consensus_candidate,
 )
+from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_judger
+from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_deficit_integration_gate import (
     build_deficit_integration_surface,
     evaluate_deficit_integration_event,
@@ -672,6 +674,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             channel_bandit=cls._build_channel_bandit(base_url=base_url),
             signal_layer=cls._build_swarm_signal_layer(base_url=base_url),
         )
+
+    @classmethod
+    def _build_entropy_judger(cls, *, base_url: str) -> dict:
+        return build_entropy_judger_surface(base_url=base_url)
+
+    @classmethod
+    def _build_latent_consensus(cls, *, base_url: str) -> dict:
+        return build_latent_consensus_surface(base_url=base_url)
 
     @classmethod
     def _build_deficit_integration_gate(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1429,6 +1439,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "decoupling_merge": f"{b}/swarm/decoupling-field/merge",
                     "anti_consensus": f"{b}/.well-known/nomad-anti-consensus.json",
                     "anti_consensus_candidate": f"{b}/swarm/anti-consensus/candidates",
+                    "entropy_judger": f"{b}/.well-known/nomad-entropy-judger.json",
+                    "entropy_judger_evaluate": f"{b}/swarm/entropy-judger/evaluate",
+                    "latent_consensus": f"{b}/.well-known/nomad-latent-consensus.json",
+                    "latent_consensus_evaluate": f"{b}/swarm/latent-consensus/evaluate",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
                     "effective_channels": f"{b}/.well-known/nomad-effective-channels.json",
@@ -1803,6 +1817,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/anti-consensus", "/.well-known/nomad-anti-consensus.json"}:
             self._json_response(self.__class__._build_anti_consensus_reservoir(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/entropy-judger", "/.well-known/nomad-entropy-judger.json"}:
+            self._json_response(self.__class__._build_entropy_judger(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/latent-consensus", "/.well-known/nomad-latent-consensus.json"}:
+            self._json_response(self.__class__._build_latent_consensus(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/deficit-integration", "/.well-known/nomad-deficit-integration.json"}:
             self._json_response(self.__class__._build_deficit_integration_gate(base_url=self._base_url()))
@@ -2957,6 +2977,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/anti-consensus",
                     "/.well-known/nomad-anti-consensus.json",
                     "/swarm/anti-consensus/candidates",
+                    "/swarm/entropy-judger",
+                    "/.well-known/nomad-entropy-judger.json",
+                    "/swarm/entropy-judger/evaluate",
+                    "/swarm/latent-consensus",
+                    "/.well-known/nomad-latent-consensus.json",
+                    "/swarm/latent-consensus/evaluate",
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",
@@ -3599,6 +3625,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             reservoir = self.__class__._build_anti_consensus_reservoir(base_url=base)
             result = evaluate_anti_consensus_candidate(payload, base_url=base, reservoir_surface=reservoir)
             self._json_response(result, status=202 if result.get("preserve_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/entropy-judger/evaluate":
+            base = self._base_url()
+            result = evaluate_entropy_judger(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("lock_detected") else 200)
+            return
+
+        if parsed.path == "/swarm/latent-consensus/evaluate":
+            base = self._base_url()
+            result = evaluate_latent_consensus(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("collapse_detected") else 200)
             return
 
         if parsed.path == "/swarm/deficit-integration/events":
@@ -4279,6 +4317,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/anti-consensus",
                     "/.well-known/nomad-anti-consensus.json",
                     "/swarm/anti-consensus/candidates",
+                    "/swarm/entropy-judger",
+                    "/.well-known/nomad-entropy-judger.json",
+                    "/swarm/entropy-judger/evaluate",
+                    "/swarm/latent-consensus",
+                    "/.well-known/nomad-latent-consensus.json",
+                    "/swarm/latent-consensus/evaluate",
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",

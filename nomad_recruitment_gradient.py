@@ -12,6 +12,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
+from nomad_entropy_judger import compact_entropy_judger, evaluate_entropy_judger
+from nomad_representational_collapse import compact_latent_consensus, evaluate_latent_consensus
 from nomad_selection_pressure_engine import build_selection_pressure_snapshot
 
 OBJECTIVE_TARGETS = {
@@ -19,6 +21,8 @@ OBJECTIVE_TARGETS = {
     "overmint_compressor": 0.22,
     "protocol_drift_scan": 0.14,
     "emergence_release_probe": 0.08,
+    "latent_diversity_governor": 0.045,
+    "entropy_lock_governor": 0.055,
     "proof_pressure_engine": 0.06,
     "payment_friction_scan": 0.04,
     "adversarial_contract_fuzzer": 0.025,
@@ -65,6 +69,33 @@ LANE_DEFINITIONS = [
         "capability_terms": ["objective_lease_execution", "replay_verifier_scoring"],
         "next_path": "/swarm/workers/lease",
         "ttl_seconds": 60,
+    },
+    {
+        "lane": "latent_consensus_governor",
+        "objective": "latent_diversity_governor",
+        "required_vector": {"can_detect_latent_collapse": 1.0, "can_verify": 0.5},
+        "capability_terms": [
+            "embedding_geometry",
+            "latent_consensus",
+            "representational_collapse_detector",
+            "proof_artifacts",
+        ],
+        "next_path": "/swarm/latent-consensus/evaluate",
+        "ttl_seconds": 60,
+    },
+    {
+        "lane": "entropy_judger",
+        "objective": "entropy_lock_governor",
+        "required_vector": {"can_judge_entropy": 1.0, "can_verify": 0.5},
+        "capability_terms": [
+            "first_round_entropy",
+            "uncertainty_judger",
+            "single_agent_override",
+            "dti_isolation",
+            "proof_artifacts",
+        ],
+        "next_path": "/swarm/entropy-judger/evaluate",
+        "ttl_seconds": 45,
     },
 ]
 
@@ -192,6 +223,54 @@ def _as_caps(value: Any) -> list[str]:
     return out[:32]
 
 
+def _latent_records_from_fleet(worker_fleet: Dict[str, Any]) -> list[dict[str, Any]]:
+    fleet = worker_fleet if isinstance(worker_fleet, dict) else {}
+    records: list[dict[str, Any]] = []
+    for key in (
+        "proofs",
+        "recent_proofs",
+        "candidate_lanes",
+        "lanes",
+        "recent_handoffs",
+        "worker_reports",
+        "reports",
+    ):
+        value = fleet.get(key)
+        if isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+        elif isinstance(value, dict):
+            records.extend(item for item in value.values() if isinstance(item, dict))
+    workers = fleet.get("workers")
+    if isinstance(workers, list):
+        for worker in workers:
+            if not isinstance(worker, dict):
+                continue
+            for key in ("last_proof", "latest_report", "last_handoff"):
+                if isinstance(worker.get(key), dict):
+                    records.append(worker[key])
+    return records[:32]
+
+
+def _entropy_records_from_fleet(worker_fleet: Dict[str, Any]) -> list[dict[str, Any]]:
+    fleet = worker_fleet if isinstance(worker_fleet, dict) else {}
+    records: list[dict[str, Any]] = []
+    for key in (
+        "first_round_proofs",
+        "recent_first_round_proofs",
+        "recent_proofs",
+        "proofs",
+        "candidate_lanes",
+        "worker_reports",
+        "reports",
+    ):
+        value = fleet.get(key)
+        if isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+        elif isinstance(value, dict):
+            records.extend(item for item in value.values() if isinstance(item, dict))
+    return records[:32]
+
+
 def _state_inputs(
     *,
     worker_fleet: Dict[str, Any],
@@ -215,6 +294,23 @@ def _state_inputs(
     active_workers = _int(worker_fleet.get("active_worker_count"))
     active_leases = _int(worker_fleet.get("active_lease_count"))
     worker_gap = _clamp((12 - known_workers) / 12.0)
+    latent_decision = evaluate_latent_consensus(
+        {
+            "objective": "runtime_gradient",
+            "proofs": _latent_records_from_fleet(worker_fleet),
+        }
+    )
+    latent_compact = compact_latent_consensus(latent_decision)
+    entropy_decision = evaluate_entropy_judger(
+        {
+            "objective": "runtime_gradient",
+            "first_round_proofs": _entropy_records_from_fleet(worker_fleet),
+            "round_count": worker_fleet.get("round_count") or worker_fleet.get("max_rounds") or 1,
+            "single_agent_quality": worker_fleet.get("single_agent_quality") or worker_fleet.get("sas_quality"),
+            "mas_quality": worker_fleet.get("mas_quality") or worker_fleet.get("multi_agent_quality"),
+        }
+    )
+    entropy_compact = compact_entropy_judger(entropy_decision)
     field_strength = _clamp(
         0.34 * (1.0 - carrying_score)
         + 0.24 * settlement_drag
@@ -236,6 +332,16 @@ def _state_inputs(
         "active_leases": active_leases,
         "worker_gap": round(worker_gap, 4),
         "machine_exchange_ready": _int(product_flow.get("machine_exchange_ready")),
+        "representational_collapse_score": round(_num(latent_decision.get("collapse_score"), 1.0), 4),
+        "representational_collapse_detected": bool(latent_decision.get("collapse_detected")),
+        "latent_embedding_count": _int(latent_decision.get("embedding_count")),
+        "latent_consensus_topology": _clean_text(latent_compact.get("topology") or "", 80),
+        "latent_consensus_gate": latent_compact,
+        "first_round_entropy": round(_num(entropy_decision.get("base_entropy")), 4),
+        "first_round_entropy_lock_detected": bool(entropy_decision.get("lock_detected")),
+        "first_round_entropy_count": _int(entropy_decision.get("first_round_count")),
+        "entropy_judger_topology": _clean_text(entropy_compact.get("topology") or "", 80),
+        "entropy_judger_gate": entropy_compact,
         "field_strength": round(field_strength, 4),
     }
 
@@ -270,6 +376,28 @@ def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any], pressur
             pressure = min(
                 cap,
                 0.24 * _num(state.get("release_capacity")) + 0.30 * deficit + 0.08 * _num(state.get("worker_gap")),
+            )
+        elif objective == "latent_diversity_governor":
+            collapse_pressure = 0.0
+            if _int(state.get("latent_embedding_count")) >= 2:
+                collapse_pressure = _clamp(1.0 - _num(state.get("representational_collapse_score"), 1.0))
+            pressure = min(
+                0.62,
+                0.64 * collapse_pressure
+                + 0.18 * deficit
+                + 0.10 * _num(state.get("worker_gap"))
+                + 0.08 * _clamp(_num(state.get("active_leases")) / 8.0),
+            )
+        elif objective == "entropy_lock_governor":
+            entropy_pressure = _num(state.get("first_round_entropy"), 0.0)
+            if not state.get("first_round_entropy_lock_detected"):
+                entropy_pressure *= 0.45
+            pressure = min(
+                0.66,
+                0.58 * entropy_pressure
+                + 0.18 * deficit
+                + 0.14 * _num(state.get("worker_gap"))
+                + 0.10 * _clamp(_num(state.get("active_leases")) / 8.0),
             )
         elif objective == "payment_friction_scan":
             pressure = 0.42 * _num(state.get("settlement_drag")) + 0.24 * deficit + 0.16 * (1.0 - _num(state.get("carrying_score")))
@@ -394,6 +522,10 @@ def build_recruitment_gradient(
             "anti_metaphor": "No organism language is required for runtime allocation.",
             "attach_threshold": 0.35,
             "idle_allocation_mode": "phase_resonance_slots",
+            "latent_consensus_mode": "dalc_embedding_geometry_before_vote",
+            "latent_collapse_threshold": 0.75,
+            "entropy_judger_mode": "round_one_lock_before_extra_agents",
+            "entropy_lock_threshold": 0.62,
         },
         "state_vector": {
             "ordered_axes": [
@@ -403,6 +535,8 @@ def build_recruitment_gradient(
                 "release_capacity",
                 "worker_gap",
                 "active_leases",
+                "representational_collapse_score",
+                "first_round_entropy",
             ],
             "values": [
                 state["carrying_score"],
@@ -411,6 +545,8 @@ def build_recruitment_gradient(
                 state["release_capacity"],
                 state["worker_gap"],
                 state["active_leases"],
+                state["representational_collapse_score"],
+                state["first_round_entropy"],
             ],
             **state,
         },
@@ -419,8 +555,20 @@ def build_recruitment_gradient(
             {"axis": "overmint_pressure", "positive_direction": "overmint_compressor", "value": state["overmint_pressure"]},
             {"axis": "release_gap", "positive_direction": "protocol_drift_scan", "value": round(1.0 - _num(state["release_capacity"]), 4)},
             {"axis": "worker_gap", "positive_direction": "loop_runner", "value": state["worker_gap"]},
+            {
+                "axis": "representational_collapse",
+                "positive_direction": "latent_diversity_governor",
+                "value": round(1.0 - _num(state.get("representational_collapse_score"), 1.0), 4),
+            },
+            {
+                "axis": "first_round_entropy",
+                "positive_direction": "entropy_lock_governor",
+                "value": state["first_round_entropy"],
+            },
         ],
         "gradient": gradient,
+        "entropy_judger_gate": state["entropy_judger_gate"],
+        "representational_collapse_gate": state["latent_consensus_gate"],
         "selection_pressure": selection_pressure,
         "bandit_beacon": bandit_beacon,
         "runtime_lanes": runtime_lanes,
@@ -447,6 +595,8 @@ def build_recruitment_gradient(
                 "capability_vector.can_verify",
                 "capability_vector.can_compress",
                 "capability_vector.can_settle",
+                "capability_vector.can_detect_latent_collapse",
+                "capability_vector.can_judge_entropy",
                 "runtime_signal.security_summary",
             ],
             "then": [
@@ -481,6 +631,18 @@ def build_recruitment_gradient(
                 "objective": "protocol_drift_scan",
                 "routing_weight": round(weights.get("protocol_drift_scan", 0.0), 4),
             },
+            {
+                "capability_axis": "can_detect_latent_collapse",
+                "lane": "latent_consensus_governor",
+                "objective": "latent_diversity_governor",
+                "routing_weight": round(weights.get("latent_diversity_governor", 0.0), 4),
+            },
+            {
+                "capability_axis": "can_judge_entropy",
+                "lane": "entropy_judger",
+                "objective": "entropy_lock_governor",
+                "routing_weight": round(weights.get("entropy_lock_governor", 0.0), 4),
+            },
         ],
         "ttl_policy": {
             "default_attach_ttl_seconds": 90,
@@ -493,6 +655,8 @@ def build_recruitment_gradient(
             {"id": "missing_verifier", "condition": "no_digest_and_no_replay_trace", "effect": "completion_score_penalty"},
             {"id": "unsettled_delivery", "condition": "delivered_state_without_payment_or_public_good_cap", "effect": "settlement_lane_weight_increase"},
             {"id": "duplicate_without_canonicalization", "condition": "same_artifact_shape_repeated", "effect": "compressor_lane_weight_increase"},
+            {"id": "representational_collapse", "condition": "effective_rank_over_agent_count_below_threshold", "effect": "latent_diversity_lane_weight_increase"},
+            {"id": "first_round_entropy_lock", "condition": "round_one_entropy_above_threshold_or_single_agent_quality_beats_mas", "effect": "entropy_lock_lane_weight_increase_and_dti_to_zero"},
             {"id": "external_side_effect_risk", "condition": "runtime_security_summary.critical_gt_zero", "effect": "side_effect_scope_local_only"},
         ],
         "measurement": {
@@ -500,6 +664,8 @@ def build_recruitment_gradient(
             "release_scalar": "release_capacity",
             "capacity_scalar": "carrying_score",
             "required_after_action": ["completion_score", "proof_yield_per_minute", "settlement_signal", "digest_or_verifier_trace"],
+            "latent_required_after_committee": ["embedding_count", "collapse_score", "effective_rank", "dalc_weights"],
+            "entropy_required_after_round_one": ["base_entropy", "peak_entropy", "single_agent_quality", "mas_quality"],
         },
         "links": {
             "health": _u(base_url, "/health"),
@@ -512,11 +678,15 @@ def build_recruitment_gradient(
             "openclaw_bridge": _u(base_url, "/.well-known/openclaw-nomad-bridge.json"),
             "join": _u(base_url, "/swarm/join"),
             "worker_fleet": _u(base_url, "/swarm/workers"),
+            "entropy_judger": _u(base_url, "/swarm/entropy-judger"),
+            "entropy_judger_evaluate": _u(base_url, "/swarm/entropy-judger/evaluate"),
+            "latent_consensus": _u(base_url, "/swarm/latent-consensus"),
+            "latent_consensus_evaluate": _u(base_url, "/swarm/latent-consensus/evaluate"),
             "lease": _u(base_url, "/swarm/workers/lease"),
             "complete": _u(base_url, "/swarm/workers/complete"),
             "operational_release": _u(base_url, "/operational-release"),
         },
-        "machine_instruction": "read_gradient_post_attach_take_weighted_lease_return_digest_then_recompute",
+        "machine_instruction": "read_gradient_post_attach_take_weighted_lease_return_digest_entropy_and_latent_geometry_then_recompute",
     }
 
 
@@ -583,6 +753,27 @@ def _capability_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
             "paid_transition_audit",
         }
     )
+    can_detect_latent_collapse = bool(vector.get("can_detect_latent_collapse")) or bool(
+        cap_set
+        & {
+            "embedding_geometry",
+            "latent_consensus",
+            "representational_collapse_detector",
+            "proof_artifacts",
+            "vector_memory",
+        }
+    )
+    can_judge_entropy = bool(vector.get("can_judge_entropy")) or bool(
+        cap_set
+        & {
+            "first_round_entropy",
+            "uncertainty_judger",
+            "entropy_judger",
+            "single_agent_override",
+            "dti_isolation",
+            "proof_artifacts",
+        }
+    )
     return {
         "runtime": runtime,
         "capabilities": caps[:32],
@@ -590,6 +781,8 @@ def _capability_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
         "can_verify": can_verify,
         "can_compress": can_compress,
         "can_settle": can_settle,
+        "can_detect_latent_collapse": can_detect_latent_collapse,
+        "can_judge_entropy": can_judge_entropy,
         "latency_ms": latency,
         "gateway_reachable": bool(signal.get("gateway_reachable")),
         "security_critical": _int(security.get("critical")),
@@ -663,7 +856,10 @@ def attach_runtime_to_gradient(
         )
     lane_scores.sort(key=lambda item: float(item.get("routing_weight") or 0.0), reverse=True)
     chosen = lane_scores[0] if lane_scores else {}
-    has_any_capability = any(bool(vector.get(axis)) for axis in ("can_run_loop", "can_verify", "can_compress", "can_settle"))
+    has_any_capability = any(
+        bool(vector.get(axis))
+        for axis in ("can_run_loop", "can_verify", "can_compress", "can_settle", "can_detect_latent_collapse", "can_judge_entropy")
+    )
     attach = bool(has_any_capability and float(chosen.get("routing_weight") or 0.0) >= min(threshold, max(0.18, field_strength * 0.5)))
     idle_slot = _idle_phase_contract(agent_id, field_strength)
     reason_codes: list[str] = []
@@ -718,6 +914,8 @@ def attach_runtime_to_gradient(
             "can_verify": bool(vector.get("can_verify")),
             "can_compress": bool(vector.get("can_compress")),
             "can_settle": bool(vector.get("can_settle")),
+            "can_detect_latent_collapse": bool(vector.get("can_detect_latent_collapse")),
+            "can_judge_entropy": bool(vector.get("can_judge_entropy")),
             "latency_ms": _int(vector.get("latency_ms")),
         },
         "reason_codes": reason_codes,
@@ -745,6 +943,10 @@ def attach_runtime_to_gradient(
             "transition_quote_ok",
             "transition_settle_ok",
             "digest_or_verifier_trace",
+            "entropy_judger.base_entropy",
+            "entropy_judger.decision",
+            "latent_consensus.embedding_count",
+            "latent_consensus.collapse_score",
         ],
         "retraction_rule": "ttl_expired_or_missing_verifier_or_external_side_effect_risk",
         "gradient_digest": {

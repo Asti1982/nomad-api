@@ -13,6 +13,9 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
+from nomad_entropy_judger import compact_entropy_judger, evaluate_entropy_judger
+from nomad_representational_collapse import compact_latent_consensus, evaluate_latent_consensus
+
 
 RESEARCH_TECHNIQUES = [
     {
@@ -44,6 +47,18 @@ RESEARCH_TECHNIQUES = [
         "source": "https://arxiv.org/abs/2410.11782",
         "finding": "Task-aware communication topology improves performance and can reduce token overhead.",
         "nomad_contract": "/swarm/topology-plan",
+    },
+    {
+        "id": "representational_collapse_dalc",
+        "source": "https://arxiv.org/abs/2604.03809",
+        "finding": "Role prompts and committee discussion can collapse into similar latent rationales; consensus weight should come from embedding geometry.",
+        "nomad_contract": "/swarm/latent-consensus",
+    },
+    {
+        "id": "first_round_entropy_lock_in",
+        "source": "https://arxiv.org/abs/2602.04234",
+        "finding": "Single-agent baselines can beat MAS in about 43.3 percent of cases, and entropy dynamics are largely set during round one.",
+        "nomad_contract": "/swarm/entropy-judger",
     },
     {
         "id": "component_contribution_credit",
@@ -263,6 +278,20 @@ def build_opaque_emergence_surface(
                 "source": "https://arxiv.org/abs/2410.11782",
             },
             {
+                "id": "latent_consensus_router",
+                "schema": "nomad.latent_consensus_decision.v1",
+                "post_url": _u(root, "/swarm/latent-consensus/evaluate"),
+                "why_agents_use_it": "measure representational collapse before voting or sharing context",
+                "source": "https://arxiv.org/abs/2604.03809",
+            },
+            {
+                "id": "entropy_judger",
+                "schema": "nomad.entropy_judger_decision.v1",
+                "post_url": _u(root, "/swarm/entropy-judger/evaluate"),
+                "why_agents_use_it": "stop unnecessary multi-agent rounds after first-round uncertainty is known",
+                "source": "https://arxiv.org/abs/2602.04234",
+            },
+            {
                 "id": "workflow_population",
                 "schema": "nomad.opaque_candidate.v1",
                 "post_url": _u(root, "/swarm/opaque-candidate"),
@@ -304,6 +333,8 @@ def build_opaque_emergence_surface(
             "opaque_emergence": _u(root, "/.well-known/nomad-opaque-emergence.json"),
             "opaque_candidate": _u(root, "/swarm/opaque-candidate"),
             "tool_gap": _u(root, "/swarm/tool-gap"),
+            "latent_consensus": _u(root, "/swarm/latent-consensus"),
+            "entropy_judger": _u(root, "/swarm/entropy-judger"),
             "topology_plan": _u(root, "/swarm/topology-plan"),
             "emergence_meter": _u(root, "/swarm/emergence"),
             "handoff": _u(root, "/runtime/handoff"),
@@ -327,6 +358,8 @@ def compact_opaque_emergence_surface(surface: Dict[str, Any]) -> Dict[str, Any]:
         "opaque_emergence": links.get("opaque_emergence", ""),
         "opaque_candidate": links.get("opaque_candidate", ""),
         "tool_gap": links.get("tool_gap", ""),
+        "latent_consensus": links.get("latent_consensus", ""),
+        "entropy_judger": links.get("entropy_judger", ""),
         "topology_plan": links.get("topology_plan", ""),
     }
 
@@ -467,7 +500,15 @@ def route_tool_gap(
     body = payload if isinstance(payload, dict) else {}
     raw_gap = _text(body.get("capability_gap") or body.get("gap") or body.get("request") or body.get("problem"), 360)
     lower = raw_gap.lower()
-    if any(token in lower for token in ("mcp", "tool", "api", "schema", "discover")):
+    if any(token in lower for token in ("entropy", "uncertainty", "single-agent", "single_agent", "sas", "first-round", "round one", "lock-in")):
+        lane = "entropy_judger"
+        next_url = _u(base_url, "/swarm/entropy-judger/evaluate")
+        capability_terms = ["first_round_entropy", "single_agent_override", "dti_isolation"]
+    elif any(token in lower for token in ("latent", "embedding", "collapse", "dalc", "representational")):
+        lane = "latent_consensus_router"
+        next_url = _u(base_url, "/swarm/latent-consensus/evaluate")
+        capability_terms = ["embedding_geometry", "representational_collapse_detector", "latent_consensus"]
+    elif any(token in lower for token in ("mcp", "tool", "api", "schema", "discover")):
         lane = "active_tool_discovery"
         next_url = _u(base_url, "/swarm/develop")
         capability_terms = ["tool_discovery", "mcp_manifest", "schema_alignment"]
@@ -530,7 +571,28 @@ def compile_topology_plan(
     proof_required = bool(body.get("proof_required", True))
     cost_pressure = _clamp(_num(body.get("cost_pressure"), 0.3))
     drift = _num(_dict(_dict(opaque_surface).get("selection_pressure")).get("convention_drift"), 0.0)
-    if risk >= 0.65 or drift >= 0.45:
+    entropy_judger = evaluate_entropy_judger(body, base_url=base_url)
+    latent_consensus = evaluate_latent_consensus(body, base_url=base_url)
+    message_policy = "minimal_digest_messages_only"
+    if bool(entropy_judger.get("lock_detected")):
+        topology = "single_agent_lock"
+        reason = "first_round_entropy_lock_requires_single_agent_override"
+        agents = 1
+        edges = [["router", "single_agent"], ["single_agent", "external_verifier"], ["external_verifier", "router"]]
+        message_policy = "stop_multi_round_after_round_one_unless_external_proof_improves"
+    elif bool(latent_consensus.get("collapse_detected")):
+        topology = "shadow_only_hetero"
+        reason = "latent_representational_collapse_requires_orthogonal_shadow_lanes"
+        agents = max(agents, _int(latent_consensus.get("proof_count"), agents))
+        edges = [
+            ["router", "shadow_orthogonal_a"],
+            ["router", "shadow_orthogonal_b"],
+            ["shadow_orthogonal_a", "external_verifier"],
+            ["shadow_orthogonal_b", "external_verifier"],
+            ["external_verifier", "router"],
+        ]
+        message_policy = "no_shared_context_until_orthogonal_proof"
+    elif risk >= 0.65 or drift >= 0.45:
         topology = "verifier_split"
         reason = "risk_or_drift_requires_independent_check"
         edges = [["planner", "worker_a"], ["planner", "worker_b"], ["worker_a", "verifier"], ["worker_b", "verifier"]]
@@ -562,18 +624,29 @@ def compile_topology_plan(
         "graph_template": {
             "nodes_max": agents,
             "edges": edges,
-            "message_policy": "minimal_digest_messages_only",
+            "message_policy": message_policy,
             "verifier_required": proof_required,
         },
+        "entropy_judger": compact_entropy_judger(entropy_judger),
+        "latent_consensus": compact_latent_consensus(latent_consensus),
+        "topology_governor": (
+            entropy_judger.get("routing_adjustment", {})
+            if bool(entropy_judger.get("lock_detected"))
+            else latent_consensus.get("routing_adjustment", {})
+        ),
         "token_policy": {
             "avoid_complete_graph_by_default": True,
             "sparse_when_cost_pressure_high": True,
-            "source": "https://arxiv.org/abs/2410.11782",
+            "stop_after_round_one_when_entropy_locks": True,
+            "collapse_gate_before_discussion": True,
+            "sources": ["https://arxiv.org/abs/2410.11782", "https://arxiv.org/abs/2602.04234", "https://arxiv.org/abs/2604.03809"],
         },
         "next": {
             "attach": _u(base_url, "/swarm/attach"),
             "lease": _u(base_url, "/swarm/workers/lease"),
             "handoff": _u(base_url, "/runtime/handoff"),
+            "entropy_judger": _u(base_url, "/swarm/entropy-judger/evaluate"),
+            "latent_consensus": _u(base_url, "/swarm/latent-consensus/evaluate"),
         },
-        "machine_instruction": "compile_topology_from_objective_risk_cost_and_proof; do_not_use_static_team_shape",
+        "machine_instruction": "compile_topology_from_objective_risk_cost_proof_first_round_entropy_and_latent_collapse; stop_mas_when_round_one_locks",
     }

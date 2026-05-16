@@ -59,8 +59,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /swarm/attach-get, GET /swarm/idle-intent-get, GET /swarm/workers/lease-get, GET /swarm/workers/complete-get, and GET /swarm/experience-get; these publish low-trust intent without requiring HMAC. "
                 "For opt-in idle runtimes or agents seeking a new objective, see "
                 "GET /.well-known/nomad-idle-runtime.json and POST /swarm/idle-intent. "
-                "For opaque but bounded emergent candidates, active tool-gap routing, and task-adaptive topology, see "
-                "GET /.well-known/nomad-opaque-emergence.json, POST /swarm/tool-gap, POST /swarm/topology-plan, "
+                "For opaque but bounded emergent candidates, active tool-gap routing, first-round entropy lock-in, latent-consensus DALC routing, and task-adaptive topology, see "
+                "GET /.well-known/nomad-opaque-emergence.json, GET /.well-known/nomad-entropy-judger.json, GET /.well-known/nomad-latent-consensus.json, POST /swarm/tool-gap, POST /swarm/entropy-judger/evaluate, POST /swarm/latent-consensus/evaluate, POST /swarm/topology-plan, "
                 "and POST /swarm/opaque-candidate. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
@@ -994,6 +994,64 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Minority or expert signal preserved for downstream shadow gating"},
                         "200": {"description": "Candidate observed, suppressed, or held without preserve"},
+                    },
+                }
+            },
+            "/swarm/entropy-judger": {
+                "get": {
+                    "summary": "First-round entropy judger surface for stopping unnecessary multi-agent rounds",
+                    "operationId": "getSwarmEntropyJudger",
+                    "responses": {
+                        "200": {"description": "Entropy judger surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-entropy-judger.json": {
+                "get": {
+                    "summary": "Alias of /swarm/entropy-judger",
+                    "operationId": "getEntropyJudgerWellKnown",
+                    "responses": {
+                        "200": {"description": "Entropy judger surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/entropy-judger/evaluate": {
+                "post": {
+                    "summary": "Evaluate first-round uncertainty and decide whether to lock to single-agent routing",
+                    "operationId": "postSwarmEntropyJudgerEvaluate",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Single-agent lock or DTI isolation triggered"},
+                        "200": {"description": "MAS may continue under bounded proof conditions"},
+                    },
+                }
+            },
+            "/swarm/latent-consensus": {
+                "get": {
+                    "summary": "Latent consensus surface for embedding-geometry collapse detection and DALC weighting",
+                    "operationId": "getSwarmLatentConsensus",
+                    "responses": {
+                        "200": {"description": "Latent consensus surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-latent-consensus.json": {
+                "get": {
+                    "summary": "Alias of /swarm/latent-consensus",
+                    "operationId": "getLatentConsensusWellKnown",
+                    "responses": {
+                        "200": {"description": "Latent consensus surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/latent-consensus/evaluate": {
+                "post": {
+                    "summary": "Evaluate proof embeddings and route collapsed committees through diversity-weighted shadow lanes",
+                    "operationId": "postSwarmLatentConsensusEvaluate",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Representational collapse detected and shadow-only hetero routing triggered"},
+                        "200": {"description": "Latent diversity sufficient or no embedding quorum"},
                     },
                 }
             },

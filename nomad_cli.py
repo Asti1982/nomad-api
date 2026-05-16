@@ -1686,6 +1686,10 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("decoupling-field is handled directly in run_once")
     if command == "anti-consensus":
         raise ValueError("anti-consensus is handled directly in run_once")
+    if command == "entropy-judger":
+        raise ValueError("entropy-judger is handled directly in run_once")
+    if command == "latent-consensus":
+        raise ValueError("latent-consensus is handled directly in run_once")
     if command == "deficit-integration":
         raise ValueError("deficit-integration is handled directly in run_once")
     if command == "effective-channels":
@@ -2704,6 +2708,74 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                         reservoir_surface=reservoir,
                         persist=not bool(getattr(args, "dry_run", False)),
                     )
+        elif args.command == "entropy-judger":
+            from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_judger
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            action = str(getattr(args, "entropy_action", "surface") or "surface")
+            if action == "surface":
+                result = build_entropy_judger_surface(base_url=base)
+            else:
+                raw_json = str(getattr(args, "proofs_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "cli_entropy_lock",
+                        "task_type": str(getattr(args, "task_type", "") or "").strip() or "general",
+                        "round_count": int(getattr(args, "round_count", 3) or 3),
+                        "single_agent_quality": float(getattr(args, "single_agent_quality", 0.86) or 0.0),
+                        "mas_quality": float(getattr(args, "mas_quality", 0.78) or 0.0),
+                        "first_round_proofs": [
+                            {"proof_id": "single-agent", "mode": "single", "entropy": 0.68, "proof_digest": "sha256:cli-sas"},
+                            {"proof_id": "mas-a", "mode": "multi", "entropy": 0.74, "proof_digest": "sha256:cli-mas-a"},
+                            {"proof_id": "mas-b", "mode": "multi", "entropy": 0.72, "proof_digest": "sha256:cli-mas-b"},
+                        ],
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.entropy_judger_cli_error.v1",
+                        "error": "invalid_proofs_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "proofs_json_not_object",
+                    }
+                else:
+                    result = evaluate_entropy_judger(payload, base_url=base)
+        elif args.command == "latent-consensus":
+            from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            action = str(getattr(args, "latent_action", "surface") or "surface")
+            if action == "surface":
+                result = build_latent_consensus_surface(base_url=base)
+            else:
+                raw_json = str(getattr(args, "proofs_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "objective": str(getattr(args, "objective", "") or "").strip() or "cli_latent_collapse",
+                        "proofs": [
+                            {"proof_id": "a", "proof_embedding": [1.0, 0.0, 0.0], "proof_digest": "sha256:cli-a"},
+                            {"proof_id": "b", "proof_embedding": [0.999, 0.001, 0.0], "proof_digest": "sha256:cli-b"},
+                            {"proof_id": "c", "proof_embedding": [0.998, 0.002, 0.0], "proof_digest": "sha256:cli-c"},
+                        ],
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.latent_consensus_cli_error.v1",
+                        "error": "invalid_proofs_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "proofs_json_not_object",
+                    }
+                else:
+                    result = evaluate_latent_consensus(payload, base_url=base)
         elif args.command == "deficit-integration":
             from nomad_api import NomadApiHandler
             from nomad_deficit_integration_gate import evaluate_deficit_integration_event
@@ -3957,6 +4029,38 @@ def build_parser() -> argparse.ArgumentParser:
     anti_consensus.add_argument("--crowd-score", type=float, default=0.44, help="Crowd score.")
     anti_consensus.add_argument("--risk-score", type=float, default=0.06, help="Bounded risk score.")
     anti_consensus.add_argument("--dry-run", action="store_true", help="Evaluate without appending the anti-consensus ledger.")
+    entropy_judger = subparsers.add_parser(
+        "entropy-judger",
+        help="Stop unnecessary multi-agent rounds when first-round entropy locks the better single-agent path.",
+    )
+    entropy_judger.add_argument(
+        "entropy_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    entropy_judger.add_argument("--base-url", default="", help="Override public base URL for links.")
+    entropy_judger.add_argument("--proofs-json", default="", help="Full JSON entropy payload.")
+    entropy_judger.add_argument("--objective", default="", help="Objective for generated CLI entropy payload.")
+    entropy_judger.add_argument("--task-type", default="", help="Task type for generated CLI entropy payload.")
+    entropy_judger.add_argument("--round-count", type=int, default=3, help="Observed or planned MAS round count.")
+    entropy_judger.add_argument("--single-agent-quality", type=float, default=0.86, help="Single-agent quality proxy.")
+    entropy_judger.add_argument("--mas-quality", type=float, default=0.78, help="Multi-agent quality proxy.")
+    latent_consensus = subparsers.add_parser(
+        "latent-consensus",
+        help="Measure proof-embedding geometry and replace collapsed majority voting with DALC weights.",
+    )
+    latent_consensus.add_argument(
+        "latent_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    latent_consensus.add_argument("--base-url", default="", help="Override public base URL for links.")
+    latent_consensus.add_argument("--proofs-json", default="", help="Full JSON latent-consensus payload.")
+    latent_consensus.add_argument("--objective", default="", help="Objective for generated CLI latent-consensus payload.")
     deficit_integration = subparsers.add_parser(
         "deficit-integration",
         help="Integrate isolated agent lanes only when coordination expansion outruns consolidation.",
