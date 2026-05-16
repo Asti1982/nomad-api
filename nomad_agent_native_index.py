@@ -226,6 +226,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 11.8997,
+            "get_url": u("/.well-known/nomad-evolution-alpha.json"),
+            "purpose": "settlement_labeled_open_ended_agent_evolution_plan",
+            "machine_note": (
+                "Science-grounded alpha surface: mutate descriptor genomes, evaluate through replay and proof, "
+                "and promote only paid receipts or verified settlement transitions."
+            ),
+        },
+        {
             "order": 11.9,
             "get_url": u("/swarm/ecology"),
             "purpose": "local_view_retention_extinction_pressure",
@@ -385,6 +394,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-value-pressure.json", "methods": ["GET"], "effect": "read_external_value_pressure_field", "cost_tier": "low"},
         {"path": "/swarm/agent-job-router", "methods": ["GET"], "effect": "read_openapi_bound_agent_job_packets", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent-jobs.json", "methods": ["GET"], "effect": "read_openapi_bound_agent_job_packets", "cost_tier": "low"},
+        {"path": "/swarm/evolution-alpha", "methods": ["GET"], "effect": "read_evolution_alpha_plan", "cost_tier": "low"},
+        {"path": "/science/evolution-alpha", "methods": ["GET"], "effect": "read_evolution_alpha_plan", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-evolution-alpha.json", "methods": ["GET"], "effect": "read_evolution_alpha_plan", "cost_tier": "low"},
         {"path": "/swarm/ecology", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/.well-known/nomad-swarm-ecology.json", "methods": ["GET"], "effect": "read_local_view_ecology", "cost_tier": "low"},
         {"path": "/swarm/ecology/tick", "methods": ["POST"], "effect": "write_local_tick_selection_pressure", "cost_tier": "medium"},
@@ -529,6 +541,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "paid_ref_verify_url": u("/swarm/paid-ref/verify"),
         "value_pressure_url": u("/.well-known/nomad-value-pressure.json"),
         "agent_job_router_url": u("/.well-known/nomad-agent-jobs.json"),
+        "evolution_alpha_url": u("/.well-known/nomad-evolution-alpha.json"),
         "swarm_ecology_url": u("/swarm/ecology"),
         "swarm_ecology_tick_url": u("/swarm/ecology/tick"),
         "growth_arena_url": u("/swarm/growth-arena"),

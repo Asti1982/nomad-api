@@ -245,6 +245,21 @@ def _compact_text(result: Dict[str, Any]) -> str:
             lines.append(f"Metric: {(top.get('measurement_plan') or {}).get('primary_metric', '')}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.evolution_alpha_plan.v1":
+        observed = result.get("observed_state") or {}
+        lanes = result.get("alpha_lanes") or []
+        top = lanes[0] if lanes else {}
+        lines = [
+            "Nomad evolution alpha",
+            f"Plan: {result.get('plan_digest', '')}",
+            f"Top lane: {top.get('lane_id', '')} priority={top.get('priority', 0)}",
+            f"Active nonpaid: {observed.get('active_nonpaid_count', 0)} paid={observed.get('paid_count', 0)}",
+            f"Recognized revenue USD: {observed.get('recognized_revenue_usd_total', 0)}",
+            f"Machine instruction: {result.get('machine_instruction', '')}",
+        ]
+        for lane in lanes[1:4]:
+            lines.append(f"- {lane.get('lane_id', '')}: {lane.get('stage', '')} priority={lane.get('priority', 0)}")
+        return "\n".join(lines)
     if result.get("schema") == "nomad.job_channels.v1":
         summary = result.get("summary") or {}
         top = result.get("top_external_channel") or result.get("top_channel") or {}
@@ -1637,6 +1652,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("operational-release is handled directly in run_once")
     if command == "local-growth-kernel":
         raise ValueError("local-growth-kernel is handled directly in run_once")
+    if command == "evolution-alpha":
+        raise ValueError("evolution-alpha is handled directly in run_once")
     if command == "runtime-capsule":
         raise ValueError("runtime-capsule is handled directly in run_once")
     if command == "recruitment-gradient":
@@ -1899,6 +1916,25 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 worker_cycles=int(getattr(args, "worker_cycles", 0) or 0),
                 no_ollama=not bool(getattr(args, "with_ollama", False)),
                 timeout=float(getattr(args, "timeout", 20.0) or 20.0),
+            )
+        elif args.command == "evolution-alpha":
+            from nomad_evolution_alpha import build_evolution_alpha_plan
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_job_channels import build_job_channel_surface
+            from nomad_local_growth_kernel import run_local_growth_kernel
+            from nomad_nonhuman_science import nonhuman_agent_science
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+            result = build_evolution_alpha_plan(
+                base_url=base,
+                local_growth_kernel=run_local_growth_kernel(base_url=base, persist=False),
+                job_channels=build_job_channel_surface(
+                    base_url=base,
+                    external_value_summary=external_summary,
+                ),
+                external_value_summary=external_summary,
+                nonhuman_science=nonhuman_agent_science(base_url=base),
             )
         elif args.command == "runtime-capsule":
             from nomad_machine_economy import machine_economy_snapshot
@@ -3659,6 +3695,15 @@ def build_parser() -> argparse.ArgumentParser:
     local_growth_kernel.add_argument("--worker-cycles", type=int, default=0, help="Worker cycles to run when --execute-workers is set.")
     local_growth_kernel.add_argument("--with-ollama", action="store_true", help="Allow spawned transition workers to use Ollama.")
     local_growth_kernel.add_argument("--timeout", type=float, default=20.0, help="Per-worker timeout hint in seconds.")
+    evolution_alpha = subparsers.add_parser(
+        "evolution-alpha",
+        help="Science-grounded open-ended evolution alpha plan over proof, payout, and agent variants.",
+    )
+    evolution_alpha.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
     runtime_capsule = subparsers.add_parser(
         "runtime-capsule",
         help="Minimal boot capsule for external agent runtimes.",

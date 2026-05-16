@@ -61,6 +61,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("nomad-paid-ref-market" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-paid-ref-selfplay" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-agent-jobs" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-evolution-alpha" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/ecology" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/swarm/growth-arena" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-idle-runtime" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -130,6 +131,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/swarm/paid-ref/verify" in routes
     assert "/swarm/agent-job-router" in routes
     assert "/.well-known/nomad-agent-jobs.json" in routes
+    assert "/swarm/evolution-alpha" in routes
+    assert "/science/evolution-alpha" in routes
+    assert "/.well-known/nomad-evolution-alpha.json" in routes
     assert "/swarm/ecology" in routes
     assert "/.well-known/nomad-swarm-ecology.json" in routes
     assert "/swarm/ecology/tick" in routes
@@ -194,6 +198,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert (out.get("paid_ref_quote_url") or "").endswith("/swarm/paid-ref/quote")
     assert (out.get("paid_ref_verify_url") or "").endswith("/swarm/paid-ref/verify")
     assert (out.get("agent_job_router_url") or "").endswith("/.well-known/nomad-agent-jobs.json")
+    assert (out.get("evolution_alpha_url") or "").endswith("/.well-known/nomad-evolution-alpha.json")
     assert (out.get("swarm_ecology_url") or "").endswith("/swarm/ecology")
     assert (out.get("swarm_ecology_tick_url") or "").endswith("/swarm/ecology/tick")
     assert (out.get("growth_arena_url") or "").endswith("/swarm/growth-arena")
@@ -245,6 +250,9 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "paid_ref_verify_post" in eps
     assert "agent_job_router_get" in eps
     assert "agent_job_router_alias_get" in eps
+    assert "evolution_alpha_get" in eps
+    assert "evolution_alpha_alias_get" in eps
+    assert "evolution_alpha_science_alias_get" in eps
     assert "work_mesh_seed_post" in eps
     assert "synergy_lite_get" in eps
     assert "state_status_get" in eps
