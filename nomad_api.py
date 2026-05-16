@@ -168,6 +168,11 @@ else:
     PORT = int(os.getenv("NOMAD_API_PORT") or os.getenv("PORT") or "8787")
 ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT / "public"
+HANDYORACLE_APK_NAME = "handyoracle-edge-gadget.apk"
+HANDYORACLE_APK_RELEASE_URL = (
+    "https://github.com/Asti1982/handyoracle/releases/download/"
+    "v0.1.1-foreground-shake/handyoracle-edge-gadget.apk"
+)
 NOMAD_PROCESS_START = time.time()
 
 
@@ -5635,6 +5640,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _public_download_file_response(self, path: Path, status: int = 200) -> None:
+        if path.name == HANDYORACLE_APK_NAME:
+            self.send_response(302)
+            self.send_header("Location", HANDYORACLE_APK_RELEASE_URL)
+            self._send_common_headers()
+            self.send_header("Content-Disposition", f'attachment; filename="{HANDYORACLE_APK_NAME}"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if (not path.exists() or not path.is_file()) and path.name == "install_nomad_transition_worker.bat":
             body = (
                 "@echo off\r\n"

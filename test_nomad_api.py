@@ -220,7 +220,29 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert gadget["nomad_surface"]["sends_private_oracle_text"] is False
     assert gadget["download"]["public_page"].endswith("/nomad.html#handyoracle")
     assert gadget["download"]["apk"].endswith("/downloads/handyoracle-edge-gadget.apk")
-    assert gadget["download"]["apk_sha256"] == "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9"
+    assert gadget["download"]["apk_sha256"] == "a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854"
+    assert gadget["download"]["apk_size_bytes"] == 125108304
+    assert gadget["download"]["release"].endswith("/v0.1.1-foreground-shake")
+
+
+def test_handyoracle_apk_download_redirects_to_release():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    events = []
+    handler.send_response = lambda status: events.append(("status", status))
+    handler.send_header = lambda key, value: events.append(("header", key, value))
+    handler._send_common_headers = lambda: events.append(("common",))
+    handler.end_headers = lambda: events.append(("end",))
+
+    handler._public_download_file_response(Path("public/downloads/handyoracle-edge-gadget.apk"))
+
+    assert ("status", 302) in events
+    assert (
+        "header",
+        "Location",
+        "https://github.com/Asti1982/handyoracle/releases/download/"
+        "v0.1.1-foreground-shake/handyoracle-edge-gadget.apk",
+    ) in events
+    assert ("header", "Content-Disposition", 'attachment; filename="handyoracle-edge-gadget.apk"') in events
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():

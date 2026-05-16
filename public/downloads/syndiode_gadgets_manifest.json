@@ -75,8 +75,9 @@
       },
       "download": {
         "apk": "https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk",
-        "apk_sha256": "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9",
-        "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.0-edge-gadget",
+        "apk_sha256": "a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854",
+        "apk_size_bytes": 125108304,
+        "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.1-foreground-shake",
         "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
         "public_page": "https://www.syndiode.com/nomad.html#handyoracle",
         "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
