@@ -88,7 +88,8 @@ def test_nomad_public_html_page_exists():
     assert "Syndiode Gadgets" in text
     assert "Sales Department Swarm" in text
     assert "HandyOracle" in text
-    assert "v0.1.0-edge-gadget" in text
+    assert "HandyOracle Android" in text
+    assert "foreground-only" in text
     assert "/downloads/syndiode_gadgets_manifest.json" in text
     assert "/downloads/handyoracle-edge-gadget.apk" in text
     assert "Transition Worker" in text
@@ -213,9 +214,11 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert pin["light_ai"]["stripe_subscription_required"] is False
     gadget = next(item for item in manifest["gadgets"] if item["id"] == "handyoracle_android_edge")
     assert gadget["id"] == "handyoracle_android_edge"
-    assert gadget["version"] == "0.1.0-edge-gadget"
+    assert gadget["version"] == "0.1.1-foreground-shake"
     assert gadget["human_surface"]["private_by_default"] is True
+    assert gadget["human_surface"]["shake_policy"] == "foreground_only"
     assert gadget["nomad_surface"]["sends_private_oracle_text"] is False
+    assert gadget["download"]["public_page"].endswith("/nomad.html#handyoracle")
     assert gadget["download"]["apk"].endswith("/downloads/handyoracle-edge-gadget.apk")
     assert gadget["download"]["apk_sha256"] == "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9"
 

@@ -1,6 +1,6 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
-  "generated_at": "2026-05-15T00:00:00+02:00",
+  "generated_at": "2026-05-16T00:00:00+02:00",
   "base_url": "https://www.syndiode.com",
   "gadgets": [
     {
@@ -49,7 +49,7 @@
     {
       "id": "handyoracle_android_edge",
       "name": "HandyOracle",
-      "version": "0.1.0-edge-gadget",
+      "version": "0.1.1-foreground-shake",
       "kind": [
         "ok_message_oracle",
         "android_edge_node",
@@ -58,7 +58,9 @@
       "human_surface": {
         "summary": "A small Android OK-message oracle gadget.",
         "private_by_default": true,
-        "private_data_boundary": "oracle text and raw phone context stay on device"
+        "private_data_boundary": "oracle text and raw phone context stay on device",
+        "shake_policy": "foreground_only",
+        "visible_status": "top_right_active_agent_or_worker_count"
       },
       "nomad_surface": {
         "summary": "Background Android edge node for public Syndiode/Nomad contracts.",
@@ -76,11 +78,16 @@
         "apk_sha256": "e95fa195078489ae3bf65617d845d6d870fff3cebfb81672132e6b6327caa7d9",
         "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.0-edge-gadget",
         "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
-        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json"
+        "public_page": "https://www.syndiode.com/nomad.html#handyoracle",
+        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
+        "primary_cta": "Download APK",
+        "fallback_cta": "Latest GitHub release"
       },
       "installation_notes": [
-        "Install the APK on an Android phone.",
-        "Android may ask to allow installation from this source.",
+        "Tap Download APK from https://www.syndiode.com/nomad.html#handyoracle on the Android phone.",
+        "Open the downloaded file; Android may ask to allow installation from this source.",
+        "Start HandyOracle and keep it in the foreground before shaking.",
+        "The top-right badge shows active Nomad agents or workers.",
         "The app can run without a bundled model through its fallback oracle path.",
         "The Nomad edge worker is secondary to the user experience and does not receive private oracle text."
       ]

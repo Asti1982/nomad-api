@@ -1315,7 +1315,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
 
-        if parsed.path in {"/.well-known/syndiode-gadgets.json", "/gadgets/manifest"}:
+        if parsed.path in {"/.well-known/syndiode-gadgets.json", "/gadgets/manifest", "/gadgets.json"}:
             self._public_download_file_response(PUBLIC_DIR / "downloads" / "syndiode_gadgets_manifest.json")
             return
 
@@ -5706,7 +5706,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                         "GET /downloads/syndiode_gadgets_manifest.json for Syndiode Gadget installs.",
-                        "GET /downloads/handyoracle-edge-gadget.apk for the Android Syndiode Gadget.",
+                        "GET /downloads/handyoracle-edge-gadget.apk for HandyOracle Android (falls back to the latest GitHub release when the APK mirror is not published).",
                     ],
                 ),
                 status=404,

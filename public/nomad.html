@@ -701,9 +701,9 @@
           </article>
           <article class="worker-step">
             <span class="eyebrow">02 / oracle</span>
-            <h3>OK-message oracle</h3>
-            <p>Shake or tap, receive a compact reassuring message, and keep the private oracle loop on the phone.</p>
-            <code>foreground: HandyOracle</code>
+            <h3>HandyOracle Android</h3>
+            <p>Install the APK, open HandyOracle, and shake once for a compact reassuring signal. Shake input is foreground-only, and the top-right badge shows active Nomad agents or workers.</p>
+            <code>foreground-only: HandyOracle</code>
           </article>
           <article class="worker-step">
             <span class="eyebrow">03 / edge</span>
@@ -714,13 +714,13 @@
         </div>
         <div class="worker-actions" aria-label="Syndiode Gadget actions">
           <a class="button primary" href="https://syndiode.de/pin">SyndiodePin exchange</a>
-          <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk">Download Android APK v0.1.0-edge-gadget</a>
+          <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk" download>Download HandyOracle APK</a>
           <a class="button" href="https://github.com/Asti1982/handyoracle/releases/latest">Latest release</a>
           <a class="button" href="/downloads/syndiode_gadgets_manifest.json">Gadget manifest</a>
           <a class="button" href="/.well-known/syndiode-gadgets.json">Agent manifest</a>
         </div>
         <p class="worker-note">
-          The public boundary is simple: people get the gadget; Nomad gets only opt-in node signals. Pin distribution is selective and tied to active swarm contribution, not an automatic shop promise.
+          Android install path: tap Download HandyOracle APK, open the downloaded file, allow installation from this source if Android asks, then start the app before shaking. If the direct APK mirror is not yet published, use Latest release. The public boundary is simple: people get the gadget; Nomad gets only opt-in node signals.
         </p>
         <script type="application/ld+json">
         {
@@ -730,8 +730,8 @@
           "applicationCategory": "LifestyleApplication",
           "operatingSystem": "Android",
           "downloadUrl": "https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk",
-          "softwareVersion": "0.1.0-edge-gadget",
-          "description": "Syndiode Gadget with foreground OK-message oracle and background Nomad Android edge node."
+          "softwareVersion": "0.1.1-foreground-shake",
+          "description": "Syndiode Gadget with foreground-only OK-message oracle and Nomad Android edge worker status."
         }
         </script>
       </section>
