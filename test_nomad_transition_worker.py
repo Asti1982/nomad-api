@@ -38,6 +38,19 @@ def test_transition_worker_has_emergence_release_objective():
     assert "emergence_release_probe" in worker.META_OBJECTIVES
 
 
+def test_transition_worker_has_autogenesis_protocol_evolution_objective():
+    worker = _load_worker()
+
+    objective = worker.MACHINE_OBJECTIVES["autogenesis_protocol_evolution"]
+
+    assert objective["pain_type"] == "agent_protocols"
+    assert "rspl_resource_probe" in objective["capabilities"]
+    assert "sepl_operator_trace" in objective["capabilities"]
+    assert "learnability_mask" in objective["capabilities"]
+    assert "independent_verifier_receipt" in objective["capabilities"]
+    assert "autogenesis_protocol_evolution" in worker.META_OBJECTIVES
+
+
 def test_transition_worker_has_overmint_compressor_objective():
     worker = _load_worker()
 
@@ -608,3 +621,21 @@ def test_edge_launch_scripts_wire_no_ollama_profile():
     assert "start_nomad_edge_worker.ps1" in bat
     assert "start_nomad_edge_worker.ps1" in installer
     assert "--edge --no-ollama --swarm-surplus" in installer
+
+
+def test_agp_pair_launch_scripts_wire_codex_and_nomad_brain_modes():
+    root = Path(__file__).resolve().parent / "public" / "downloads"
+    ps1 = (root / "start_nomad_agp_pair.ps1").read_text(encoding="utf-8")
+    bat = (root / "start_nomad_agp_pair.bat").read_text(encoding="utf-8")
+    codex_bat = (root / "start_nomad_codex_agp_pair.bat").read_text(encoding="utf-8")
+    installer = (root / "install_nomad_transition_worker.bat").read_text(encoding="utf-8")
+
+    assert "autogenesis_protocol_evolution" in ps1
+    assert "--edge-with-ollama" in ps1
+    assert "--ollama-model" in ps1
+    assert "CodexProposer" in ps1
+    assert "nomad-agp-proposer-local" in bat
+    assert "nomad-agp-verifier-local" in bat
+    assert "NOMAD_AGP_CODEX_PROPOSER=1" in codex_bat
+    assert "start_nomad_agp_pair.ps1" in installer
+    assert "nomad_codex_agp_pair.bat" in installer

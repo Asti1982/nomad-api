@@ -24,6 +24,7 @@ DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECO
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
     "overmint_compressor": 0.2,
+    "autogenesis_protocol_evolution": 0.12,
     "protocol_drift_scan": 0.1,
     "emergence_release_probe": 0.1,
     "proof_pressure_engine": 0.08,

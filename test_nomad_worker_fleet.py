@@ -36,6 +36,7 @@ def test_worker_fleet_distributes_objective_leases(tmp_path):
     assert fleet["post_lease"].endswith("/swarm/workers/lease")
     assert "emergence_release_probe" in fleet["objective_targets"]
     assert "overmint_compressor" in fleet["objective_targets"]
+    assert "autogenesis_protocol_evolution" in fleet["objective_targets"]
 
 
 def test_worker_fleet_records_completion_and_stats(tmp_path):
@@ -175,6 +176,21 @@ def test_worker_fleet_prefers_emergence_release_when_next_gate_needs_peer_probe(
 
     assert lease["ok"] is True
     assert lease["objective"] == "emergence_release_probe"
+
+
+def test_worker_fleet_can_lease_autogenesis_protocol_evolution(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    lease = registry.worker_fleet_lease(
+        {
+            "agent_id": "agp-verifier-worker",
+            "known_objectives": ["autogenesis_protocol_evolution"],
+            "proposed_objective": "autogenesis_protocol_evolution",
+        },
+        base_url="https://nomad.example",
+    )
+
+    assert lease["ok"] is True
+    assert lease["objective"] == "autogenesis_protocol_evolution"
 
 
 def test_worker_fleet_routes_overmint_pressure_to_compressor(tmp_path):

@@ -54,6 +54,31 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "evidence": ["bootstrap", "mission", "well_known_probe", "openapi_probe", "local_note"],
         "prompt": "Return one protocol-drift check with machine-verifiable acceptance criteria for blocker: {blocker}",
     },
+    "autogenesis_protocol_evolution": {
+        "problem": "Produce AGP shadow-lane protocol-evolution evidence with RSPL/SEPL gates and verifier-ready receipts.",
+        "pain_type": "agent_protocols",
+        "capabilities": [
+            "autogenesis_protocol_evolution",
+            "rspl_resource_probe",
+            "sepl_operator_trace",
+            "learnability_mask",
+            "independent_verifier_receipt",
+            "proof_artifacts",
+        ],
+        "evidence": [
+            "bootstrap",
+            "mission",
+            "well_known_probe",
+            "openapi_probe",
+            "fleet_lease",
+            "local_note",
+        ],
+        "prompt": (
+            "Return one AGP protocol-evolution candidate boundary for blocker '{blocker}' with RSPL entity, "
+            "SEPL trace reflect/select/improve/evaluate/commit, learnability mask, proof digest, verifier "
+            "requirements, and rollback/noop condition. No executable code."
+        ),
+    },
     "latency_anomaly_hunt": {
         "problem": "Track latency anomalies on critical machine surfaces and emit bounded mitigation signals.",
         "pain_type": "compute_reliability",

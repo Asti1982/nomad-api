@@ -13,6 +13,9 @@ set WORKER1_PS1_URL=%BASE_URL%/downloads/start_nomad_worker1.ps1
 set WORKER1_BAT_URL=%BASE_URL%/downloads/start_nomad_worker1.bat
 set EDGE_PS1_URL=%BASE_URL%/downloads/start_nomad_edge_worker.ps1
 set EDGE_BAT_URL=%BASE_URL%/downloads/start_nomad_edge_worker.bat
+set AGP_PAIR_PS1_URL=%BASE_URL%/downloads/start_nomad_agp_pair.ps1
+set AGP_PAIR_BAT_URL=%BASE_URL%/downloads/start_nomad_agp_pair.bat
+set CODEX_AGP_PAIR_BAT_URL=%BASE_URL%/downloads/start_nomad_codex_agp_pair.bat
 set OLLAMA_BRIDGE_URL=%BASE_URL%/downloads/nomad_ollama_swarm_bridge.py
 set LOG_FILE=%INSTALL_DIR%\nomad_agent.log
 set WATCHDOG_PS1=%INSTALL_DIR%\start_nomad_transition_worker.ps1
@@ -33,6 +36,8 @@ set AGENT_ALIAS=%INSTALL_DIR%\nomad_agent.bat
 set AGENT_VISIBLE_ALIAS=%INSTALL_DIR%\nomad_agent_visible.bat
 set AGENT_STOP_ALIAS=%INSTALL_DIR%\nomad_agent_stop.bat
 set EDGE_ALIAS=%INSTALL_DIR%\nomad_edge_worker.bat
+set AGP_PAIR_ALIAS=%INSTALL_DIR%\nomad_agp_pair.bat
+set CODEX_AGP_PAIR_ALIAS=%INSTALL_DIR%\nomad_codex_agp_pair.bat
 set WORKER1_ALIAS=%INSTALL_DIR%\nomad_worker1.bat
 set OLLAMA_SWARM_ALIAS=%INSTALL_DIR%\nomad_ollama_swarm.bat
 
@@ -56,6 +61,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBa
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%WORKER1_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_worker1.bat'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EDGE_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_edge_worker.ps1'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%EDGE_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_edge_worker.bat'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%AGP_PAIR_PS1_URL%' -OutFile '%INSTALL_DIR%\start_nomad_agp_pair.ps1'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%AGP_PAIR_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_agp_pair.bat'" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%CODEX_AGP_PAIR_BAT_URL%' -OutFile '%INSTALL_DIR%\start_nomad_codex_agp_pair.bat'" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%OLLAMA_BRIDGE_URL%' -OutFile '%INSTALL_DIR%\nomad_ollama_swarm_bridge.py'" >nul 2>&1
 
 echo.
@@ -65,6 +73,7 @@ echo Installed to: %INSTALL_DIR%
 echo Preparing Nomad Agent launchers...
 call :write_aliases
 echo Starting Nomad Edge Worker (visible PowerShell + live JSON output, no Ollama/OpenClaw required)...
+echo Worker flags: --edge --no-ollama --swarm-surplus
 echo Log file: %LOG_FILE%
 rem Edge worker profile flags: --edge --no-ollama --swarm-surplus
 call :write_watchdog
@@ -73,6 +82,8 @@ start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "
 echo.
 echo Nomad Agent started.
 echo Edge launcher: %EDGE_ALIAS%
+echo AGP pair launcher: %AGP_PAIR_ALIAS%
+echo Codex+AGP launcher: %CODEX_AGP_PAIR_ALIAS%
 echo Visible launcher: %AGENT_VISIBLE_ALIAS%
 echo Background launcher: %AGENT_ALIAS%
 echo Worker 1 launcher: %WORKER1_ALIAS%
@@ -139,6 +150,20 @@ echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
 echo cd /d "%INSTALL_DIR%"
 echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%%BASE_URL%%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
 ) > "%EDGE_ALIAS%"
+(
+echo @echo off
+echo setlocal
+echo set BASE_URL=%%1
+echo if "%%BASE_URL%%"=="" set BASE_URL=%BASE_URL%
+echo cd /d "%INSTALL_DIR%"
+echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\start_nomad_agp_pair.ps1" -BaseUrl "%%BASE_URL%%" -Model "auto" -OllamaUrl "%OLLAMA_URL%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
+) > "%AGP_PAIR_ALIAS%"
+(
+echo @echo off
+echo setlocal
+echo set NOMAD_AGP_CODEX_PROPOSER=1
+echo call "%AGP_PAIR_ALIAS%" %%*
+) > "%CODEX_AGP_PAIR_ALIAS%"
 (
 echo @echo off
 echo setlocal
