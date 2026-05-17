@@ -209,7 +209,75 @@ def _looks_digest(value: str) -> bool:
     return bool(re.match(r"^(sha256|blake3):[a-f0-9][a-f0-9_.:-]{5,}$", text))
 
 
-def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
+def _canonical_verifier_payload(payload: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
+    verifier = _dict(payload.get("independent_verifier") or payload.get("verifier"))
+    resource = _dict(payload.get("resource") or payload.get("rspl_resource"))
+    return {
+        "schema": "nomad.agp_verifier_receipt.v1",
+        "proposer_agent_id": _clean_id(
+            payload.get("proposer_agent_id") or payload.get("agent_id") or payload.get("worker_id"),
+            fallback="",
+        ),
+        "verifier_agent_id": _clean_id(
+            payload.get("verifier_agent_id") or verifier.get("agent_id") or verifier.get("worker_id"),
+            fallback="",
+        ),
+        "verifier_lease_id": _text(payload.get("verifier_lease_id") or verifier.get("lease_id"), 160),
+        "candidate_type": _clean_id(payload.get("candidate_type") or payload.get("event_type") or payload.get("type"), fallback=""),
+        "resource": {
+            "resource_id": _clean_id(resource.get("resource_id") or payload.get("resource_id"), fallback=""),
+            "resource_kind": _clean_id(resource.get("resource_kind") or payload.get("resource_kind"), fallback=""),
+            "entity_type": _clean_entity_type(resource.get("entity_type") or payload.get("entity_type"), resource_kind=resource.get("resource_kind") or payload.get("resource_kind")),
+            "from_version": _text(resource.get("from_version") or payload.get("from_version"), 80),
+            "to_version": _text(resource.get("to_version") or payload.get("to_version") or payload.get("proposed_version"), 80),
+        },
+        "proof_digest": _text(payload.get("proof_digest") or payload.get("digest"), 220),
+        "test_digest": _text(payload.get("test_digest") or _dict(payload.get("evaluation")).get("test_digest"), 220),
+        "verifier_trace_digest": _text(
+            payload.get("verifier_trace_digest") or verifier.get("trace_digest") or verifier.get("verifier_trace_digest") or verifier.get("trace"),
+            220,
+        ),
+        "sepl_operator_trace": _items(payload.get("sepl_operator_trace") or payload.get("operator_trace") or payload.get("sepl_trace")),
+        "learnability_mask": payload.get("learnability_mask") if isinstance(payload.get("learnability_mask"), (dict, list)) else {},
+        "variable_lifting": payload.get("variable_lifting") or payload.get("variable_patches") or payload.get("variables") or {},
+        "boundedness": _dict(payload.get("boundedness")),
+        "rollback_ref": _text(payload.get("rollback_ref") or payload.get("noop_ref"), 220),
+        "evaluation": _dict(payload.get("evaluation")),
+        "verifier_evaluation": evaluation,
+    }
+
+
+def _canonical_verifier_receipt_digest(payload: dict[str, Any], evaluation: dict[str, Any]) -> str:
+    return f"sha256:{_digest(_canonical_verifier_payload(payload, evaluation), length=64)}"
+
+
+def _lease_match(
+    *,
+    verifier_id: str,
+    lease_id: str,
+    verifier_lease_index: dict[str, Any] | None,
+) -> tuple[bool | None, dict[str, Any], list[str]]:
+    if verifier_lease_index is None:
+        return None, {}, ["verifier_lease_index_unavailable"]
+    lease = _dict(verifier_lease_index.get(lease_id))
+    reasons: list[str] = []
+    if not lease:
+        reasons.append("verifier_lease_not_found")
+        return False, {}, reasons
+    lease_agent = _clean_id(lease.get("agent_id") or lease.get("worker_id"), fallback="")
+    if lease_agent != verifier_id:
+        reasons.append("verifier_lease_agent_mismatch")
+    status = _clean_id(lease.get("status"), fallback="")
+    if status not in {"active", "completed", "leased"}:
+        reasons.append("verifier_lease_not_active_or_completed")
+    return not reasons, lease, reasons
+
+
+def _independent_verifier_gate(
+    payload: dict[str, Any],
+    *,
+    verifier_lease_index: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     verifier = _dict(payload.get("independent_verifier") or payload.get("verifier"))
     proposer_id = _clean_id(
         payload.get("proposer_agent_id") or payload.get("agent_id") or payload.get("worker_id"),
@@ -235,6 +303,12 @@ def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
     )
     evaluation = _dict(payload.get("verifier_evaluation") or verifier.get("evaluation"))
     test_score = _test_score(evaluation)
+    expected_receipt_digest = _canonical_verifier_receipt_digest(payload, evaluation)
+    lease_ok, lease_record, lease_reasons = _lease_match(
+        verifier_id=verifier_id,
+        lease_id=lease_id,
+        verifier_lease_index=verifier_lease_index,
+    )
     reasons: list[str] = []
     if not proposer_id:
         reasons.append("proposer_agent_id_required")
@@ -246,10 +320,14 @@ def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
         reasons.append("verifier_lease_id_required")
     if not _looks_digest(receipt_digest):
         reasons.append("verifier_receipt_digest_required")
+    elif receipt_digest != expected_receipt_digest:
+        reasons.append("verifier_receipt_digest_mismatch")
     if not _looks_digest(trace_digest):
         reasons.append("verifier_trace_digest_required")
     if test_score <= 0.0:
         reasons.append("verifier_evaluation_required")
+    if lease_id:
+        reasons.extend(lease_reasons)
     accepted = not reasons
     return {
         "required": True,
@@ -258,8 +336,11 @@ def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "verifier_agent_id": verifier_id,
         "verifier_lease_id": lease_id,
         "verifier_receipt_digest": receipt_digest,
+        "expected_verifier_receipt_digest": expected_receipt_digest,
         "verifier_trace_digest": trace_digest,
         "verifier_test_score": test_score,
+        "verifier_lease_checked": verifier_lease_index is not None,
+        "verifier_lease_status": _text(lease_record.get("status"), 40),
         "reason_codes": reasons or ["independent_verifier_accepted"],
     }
 
@@ -661,6 +742,7 @@ def version_resource(
     *,
     base_url: str = "",
     substrate_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
@@ -683,7 +765,7 @@ def version_resource(
     target_state = _clean_state(body.get("target_state") or body.get("state") or "shadow")
     resource_kind = _clean_id(body.get("resource_kind") or "resource", fallback="resource")
     entity_type = _clean_entity_type(body.get("entity_type"), resource_kind=resource_kind)
-    verifier_gate = _independent_verifier_gate(body)
+    verifier_gate = _independent_verifier_gate(body, verifier_lease_index=verifier_lease_index)
     sepl_gate = _sepl_operator_trace_gate(body)
     learnability = _learnability_gate(body)
     verifier_evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation"))
@@ -837,6 +919,7 @@ def record_development_cycle_event(
     *,
     base_url: str = "",
     development_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
@@ -858,7 +941,7 @@ def record_development_cycle_event(
         event_type = event_type.replace("_", "-")
     resource = _dict(body.get("resource") or body.get("rspl_resource"))
     operator_patch = _dict(body.get("operator_patch") or body.get("sepl_operator_patch"))
-    verifier_gate = _independent_verifier_gate(body)
+    verifier_gate = _independent_verifier_gate(body, verifier_lease_index=verifier_lease_index)
     sepl_gate = _sepl_operator_trace_gate(body)
     learnability = _learnability_gate(body)
     verifier_evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation"))
@@ -1125,6 +1208,7 @@ def submit_autogenesis_shadow_candidate(
     base_url: str = "",
     autogenesis_surface: dict[str, Any] | None = None,
     development_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
@@ -1151,6 +1235,7 @@ def submit_autogenesis_shadow_candidate(
         event_payload,
         base_url=base_url,
         development_surface=development_surface,
+        verifier_lease_index=verifier_lease_index,
         ledger_path=ledger_path,
         persist=persist,
     )

@@ -3735,6 +3735,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     base_url=base,
                     autogenesis_surface=autogenesis,
                     development_surface=development,
+                    verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
                 )
                 self._json_response(result, status=202 if result.get("accepted") else 422)
                 return
@@ -3779,7 +3780,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/swarm/resource-substrate/version":
             base = self._base_url()
             substrate = self.__class__._build_resource_substrate(base_url=base)
-            result = version_resource(payload, base_url=base, substrate_surface=substrate)
+            result = version_resource(
+                payload,
+                base_url=base,
+                substrate_surface=substrate,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+            )
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
@@ -3841,6 +3847,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     payload,
                     base_url=base,
                     development_surface=development,
+                    verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
                 )
                 self._json_response(result, status=202 if result.get("accepted") else 422)
                 return
@@ -3859,7 +3866,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/swarm/variant-candidates":
             base = self._base_url()
             forge = self.__class__._build_variant_forge(base_url=base)
-            result = submit_variant_candidate(payload, base_url=base, forge_surface=forge)
+            result = submit_variant_candidate(
+                payload,
+                base_url=base,
+                forge_surface=forge,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+            )
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 

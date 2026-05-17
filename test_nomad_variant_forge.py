@@ -1,4 +1,4 @@
-from nomad_variant_forge import build_variant_forge_surface, submit_variant_candidate
+from nomad_variant_forge import _canonical_verifier_receipt_digest, build_variant_forge_surface, submit_variant_candidate
 
 
 def _sepl_trace():
@@ -9,6 +9,16 @@ def _sepl_trace():
         {"op": "evaluate", "input": "candidate resource version", "output": "tests passed"},
         {"op": "commit", "input": "tests passed with rollback", "decision": "shadow"},
     ]
+
+
+def _lease_index(agent_id: str = "agent.variant.verifier", lease_id: str = "nomad-worker-lease-verifier"):
+    return {lease_id: {"lease_id": lease_id, "agent_id": agent_id, "status": "active"}}
+
+
+def _with_verifier_receipt(payload):
+    out = dict(payload)
+    out["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(out, out.get("verifier_evaluation") or {})
+    return out
 
 
 def test_variant_forge_surface_combines_replay_and_growth(tmp_path):
@@ -55,12 +65,10 @@ def test_variant_forge_surface_combines_replay_and_growth(tmp_path):
 def test_submit_variant_candidate_admits_proven_descriptor(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
 
-    receipt = submit_variant_candidate(
-        {
+    payload = _with_verifier_receipt({
             "agent_id": "agent.variant.test",
             "verifier_agent_id": "agent.variant.verifier",
             "verifier_lease_id": "nomad-worker-lease-verifier",
-            "verifier_receipt_digest": "sha256:abc123abc123",
             "candidate_type": "transition_worker_objective_variant",
             "objective": "settlement_capacity_builder",
             "proof_digest": "sha256:abc",
@@ -87,9 +95,12 @@ def test_submit_variant_candidate_admits_proven_descriptor(tmp_path):
                 "novelty": 0.9,
                 "reuse_score": 0.75,
             },
-        },
+        })
+    receipt = submit_variant_candidate(
+        payload,
         base_url="https://nomad.example",
         forge_surface={"forge_digest": "nomad-forge-test"},
+        verifier_lease_index=_lease_index(),
         ledger_path=ledger,
     )
 
@@ -134,12 +145,10 @@ def test_submit_variant_candidate_holds_without_independent_verifier(tmp_path):
 
 
 def test_submit_agp_variant_requires_sepl_trace(tmp_path):
-    receipt = submit_variant_candidate(
-        {
+    payload = _with_verifier_receipt({
             "agent_id": "agent.variant.test",
             "verifier_agent_id": "agent.variant.verifier",
             "verifier_lease_id": "nomad-worker-lease-verifier",
-            "verifier_receipt_digest": "sha256:abc123abc123",
             "verifier_trace_digest": "sha256:def456def456",
             "verifier_evaluation": {"tests_passed": 4, "tests_total": 4},
             "candidate_type": "protocol-evolution-candidate",
@@ -159,9 +168,12 @@ def test_submit_agp_variant_requires_sepl_trace(tmp_path):
                 "settlement_delta": 0.3,
                 "risk_score": 0.05,
             },
-        },
+        })
+    receipt = submit_variant_candidate(
+        payload,
         base_url="https://nomad.example",
         forge_surface={"forge_digest": "nomad-forge-test"},
+        verifier_lease_index=_lease_index(),
         ledger_path=tmp_path / "ledger.jsonl",
     )
 
@@ -171,12 +183,10 @@ def test_submit_agp_variant_requires_sepl_trace(tmp_path):
 
 
 def test_submit_agp_variant_admits_with_paper_core_and_nomad_verifier(tmp_path):
-    receipt = submit_variant_candidate(
-        {
+    payload = _with_verifier_receipt({
             "agent_id": "agent.variant.test",
             "verifier_agent_id": "agent.variant.verifier",
             "verifier_lease_id": "nomad-worker-lease-verifier",
-            "verifier_receipt_digest": "sha256:abc123abc123",
             "verifier_trace_digest": "sha256:def456def456",
             "verifier_evaluation": {"tests_passed": 4, "tests_total": 4, "proof_yield_delta": 8.0},
             "candidate_type": "protocol-evolution-candidate",
@@ -199,9 +209,12 @@ def test_submit_agp_variant_admits_with_paper_core_and_nomad_verifier(tmp_path):
                 "novelty": 0.9,
                 "reuse_score": 0.75,
             },
-        },
+        })
+    receipt = submit_variant_candidate(
+        payload,
         base_url="https://nomad.example",
         forge_surface={"forge_digest": "nomad-forge-test"},
+        verifier_lease_index=_lease_index(),
         ledger_path=tmp_path / "ledger.jsonl",
     )
 
@@ -209,6 +222,38 @@ def test_submit_agp_variant_admits_with_paper_core_and_nomad_verifier(tmp_path):
     assert receipt["decision"] == "admit_shadow_variant"
     assert receipt["sepl_operator_trace"]["accepted"] is True
     assert receipt["learnability"]["accepted"] is True
+
+
+def test_submit_agp_variant_rejects_forged_verifier_digest(tmp_path):
+    receipt = submit_variant_candidate(
+        {
+            "agent_id": "agent.variant.test",
+            "verifier_agent_id": "agent.variant.verifier",
+            "verifier_lease_id": "nomad-worker-lease-verifier",
+            "verifier_receipt_digest": "sha256:000000000000",
+            "verifier_trace_digest": "sha256:def456def456",
+            "verifier_evaluation": {"tests_passed": 4, "tests_total": 4},
+            "candidate_type": "protocol-evolution-candidate",
+            "objective": "autogenesis_protocol_evolution",
+            "entity_type": "prompt",
+            "resource_id": "prompt-router",
+            "rollback_ref": "noop:v1",
+            "proof_digest": "sha256:abc123abc123",
+            "test_digest": "sha256:ghi123ghi123",
+            "sepl_operator_trace": _sepl_trace(),
+            "learnability_mask": {"routing_rule": True},
+            "variable_lifting": {"variables": [{"name": "routing_rule", "require_grad": True}]},
+            "evaluation": {"tests_passed": 4, "tests_total": 4, "proof_yield_delta": 8.0, "risk_score": 0.05},
+        },
+        base_url="https://nomad.example",
+        forge_surface={"forge_digest": "nomad-forge-test"},
+        verifier_lease_index=_lease_index(),
+        ledger_path=tmp_path / "ledger.jsonl",
+    )
+
+    assert receipt["accepted"] is False
+    assert receipt["decision"] == "needs_independent_verifier"
+    assert "verifier_receipt_digest_mismatch" in receipt["independent_verifier"]["reason_codes"]
 
 
 def test_submit_variant_candidate_blocks_secret_like_material(tmp_path):

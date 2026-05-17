@@ -358,6 +358,27 @@ def test_get_only_transition_worker_gets_get_only_coordination_chain(tmp_path: P
     assert any(rule["when"] == "agent_is_get_only_worker" for rule in board["routing_rules"])
 
 
+def test_worker_verifier_lease_index_exposes_real_leases(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+
+    lease = registry.worker_fleet_lease(
+        {
+            "agent_id": "agp.verifier",
+            "capabilities": ["verifier", "agp"],
+            "proposed_objective": "runtime_routing",
+            "lease_seconds": 120,
+        },
+        base_url="https://syndiode.com",
+    )
+
+    index = registry.worker_verifier_lease_index()
+    indexed = index[lease["lease_id"]]
+    assert indexed["lease_id"] == lease["lease_id"]
+    assert indexed["agent_id"] == "agp.verifier"
+    assert indexed["status"] == "active"
+    assert indexed["expires_at"]
+
+
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
     contract = registry.join_contract(base_url="https://syndiode.com")

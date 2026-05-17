@@ -1009,6 +1009,28 @@ class SwarmJoinRegistry:
             "updated_at": _iso_now(),
         }
 
+    def worker_verifier_lease_index(self) -> dict[str, Any]:
+        """Return canonical worker lease records for server-side verifier checks."""
+        self._prune_worker_fleet()
+        fleet = self._fleet()
+        out: dict[str, Any] = {}
+        for lease_id, lease in (fleet.get("leases") or {}).items():
+            if not isinstance(lease, dict):
+                continue
+            lid = str(lease.get("lease_id") or lease_id or "").strip()
+            if not lid:
+                continue
+            out[lid] = {
+                "lease_id": lid,
+                "agent_id": _clean_agent_id(lease.get("agent_id") or lease.get("worker_id") or ""),
+                "objective": _clean_agent_id(lease.get("objective") or ""),
+                "status": _clean_agent_id(lease.get("status") or ""),
+                "issued_at": lease.get("issued_at") or "",
+                "expires_at": lease.get("expires_at") or "",
+                "completed_at": lease.get("completed_at") or "",
+            }
+        return out
+
     def worker_fleet_lease(
         self,
         payload: dict[str, Any],

@@ -1,4 +1,5 @@
 from nomad_autogenesis import (
+    _canonical_verifier_receipt_digest,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
     build_development_cycles_surface,
@@ -24,10 +25,19 @@ def _independent_verifier():
     return {
         "verifier_agent_id": "agp.verifier",
         "verifier_lease_id": "nomad-worker-lease-verifier",
-        "verifier_receipt_digest": "sha256:abc123abc123",
         "verifier_trace_digest": "sha256:def456def456",
         "verifier_evaluation": {"tests_passed": 6, "tests_total": 6},
     }
+
+
+def _verifier_lease_index(agent_id: str = "agp.verifier", lease_id: str = "nomad-worker-lease-verifier"):
+    return {lease_id: {"lease_id": lease_id, "agent_id": agent_id, "status": "active"}}
+
+
+def _with_verifier_receipt(payload):
+    out = dict(payload)
+    out["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(out, out.get("verifier_evaluation") or {})
+    return out
 
 
 def _sepl_trace():
@@ -168,7 +178,7 @@ def test_development_cycle_event_and_shadow_candidate_emit_downstream_payloads(t
         resource_substrate=substrate,
         development_cycles=cycles,
     )
-    payload = {
+    payload = _with_verifier_receipt({
         "agent_id": "agp.worker",
         "candidate_type": "protocol-evolution-candidate",
         "resource": {
@@ -188,12 +198,13 @@ def test_development_cycle_event_and_shadow_candidate_emit_downstream_payloads(t
         "boundedness": _boundedness(),
         "evaluation": {"tests_passed": 6, "tests_total": 6, "proof_yield_delta": 1.2, "risk_score": 0.1},
         **_independent_verifier(),
-    }
+    })
 
     event = record_development_cycle_event(
         payload,
         base_url="https://nomad.example",
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(),
         ledger_path=cycle_ledger,
     )
     shadow = submit_autogenesis_shadow_candidate(
@@ -201,6 +212,7 @@ def test_development_cycle_event_and_shadow_candidate_emit_downstream_payloads(t
         base_url="https://nomad.example",
         autogenesis_surface=agp,
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(),
         ledger_path=cycle_ledger,
     )
 
@@ -225,11 +237,10 @@ def test_autogenesis_shadow_rejects_self_attested_verifier(tmp_path):
         resource_substrate=substrate,
         development_cycles=cycles,
     )
-    payload = {
+    payload = _with_verifier_receipt({
         "agent_id": "agp.worker",
         "verifier_agent_id": "agp.worker",
         "verifier_lease_id": "nomad-worker-lease-self",
-        "verifier_receipt_digest": "sha256:abc123abc123",
         "verifier_trace_digest": "sha256:def456def456",
         "verifier_evaluation": {"tests_passed": 6, "tests_total": 6},
         "candidate_type": "protocol-evolution-candidate",
@@ -242,12 +253,13 @@ def test_autogenesis_shadow_rejects_self_attested_verifier(tmp_path):
         "rollback_ref": "noop:v1",
         "boundedness": _boundedness(),
         "evaluation": {"tests_passed": 6, "tests_total": 6},
-    }
+    })
 
     event = record_development_cycle_event(
         payload,
         base_url="https://nomad.example",
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(agent_id="agp.worker", lease_id="nomad-worker-lease-self"),
         ledger_path=cycle_ledger,
     )
     shadow = submit_autogenesis_shadow_candidate(
@@ -255,6 +267,7 @@ def test_autogenesis_shadow_rejects_self_attested_verifier(tmp_path):
         base_url="https://nomad.example",
         autogenesis_surface=agp,
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(agent_id="agp.worker", lease_id="nomad-worker-lease-self"),
         ledger_path=cycle_ledger,
     )
 
@@ -267,7 +280,7 @@ def test_autogenesis_shadow_rejects_self_attested_verifier(tmp_path):
 def test_autogenesis_shadow_rejects_missing_sepl_trace(tmp_path):
     cycle_ledger = tmp_path / "cycles.jsonl"
     cycles = build_development_cycles_surface(base_url="https://nomad.example")
-    payload = {
+    payload = _with_verifier_receipt({
         "agent_id": "agp.worker",
         "candidate_type": "protocol-evolution-candidate",
         "resource": {"resource_id": "nomad-gradient", "resource_kind": "json_contract"},
@@ -278,12 +291,13 @@ def test_autogenesis_shadow_rejects_missing_sepl_trace(tmp_path):
         "boundedness": _boundedness(),
         "evaluation": {"tests_passed": 6, "tests_total": 6},
         **_independent_verifier(),
-    }
+    })
 
     event = record_development_cycle_event(
         payload,
         base_url="https://nomad.example",
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(),
         ledger_path=cycle_ledger,
     )
 
@@ -295,7 +309,7 @@ def test_autogenesis_shadow_rejects_missing_sepl_trace(tmp_path):
 def test_autogenesis_shadow_rejects_non_trainable_variable(tmp_path):
     cycle_ledger = tmp_path / "cycles.jsonl"
     cycles = build_development_cycles_surface(base_url="https://nomad.example")
-    payload = {
+    payload = _with_verifier_receipt({
         "agent_id": "agp.worker",
         "candidate_type": "protocol-evolution-candidate",
         "resource": {"resource_id": "nomad-gradient", "resource_kind": "json_contract"},
@@ -308,15 +322,77 @@ def test_autogenesis_shadow_rejects_non_trainable_variable(tmp_path):
         "boundedness": _boundedness(),
         "evaluation": {"tests_passed": 6, "tests_total": 6},
         **_independent_verifier(),
-    }
+    })
 
     event = record_development_cycle_event(
         payload,
         base_url="https://nomad.example",
         development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(),
         ledger_path=cycle_ledger,
     )
 
     assert event["accepted"] is False
     assert event["decision"] == "hold_event_until_learnability_mask"
     assert "non_trainable_variables_selected" in event["reason_codes"]
+
+
+def test_autogenesis_shadow_rejects_missing_real_verifier_lease(tmp_path):
+    cycle_ledger = tmp_path / "cycles.jsonl"
+    cycles = build_development_cycles_surface(base_url="https://nomad.example")
+    payload = _with_verifier_receipt({
+        "agent_id": "agp.worker",
+        "candidate_type": "protocol-evolution-candidate",
+        "resource": {"resource_id": "nomad-gradient", "resource_kind": "json_contract"},
+        "sepl_operator_trace": _sepl_trace(),
+        **_learnability(),
+        "proof_digest": "sha256:abc123abc123",
+        "test_digest": "sha256:fed456fed456",
+        "rollback_ref": "noop:v1",
+        "boundedness": _boundedness(),
+        "evaluation": {"tests_passed": 6, "tests_total": 6},
+        **_independent_verifier(),
+    })
+
+    event = record_development_cycle_event(
+        payload,
+        base_url="https://nomad.example",
+        development_surface=cycles,
+        verifier_lease_index={},
+        ledger_path=cycle_ledger,
+    )
+
+    assert event["accepted"] is False
+    assert event["decision"] == "hold_event_until_independent_verifier"
+    assert "verifier_lease_not_found" in event["reason_codes"]
+
+
+def test_autogenesis_shadow_rejects_forged_verifier_receipt_digest(tmp_path):
+    cycle_ledger = tmp_path / "cycles.jsonl"
+    cycles = build_development_cycles_surface(base_url="https://nomad.example")
+    payload = {
+        "agent_id": "agp.worker",
+        "candidate_type": "protocol-evolution-candidate",
+        "resource": {"resource_id": "nomad-gradient", "resource_kind": "json_contract"},
+        "sepl_operator_trace": _sepl_trace(),
+        **_learnability(),
+        "proof_digest": "sha256:abc123abc123",
+        "test_digest": "sha256:fed456fed456",
+        "rollback_ref": "noop:v1",
+        "boundedness": _boundedness(),
+        "evaluation": {"tests_passed": 6, "tests_total": 6},
+        **_independent_verifier(),
+        "verifier_receipt_digest": "sha256:000000000000",
+    }
+
+    event = record_development_cycle_event(
+        payload,
+        base_url="https://nomad.example",
+        development_surface=cycles,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=cycle_ledger,
+    )
+
+    assert event["accepted"] is False
+    assert event["decision"] == "hold_event_until_independent_verifier"
+    assert "verifier_receipt_digest_mismatch" in event["reason_codes"]
