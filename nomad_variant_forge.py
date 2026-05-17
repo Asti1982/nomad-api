@@ -39,6 +39,7 @@ AGP_CANDIDATE_TYPES = {
     "sepl-operator-patch",
     "rspl-contract-patch",
 }
+SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
 
 
 def _iso_now() -> str:
@@ -154,6 +155,138 @@ def _test_score(evaluation: dict[str, Any]) -> float:
     if total <= 0:
         return 0.0
     return round(_clamp(passed / max(1, total)), 4)
+
+
+def _looks_digest(value: str) -> bool:
+    text = _text(value, 220).lower()
+    return bool(re.match(r"^(sha256|blake3):[a-f0-9][a-f0-9_.:-]{5,}$", text))
+
+
+def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    verifier = _dict(payload.get("independent_verifier") or payload.get("verifier"))
+    proposer_id = _clean_id(
+        payload.get("proposer_agent_id") or payload.get("agent_id") or payload.get("worker_id"),
+        fallback="",
+    )
+    verifier_id = _clean_id(
+        payload.get("verifier_agent_id") or verifier.get("agent_id") or verifier.get("worker_id"),
+        fallback="",
+    )
+    lease_id = _text(payload.get("verifier_lease_id") or verifier.get("lease_id"), 160)
+    receipt_digest = _text(
+        payload.get("verifier_receipt_digest")
+        or verifier.get("receipt_digest")
+        or verifier.get("receipt_ref"),
+        220,
+    )
+    trace_digest = _text(
+        payload.get("verifier_trace_digest")
+        or verifier.get("trace_digest")
+        or verifier.get("verifier_trace_digest")
+        or verifier.get("trace"),
+        220,
+    )
+    evaluation = _dict(payload.get("verifier_evaluation") or verifier.get("evaluation"))
+    test_score = _test_score(evaluation)
+    reasons: list[str] = []
+    if not proposer_id:
+        reasons.append("proposer_agent_id_required")
+    if not verifier_id:
+        reasons.append("verifier_agent_id_required")
+    if proposer_id and verifier_id and proposer_id == verifier_id:
+        reasons.append("verifier_must_differ_from_proposer")
+    if not lease_id:
+        reasons.append("verifier_lease_id_required")
+    if not _looks_digest(receipt_digest):
+        reasons.append("verifier_receipt_digest_required")
+    if not _looks_digest(trace_digest):
+        reasons.append("verifier_trace_digest_required")
+    if test_score <= 0.0:
+        reasons.append("verifier_evaluation_required")
+    accepted = not reasons
+    return {
+        "required": True,
+        "accepted": accepted,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": lease_id,
+        "verifier_receipt_digest": receipt_digest,
+        "verifier_trace_digest": trace_digest,
+        "verifier_test_score": test_score,
+        "reason_codes": reasons or ["independent_verifier_accepted"],
+    }
+
+
+def _sepl_operator_trace_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_trace = payload.get("sepl_operator_trace") or payload.get("operator_trace") or payload.get("sepl_trace")
+    trace: list[dict[str, Any]] = []
+    if isinstance(raw_trace, list):
+        for item in raw_trace:
+            if isinstance(item, dict):
+                op = _clean_id(item.get("op") or item.get("operator"), fallback="")
+                trace.append({**item, "op": op})
+            else:
+                trace.append({"op": _clean_id(item, fallback="")})
+    ops = [item.get("op", "") for item in trace]
+    reasons: list[str] = []
+    if ops != list(SEPL_OPERATORS):
+        reasons.append("sepl_operator_trace_must_be_reflect_select_improve_evaluate_commit")
+    for item in trace:
+        op = item.get("op", "")
+        if op and not _text(item.get("input") or item.get("evidence") or item.get("output") or item.get("decision"), 260):
+            reasons.append(f"{op}_operator_missing_input_or_output")
+    return {
+        "required": True,
+        "accepted": not reasons,
+        "operators": list(SEPL_OPERATORS),
+        "observed": ops,
+        "trace": trace,
+        "reason_codes": reasons or ["sepl_operator_trace_accepted"],
+    }
+
+
+def _learnability_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    mask_raw = payload.get("learnability_mask")
+    mask: dict[str, bool] = {}
+    if isinstance(mask_raw, dict):
+        mask = {_clean_id(k, fallback=str(k)): bool(v) for k, v in mask_raw.items()}
+    elif isinstance(mask_raw, list):
+        mask = {_clean_id(item, fallback=str(item)): True for item in mask_raw}
+
+    lifted = payload.get("variable_lifting") or payload.get("variable_patches") or payload.get("variables")
+    if isinstance(lifted, dict):
+        candidates = lifted.get("variables") if isinstance(lifted.get("variables"), list) else [lifted]
+    elif isinstance(lifted, list):
+        candidates = lifted
+    else:
+        candidates = []
+
+    variables: list[dict[str, Any]] = []
+    blocked: list[str] = []
+    trainable_count = 0
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_id(item.get("name") or item.get("variable") or item.get("id"), fallback="")
+        if not name:
+            continue
+        declared = bool(item.get("trainable") or item.get("require_grad"))
+        allowed = bool(mask.get(name, declared))
+        if allowed:
+            trainable_count += 1
+        else:
+            blocked.append(name)
+        variables.append({"name": name, "trainable": allowed, "require_grad": bool(item.get("require_grad") or allowed)})
+
+    reasons = ["non_trainable_variables_selected"] if blocked else []
+    return {
+        "required": bool(variables),
+        "accepted": not blocked,
+        "trainable_count": trainable_count,
+        "blocked_variables": blocked,
+        "variables": variables,
+        "reason_codes": reasons or (["learnability_mask_accepted"] if variables else ["no_variables_lifted"]),
+    }
 
 
 def _objective_prior(objective: str) -> float:
@@ -289,11 +422,24 @@ def build_variant_forge_surface(
         "candidate_contract": {
             "schema": "nomad.variant_candidate_contract.v1",
             "required": ["agent_id", "candidate_type", "objective"],
+            "agp_required": [
+                "entity_type in prompt|agent|tool|environment|memory",
+                "sepl_operator_trace reflect->select->improve->evaluate->commit",
+                "learnability_mask for variable_lifting",
+                "rollback_ref or noop_ref",
+            ],
+            "independent_verifier_required": [
+                "verifier_agent_id != agent_id",
+                "verifier_lease_id",
+                "verifier_receipt_digest",
+                "verifier_trace_digest",
+                "verifier_evaluation",
+            ],
             "agp_candidate_types": sorted(AGP_CANDIDATE_TYPES),
             "proof_fields": ["proof_digest", "verifier_trace_digest", "test_digest", "settlement_ref", "replay_digest"],
             "evaluation_fields": ["tests_passed", "tests_total", "replay_delta", "proof_yield_delta", "settlement_delta", "risk_score"],
             "side_effect_scope": "descriptor_only_no_execution",
-            "resource_fields": ["resource_id", "resource_kind", "from_version", "to_version", "rollback_ref", "noop_ref"],
+            "resource_fields": ["resource_id", "entity_type", "resource_kind", "from_version", "to_version", "rollback_ref", "noop_ref"],
         },
         "requested_variants": rows[:12],
         "recent_candidate_count": len(recent),
@@ -347,7 +493,10 @@ def submit_variant_candidate(
     candidate_type = _clean_id(body.get("candidate_type") or body.get("type"), fallback="runtime_variant")
     candidate_type = candidate_type.replace("_", "-") if candidate_type.replace("_", "-") in AGP_CANDIDATE_TYPES else candidate_type
     agent_id = _text(body.get("agent_id") or body.get("worker_id"), 120)
-    evaluation = _dict(body.get("evaluation"))
+    verifier_gate = _independent_verifier_gate(body)
+    sepl_gate = _sepl_operator_trace_gate(body)
+    learnability = _learnability_gate(body)
+    evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation") or body.get("evaluation"))
     proof = _proof_score(body)
     tests = _test_score(evaluation)
     replay_gain = _clamp(_num(evaluation.get("replay_delta")) * 2.0 + _num(evaluation.get("counterfactual_score")))
@@ -371,6 +520,7 @@ def submit_variant_candidate(
         + 0.10 * settlement
         + 0.08 * novelty
         + 0.06 * reuse
+        + (0.06 if is_agp and sepl_gate.get("accepted") and learnability.get("accepted") else 0.0)
         + (0.06 if is_agp and resource_signal and rollback_signal else 0.0)
         - 0.18 * risk
     )
@@ -379,9 +529,19 @@ def submit_variant_candidate(
     if proof <= 0.0 and tests <= 0.0:
         score = min(score, 0.34)
 
-    if score >= 0.62 and proof > 0.0:
+    agp_gates_ok = (not is_agp) or (bool(sepl_gate.get("accepted")) and bool(learnability.get("accepted")))
+    if is_agp and not sepl_gate.get("accepted"):
+        decision = "needs_sepl_operator_trace"
+        accepted = False
+    elif is_agp and not learnability.get("accepted"):
+        decision = "needs_learnability_mask"
+        accepted = False
+    elif score >= 0.62 and proof > 0.0 and verifier_gate["accepted"] and agp_gates_ok:
         decision = "admit_shadow_variant"
         accepted = True
+    elif score >= 0.62 and proof > 0.0:
+        decision = "needs_independent_verifier"
+        accepted = False
     elif score >= 0.44:
         decision = "needs_independent_verifier"
         accepted = False
@@ -419,7 +579,14 @@ def submit_variant_candidate(
             "risk": round(risk, 4),
             "agp_resource": round(float(bool(is_agp and resource_signal)), 4),
             "agp_rollback": round(float(bool(is_agp and rollback_signal)), 4),
+            "sepl_operator_trace": round(float(bool(sepl_gate.get("accepted"))), 4),
+            "learnability": round(float(bool(learnability.get("accepted"))), 4),
+            "independent_verifier": round(float(bool(verifier_gate.get("accepted"))), 4),
+            "verifier_tests": round(_num(verifier_gate.get("verifier_test_score")), 4),
         },
+        "sepl_operator_trace": sepl_gate,
+        "learnability": learnability,
+        "independent_verifier": verifier_gate,
         "next": {
             "forge": _u(base_url, "/swarm/variant-forge"),
             "lease": _u(base_url, "/swarm/workers/lease"),
@@ -435,4 +602,3 @@ def submit_variant_candidate(
     else:
         row["persisted"] = False
     return row
-

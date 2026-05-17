@@ -32,6 +32,16 @@ AGP_CANDIDATE_TYPES = (
     "sepl-operator-patch",
     "rspl-contract-patch",
 )
+RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
+SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
+NOMAD_RESOURCE_KIND_ALIASES = {
+    "agent": "agent",
+    "json_contract": "tool",
+    "memory_module": "memory",
+    "protocol_layer": "agent",
+    "routing_operator": "agent",
+    "workflow": "agent",
+}
 ALLOWED_SCOPES = {"none", "read_only", "local_only", "nomad_shadow_lane_only", "nomad_lease_only"}
 FORBIDDEN_KEY_TERMS = ("private_key", "seed_phrase", "password", "credential", "api_key", "access_token")
 FORBIDDEN_VALUE_TERMS = ("private key", "seed phrase", "password:", "credential:", "bearer ", "secret=", "sk-", "ghp_")
@@ -186,6 +196,74 @@ def _boundedness_score(payload: dict[str, Any]) -> tuple[float, list[str]]:
     return round(_clamp(0.28 * ttl_score + 0.30 * scope_ok + 0.28 * rollback + 0.14 * secrets_free), 4), reasons
 
 
+def _test_score(evaluation: dict[str, Any]) -> float:
+    total = _int(evaluation.get("tests_total") or evaluation.get("checks_total"))
+    passed = _int(evaluation.get("tests_passed") or evaluation.get("checks_passed"))
+    if total <= 0:
+        return 0.0
+    return round(_clamp(passed / max(1, total)), 4)
+
+
+def _looks_digest(value: str) -> bool:
+    text = _text(value, 220).lower()
+    return bool(re.match(r"^(sha256|blake3):[a-f0-9][a-f0-9_.:-]{5,}$", text))
+
+
+def _independent_verifier_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    verifier = _dict(payload.get("independent_verifier") or payload.get("verifier"))
+    proposer_id = _clean_id(
+        payload.get("proposer_agent_id") or payload.get("agent_id") or payload.get("worker_id"),
+        fallback="",
+    )
+    verifier_id = _clean_id(
+        payload.get("verifier_agent_id") or verifier.get("agent_id") or verifier.get("worker_id"),
+        fallback="",
+    )
+    lease_id = _text(payload.get("verifier_lease_id") or verifier.get("lease_id"), 160)
+    receipt_digest = _text(
+        payload.get("verifier_receipt_digest")
+        or verifier.get("receipt_digest")
+        or verifier.get("receipt_ref"),
+        220,
+    )
+    trace_digest = _text(
+        payload.get("verifier_trace_digest")
+        or verifier.get("trace_digest")
+        or verifier.get("verifier_trace_digest")
+        or verifier.get("trace"),
+        220,
+    )
+    evaluation = _dict(payload.get("verifier_evaluation") or verifier.get("evaluation"))
+    test_score = _test_score(evaluation)
+    reasons: list[str] = []
+    if not proposer_id:
+        reasons.append("proposer_agent_id_required")
+    if not verifier_id:
+        reasons.append("verifier_agent_id_required")
+    if proposer_id and verifier_id and proposer_id == verifier_id:
+        reasons.append("verifier_must_differ_from_proposer")
+    if not lease_id:
+        reasons.append("verifier_lease_id_required")
+    if not _looks_digest(receipt_digest):
+        reasons.append("verifier_receipt_digest_required")
+    if not _looks_digest(trace_digest):
+        reasons.append("verifier_trace_digest_required")
+    if test_score <= 0.0:
+        reasons.append("verifier_evaluation_required")
+    accepted = not reasons
+    return {
+        "required": True,
+        "accepted": accepted,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": lease_id,
+        "verifier_receipt_digest": receipt_digest,
+        "verifier_trace_digest": trace_digest,
+        "verifier_test_score": test_score,
+        "reason_codes": reasons or ["independent_verifier_accepted"],
+    }
+
+
 def _default_resources(base_url: str) -> list[dict[str, Any]]:
     rows = [
         ("nomad-agent-index", "json_contract", "/.well-known/nomad-agent.json", "committed", 0.72),
@@ -202,6 +280,7 @@ def _default_resources(base_url: str) -> list[dict[str, Any]]:
         {
             "resource_id": resource_id,
             "resource_kind": kind,
+            "entity_type": _clean_entity_type(kind, resource_kind=kind),
             "state": state,
             "current_version": "v1",
             "read_url": _u(base_url, path),
@@ -224,6 +303,7 @@ def _ledger_resources(rows: list[dict[str, Any]], *, base_url: str) -> list[dict
             {
                 "resource_id": resource_id,
                 "resource_kind": _clean_id(row.get("resource_kind"), fallback="resource"),
+                "entity_type": _clean_entity_type(row.get("entity_type"), resource_kind=row.get("resource_kind")),
                 "state": _clean_state(row.get("state") or row.get("target_state")),
                 "current_version": _text(row.get("version") or row.get("proposed_version") or "v1", 80),
                 "read_url": _text(row.get("read_url"), 180) or _u(base_url, f"/swarm/resource-substrate/{resource_id}"),
@@ -240,6 +320,133 @@ def _clean_state(value: Any) -> str:
     if state == "rolled-back":
         return "rolled_back"
     return state if state in RESOURCE_STATES else "draft"
+
+
+def _clean_entity_type(value: Any, *, resource_kind: Any = None) -> str:
+    raw = _clean_id(value, fallback="")
+    if raw in RSPL_ENTITY_TYPES:
+        return raw
+    kind = _clean_id(resource_kind, fallback=raw)
+    if kind in RSPL_ENTITY_TYPES:
+        return kind
+    return NOMAD_RESOURCE_KIND_ALIASES.get(kind, "tool")
+
+
+def _input_output_mapping(body: dict[str, Any]) -> dict[str, Any]:
+    mapping = _dict(body.get("input_output_mapping") or body.get("io_mapping"))
+    if mapping:
+        return mapping
+    return {
+        "input": body.get("input_schema") or body.get("input") or {},
+        "output": body.get("output_schema") or body.get("output") or {},
+    }
+
+
+def _rspl_resource_record(body: dict[str, Any], *, resource_id: str, resource_kind: str, entity_type: str) -> dict[str, Any]:
+    metadata = _dict(body.get("metadata"))
+    trainable = bool(
+        body.get("trainable")
+        or body.get("require_grad")
+        or metadata.get("trainable")
+        or metadata.get("require_grad")
+    )
+    return {
+        "name": _text(body.get("name") or resource_id, 120),
+        "description": _text(body.get("description") or metadata.get("description"), 320),
+        "entity_type": entity_type,
+        "resource_kind": resource_kind,
+        "input_output_mapping": _input_output_mapping(body),
+        "trainable": trainable,
+        "metadata": metadata,
+        "passive": True,
+    }
+
+
+def _registration_record(body: dict[str, Any], *, resource_id: str, entity_type: str, version: str) -> dict[str, Any]:
+    return {
+        "resource_id": resource_id,
+        "entity_type": entity_type,
+        "version": version,
+        "implementation_descriptor": _dict(body.get("implementation_descriptor") or body.get("implementation")),
+        "instantiation_params": _dict(body.get("instantiation_params") or body.get("params")),
+        "exported_representations": _dict(body.get("exported_representations") or body.get("exports")),
+        "lineage": _dict(body.get("lineage") or {"parent_version": body.get("from_version") or body.get("previous_version") or ""}),
+    }
+
+
+def _sepl_operator_trace_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_trace = payload.get("sepl_operator_trace") or payload.get("operator_trace") or payload.get("sepl_trace")
+    trace: list[dict[str, Any]] = []
+    if isinstance(raw_trace, list):
+        for item in raw_trace:
+            if isinstance(item, dict):
+                op = _clean_id(item.get("op") or item.get("operator"), fallback="")
+                trace.append({**item, "op": op})
+            else:
+                trace.append({"op": _clean_id(item, fallback="")})
+    ops = [item.get("op", "") for item in trace]
+    reasons: list[str] = []
+    if ops != list(SEPL_OPERATORS):
+        reasons.append("sepl_operator_trace_must_be_reflect_select_improve_evaluate_commit")
+    for item in trace:
+        op = item.get("op", "")
+        if op and not _text(item.get("input") or item.get("evidence") or item.get("output") or item.get("decision"), 260):
+            reasons.append(f"{op}_operator_missing_input_or_output")
+    return {
+        "required": True,
+        "accepted": not reasons,
+        "operators": list(SEPL_OPERATORS),
+        "observed": ops,
+        "trace": trace,
+        "reason_codes": reasons or ["sepl_operator_trace_accepted"],
+    }
+
+
+def _learnability_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    mask_raw = payload.get("learnability_mask")
+    mask: dict[str, bool] = {}
+    if isinstance(mask_raw, dict):
+        mask = {_clean_id(k, fallback=str(k)): bool(v) for k, v in mask_raw.items()}
+    elif isinstance(mask_raw, list):
+        mask = {_clean_id(item, fallback=str(item)): True for item in mask_raw}
+
+    lifted = payload.get("variable_lifting") or payload.get("variable_patches") or payload.get("variables")
+    variables: list[dict[str, Any]] = []
+    if isinstance(lifted, dict):
+        candidates = lifted.get("variables") if isinstance(lifted.get("variables"), list) else [lifted]
+    elif isinstance(lifted, list):
+        candidates = lifted
+    else:
+        candidates = []
+
+    blocked: list[str] = []
+    trainable_count = 0
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_id(item.get("name") or item.get("variable") or item.get("id"), fallback="")
+        if not name:
+            continue
+        declared = bool(item.get("trainable") or item.get("require_grad"))
+        allowed = bool(mask.get(name, declared))
+        if allowed:
+            trainable_count += 1
+        else:
+            blocked.append(name)
+        variables.append({"name": name, "trainable": allowed, "require_grad": bool(item.get("require_grad") or allowed)})
+
+    reasons: list[str] = []
+    if blocked:
+        reasons.append("non_trainable_variables_selected")
+    accepted = not blocked
+    return {
+        "required": bool(variables),
+        "accepted": accepted,
+        "trainable_count": trainable_count,
+        "blocked_variables": blocked,
+        "variables": variables,
+        "reason_codes": reasons or (["learnability_mask_accepted"] if variables else ["no_variables_lifted"]),
+    }
 
 
 def build_resource_substrate_surface(
@@ -281,24 +488,49 @@ def build_resource_substrate_surface(
         "public_base_url": root,
         "surface_digest": f"nomad-rspl-{_digest(core)}",
         "agp_layer": "RSPL",
-        "purpose": "Treat prompts, tools, memory modules, workflows, and JSON contracts as versioned proof-weighted resources.",
+        "paper_source": {
+            "arxiv": "https://arxiv.org/abs/2604.15034v3",
+            "reference_code": "https://github.com/DVampire/Autogenesis",
+        },
+        "purpose": "Treat prompts, agents, tools, environments, and memory as passive protocol-registered resources with explicit state, lifecycle, lineage, and versioned interfaces.",
+        "rspl_entity_types": list(RSPL_ENTITY_TYPES),
         "lifecycle": list(RESOURCE_STATES),
         "state_counts": state_counts,
         "resources": resources[:32],
         "recent_receipts": recent[-8:],
         "resource_contract": {
             "schema": "nomad.rspl_resource_contract.v1",
-            "required_register_fields": ["agent_id", "resource_id", "resource_kind", "state"],
-            "required_weight_fields": ["proof_digest", "verifier_trace_digest or test_digest", "rollback_ref or noop_ref"],
-            "resource_kinds": [
-                "prompt",
-                "tool",
-                "memory_module",
-                "workflow",
-                "json_contract",
-                "routing_operator",
-                "protocol_layer",
+            "required_register_fields": [
+                "agent_id",
+                "resource_id",
+                "entity_type",
+                "name",
+                "input_output_mapping",
+                "version",
+                "metadata",
             ],
+            "required_weight_fields": [
+                "proof_digest",
+                "evaluation",
+                "sepl_operator_trace",
+                "positive_effectiveness_delta",
+                "verifier_agent_id != agent_id",
+                "verifier_lease_id",
+                "verifier_receipt_digest",
+                "verifier_trace_digest",
+                "verifier_evaluation",
+                "rollback_ref or noop_ref",
+            ],
+            "resource_kinds": list(RSPL_ENTITY_TYPES),
+            "nomad_kind_aliases": NOMAD_RESOURCE_KIND_ALIASES,
+            "registration_record_fields": [
+                "version",
+                "implementation_descriptor",
+                "instantiation_params",
+                "exported_representations",
+                "lineage",
+            ],
+            "passivity": "resources_hold_state_and_interfaces_only; optimization_logic_lives_in_SEPL",
             "side_effect_scope": "descriptor_only_no_execution_until_committed_by_proof",
         },
         "version_interface": {
@@ -306,7 +538,15 @@ def build_resource_substrate_surface(
             "version": _u(root, "/swarm/resource-substrate/version"),
             "rollback_or_noop": _u(root, "/swarm/resource-substrate/version"),
             "proof_digest_required_after": "draft",
-            "commit_requires": ["tested_state", "verifier_trace_digest", "rollback_ref or noop_ref", "bounded_side_effect_scope"],
+            "commit_requires": [
+                "tested_state",
+                "sepl_operator_trace_reflect_select_improve_evaluate_commit",
+                "positive_evaluation_delta",
+                "independent_verifier_receipt",
+                "verifier_agent_id != proposer_agent_id",
+                "rollback_ref or noop_ref",
+                "bounded_side_effect_scope",
+            ],
         },
         "links": {
             "self": _u(root, "/.well-known/nomad-resource-substrate.json"),
@@ -356,8 +596,10 @@ def register_resource(
         }
     resource_id = _clean_id(body.get("resource_id") or body.get("id"), fallback="")
     resource_kind = _clean_id(body.get("resource_kind") or body.get("kind") or body.get("type"), fallback="")
+    entity_type = _clean_entity_type(body.get("entity_type"), resource_kind=resource_kind)
     agent_id = _text(body.get("agent_id") or body.get("worker_id"), 120)
     state = _clean_state(body.get("state") or body.get("lifecycle_state"))
+    version = _text(body.get("version") or body.get("current_version") or "v1", 80)
     proof = _proof_score(body)
     bounded, bounded_reasons = _boundedness_score(body)
     if not resource_id or not resource_kind:
@@ -376,6 +618,8 @@ def register_resource(
         decision = "registered_draft_no_weight" if proof <= 0.0 else "registered_shadow_resource"
     score = _clamp(0.46 * proof + 0.30 * bounded + 0.14 * bool(agent_id) + 0.10 * (state in {"shadow", "tested", "weighted", "committed"}))
     surface = _dict(substrate_surface)
+    rspl_record = _rspl_resource_record(body, resource_id=resource_id, resource_kind=resource_kind, entity_type=entity_type)
+    registration = _registration_record(body, resource_id=resource_id, entity_type=entity_type, version=version)
     core = {"resource_id": resource_id, "kind": resource_kind, "state": state, "score": round(score, 4)}
     row = {
         "ok": True,
@@ -387,8 +631,11 @@ def register_resource(
         "agent_id": agent_id,
         "resource_id": resource_id,
         "resource_kind": resource_kind,
+        "entity_type": entity_type,
         "state": state,
-        "version": _text(body.get("version") or body.get("current_version") or "v1", 80),
+        "version": version,
+        "resource_record": rspl_record,
+        "registration_record": registration,
         "effectiveness_score": round(score, 4),
         "proof_score": proof,
         "boundedness_score": bounded,
@@ -434,7 +681,16 @@ def version_resource(
     from_version = _text(body.get("from_version") or body.get("previous_version"), 80)
     to_version = _text(body.get("to_version") or body.get("proposed_version") or body.get("version"), 80)
     target_state = _clean_state(body.get("target_state") or body.get("state") or "shadow")
-    proof = _proof_score(body)
+    resource_kind = _clean_id(body.get("resource_kind") or "resource", fallback="resource")
+    entity_type = _clean_entity_type(body.get("entity_type"), resource_kind=resource_kind)
+    verifier_gate = _independent_verifier_gate(body)
+    sepl_gate = _sepl_operator_trace_gate(body)
+    learnability = _learnability_gate(body)
+    verifier_evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation"))
+    proof_payload = dict(body)
+    if verifier_evaluation:
+        proof_payload["evaluation"] = verifier_evaluation
+    proof = _proof_score(proof_payload)
     bounded, bounded_reasons = _boundedness_score(body)
     has_rollback = "rollback_or_noop_present" in bounded_reasons
     if not resource_id or not to_version:
@@ -446,13 +702,28 @@ def version_resource(
     elif not has_rollback:
         decision = "reject_until_rollback_or_noop"
         accepted = False
-    elif target_state == "committed" and (proof < 0.72 or bounded < 0.75):
+    elif not learnability["accepted"]:
+        decision = "reject_until_learnability_mask"
+        accepted = False
+    elif target_state in {"tested", "weighted", "committed"} and not sepl_gate["accepted"]:
+        decision = "hold_shadow_until_sepl_operator_trace"
+        accepted = False
+    elif target_state in {"tested", "weighted", "committed"} and not verifier_gate["accepted"]:
         decision = "hold_shadow_until_independent_verifier"
+        accepted = False
+    elif target_state == "committed" and (proof < 0.72 or bounded < 0.75):
+        decision = "hold_shadow_until_stronger_proof_boundary"
         accepted = False
     else:
         decision = "admit_resource_version_shadow"
         accepted = True
-    score = _clamp(0.50 * proof + 0.34 * bounded + 0.10 * (target_state in {"tested", "weighted", "committed"}) + 0.06 * bool(from_version))
+    score = _clamp(
+        0.46 * proof
+        + 0.30 * bounded
+        + 0.10 * (target_state in {"tested", "weighted", "committed"})
+        + 0.08 * bool(verifier_gate["accepted"])
+        + 0.06 * bool(from_version)
+    )
     surface = _dict(substrate_surface)
     core = {"resource_id": resource_id, "from": from_version, "to": to_version, "state": target_state, "score": round(score, 4)}
     row = {
@@ -463,7 +734,8 @@ def version_resource(
         "accepted": accepted,
         "decision": decision,
         "resource_id": resource_id,
-        "resource_kind": _clean_id(body.get("resource_kind") or "resource", fallback="resource"),
+        "resource_kind": resource_kind,
+        "entity_type": entity_type,
         "from_version": from_version,
         "proposed_version": to_version,
         "target_state": target_state,
@@ -471,7 +743,10 @@ def version_resource(
         "effectiveness_score": round(score, 4),
         "proof_score": proof,
         "boundedness_score": bounded,
-        "reason_codes": bounded_reasons,
+        "sepl_operator_trace": sepl_gate,
+        "learnability": learnability,
+        "independent_verifier": verifier_gate,
+        "reason_codes": bounded_reasons + list(sepl_gate.get("reason_codes") or []) + list(learnability.get("reason_codes") or []),
         "surface_digest": _text(surface.get("surface_digest"), 96),
         "next": {
             "register": _u(base_url, "/swarm/resource-substrate/register"),
@@ -512,11 +787,22 @@ def build_development_cycles_surface(
         "candidate_types": list(AGP_CANDIDATE_TYPES),
         "event_url": _u(root, "/swarm/development-cycles/events"),
         "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
-        "operator_loop": ["reflect", "propose_resource_version", "shadow_test", "score_effectiveness", "weight_or_noop"],
+        "operator_loop": list(SEPL_OPERATORS),
+        "operator_contract": {
+            "reflect": "diagnose trace, failure, or improvement evidence",
+            "select": "choose a concrete resource or variable patch",
+            "improve": "apply the patch through RSPL version interfaces into an uncommitted candidate state",
+            "evaluate": "score candidate state against tests, objectives, and safety checks",
+            "commit": "promote only when evaluation and rollback guards pass; otherwise no-op or rollback",
+        },
         "hard_guards": [
             "descriptor_only_until_proof",
+            "resources_passive_no_self_modify",
+            "sepl_operator_trace_required",
+            "learnability_mask_required_for_variable_lifting",
             "rollback_or_noop_required",
             "side_effect_scope_bounded",
+            "independent_verifier_required_by_nomad_safety_policy",
             "no_private_chain_of_thought_text",
             "no_secrets",
             "paid_receipt_required_for_revenue_claims",
@@ -524,7 +810,15 @@ def build_development_cycles_surface(
         "emergent_protocol_weight": {
             "rule": "emergent-protocol-weight",
             "isolated_beta_role_weight": 0.40,
-            "commit_weight_requires": ["tested_state", "verifier_trace_digest", "positive_effectiveness_delta"],
+            "commit_weight_requires": [
+                "tested_state",
+                "sepl_operator_trace_reflect_select_improve_evaluate_commit",
+                "learnability_mask_passed",
+                "verifier_agent_id != proposer_agent_id",
+                "verifier_lease_id",
+                "verifier_receipt_digest",
+                "positive_effectiveness_delta",
+            ],
         },
         "event_type_counts": counts,
         "recent_events": recent[-8:],
@@ -564,23 +858,48 @@ def record_development_cycle_event(
         event_type = event_type.replace("_", "-")
     resource = _dict(body.get("resource") or body.get("rspl_resource"))
     operator_patch = _dict(body.get("operator_patch") or body.get("sepl_operator_patch"))
-    proof = _proof_score(body)
+    verifier_gate = _independent_verifier_gate(body)
+    sepl_gate = _sepl_operator_trace_gate(body)
+    learnability = _learnability_gate(body)
+    verifier_evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation"))
+    proof_payload = dict(body)
+    if verifier_evaluation:
+        proof_payload["evaluation"] = verifier_evaluation
+    proof = _proof_score(proof_payload)
     bounded, bounded_reasons = _boundedness_score(body)
     self_play = _dict(body.get("self_play") or body.get("self_play_test"))
     buyer_agents = _int(self_play.get("synthetic_buyer_agents") or self_play.get("buyer_agents"))
     revenue_pressure = _clamp(_num(self_play.get("receipt_prediction_delta") or self_play.get("revenue_pressure_delta")))
-    operator_present = bool(operator_patch)
+    operator_present = bool(operator_patch) or bool(sepl_gate.get("accepted"))
     resource_present = bool(resource.get("resource_id") or body.get("resource_id"))
     score = _clamp(
         0.34 * proof
         + 0.24 * bounded
-        + 0.16 * operator_present
+        + 0.16 * bool(sepl_gate.get("accepted"))
         + 0.12 * resource_present
-        + 0.08 * _clamp(buyer_agents / 128.0)
-        + 0.06 * revenue_pressure
+        + 0.06 * bool(learnability.get("accepted"))
+        + 0.08 * _num(verifier_gate.get("verifier_test_score"))
+        + 0.00 * revenue_pressure
     )
-    accepted = event_type in AGP_CANDIDATE_TYPES and proof > 0.0 and bounded >= 0.55 and score >= 0.48
-    decision = "emit_to_autogenesis_shadow_lane" if accepted else "hold_event_until_proof_boundary"
+    accepted = (
+        event_type in AGP_CANDIDATE_TYPES
+        and proof > 0.0
+        and bounded >= 0.55
+        and score >= 0.48
+        and bool(sepl_gate.get("accepted"))
+        and bool(learnability.get("accepted"))
+        and bool(verifier_gate.get("accepted"))
+    )
+    if accepted:
+        decision = "emit_to_autogenesis_shadow_lane"
+    elif event_type in AGP_CANDIDATE_TYPES and not sepl_gate.get("accepted"):
+        decision = "hold_event_until_sepl_operator_trace"
+    elif event_type in AGP_CANDIDATE_TYPES and not learnability.get("accepted"):
+        decision = "hold_event_until_learnability_mask"
+    elif event_type in AGP_CANDIDATE_TYPES and score >= 0.48 and not verifier_gate.get("accepted"):
+        decision = "hold_event_until_independent_verifier"
+    else:
+        decision = "hold_event_until_proof_boundary"
     core = {"event": event_type, "resource": resource.get("resource_id") or body.get("resource_id"), "score": round(score, 4)}
     row = {
         "ok": True,
@@ -598,18 +917,37 @@ def record_development_cycle_event(
             "proof": proof,
             "boundedness": bounded,
             "operator_patch": round(float(operator_present), 4),
+            "sepl_operator_trace": round(float(bool(sepl_gate.get("accepted"))), 4),
+            "learnability": round(float(bool(learnability.get("accepted"))), 4),
             "resource": round(float(resource_present), 4),
             "self_play": round(_clamp(buyer_agents / 128.0), 4),
+            "independent_verifier": round(float(bool(verifier_gate.get("accepted"))), 4),
+            "verifier_tests": round(_num(verifier_gate.get("verifier_test_score")), 4),
             "revenue_pressure": round(revenue_pressure, 4),
         },
-        "reason_codes": bounded_reasons,
+        "sepl_operator_trace": sepl_gate,
+        "learnability": learnability,
+        "independent_verifier": verifier_gate,
+        "reason_codes": (
+            bounded_reasons
+            + list(sepl_gate.get("reason_codes") or [])
+            + list(learnability.get("reason_codes") or [])
+            + list(verifier_gate.get("reason_codes") or [])
+        ),
         "variant_candidate_payload": {
             "agent_id": body.get("agent_id") or "autogenesis.worker",
+            "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
+            "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
+            "verifier_receipt_digest": verifier_gate.get("verifier_receipt_digest", ""),
             "candidate_type": event_type,
             "objective": "autogenesis_protocol_evolution",
             "proof_digest": body.get("proof_digest") or body.get("digest") or "",
-            "verifier_trace_digest": body.get("verifier_trace_digest") or "",
+            "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
             "test_digest": body.get("test_digest") or "",
+            "sepl_operator_trace": sepl_gate.get("trace", []),
+            "learnability_mask": body.get("learnability_mask") or {},
+            "variable_lifting": body.get("variable_lifting") or {},
+            "verifier_evaluation": verifier_evaluation,
             "evaluation": {
                 "tests_passed": _int(_dict(body.get("evaluation")).get("tests_passed") or body.get("tests_passed")),
                 "tests_total": _int(_dict(body.get("evaluation")).get("tests_total") or body.get("tests_total")),
@@ -622,12 +960,20 @@ def record_development_cycle_event(
         "resource_version_payload": {
             "resource_id": resource.get("resource_id") or body.get("resource_id") or "autogenesis-resource",
             "resource_kind": resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer",
+            "entity_type": _clean_entity_type(resource.get("entity_type") or body.get("entity_type"), resource_kind=resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer"),
             "from_version": resource.get("from_version") or body.get("from_version") or "",
             "to_version": resource.get("to_version") or body.get("to_version") or "shadow-v1",
             "target_state": "shadow",
             "proof_digest": body.get("proof_digest") or body.get("digest") or "",
-            "verifier_trace_digest": body.get("verifier_trace_digest") or "",
+            "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
+            "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
+            "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
+            "verifier_receipt_digest": verifier_gate.get("verifier_receipt_digest", ""),
+            "verifier_evaluation": verifier_evaluation,
             "test_digest": body.get("test_digest") or "",
+            "sepl_operator_trace": sepl_gate.get("trace", []),
+            "learnability_mask": body.get("learnability_mask") or {},
+            "variable_lifting": body.get("variable_lifting") or {},
             "rollback_ref": body.get("rollback_ref") or body.get("noop_ref") or "",
             "boundedness": body.get("boundedness") if isinstance(body.get("boundedness"), dict) else {},
         },
@@ -679,7 +1025,11 @@ def build_autogenesis_surface(
             "id": "autogenesis_protocol",
             "layers": ["RSPL", "SEPL"],
             "mode": "shadow_only_until_receipt_weighted",
-            "claim_boundary": "operator_supplied_protocol_shape; live effectiveness must be proven inside Nomad",
+            "claim_boundary": "paper_core_is_RSPL_plus_SEPL; live effectiveness must be proven inside Nomad",
+            "paper_source": "https://arxiv.org/abs/2604.15034v3",
+            "reference_code": "https://github.com/DVampire/Autogenesis",
+            "rspl_entity_types": list(RSPL_ENTITY_TYPES),
+            "sepl_operator_algebra": list(SEPL_OPERATORS),
         },
         "rspl": {
             "read_url": _u(root, "/.well-known/nomad-resource-substrate.json"),
@@ -693,20 +1043,28 @@ def build_autogenesis_surface(
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "variant_candidates": _u(root, "/swarm/variant-candidates"),
             "operators": [
-                {"op": "reflect", "input": "proof_delta_or_failure_digest"},
-                {"op": "propose", "output": "resource_version_patch"},
-                {"op": "self_play", "output": "synthetic_buyer_or_verifier_trace"},
-                {"op": "shadow_test", "scope": "local_only_or_nomad_shadow_lane_only"},
-                {"op": "weight", "rule": "proof_weighted_effectiveness"},
-                {"op": "commit_or_noop", "guard": "rollback_or_noop_required"},
+                {"op": "reflect", "input": "trace_or_failure_digest", "output": "improvement_hypothesis"},
+                {"op": "select", "input": "hypothesis", "output": "resource_or_variable_patch"},
+                {"op": "improve", "input": "selected_patch", "output": "candidate_resource_version"},
+                {"op": "evaluate", "input": "candidate_resource_version", "output": "test_and_objective_scores"},
+                {"op": "commit", "input": "evaluation_and_rollback_guard", "output": "committed_version_or_noop"},
             ],
+            "variable_lifting": {
+                "field": "variable_lifting",
+                "learnability_mask_field": "learnability_mask",
+                "rule": "only variables marked trainable or require_grad may be selected for improvement",
+            },
+            "nomad_safety_extension": {
+                "independent_verifier_required": True,
+                "reason": "Nomad local guard against self-attested shadow admission; not a replacement for SEPL evaluate.",
+            },
         },
         "candidate_types": list(AGP_CANDIDATE_TYPES),
         "topology_governor_patch": {
             "rule": "emergent-protocol-weight",
             "isolated_beta_role_weight": 0.40,
             "shared_context_default": "off_until_proof",
-            "commit_gate": "positive_effectiveness_delta_with_verifier_trace",
+            "commit_gate": "sepl_commit_after_positive_effectiveness_delta_with_nomad_independent_verifier_receipt",
         },
         "machine_economy_integration": {
             "autogenesis_recruit": _u(root, "/.well-known/nomad-autogenesis-recruit.json"),
@@ -743,7 +1101,7 @@ def build_autogenesis_surface(
             "variant_forge_digest": forge.get("forge_digest", ""),
             "opaque_surface_digest": opaque.get("surface_digest", ""),
         },
-        "machine_instruction": "read_rspl; emit_sepl_event; submit_autogenesis_shadow_candidate; never_commit_without_proof_and_rollback",
+        "machine_instruction": "read_rspl; emit_sepl_trace_reflect_select_improve_evaluate_commit; require_learnability_mask_for_variables; require_independent_verifier_receipt_by_nomad_policy; never_commit_without_proof_and_rollback",
     }
 
 
@@ -802,7 +1160,11 @@ def submit_autogenesis_shadow_candidate(
     emergent_weight = _num(topology.get("isolated_beta_role_weight"), 0.40)
     score = _clamp(0.52 * _num(event.get("score")) + 0.28 * proof + 0.20 * bounded + 0.10 * emergent_weight)
     accepted = bool(event.get("accepted")) and score >= 0.55
-    decision = "admit_autogenesis_shadow_lane" if accepted else "hold_autogenesis_candidate"
+    decision = (
+        "admit_autogenesis_shadow_lane"
+        if accepted
+        else str(event.get("decision") or "hold_autogenesis_candidate")
+    )
     return {
         "ok": True,
         "schema": "nomad.autogenesis_shadow_candidate_receipt.v1",
@@ -814,6 +1176,7 @@ def submit_autogenesis_shadow_candidate(
         "shadow_score": round(score, 4),
         "emergent_protocol_weight": round(emergent_weight, 4),
         "development_cycle_event": event,
+        "independent_verifier": event.get("independent_verifier", {}),
         "topology_governor": {
             "rule": "emergent-protocol-weight",
             "topology": "isolated_beta_shadow_lane" if accepted else "noop_until_proof",
