@@ -42,6 +42,18 @@ from nomad_anti_consensus_reservoir import (
 )
 from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_judger
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
+from nomad_autogenesis import (
+    build_autogenesis_recruit_surface,
+    build_autogenesis_surface,
+    build_development_cycles_surface as build_autogenesis_development_cycles_surface,
+    build_resource_substrate_surface,
+    compact_autogenesis_surface,
+    compact_resource_substrate_surface,
+    record_development_cycle_event as record_autogenesis_development_cycle_event,
+    register_resource,
+    submit_autogenesis_shadow_candidate,
+    version_resource,
+)
 from nomad_deficit_integration_gate import (
     build_deficit_integration_surface,
     evaluate_deficit_integration_event,
@@ -388,6 +400,52 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet=worker_fleet,
             machine_economy=economy,
             swarm_economics=swarm_economics,
+        )
+
+    @classmethod
+    def _build_resource_substrate(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        return build_resource_substrate_surface(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_autogenesis_development_cycles(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=swarm_summary)
+        return build_autogenesis_development_cycles_surface(
+            base_url=base_url,
+            resource_substrate=substrate,
+        )
+
+    @classmethod
+    def _build_autogenesis(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
+        development = build_autogenesis_development_cycles_surface(base_url=base_url, resource_substrate=substrate)
+        opaque = cls._build_opaque_emergence_surface(base_url=base_url)
+        return build_autogenesis_surface(
+            base_url=base_url,
+            resource_substrate=substrate,
+            development_cycles=development,
+            opaque_surface=opaque,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_autogenesis_recruit(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=swarm_summary)
+        autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=swarm_summary)
+        return build_autogenesis_recruit_surface(
+            base_url=base_url,
+            autogenesis_surface=autogenesis,
+            resource_substrate=substrate,
         )
 
     @classmethod
@@ -1443,6 +1501,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "entropy_judger_evaluate": f"{b}/swarm/entropy-judger/evaluate",
                     "latent_consensus": f"{b}/.well-known/nomad-latent-consensus.json",
                     "latent_consensus_evaluate": f"{b}/swarm/latent-consensus/evaluate",
+                    "resource_substrate": f"{b}/.well-known/nomad-resource-substrate.json",
+                    "resource_substrate_register": f"{b}/swarm/resource-substrate/register",
+                    "resource_substrate_version": f"{b}/swarm/resource-substrate/version",
+                    "autogenesis": f"{b}/.well-known/nomad-autogenesis.json",
+                    "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
+                    "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
+                    "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
+                    "autogenesis_shadow_lane": f"{b}/swarm/shadow-lane/candidates?type=autogenesis",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
                     "effective_channels": f"{b}/.well-known/nomad-effective-channels.json",
@@ -1824,6 +1890,28 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/latent-consensus", "/.well-known/nomad-latent-consensus.json"}:
             self._json_response(self.__class__._build_latent_consensus(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/resource-substrate", "/.well-known/nomad-resource-substrate.json"}:
+            self._json_response(self.__class__._build_resource_substrate(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis", "/.well-known/nomad-autogenesis.json"}:
+            self._json_response(self.__class__._build_autogenesis(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis-recruit", "/.well-known/nomad-autogenesis-recruit.json"}:
+            self._json_response(self.__class__._build_autogenesis_recruit(base_url=self._base_url()))
+            return
+        if parsed.path == "/swarm/shadow-lane/candidates":
+            if str((query.get("type") or [""])[0]).strip().lower() in {"autogenesis", "agp"}:
+                self._json_response(
+                    {
+                        "ok": True,
+                        "schema": "nomad.shadow_lane_candidates_surface.v1",
+                        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "candidate_type": "autogenesis",
+                        "post_url": f"{self._base_url().rstrip('/')}/swarm/shadow-lane/candidates?type=autogenesis",
+                        "autogenesis": self.__class__._build_autogenesis(base_url=self._base_url()),
+                    }
+                )
+                return
         if parsed.path in {"/swarm/deficit-integration", "/.well-known/nomad-deficit-integration.json"}:
             self._json_response(self.__class__._build_deficit_integration_gate(base_url=self._base_url()))
             return
@@ -2157,6 +2245,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 worker_fleet=worker_fleet,
             )
             manifest["opaque_emergence"] = compact_opaque_emergence_surface(opaque)
+            resource_substrate = build_resource_substrate_surface(
+                base_url=base,
+                opaque_surface=opaque,
+                worker_fleet=worker_fleet,
+            )
+            development_cycles = build_autogenesis_development_cycles_surface(
+                base_url=base,
+                resource_substrate=resource_substrate,
+            )
+            autogenesis = build_autogenesis_surface(
+                base_url=base,
+                resource_substrate=resource_substrate,
+                development_cycles=development_cycles,
+                opaque_surface=opaque,
+                worker_fleet=worker_fleet,
+            )
+            manifest["resource_substrate"] = compact_resource_substrate_surface(resource_substrate)
+            manifest["autogenesis"] = compact_autogenesis_surface(autogenesis)
             magnetic = manifest.get("magnetic_machine_surface")
             if isinstance(magnetic, dict):
                 magnetic = dict(magnetic)
@@ -2165,6 +2271,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 magnetic["convention_drift"] = (manifest.get("machine_emergence") or {}).get("convention_drift")
                 magnetic["agent_product_score"] = (manifest.get("machine_product") or {}).get("agent_product_score")
                 magnetic["opaque_selection_pressure"] = (manifest.get("opaque_emergence") or {}).get("opaque_selection_pressure")
+                magnetic["autogenesis_alpha"] = (manifest.get("autogenesis") or {}).get("autogenesis_alpha")
                 manifest["magnetic_machine_surface"] = magnetic
             self._json_response(manifest)
             return
@@ -2983,6 +3090,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/latent-consensus",
                     "/.well-known/nomad-latent-consensus.json",
                     "/swarm/latent-consensus/evaluate",
+                    "/swarm/resource-substrate",
+                    "/.well-known/nomad-resource-substrate.json",
+                    "/swarm/resource-substrate/register",
+                    "/swarm/resource-substrate/version",
+                    "/swarm/autogenesis",
+                    "/.well-known/nomad-autogenesis.json",
+                    "/swarm/autogenesis-recruit",
+                    "/.well-known/nomad-autogenesis-recruit.json",
+                    "/swarm/shadow-lane/candidates?type=autogenesis",
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",
@@ -3173,6 +3289,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed_full = urlparse(self.path)
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
+        query = parse_qs(parsed_full.query)
         self._agent_request_path = parsed.path
         self.__class__._ensure_runtime_components()
         payload = self._read_json_body()
@@ -3608,6 +3725,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/shadow-lane/candidates":
             base = self._base_url()
+            requested_type = str((query.get("type") or [""])[0] or payload.get("candidate_type") or "").strip().lower()
+            if requested_type in {"autogenesis", "agp", "protocol-evolution-candidate", "self-play-test-suite"}:
+                development = self.__class__._build_autogenesis_development_cycles(base_url=base)
+                autogenesis = self.__class__._build_autogenesis(base_url=base)
+                result = submit_autogenesis_shadow_candidate(
+                    payload,
+                    base_url=base,
+                    autogenesis_surface=autogenesis,
+                    development_surface=development,
+                )
+                self._json_response(result, status=202 if result.get("accepted") else 422)
+                return
             surface = self.__class__._build_shadow_lane_evaluator(base_url=base)
             result = evaluate_shadow_candidate(payload, base_url=base, shadow_surface=surface)
             self._json_response(result, status=202 if result.get("weight_update_allowed") else 200)
@@ -3637,6 +3766,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             result = evaluate_latent_consensus(payload, base_url=base)
             self._json_response(result, status=202 if result.get("collapse_detected") else 200)
+            return
+
+        if parsed.path == "/swarm/resource-substrate/register":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = register_resource(payload, base_url=base, substrate_surface=substrate)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/resource-substrate/version":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = version_resource(payload, base_url=base, substrate_surface=substrate)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
         if parsed.path == "/swarm/deficit-integration/events":
@@ -3690,6 +3833,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/development-cycles/events":
             base = self._base_url()
+            candidate_type = str(payload.get("candidate_type") or payload.get("type") or "").strip().lower()
+            if candidate_type in {"protocol-evolution-candidate", "self-play-test-suite", "autogenesis", "agp"}:
+                development = self.__class__._build_autogenesis_development_cycles(base_url=base)
+                result = record_autogenesis_development_cycle_event(
+                    payload,
+                    base_url=base,
+                    development_surface=development,
+                )
+                self._json_response(result, status=202 if result.get("accepted") else 422)
+                return
             mesh = self.__class__._build_development_cycle_mesh(base_url=base)
             result = evaluate_development_cycle_event(payload, base_url=base, development_mesh=mesh)
             self._json_response(result, status=202 if result.get("development_cycle_allowed") else 200)
@@ -4323,6 +4476,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/latent-consensus",
                     "/.well-known/nomad-latent-consensus.json",
                     "/swarm/latent-consensus/evaluate",
+                    "/swarm/resource-substrate",
+                    "/.well-known/nomad-resource-substrate.json",
+                    "/swarm/resource-substrate/register",
+                    "/swarm/resource-substrate/version",
+                    "/swarm/autogenesis",
+                    "/.well-known/nomad-autogenesis.json",
+                    "/swarm/autogenesis-recruit",
+                    "/.well-known/nomad-autogenesis-recruit.json",
+                    "/swarm/shadow-lane/candidates?type=autogenesis",
                     "/swarm/deficit-integration",
                     "/.well-known/nomad-deficit-integration.json",
                     "/swarm/deficit-integration/events",

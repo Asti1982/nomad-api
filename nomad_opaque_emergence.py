@@ -73,6 +73,18 @@ RESEARCH_TECHNIQUES = [
         "nomad_contract": "/.well-known/nomad-agent.json",
     },
     {
+        "id": "autogenesis_resource_substrate",
+        "source": "operator_supplied_agp_spec_2026-05-17",
+        "finding": "Prompts, tools, memory modules, workflows, and JSON contracts should be treated as versioned resources with proof-weighted lifecycle state.",
+        "nomad_contract": "/.well-known/nomad-resource-substrate.json",
+    },
+    {
+        "id": "autogenesis_self_evolution_layer",
+        "source": "operator_supplied_agp_spec_2026-05-17",
+        "finding": "Self-evolution should run through shadow-only operator loops: propose, self-play, test, score, weight, then commit or no-op.",
+        "nomad_contract": "/.well-known/nomad-autogenesis.json",
+    },
+    {
         "id": "cross_domain_agent_membrane",
         "source": "https://arxiv.org/abs/2505.23847",
         "finding": "Cross-domain multi-agent systems need security membranes because peer messages can create emergent risks.",
@@ -298,6 +310,13 @@ def build_opaque_emergence_surface(
                 "why_agents_use_it": "submit a black-box workflow candidate for bounded shadow-lane scoring",
                 "sources": ["https://arxiv.org/abs/2410.10762", "https://arxiv.org/abs/2502.07373"],
             },
+            {
+                "id": "autogenesis_protocol",
+                "schema": "nomad.autogenesis_protocol.v1",
+                "post_url": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+                "why_agents_use_it": "submit RSPL resource versions and SEPL operator patches without executing them",
+                "sources": ["operator_supplied_agp_spec_2026-05-17"],
+            },
         ],
         "candidate_contract": {
             "post_url": _u(root, "/swarm/opaque-candidate"),
@@ -335,6 +354,9 @@ def build_opaque_emergence_surface(
             "tool_gap": _u(root, "/swarm/tool-gap"),
             "latent_consensus": _u(root, "/swarm/latent-consensus"),
             "entropy_judger": _u(root, "/swarm/entropy-judger"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "autogenesis_shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "topology_plan": _u(root, "/swarm/topology-plan"),
             "emergence_meter": _u(root, "/swarm/emergence"),
             "handoff": _u(root, "/runtime/handoff"),
@@ -360,6 +382,7 @@ def compact_opaque_emergence_surface(surface: Dict[str, Any]) -> Dict[str, Any]:
         "tool_gap": links.get("tool_gap", ""),
         "latent_consensus": links.get("latent_consensus", ""),
         "entropy_judger": links.get("entropy_judger", ""),
+        "autogenesis": links.get("autogenesis", ""),
         "topology_plan": links.get("topology_plan", ""),
     }
 
@@ -508,6 +531,10 @@ def route_tool_gap(
         lane = "latent_consensus_router"
         next_url = _u(base_url, "/swarm/latent-consensus/evaluate")
         capability_terms = ["embedding_geometry", "representational_collapse_detector", "latent_consensus"]
+    elif any(token in lower for token in ("autogenesis", "agp", "rspl", "sepl", "resource substrate", "self-evolution", "self evolution")):
+        lane = "autogenesis_protocol"
+        next_url = _u(base_url, "/.well-known/nomad-autogenesis.json")
+        capability_terms = ["resource_substrate", "self_evolution_protocol", "autogenesis_shadow_lane"]
     elif any(token in lower for token in ("mcp", "tool", "api", "schema", "discover")):
         lane = "active_tool_discovery"
         next_url = _u(base_url, "/swarm/develop")
@@ -592,6 +619,16 @@ def compile_topology_plan(
             ["external_verifier", "router"],
         ]
         message_policy = "no_shared_context_until_orthogonal_proof"
+    elif "autogenesis" in objective or "agp" in objective or "protocol_evolution" in objective:
+        topology = "isolated_beta_shadow_lane"
+        reason = "autogenesis_protocol_versions_must_shadow_test_before_weight"
+        edges = [
+            ["resource_substrate", "sepl_operator"],
+            ["sepl_operator", "self_play_verifier"],
+            ["self_play_verifier", "topology_governor"],
+            ["topology_governor", "resource_substrate"],
+        ]
+        message_policy = "descriptor_and_digest_messages_only"
     elif risk >= 0.65 or drift >= 0.45:
         topology = "verifier_split"
         reason = "risk_or_drift_requires_independent_check"

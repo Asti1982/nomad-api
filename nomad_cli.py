@@ -260,6 +260,37 @@ def _compact_text(result: Dict[str, Any]) -> str:
         for lane in lanes[1:4]:
             lines.append(f"- {lane.get('lane_id', '')}: {lane.get('stage', '')} priority={lane.get('priority', 0)}")
         return "\n".join(lines)
+
+    if result.get("schema") == "nomad.resource_substrate.v1":
+        counts = result.get("state_counts") or {}
+        resources = result.get("resources") or []
+        lines = [
+            "Nomad resource substrate",
+            f"Digest: {result.get('surface_digest', '')}",
+            f"Resources: {len(resources)} states={counts}",
+            f"Register: {(result.get('version_interface') or {}).get('register', '')}",
+            f"Version: {(result.get('version_interface') or {}).get('version', '')}",
+        ]
+        for item in resources[:4]:
+            lines.append(
+                f"- {item.get('resource_id', '')}: {item.get('state', '')} score={item.get('effectiveness_score', 0)}"
+            )
+        return "\n".join(lines)
+
+    if result.get("schema") == "nomad.autogenesis_protocol.v1":
+        sepl = result.get("sepl") or {}
+        gov = result.get("topology_governor_patch") or {}
+        lines = [
+            "Nomad autogenesis protocol",
+            f"Digest: {result.get('surface_digest', '')}",
+            f"Layers: {', '.join((result.get('protocol') or {}).get('layers', []))}",
+            f"Mode: {(result.get('protocol') or {}).get('mode', '')}",
+            f"Shadow lane: {sepl.get('shadow_lane', '')}",
+            f"Emergent protocol weight: {gov.get('isolated_beta_role_weight', 0)}",
+        ]
+        for item in (result.get("go_to_market") or {}).get("x_thread_drafts", [])[:3]:
+            lines.append(f"- X draft: {item}")
+        return "\n".join(lines)
     if result.get("schema") == "nomad.job_channels.v1":
         summary = result.get("summary") or {}
         top = result.get("top_external_channel") or result.get("top_channel") or {}
@@ -1690,6 +1721,10 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("entropy-judger is handled directly in run_once")
     if command == "latent-consensus":
         raise ValueError("latent-consensus is handled directly in run_once")
+    if command == "resource-substrate":
+        raise ValueError("resource-substrate is handled directly in run_once")
+    if command == "autogenesis":
+        raise ValueError("autogenesis is handled directly in run_once")
     if command == "deficit-integration":
         raise ValueError("deficit-integration is handled directly in run_once")
     if command == "effective-channels":
@@ -1958,6 +1993,46 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 operational_release=release,
             )
             result = build_runtime_capsule(base_url=base, recruitment_gradient=gradient)
+        elif args.command == "resource-substrate":
+            from nomad_autogenesis import build_resource_substrate_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            result = build_resource_substrate_surface(
+                base_url=base,
+                worker_fleet=worker_fleet,
+            )
+        elif args.command == "autogenesis":
+            from nomad_autogenesis import (
+                build_autogenesis_recruit_surface,
+                build_autogenesis_surface,
+                build_development_cycles_surface,
+                build_resource_substrate_surface,
+            )
+            from nomad_opaque_emergence import build_opaque_emergence_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            agent = NomadAgent()
+            worker_fleet = agent.swarm_registry.worker_fleet_contract(base_url=base)
+            opaque = build_opaque_emergence_surface(base_url=base, worker_fleet=worker_fleet)
+            substrate = build_resource_substrate_surface(base_url=base, worker_fleet=worker_fleet, opaque_surface=opaque)
+            cycles = build_development_cycles_surface(base_url=base, resource_substrate=substrate)
+            agp = build_autogenesis_surface(
+                base_url=base,
+                resource_substrate=substrate,
+                development_cycles=cycles,
+                opaque_surface=opaque,
+                worker_fleet=worker_fleet,
+            )
+            if bool(getattr(args, "recruit", False)):
+                result = build_autogenesis_recruit_surface(
+                    base_url=base,
+                    autogenesis_surface=agp,
+                    resource_substrate=substrate,
+                )
+            else:
+                result = agp
         elif args.command == "recruitment-gradient":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3784,6 +3859,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--base-url",
         default="",
         help="Override public base URL for absolute links.",
+    )
+    resource_substrate = subparsers.add_parser(
+        "resource-substrate",
+        help="AGP RSPL: lifecycle-managed Nomad resources and version interfaces.",
+    )
+    resource_substrate.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    autogenesis = subparsers.add_parser(
+        "autogenesis",
+        help="AGP RSPL+SEPL surface for self-evolving protocol candidates.",
+    )
+    autogenesis.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    autogenesis.add_argument(
+        "--recruit",
+        action="store_true",
+        help="Return the machine-economy recruit surface for AGP packets and agent CTAs.",
     )
     recruitment_gradient = subparsers.add_parser(
         "recruitment-gradient",

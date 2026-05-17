@@ -152,6 +152,12 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/ad-cycles/events" in text
     assert "/.well-known/nomad-development-cycles.json" in text
     assert "/swarm/development-cycles/events" in text
+    assert "/.well-known/nomad-resource-substrate.json" in text
+    assert "/.well-known/nomad-autogenesis.json" in text
+    assert "/.well-known/nomad-autogenesis-recruit.json" in text
+    assert "/swarm/resource-substrate/register" in text
+    assert "/swarm/resource-substrate/version" in text
+    assert "/swarm/shadow-lane/candidates?type=autogenesis" in text
     assert "/.well-known/nomad-topology-governor.json" in text
     assert "/swarm/topology-governor/events" in text
     assert "RTCda4841be5b2d109da5d995fb864c09676bb5b7c7" in text
@@ -669,6 +675,14 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/development-cycles" in doc["paths"]
     assert "/.well-known/nomad-development-cycles.json" in doc["paths"]
     assert "/swarm/development-cycles/events" in doc["paths"]
+    assert "/swarm/resource-substrate" in doc["paths"]
+    assert "/.well-known/nomad-resource-substrate.json" in doc["paths"]
+    assert "/swarm/resource-substrate/register" in doc["paths"]
+    assert "/swarm/resource-substrate/version" in doc["paths"]
+    assert "/swarm/autogenesis" in doc["paths"]
+    assert "/.well-known/nomad-autogenesis.json" in doc["paths"]
+    assert "/swarm/autogenesis-recruit" in doc["paths"]
+    assert "/.well-known/nomad-autogenesis-recruit.json" in doc["paths"]
     assert "/swarm/topology-governor" in doc["paths"]
     assert "/.well-known/nomad-topology-governor.json" in doc["paths"]
     assert "/swarm/topology-governor/events" in doc["paths"]

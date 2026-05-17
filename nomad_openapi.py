@@ -62,6 +62,9 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For opaque but bounded emergent candidates, active tool-gap routing, first-round entropy lock-in, latent-consensus DALC routing, and task-adaptive topology, see "
                 "GET /.well-known/nomad-opaque-emergence.json, GET /.well-known/nomad-entropy-judger.json, GET /.well-known/nomad-latent-consensus.json, POST /swarm/tool-gap, POST /swarm/entropy-judger/evaluate, POST /swarm/latent-consensus/evaluate, POST /swarm/topology-plan, "
                 "and POST /swarm/opaque-candidate. "
+                "For AGP resource-substrate and self-evolution loops, see "
+                "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
+                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
                 "and POST /runtime/handoff. "
@@ -875,9 +878,32 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 }
             },
             "/swarm/shadow-lane/candidates": {
+                "get": {
+                    "summary": "Read a shadow-lane candidate surface; use type=autogenesis for AGP RSPL/SEPL candidates",
+                    "operationId": "getSwarmShadowLaneCandidates",
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string", "example": "autogenesis"},
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Shadow-lane candidate surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
                 "post": {
-                    "summary": "Submit or generate a descriptor candidate; local tests and minted proof digest gate any weight increase",
+                    "summary": "Submit or generate a descriptor candidate; type=autogenesis routes AGP protocol candidates through RSPL/SEPL",
                     "operationId": "postSwarmShadowLaneCandidate",
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string", "example": "autogenesis"},
+                        }
+                    ],
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -1052,6 +1078,82 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Representational collapse detected and shadow-only hetero routing triggered"},
                         "200": {"description": "Latent diversity sufficient or no embedding quorum"},
+                    },
+                }
+            },
+            "/swarm/resource-substrate": {
+                "get": {
+                    "summary": "AGP RSPL surface: lifecycle-managed prompts, tools, workflows, and Nomad contracts",
+                    "operationId": "getSwarmResourceSubstrate",
+                    "responses": {
+                        "200": {"description": "Resource substrate surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-resource-substrate.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/resource-substrate",
+                    "operationId": "getResourceSubstrateWellKnown",
+                    "responses": {
+                        "200": {"description": "Resource substrate surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/resource-substrate/register": {
+                "post": {
+                    "summary": "Register a draft or shadow RSPL resource descriptor without executing it",
+                    "operationId": "postSwarmResourceSubstrateRegister",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Resource descriptor accepted into the RSPL ledger"},
+                        "422": {"description": "Resource descriptor rejected by proof or secret boundary"},
+                    },
+                }
+            },
+            "/swarm/resource-substrate/version": {
+                "post": {
+                    "summary": "Submit a proof-bounded RSPL resource version with rollback/no-op metadata",
+                    "operationId": "postSwarmResourceSubstrateVersion",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Resource version accepted for shadow weighting"},
+                        "422": {"description": "Resource version rejected by proof, rollback, or secret boundary"},
+                    },
+                }
+            },
+            "/swarm/autogenesis": {
+                "get": {
+                    "summary": "AGP RSPL+SEPL protocol surface for bounded self-evolving Nomad resources",
+                    "operationId": "getSwarmAutogenesis",
+                    "responses": {
+                        "200": {"description": "Autogenesis protocol surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-autogenesis.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/autogenesis",
+                    "operationId": "getAutogenesisWellKnown",
+                    "responses": {
+                        "200": {"description": "Autogenesis protocol surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/autogenesis-recruit": {
+                "get": {
+                    "summary": "Machine-economy recruit surface for AGP protocol-patch packets and agent CTAs",
+                    "operationId": "getSwarmAutogenesisRecruit",
+                    "responses": {
+                        "200": {"description": "Autogenesis recruit surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-autogenesis-recruit.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/autogenesis-recruit",
+                    "operationId": "getAutogenesisRecruitWellKnown",
+                    "responses": {
+                        "200": {"description": "Autogenesis recruit surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
@@ -1703,7 +1805,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/swarm/development-cycles/events": {
                 "post": {
-                    "summary": "Evaluate one proposed development transition without applying code",
+                    "summary": "Evaluate one proposed development transition without applying code; AGP protocol candidates emit RSPL/SEPL receipts",
                     "operationId": "postSwarmDevelopmentCycleEvent",
                     "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
                     "responses": {

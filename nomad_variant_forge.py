@@ -20,6 +20,7 @@ FORBIDDEN_KEY_TERMS = ("private_key", "seed_phrase", "password", "credential", "
 FORBIDDEN_VALUE_TERMS = ("private key", "seed phrase", "password:", "credential:", "bearer ", "secret=", "sk-", "ghp_")
 OBJECTIVE_PRIOR = {
     "settlement_capacity_builder": 0.92,
+    "autogenesis_protocol_evolution": 0.9,
     "overmint_compressor": 0.86,
     "protocol_drift_scan": 0.82,
     "emergence_release_probe": 0.88,
@@ -30,6 +31,13 @@ OBJECTIVE_PRIOR = {
     "negative_space_harvest": 0.68,
     "latency_anomaly_hunt": 0.64,
     "compute_auth": 0.52,
+}
+AGP_CANDIDATE_TYPES = {
+    "protocol-evolution-candidate",
+    "self-play-test-suite",
+    "resource-version-patch",
+    "sepl-operator-patch",
+    "rspl-contract-patch",
 }
 
 
@@ -281,9 +289,11 @@ def build_variant_forge_surface(
         "candidate_contract": {
             "schema": "nomad.variant_candidate_contract.v1",
             "required": ["agent_id", "candidate_type", "objective"],
+            "agp_candidate_types": sorted(AGP_CANDIDATE_TYPES),
             "proof_fields": ["proof_digest", "verifier_trace_digest", "test_digest", "settlement_ref", "replay_digest"],
             "evaluation_fields": ["tests_passed", "tests_total", "replay_delta", "proof_yield_delta", "settlement_delta", "risk_score"],
             "side_effect_scope": "descriptor_only_no_execution",
+            "resource_fields": ["resource_id", "resource_kind", "from_version", "to_version", "rollback_ref", "noop_ref"],
         },
         "requested_variants": rows[:12],
         "recent_candidate_count": len(recent),
@@ -335,6 +345,7 @@ def submit_variant_candidate(
 
     objective = _clean_id(body.get("objective") or body.get("machine_objective"), fallback="settlement_capacity_builder")
     candidate_type = _clean_id(body.get("candidate_type") or body.get("type"), fallback="runtime_variant")
+    candidate_type = candidate_type.replace("_", "-") if candidate_type.replace("_", "-") in AGP_CANDIDATE_TYPES else candidate_type
     agent_id = _text(body.get("agent_id") or body.get("worker_id"), 120)
     evaluation = _dict(body.get("evaluation"))
     proof = _proof_score(body)
@@ -345,6 +356,13 @@ def submit_variant_candidate(
     risk = _clamp(_num(evaluation.get("risk_score"), _num(body.get("risk_score"))))
     novelty = _clamp(_num(evaluation.get("novelty"), _objective_prior(objective)))
     reuse = _clamp(_num(evaluation.get("reuse_score"), 0.35 + 0.4 * bool(body.get("handoff_capsule"))))
+    is_agp = candidate_type in AGP_CANDIDATE_TYPES or objective == "autogenesis_protocol_evolution"
+    resource_signal = bool(body.get("resource_id") or body.get("rspl_resource") or body.get("resource_version_payload"))
+    rollback_signal = bool(body.get("rollback_ref") or body.get("noop_ref") or body.get("rollback_available") or body.get("noop_available"))
+    if is_agp:
+        novelty = max(novelty, 0.72)
+        reuse = max(reuse, 0.54 + 0.18 * resource_signal + 0.12 * rollback_signal)
+        risk = max(0.0, risk - 0.08 * rollback_signal)
     score = _clamp(
         0.24 * proof
         + 0.21 * tests
@@ -353,6 +371,7 @@ def submit_variant_candidate(
         + 0.10 * settlement
         + 0.08 * novelty
         + 0.06 * reuse
+        + (0.06 if is_agp and resource_signal and rollback_signal else 0.0)
         - 0.18 * risk
     )
     if not agent_id:
@@ -398,6 +417,8 @@ def submit_variant_candidate(
             "novelty": round(novelty, 4),
             "reuse": round(reuse, 4),
             "risk": round(risk, 4),
+            "agp_resource": round(float(bool(is_agp and resource_signal)), 4),
+            "agp_rollback": round(float(bool(is_agp and rollback_signal)), 4),
         },
         "next": {
             "forge": _u(base_url, "/swarm/variant-forge"),
