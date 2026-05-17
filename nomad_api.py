@@ -1339,7 +1339,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _edge_ingress_prefix() -> str:
         """When NOMAD_PUBLIC_API_URL has no path (apex) but a CDN still forwards /nomad/*, strip this first."""
-        raw = (os.getenv("NOMAD_EDGE_INGRESS_PREFIX") or "").strip().rstrip("/")
+        configured = os.getenv("NOMAD_EDGE_INGRESS_PREFIX")
+        raw = ("nomad" if configured is None else configured).strip().rstrip("/")
         if not raw:
             return ""
         return raw if raw.startswith("/") else f"/{raw}"
