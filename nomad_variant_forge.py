@@ -578,7 +578,7 @@ def submit_variant_candidate(
     verifier_gate = _independent_verifier_gate(body, verifier_lease_index=verifier_lease_index)
     sepl_gate = _sepl_operator_trace_gate(body)
     learnability = _learnability_gate(body)
-    evaluation = _dict(body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation") or body.get("evaluation"))
+    evaluation = _dict(body.get("evaluation") or body.get("verifier_evaluation") or _dict(body.get("independent_verifier")).get("evaluation"))
     proof = _proof_score(body)
     tests = _test_score(evaluation)
     replay_gain = _clamp(_num(evaluation.get("replay_delta")) * 2.0 + _num(evaluation.get("counterfactual_score")))

@@ -10,6 +10,7 @@ from nomad_autogenesis import (
     version_resource,
 )
 from nomad_cli import run_once
+from nomad_variant_forge import submit_variant_candidate
 
 
 def _boundedness():
@@ -222,6 +223,24 @@ def test_development_cycle_event_and_shadow_candidate_emit_downstream_payloads(t
     assert event["learnability"]["accepted"] is True
     assert event["variant_candidate_payload"]["objective"] == "autogenesis_protocol_evolution"
     assert event["resource_version_payload"]["resource_id"] == "nomad-gradient"
+    variant = submit_variant_candidate(
+        event["variant_candidate_payload"],
+        base_url="https://nomad.example",
+        forge_surface={"forge_digest": "nomad-forge-test"},
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=tmp_path / "variants.jsonl",
+    )
+    version = version_resource(
+        event["resource_version_payload"],
+        base_url="https://nomad.example",
+        substrate_surface=substrate,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=tmp_path / "resources.jsonl",
+    )
+    assert variant["accepted"] is True
+    assert variant["independent_verifier"]["accepted"] is True
+    assert version["accepted"] is True
+    assert version["independent_verifier"]["accepted"] is True
     assert shadow["accepted"] is True
     assert shadow["decision"] == "admit_autogenesis_shadow_lane"
     assert shadow["independent_verifier"]["accepted"] is True

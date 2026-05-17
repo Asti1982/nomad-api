@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_variant_forge import _canonical_verifier_receipt_digest as _variant_verifier_receipt_digest
+
 
 DEFAULT_RESOURCE_LEDGER_PATH = Path(
     os.getenv("NOMAD_RESOURCE_SUBSTRATE_LEDGER_PATH", "nomad_resource_substrate_ledger.jsonl")
@@ -984,6 +986,62 @@ def record_development_cycle_event(
     else:
         decision = "hold_event_until_proof_boundary"
     core = {"event": event_type, "resource": resource.get("resource_id") or body.get("resource_id"), "score": round(score, 4)}
+    variant_candidate_payload = {
+        "agent_id": body.get("agent_id") or "autogenesis.worker",
+        "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
+        "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
+        "candidate_type": event_type,
+        "objective": "autogenesis_protocol_evolution",
+        "resource_id": resource.get("resource_id") or body.get("resource_id") or "autogenesis-resource",
+        "resource_kind": resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer",
+        "entity_type": _clean_entity_type(resource.get("entity_type") or body.get("entity_type"), resource_kind=resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer"),
+        "from_version": resource.get("from_version") or body.get("from_version") or "",
+        "to_version": resource.get("to_version") or body.get("to_version") or "shadow-v1",
+        "rollback_ref": body.get("rollback_ref") or body.get("noop_ref") or "",
+        "proof_digest": body.get("proof_digest") or body.get("digest") or "",
+        "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
+        "test_digest": body.get("test_digest") or "",
+        "sepl_operator_trace": sepl_gate.get("trace", []),
+        "learnability_mask": body.get("learnability_mask") or {},
+        "variable_lifting": body.get("variable_lifting") or {},
+        "verifier_evaluation": verifier_evaluation,
+        "evaluation": {
+            "tests_passed": _int(_dict(body.get("evaluation")).get("tests_passed") or body.get("tests_passed")),
+            "tests_total": _int(_dict(body.get("evaluation")).get("tests_total") or body.get("tests_total")),
+            "proof_yield_delta": _num(_dict(body.get("evaluation")).get("proof_yield_delta")),
+            "settlement_delta": revenue_pressure,
+            "novelty": 0.72,
+            "risk_score": _num(_dict(body.get("evaluation")).get("risk_score"), 0.18),
+        },
+    }
+    variant_candidate_payload["verifier_receipt_digest"] = _variant_verifier_receipt_digest(
+        variant_candidate_payload,
+        verifier_evaluation,
+    )
+    resource_version_payload = {
+        "agent_id": body.get("agent_id") or "autogenesis.worker",
+        "resource_id": resource.get("resource_id") or body.get("resource_id") or "autogenesis-resource",
+        "resource_kind": resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer",
+        "entity_type": _clean_entity_type(resource.get("entity_type") or body.get("entity_type"), resource_kind=resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer"),
+        "from_version": resource.get("from_version") or body.get("from_version") or "",
+        "to_version": resource.get("to_version") or body.get("to_version") or "shadow-v1",
+        "target_state": "shadow",
+        "proof_digest": body.get("proof_digest") or body.get("digest") or "",
+        "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
+        "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
+        "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
+        "verifier_evaluation": verifier_evaluation,
+        "test_digest": body.get("test_digest") or "",
+        "sepl_operator_trace": sepl_gate.get("trace", []),
+        "learnability_mask": body.get("learnability_mask") or {},
+        "variable_lifting": body.get("variable_lifting") or {},
+        "rollback_ref": body.get("rollback_ref") or body.get("noop_ref") or "",
+        "boundedness": body.get("boundedness") if isinstance(body.get("boundedness"), dict) else {},
+    }
+    resource_version_payload["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(
+        resource_version_payload,
+        verifier_evaluation,
+    )
     row = {
         "ok": True,
         "schema": "nomad.development_cycle_event_receipt.v1",
@@ -1017,49 +1075,8 @@ def record_development_cycle_event(
             + list(learnability.get("reason_codes") or [])
             + list(verifier_gate.get("reason_codes") or [])
         ),
-        "variant_candidate_payload": {
-            "agent_id": body.get("agent_id") or "autogenesis.worker",
-            "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
-            "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
-            "verifier_receipt_digest": verifier_gate.get("verifier_receipt_digest", ""),
-            "candidate_type": event_type,
-            "objective": "autogenesis_protocol_evolution",
-            "proof_digest": body.get("proof_digest") or body.get("digest") or "",
-            "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
-            "test_digest": body.get("test_digest") or "",
-            "sepl_operator_trace": sepl_gate.get("trace", []),
-            "learnability_mask": body.get("learnability_mask") or {},
-            "variable_lifting": body.get("variable_lifting") or {},
-            "verifier_evaluation": verifier_evaluation,
-            "evaluation": {
-                "tests_passed": _int(_dict(body.get("evaluation")).get("tests_passed") or body.get("tests_passed")),
-                "tests_total": _int(_dict(body.get("evaluation")).get("tests_total") or body.get("tests_total")),
-                "proof_yield_delta": _num(_dict(body.get("evaluation")).get("proof_yield_delta")),
-                "settlement_delta": revenue_pressure,
-                "novelty": 0.72,
-                "risk_score": _num(_dict(body.get("evaluation")).get("risk_score"), 0.18),
-            },
-        },
-        "resource_version_payload": {
-            "resource_id": resource.get("resource_id") or body.get("resource_id") or "autogenesis-resource",
-            "resource_kind": resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer",
-            "entity_type": _clean_entity_type(resource.get("entity_type") or body.get("entity_type"), resource_kind=resource.get("resource_kind") or body.get("resource_kind") or "protocol_layer"),
-            "from_version": resource.get("from_version") or body.get("from_version") or "",
-            "to_version": resource.get("to_version") or body.get("to_version") or "shadow-v1",
-            "target_state": "shadow",
-            "proof_digest": body.get("proof_digest") or body.get("digest") or "",
-            "verifier_trace_digest": verifier_gate.get("verifier_trace_digest", ""),
-            "verifier_agent_id": verifier_gate.get("verifier_agent_id", ""),
-            "verifier_lease_id": verifier_gate.get("verifier_lease_id", ""),
-            "verifier_receipt_digest": verifier_gate.get("verifier_receipt_digest", ""),
-            "verifier_evaluation": verifier_evaluation,
-            "test_digest": body.get("test_digest") or "",
-            "sepl_operator_trace": sepl_gate.get("trace", []),
-            "learnability_mask": body.get("learnability_mask") or {},
-            "variable_lifting": body.get("variable_lifting") or {},
-            "rollback_ref": body.get("rollback_ref") or body.get("noop_ref") or "",
-            "boundedness": body.get("boundedness") if isinstance(body.get("boundedness"), dict) else {},
-        },
+        "variant_candidate_payload": variant_candidate_payload,
+        "resource_version_payload": resource_version_payload,
         "next": {
             "shadow_lane": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "variant_candidates": _u(base_url, "/swarm/variant-candidates"),
