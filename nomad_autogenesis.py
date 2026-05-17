@@ -1306,14 +1306,40 @@ def _select_autonomous_resource(substrate: dict[str, Any], payload: dict[str, An
     }
 
 
-def _autonomous_lineage_digest(resource: dict[str, Any], substrate: dict[str, Any], recent_cycles: list[dict[str, Any]]) -> str:
+def _autonomous_lineage_digest(resource: dict[str, Any], payload: dict[str, Any]) -> str:
+    trigger_digest = _text(payload.get("trigger_digest") or payload.get("novelty_digest") or payload.get("signal_digest"), 220)
     core = {
         "resource_id": resource.get("resource_id"),
         "current_version": resource.get("current_version"),
         "state": resource.get("state"),
-        "surface_digest": substrate.get("surface_digest"),
+        "trigger_digest": trigger_digest or "stable_resource_lineage",
     }
     return f"sha256:{_digest(core, length=64)}"
+
+
+def _autonomous_lineage_depth(version: str) -> int:
+    return max(0, _text(version, 220).count("-agp-auto-"))
+
+
+def _recent_resource_cycle(
+    recent_cycles: list[dict[str, Any]],
+    resource_id: str,
+    *,
+    window: int,
+) -> dict[str, Any]:
+    if window <= 0:
+        return {}
+    rid = _clean_id(resource_id, fallback="")
+    for row in reversed(recent_cycles[-window:]):
+        resource = _dict(row.get("resource"))
+        if _clean_id(resource.get("resource_id"), fallback="") == rid and row.get("decision") in {
+            "commit_weighted_resource_version",
+            "commit_descriptor_resource_version",
+            "noop_resource_cooldown",
+            "noop_lineage_depth_limit",
+        }:
+            return row
+    return {}
 
 
 def _autonomous_version(current_version: str, lineage_digest: str) -> str:
@@ -1366,6 +1392,8 @@ def build_autonomous_agp_cycle_surface(
         },
         "hard_gates": [
             "dedupe_by_lineage_digest",
+            "resource_cooldown_window",
+            "lineage_depth_limit",
             "independent_verifier_lease_checked",
             "canonical_verifier_receipt_digest",
             "sepl_operator_trace_exact",
@@ -1386,6 +1414,12 @@ def build_autonomous_agp_cycle_surface(
             "active_worker_count": _int(fleet.get("active_worker_count")),
             "active_lease_count": _int(fleet.get("active_lease_count")),
             "agp_objective_target": _num(_dict(fleet.get("objective_targets")).get("autogenesis_protocol_evolution")),
+        },
+        "degeneration_guards": {
+            "default_cooldown_window_cycles": 3,
+            "default_max_auto_depth": 2,
+            "lineage_digest_inputs": ["resource_id", "current_version", "state", "optional_trigger_digest"],
+            "duplicate_policy": "noop_without_version_increment",
         },
         "recent_cycle_count": len(recent),
         "latest_cycle": last,
@@ -1421,7 +1455,11 @@ def run_autonomous_agp_cycle(
     agp = _dict(autogenesis_surface)
     recent_auto = _autonomous_ledger(ledger_path)
     resource = _select_autonomous_resource(substrate, body)
-    lineage_digest = _autonomous_lineage_digest(resource, substrate, recent_auto)
+    current_version = _text(resource.get("current_version") or "v1", 80)
+    lineage_digest = _autonomous_lineage_digest(resource, body)
+    max_auto_depth = max(1, min(_int(body.get("max_auto_depth"), 2), 8))
+    cooldown_window = max(0, min(_int(body.get("cooldown_window_cycles"), 3), 20))
+    force = bool(body.get("force") or body.get("force_cycle"))
     for row in reversed(recent_auto):
         if row.get("lineage_digest") == lineage_digest and row.get("decision") in {
             "commit_weighted_resource_version",
@@ -1440,6 +1478,50 @@ def run_autonomous_agp_cycle(
                 "commit": {"decision": "noop", "reason": "lineage_already_processed"},
                 "machine_instruction": "do_not_increment_version_for_duplicate_lineage",
             }
+    depth = _autonomous_lineage_depth(current_version)
+    if depth >= max_auto_depth and not force:
+        row = {
+            "ok": True,
+            "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+            "cycle_id": f"agp-auto-{_digest({'lineage': lineage_digest, 'depth': depth})}",
+            "accepted": False,
+            "decision": "noop_lineage_depth_limit",
+            "generated_at": now,
+            "lineage_digest": lineage_digest,
+            "resource": resource,
+            "lineage_depth": depth,
+            "max_auto_depth": max_auto_depth,
+            "commit": {"decision": "noop", "reason": "lineage_depth_limit"},
+            "machine_instruction": "wait_for_external_trigger_digest_or_human_review_before_more_depth",
+        }
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    recent_resource = _recent_resource_cycle(
+        recent_auto,
+        str(resource.get("resource_id") or ""),
+        window=cooldown_window,
+    )
+    if recent_resource and not (force or body.get("trigger_digest") or body.get("novelty_digest") or body.get("signal_digest")):
+        row = {
+            "ok": True,
+            "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+            "cycle_id": f"agp-auto-{_digest({'lineage': lineage_digest, 'cooldown': recent_resource.get('cycle_id')})}",
+            "accepted": False,
+            "decision": "noop_resource_cooldown",
+            "generated_at": now,
+            "lineage_digest": lineage_digest,
+            "resource": resource,
+            "cooldown_window_cycles": cooldown_window,
+            "cooldown_after": recent_resource.get("cycle_id", ""),
+            "commit": {"decision": "noop", "reason": "resource_recently_processed_without_new_signal"},
+            "machine_instruction": "provide_new_trigger_digest_or_wait_for_other_resource_before_recycling_same_resource",
+        }
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+            row["persisted"] = True
+        return row
 
     proposer_id = _clean_id(body.get("proposer_agent_id") or body.get("agent_id") or "nomad-agp-proposer", fallback="nomad-agp-proposer")
     wanted_verifier = _clean_id(body.get("verifier_agent_id"), fallback="")
@@ -1467,7 +1549,6 @@ def run_autonomous_agp_cycle(
             row["persisted"] = True
         return row
 
-    current_version = _text(resource.get("current_version") or "v1", 80)
     target_version = _text(body.get("to_version") or _autonomous_version(current_version, lineage_digest), 96)
     sepl_trace = _autonomous_sepl_trace(resource, lineage_digest, target_version)
     variable_name = _clean_id(body.get("variable") or "runtime_weight", fallback="runtime_weight")
@@ -1610,6 +1691,12 @@ def run_autonomous_agp_cycle(
             "min_effectiveness_score": min_effectiveness,
             "observed_effectiveness_score": round(_num(shadow.get("shadow_score")), 4),
             "side_effect_scope": "descriptor_only_resource_version",
+        },
+        "degeneration_guard": {
+            "lineage_depth": depth,
+            "max_auto_depth": max_auto_depth,
+            "cooldown_window_cycles": cooldown_window,
+            "force": force,
         },
         "lineage": {
             "parent_resource_id": resource.get("resource_id"),

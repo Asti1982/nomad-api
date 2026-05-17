@@ -250,6 +250,95 @@ def test_autonomous_agp_cycle_commits_weighted_descriptor_and_dedupes(tmp_path):
     assert duplicate["decision"] == "noop_duplicate_lineage"
 
 
+def test_autonomous_agp_cycle_cools_down_same_resource_after_weight(tmp_path):
+    auto_ledger = tmp_path / "auto.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+    first = run_autonomous_agp_cycle(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "resource": {
+                "resource_id": "nomad-autogenesis",
+                "resource_kind": "protocol_layer",
+                "entity_type": "agent",
+                "current_version": "v1",
+                "state": "shadow",
+                "effectiveness_score": 0.64,
+            },
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=auto_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+    updated_substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    second = run_autonomous_agp_cycle(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "resource": {
+                "resource_id": "nomad-autogenesis",
+                "resource_kind": "protocol_layer",
+                "entity_type": "agent",
+                "current_version": first["target_version"],
+                "state": "weighted",
+                "effectiveness_score": 0.98,
+            },
+        },
+        base_url="https://nomad.example",
+        resource_substrate=updated_substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=auto_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+
+    assert first["accepted"] is True
+    assert second["accepted"] is False
+    assert second["decision"] == "noop_resource_cooldown"
+    assert second["commit"]["reason"] == "resource_recently_processed_without_new_signal"
+
+
+def test_autonomous_agp_cycle_stops_at_lineage_depth_limit(tmp_path):
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example")
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+
+    cycle = run_autonomous_agp_cycle(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_auto_depth": 2,
+            "resource": {
+                "resource_id": "nomad-autogenesis",
+                "resource_kind": "protocol_layer",
+                "entity_type": "agent",
+                "current_version": "v1-agp-auto-a-agp-auto-b",
+                "state": "weighted",
+                "effectiveness_score": 0.98,
+            },
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=tmp_path / "auto.jsonl",
+        resource_ledger_path=tmp_path / "resources.jsonl",
+    )
+
+    assert cycle["accepted"] is False
+    assert cycle["decision"] == "noop_lineage_depth_limit"
+    assert cycle["lineage_depth"] == 2
+
+
 def test_autonomous_agp_cycle_waits_for_independent_verifier_lease(tmp_path):
     substrate = build_resource_substrate_surface(base_url="https://nomad.example")
     cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)

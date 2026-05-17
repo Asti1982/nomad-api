@@ -1354,6 +1354,8 @@ def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, r
         "proposer_lease_id": clean((lease or {}).get("lease_id"), 160),
         "verifier_agent_id": verifier_agent_id,
         "min_effectiveness_score": 0.72,
+        "cooldown_window_cycles": 3,
+        "max_auto_depth": 2,
         "allow_commit": os.getenv("NOMAD_AGP_ALLOW_COMMIT", "").strip().lower() in {"1", "true", "yes", "on"},
         "source_tag": "nomad.transition_worker.autonomous_agp_cycle",
         "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)

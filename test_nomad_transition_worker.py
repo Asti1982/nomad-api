@@ -673,6 +673,8 @@ def test_transition_worker_submits_autonomous_agp_cycle(monkeypatch):
     assert calls[0][2]["proposer_agent_id"] == "agp.proposer"
     assert calls[0][2]["verifier_agent_id"] == "agp.verifier"
     assert calls[0][2]["proposer_lease_id"] == "nomad-worker-lease-proposer"
+    assert calls[0][2]["cooldown_window_cycles"] == 3
+    assert calls[0][2]["max_auto_depth"] == 2
 
 
 def test_transition_worker_verifier_role_skips_autonomous_agp_proposal(monkeypatch):
