@@ -379,6 +379,36 @@ def test_worker_verifier_lease_index_exposes_real_leases(tmp_path: Path):
     assert indexed["expires_at"]
 
 
+def test_worker_completion_records_effectiveness_score(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+    lease = registry.worker_fleet_lease(
+        {
+            "agent_id": "agp.proposer",
+            "capabilities": ["agp"],
+            "proposed_objective": "proof_pressure_engine",
+            "lease_seconds": 120,
+        },
+        base_url="https://syndiode.com",
+    )
+
+    complete = registry.worker_fleet_complete(
+        {
+            "agent_id": "agp.proposer",
+            "lease_id": lease["lease_id"],
+            "report": {
+                "machine_objective": "paper_aligned_agp_live_cycle",
+                "proof_digest": "sha256:abc123abc123",
+                "effectiveness_score": 0.854,
+            },
+        },
+        base_url="https://syndiode.com",
+    )
+
+    assert complete["recorded_score"] == 0.854
+    index = registry.worker_verifier_lease_index()
+    assert index[lease["lease_id"]]["status"] == "completed"
+
+
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
     contract = registry.join_contract(base_url="https://syndiode.com")

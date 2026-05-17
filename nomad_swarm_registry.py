@@ -2353,12 +2353,13 @@ class SwarmJoinRegistry:
 
     @staticmethod
     def _report_score(report: dict[str, Any]) -> float:
-        try:
-            score = float(report.get("meta_score") or 0.0)
-        except (TypeError, ValueError):
-            score = 0.0
-        if score:
-            return round(score, 4)
+        for key in ("meta_score", "effectiveness_score", "shadow_score", "variant_score", "resource_effectiveness_score"):
+            try:
+                score = float(report.get(key) or 0.0)
+            except (TypeError, ValueError):
+                score = 0.0
+            if score:
+                return round(score, 4)
         score = 0.0
         if report.get("ok"):
             score += 2.0
