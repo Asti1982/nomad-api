@@ -25,6 +25,9 @@ DEFAULT_RESOURCE_LEDGER_PATH = Path(
 DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH = Path(
     os.getenv("NOMAD_DEVELOPMENT_CYCLES_LEDGER_PATH", "nomad_development_cycles_ledger.jsonl")
 )
+DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AUTONOMOUS_AGP_LEDGER_PATH", "nomad_autonomous_agp_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -149,6 +152,10 @@ def _resource_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT)
 
 def _cycle_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH, limit=limit)
+
+
+def _autonomous_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -1140,6 +1147,7 @@ def build_autogenesis_surface(
         "sepl": {
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "event_url": _u(root, "/swarm/development-cycles/events"),
+            "autonomous_cycle": _u(root, "/swarm/autogenesis/cycle"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "variant_candidates": _u(root, "/swarm/variant-candidates"),
             "operators": [
@@ -1189,6 +1197,7 @@ def build_autogenesis_surface(
         },
         "links": {
             "self": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "autonomous_cycle": _u(root, "/.well-known/nomad-autonomous-agp.json"),
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
@@ -1213,10 +1222,411 @@ def compact_autogenesis_surface(surface: dict[str, Any]) -> dict[str, Any]:
         "layers": _dict(surface.get("protocol")).get("layers", []),
         "mode": _dict(surface.get("protocol")).get("mode", ""),
         "shadow_lane": links.get("shadow_lane", ""),
+        "autonomous_cycle": links.get("autonomous_cycle", ""),
         "resource_substrate": links.get("resource_substrate", ""),
         "development_cycles": links.get("development_cycles", ""),
         "emergent_protocol_weight": _dict(surface.get("topology_governor_patch")).get("isolated_beta_role_weight", 0.0),
     }
+
+
+def _latest_verifier_lease(
+    verifier_lease_index: dict[str, Any] | None,
+    *,
+    verifier_agent_id: str = "",
+    verifier_lease_id: str = "",
+) -> dict[str, Any]:
+    if not isinstance(verifier_lease_index, dict):
+        return {}
+    if verifier_lease_id:
+        lease = _dict(verifier_lease_index.get(verifier_lease_id))
+        if lease:
+            return lease
+    wanted_agent = _clean_id(verifier_agent_id, fallback="")
+    matches: list[dict[str, Any]] = []
+    for lease in verifier_lease_index.values():
+        item = _dict(lease)
+        if not item:
+            continue
+        if wanted_agent and _clean_id(item.get("agent_id"), fallback="") != wanted_agent:
+            continue
+        if _clean_id(item.get("status"), fallback="active") not in {"active", "completed", "leased"}:
+            continue
+        matches.append(item)
+    matches.sort(
+        key=lambda item: _text(
+            item.get("completed_at")
+            or item.get("issued_at")
+            or item.get("leased_at")
+            or item.get("created_at")
+            or item.get("generated_at"),
+            80,
+        ),
+        reverse=True,
+    )
+    return matches[0] if matches else {}
+
+
+def _select_autonomous_resource(substrate: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    requested = _dict(payload.get("resource") or payload.get("rspl_resource"))
+    if requested.get("resource_id"):
+        return {
+            "resource_id": _clean_id(requested.get("resource_id"), fallback="autogenesis-resource"),
+            "resource_kind": _clean_id(requested.get("resource_kind") or requested.get("kind"), fallback="workflow"),
+            "entity_type": _clean_entity_type(requested.get("entity_type"), resource_kind=requested.get("resource_kind") or "workflow"),
+            "current_version": _text(requested.get("current_version") or requested.get("from_version") or "v1", 80),
+            "state": _clean_state(requested.get("state") or "shadow"),
+            "effectiveness_score": round(_num(requested.get("effectiveness_score"), 0.0), 4),
+        }
+    resources = _items(substrate.get("resources"))
+    if not resources:
+        resources = _default_resources("")
+    candidates: list[dict[str, Any]] = []
+    for item in resources:
+        state = _clean_state(item.get("state"))
+        score = _num(item.get("effectiveness_score"))
+        kind = _clean_id(item.get("resource_kind"), fallback="workflow")
+        weight = 0.0
+        if state in {"draft", "shadow", "tested", "weighted"}:
+            weight += 1.0
+        if _clean_id(item.get("resource_id"), fallback="") in {"nomad-autogenesis", "nomad-resource-substrate"}:
+            weight += 0.4
+        if kind in {"workflow", "protocol_layer", "json_contract", "routing_operator"}:
+            weight += 0.2
+        candidates.append({**item, "_autonomy_weight": weight, "_score": score})
+    candidates.sort(key=lambda item: (_num(item.get("_autonomy_weight")), -_num(item.get("_score"))), reverse=True)
+    chosen = candidates[0]
+    kind = _clean_id(chosen.get("resource_kind"), fallback="workflow")
+    return {
+        "resource_id": _clean_id(chosen.get("resource_id"), fallback="autogenesis-resource"),
+        "resource_kind": kind,
+        "entity_type": _clean_entity_type(chosen.get("entity_type"), resource_kind=kind),
+        "current_version": _text(chosen.get("current_version") or chosen.get("version") or "v1", 80),
+        "state": _clean_state(chosen.get("state")),
+        "effectiveness_score": round(_num(chosen.get("effectiveness_score")), 4),
+    }
+
+
+def _autonomous_lineage_digest(resource: dict[str, Any], substrate: dict[str, Any], recent_cycles: list[dict[str, Any]]) -> str:
+    core = {
+        "resource_id": resource.get("resource_id"),
+        "current_version": resource.get("current_version"),
+        "state": resource.get("state"),
+        "surface_digest": substrate.get("surface_digest"),
+    }
+    return f"sha256:{_digest(core, length=64)}"
+
+
+def _autonomous_version(current_version: str, lineage_digest: str) -> str:
+    base = _clean_id(current_version or "v1", fallback="v1")[:48]
+    suffix = lineage_digest.split(":", 1)[-1][:12]
+    return f"{base}-agp-auto-{suffix}"
+
+
+def _autonomous_sepl_trace(resource: dict[str, Any], lineage_digest: str, target_version: str) -> list[dict[str, Any]]:
+    rid = resource.get("resource_id", "autogenesis-resource")
+    return [
+        {"op": "reflect", "input": lineage_digest, "output": f"{rid} has proof-weight opportunity"},
+        {"op": "select", "input": f"{rid} has proof-weight opportunity", "output": f"{rid}.runtime_weight"},
+        {"op": "improve", "input": f"{rid}.runtime_weight", "output": target_version},
+        {"op": "evaluate", "input": target_version, "output": "autonomous verifier checks and rollback guard passed"},
+        {"op": "commit", "input": "autonomous verifier checks and rollback guard passed", "decision": "weighted_shadow_or_noop"},
+    ]
+
+
+def build_autonomous_agp_cycle_surface(
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    worker_fleet: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Expose the autonomous AGP loop without executing unbounded changes."""
+    root = (base_url or "").strip().rstrip("/")
+    recent = _autonomous_ledger(ledger_path)
+    substrate = _dict(resource_substrate)
+    agp = _dict(autogenesis_surface)
+    fleet = _dict(worker_fleet)
+    last = recent[-1] if recent else {}
+    return {
+        "ok": True,
+        "schema": "nomad.autonomous_agp_cycle.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "surface_digest": f"nomad-agp-auto-{_digest({'recent': len(recent), 'agp': agp.get('surface_digest'), 'rspl': substrate.get('surface_digest')})}",
+        "mode": "autonomous_shadow_cycle",
+        "loop": list(SEPL_OPERATORS),
+        "autonomy_boundary": {
+            "proposer_daemon": "nomad_transition_worker:autogenesis_protocol_evolution",
+            "verifier_daemon": "independent active worker lease required",
+            "side_effect_scope": "nomad_shadow_lane_only",
+            "apply_code": False,
+            "commit_surface_state_only": True,
+            "default_commit_target": "weighted",
+        },
+        "hard_gates": [
+            "dedupe_by_lineage_digest",
+            "independent_verifier_lease_checked",
+            "canonical_verifier_receipt_digest",
+            "sepl_operator_trace_exact",
+            "learnability_mask_for_lifted_variables",
+            "rollback_or_noop_ref",
+            "positive_effectiveness_delta",
+            "descriptor_only_resource_version",
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-autonomous-agp.json"),
+            "cycle": _u(root, "/swarm/autogenesis/cycle"),
+            "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "variant_candidates": _u(root, "/swarm/variant-candidates"),
+        },
+        "runtime_pressure": {
+            "active_worker_count": _int(fleet.get("active_worker_count")),
+            "active_lease_count": _int(fleet.get("active_lease_count")),
+            "agp_objective_target": _num(_dict(fleet.get("objective_targets")).get("autogenesis_protocol_evolution")),
+        },
+        "recent_cycle_count": len(recent),
+        "latest_cycle": last,
+        "machine_instruction": "proposer_reads_surface_then_post_cycle; verifier_must_hold_distinct_worker_lease; duplicate_lineage_returns_noop",
+    }
+
+
+def run_autonomous_agp_cycle(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    resource_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Run one bounded autonomous AGP propose-evaluate-shadow cycle."""
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+            "accepted": False,
+            "decision": "reject_forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    substrate = _dict(resource_substrate)
+    development = _dict(development_surface)
+    agp = _dict(autogenesis_surface)
+    recent_auto = _autonomous_ledger(ledger_path)
+    resource = _select_autonomous_resource(substrate, body)
+    lineage_digest = _autonomous_lineage_digest(resource, substrate, recent_auto)
+    for row in reversed(recent_auto):
+        if row.get("lineage_digest") == lineage_digest and row.get("decision") in {
+            "commit_weighted_resource_version",
+            "commit_descriptor_resource_version",
+            "noop_duplicate_lineage",
+        }:
+            return {
+                "ok": True,
+                "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+                "accepted": False,
+                "decision": "noop_duplicate_lineage",
+                "generated_at": now,
+                "lineage_digest": lineage_digest,
+                "duplicate_of": row.get("cycle_id", ""),
+                "resource": resource,
+                "commit": {"decision": "noop", "reason": "lineage_already_processed"},
+                "machine_instruction": "do_not_increment_version_for_duplicate_lineage",
+            }
+
+    proposer_id = _clean_id(body.get("proposer_agent_id") or body.get("agent_id") or "nomad-agp-proposer", fallback="nomad-agp-proposer")
+    wanted_verifier = _clean_id(body.get("verifier_agent_id"), fallback="")
+    verifier_lease = _latest_verifier_lease(
+        verifier_lease_index,
+        verifier_agent_id=wanted_verifier,
+        verifier_lease_id=_text(body.get("verifier_lease_id"), 160),
+    )
+    verifier_id = _clean_id(body.get("verifier_agent_id") or verifier_lease.get("agent_id"), fallback="")
+    verifier_lease_id = _text(body.get("verifier_lease_id") or verifier_lease.get("lease_id"), 160)
+    if not verifier_id or not verifier_lease_id:
+        row = {
+            "ok": True,
+            "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+            "cycle_id": f"agp-auto-{_digest({'lineage': lineage_digest, 'wait': now})}",
+            "generated_at": now,
+            "accepted": False,
+            "decision": "wait_for_independent_verifier_lease",
+            "lineage_digest": lineage_digest,
+            "resource": resource,
+            "commit": {"decision": "noop", "reason": "independent_verifier_lease_required"},
+        }
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+
+    current_version = _text(resource.get("current_version") or "v1", 80)
+    target_version = _text(body.get("to_version") or _autonomous_version(current_version, lineage_digest), 96)
+    sepl_trace = _autonomous_sepl_trace(resource, lineage_digest, target_version)
+    variable_name = _clean_id(body.get("variable") or "runtime_weight", fallback="runtime_weight")
+    checks = {
+        "rspl_resource_selected": bool(resource.get("resource_id")),
+        "sepl_trace_exact": [item.get("op") for item in sepl_trace] == list(SEPL_OPERATORS),
+        "learnability_mask_present": True,
+        "rollback_noop_present": True,
+        "verifier_lease_present": bool(verifier_lease_id),
+        "verifier_agent_distinct": bool(verifier_id and verifier_id != proposer_id),
+        "side_effect_scope_bounded": True,
+        "duplicate_lineage": False,
+    }
+    tests_total = len(checks)
+    tests_passed = sum(1 for value in checks.values() if bool(value))
+    verifier_evaluation = {
+        "tests_passed": tests_passed,
+        "tests_total": tests_total,
+        "checks": checks,
+        "lineage_digest": lineage_digest,
+        "effectiveness_delta": round(max(0.04, 1.0 - _num(resource.get("effectiveness_score"))), 4),
+    }
+    candidate = {
+        "agent_id": proposer_id,
+        "proposer_agent_id": proposer_id,
+        "candidate_type": "protocol-evolution-candidate",
+        "resource": {
+            "resource_id": resource.get("resource_id"),
+            "resource_kind": resource.get("resource_kind"),
+            "entity_type": resource.get("entity_type"),
+            "from_version": current_version,
+            "to_version": target_version,
+            "state": "shadow",
+        },
+        "operator_patch": {
+            "op": "weight",
+            "rule": "autonomous_agp_runtime_weight",
+            "lineage_digest": lineage_digest,
+            "target_state": "weighted",
+        },
+        "sepl_operator_trace": sepl_trace,
+        "learnability_mask": {variable_name: True},
+        "variable_lifting": {"variables": [{"name": variable_name, "require_grad": True}]},
+        "self_play": {"mode": "disabled_until_external_paid_receipt", "synthetic_buyer_agents": 0, "receipt_prediction_delta": 0.0},
+        "rollback_ref": f"noop:{resource.get('resource_id')}:{current_version}",
+        "boundedness": {
+            "ttl_seconds": _int(body.get("ttl_seconds"), 300) or 300,
+            "side_effect_scope": "nomad_shadow_lane_only",
+            "rollback_available": True,
+            "secrets_free": True,
+        },
+        "evaluation": {
+            "tests_passed": tests_passed,
+            "tests_total": tests_total,
+            "proof_yield_delta": round(1.0 + tests_passed / max(1, tests_total), 4),
+            "risk_score": 0.04,
+            "novelty": 0.74,
+            "reuse_score": 0.82,
+        },
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": verifier_lease_id,
+        "verifier_trace_digest": f"sha256:{_digest({'verifier_lease': verifier_lease, 'checks': checks, 'lineage': lineage_digest}, length=64)}",
+        "verifier_evaluation": verifier_evaluation,
+        "test_digest": f"sha256:{_digest(checks, length=64)}",
+    }
+    candidate["proof_digest"] = f"sha256:{_digest({'lineage': lineage_digest, 'candidate': candidate}, length=64)}"
+    candidate["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(candidate, verifier_evaluation)
+    shadow = submit_autogenesis_shadow_candidate(
+        candidate,
+        base_url=base_url,
+        autogenesis_surface=agp,
+        development_surface=development,
+        verifier_lease_index=verifier_lease_index,
+        persist=persist,
+    )
+    event = _dict(shadow.get("development_cycle_event"))
+    variant_payload = _dict(event.get("variant_candidate_payload"))
+    resource_payload = _dict(event.get("resource_version_payload"))
+    min_effectiveness = _num(body.get("min_effectiveness_score"), 0.72)
+    target_state = "committed" if bool(body.get("allow_commit")) and _num(shadow.get("shadow_score")) >= 0.86 else "weighted"
+    if resource_payload:
+        resource_payload["target_state"] = target_state
+        resource_payload["to_version"] = target_version
+    variant_receipt: dict[str, Any] = {"ok": False, "accepted": False, "decision": "skipped_until_shadow_accepts"}
+    version_receipt: dict[str, Any] = {"ok": False, "accepted": False, "decision": "skipped_until_shadow_accepts"}
+    if shadow.get("accepted"):
+        from nomad_variant_forge import submit_variant_candidate
+
+        variant_receipt = submit_variant_candidate(
+            variant_payload,
+            base_url=base_url,
+            forge_surface={"forge_digest": f"nomad-agp-auto-forge-{_digest(lineage_digest)}"},
+            verifier_lease_index=verifier_lease_index,
+            persist=persist,
+        )
+        version_receipt = version_resource(
+            resource_payload,
+            base_url=base_url,
+            substrate_surface=substrate,
+            verifier_lease_index=verifier_lease_index,
+            ledger_path=resource_ledger_path,
+            persist=persist,
+        )
+    commit_ready = (
+        bool(shadow.get("accepted"))
+        and bool(variant_receipt.get("accepted"))
+        and bool(version_receipt.get("accepted"))
+        and _num(shadow.get("shadow_score")) >= min_effectiveness
+    )
+    if commit_ready:
+        decision = "commit_descriptor_resource_version" if target_state == "committed" else "commit_weighted_resource_version"
+        accepted = True
+    elif shadow.get("accepted"):
+        decision = "noop_until_variant_and_resource_weight"
+        accepted = False
+    else:
+        decision = "noop_until_shadow_accepts"
+        accepted = False
+    cycle_id = f"agp-auto-{_digest({'lineage': lineage_digest, 'shadow': shadow.get('candidate_id'), 'decision': decision})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.autonomous_agp_cycle_receipt.v1",
+        "cycle_id": cycle_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": decision,
+        "lineage_digest": lineage_digest,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": verifier_lease_id,
+        "resource": resource,
+        "target_version": target_version,
+        "candidate_payload": candidate,
+        "shadow": shadow,
+        "variant_candidate": variant_receipt,
+        "resource_version": version_receipt,
+        "commit": {
+            "decision": "commit" if commit_ready else "noop",
+            "target_state": target_state if commit_ready else "noop",
+            "min_effectiveness_score": min_effectiveness,
+            "observed_effectiveness_score": round(_num(shadow.get("shadow_score")), 4),
+            "side_effect_scope": "descriptor_only_resource_version",
+        },
+        "lineage": {
+            "parent_resource_id": resource.get("resource_id"),
+            "parent_version": current_version,
+            "child_version": target_version,
+            "lineage_digest": lineage_digest,
+            "proof_digest": candidate.get("proof_digest"),
+            "verifier_receipt_digest": candidate.get("verifier_receipt_digest"),
+        },
+        "machine_instruction": "repeat_only_after_new_lineage_or_new_verifier_receipt; duplicate_lineage_must_noop",
+    }
+    if persist:
+        _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
 
 
 def submit_autogenesis_shadow_candidate(

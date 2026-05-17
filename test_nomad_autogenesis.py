@@ -1,11 +1,13 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
+    build_autonomous_agp_cycle_surface,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
     build_development_cycles_surface,
     build_resource_substrate_surface,
     record_development_cycle_event,
     register_resource,
+    run_autonomous_agp_cycle,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -157,6 +159,7 @@ def test_autogenesis_surface_connects_rspl_sepl_and_recruit_market():
     assert agp["protocol"]["layers"] == ["RSPL", "SEPL"]
     assert agp["protocol"]["sepl_operator_algebra"] == ["reflect", "select", "improve", "evaluate", "commit"]
     assert agp["rspl"]["register_url"].endswith("/swarm/resource-substrate/register")
+    assert agp["sepl"]["autonomous_cycle"].endswith("/swarm/autogenesis/cycle")
     assert agp["sepl"]["shadow_lane"].endswith("/swarm/shadow-lane/candidates?type=autogenesis")
     assert [item["op"] for item in agp["sepl"]["operators"]] == ["reflect", "select", "improve", "evaluate", "commit"]
     assert agp["topology_governor_patch"]["isolated_beta_role_weight"] == 0.40
@@ -168,6 +171,104 @@ def test_autogenesis_surface_connects_rspl_sepl_and_recruit_market():
     assert recruit["packets"][0]["headline"]
     assert recruit["marketing_boundary"]["x_thread_drafts"][0].startswith("Nomad now has AGP")
     assert cli["schema"] == "nomad.autogenesis_protocol.v1"
+
+
+def test_autonomous_agp_cycle_commits_weighted_descriptor_and_dedupes(tmp_path):
+    auto_ledger = tmp_path / "auto.jsonl"
+    cycle_ledger = tmp_path / "cycles.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate, ledger_path=cycle_ledger)
+    agp = build_autogenesis_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_cycles=cycles,
+        worker_fleet={"active_worker_count": 2},
+    )
+    surface = build_autonomous_agp_cycle_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface=agp,
+        worker_fleet={"active_worker_count": 2, "active_lease_count": 1},
+        ledger_path=auto_ledger,
+    )
+
+    cycle = run_autonomous_agp_cycle(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "resource": {
+                "resource_id": "nomad-autogenesis",
+                "resource_kind": "protocol_layer",
+                "entity_type": "agent",
+                "current_version": "v1",
+                "state": "shadow",
+                "effectiveness_score": 0.64,
+            },
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=auto_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+    duplicate = run_autonomous_agp_cycle(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "resource": {
+                "resource_id": "nomad-autogenesis",
+                "resource_kind": "protocol_layer",
+                "entity_type": "agent",
+                "current_version": "v1",
+                "state": "shadow",
+                "effectiveness_score": 0.64,
+            },
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=auto_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+
+    assert surface["schema"] == "nomad.autonomous_agp_cycle.v1"
+    assert surface["links"]["cycle"].endswith("/swarm/autogenesis/cycle")
+    assert cycle["accepted"] is True
+    assert cycle["decision"] == "commit_weighted_resource_version"
+    assert cycle["shadow"]["accepted"] is True
+    assert cycle["variant_candidate"]["accepted"] is True
+    assert cycle["resource_version"]["accepted"] is True
+    assert cycle["resource_version"]["target_state"] == "weighted"
+    assert cycle["commit"]["side_effect_scope"] == "descriptor_only_resource_version"
+    assert cycle["lineage"]["proof_digest"].startswith("sha256:")
+    assert duplicate["accepted"] is False
+    assert duplicate["decision"] == "noop_duplicate_lineage"
+
+
+def test_autonomous_agp_cycle_waits_for_independent_verifier_lease(tmp_path):
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example")
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+
+    cycle = run_autonomous_agp_cycle(
+        {"agent_id": "agp.proposer", "verifier_agent_id": "agp.verifier"},
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index={},
+        ledger_path=tmp_path / "auto.jsonl",
+        resource_ledger_path=tmp_path / "resources.jsonl",
+    )
+
+    assert cycle["accepted"] is False
+    assert cycle["decision"] == "wait_for_independent_verifier_lease"
+    assert cycle["commit"]["decision"] == "noop"
 
 
 def test_development_cycle_event_and_shadow_candidate_emit_downstream_payloads(tmp_path):

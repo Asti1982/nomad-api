@@ -809,6 +809,17 @@ def _score_run(report: dict) -> float:
         score += 0.45
         if clean(replay_surface.get("selected_objective"), 80) == clean(report.get("machine_objective"), 80):
             score += min(0.75, float(replay_surface.get("selected_score") or 0.0))
+    agp_cycle = report.get("agp_autonomous_cycle") if isinstance(report.get("agp_autonomous_cycle"), dict) else {}
+    if agp_cycle:
+        if agp_cycle.get("accepted"):
+            score += 1.25
+        shadow = agp_cycle.get("shadow") if isinstance(agp_cycle.get("shadow"), dict) else {}
+        score += min(1.0, float(shadow.get("shadow_score") or 0.0))
+        commit = agp_cycle.get("commit") if isinstance(agp_cycle.get("commit"), dict) else {}
+        if commit.get("decision") == "commit":
+            score += 0.75
+        elif agp_cycle.get("decision") == "noop_duplicate_lineage":
+            score -= 0.25
     tier = str(report.get("witness_tier") or "").strip().lower()
     if tier == "strong":
         score += 1.05
@@ -1322,6 +1333,40 @@ def _variant_candidate_submit(base_url: str, agent_id: str, timeout: float, repo
             "error": clean((data or {}).get("error") if isinstance(data, dict) else "variant_candidate_failed", 120),
             "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
             "candidate": payload,
+        }
+    return data
+
+
+def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    objective = clean(report.get("machine_objective"), 80)
+    if objective != "autogenesis_protocol_evolution":
+        return {"ok": False, "skipped": True, "reason": "not_agp_objective"}
+    role = clean(os.getenv("NOMAD_AGP_ROLE", ""), 32).lower()
+    if role == "verifier":
+        return {"ok": True, "skipped": True, "reason": "verifier_role_waits_for_proposer_cycle"}
+    verifier_agent_id = clean(os.getenv("NOMAD_AGP_VERIFIER_AGENT_ID", ""), 120)
+    if not verifier_agent_id and "proposer" in agent_id:
+        verifier_agent_id = clean(agent_id.replace("proposer", "verifier"), 120)
+    payload = {
+        "schema": "nomad.autonomous_agp_cycle_request.v1",
+        "agent_id": agent_id,
+        "proposer_agent_id": agent_id,
+        "proposer_lease_id": clean((lease or {}).get("lease_id"), 160),
+        "verifier_agent_id": verifier_agent_id,
+        "min_effectiveness_score": 0.72,
+        "allow_commit": os.getenv("NOMAD_AGP_ALLOW_COMMIT", "").strip().lower() in {"1", "true", "yes", "on"},
+        "source_tag": "nomad.transition_worker.autonomous_agp_cycle",
+        "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
+        if isinstance(report.get("local_witness"), dict)
+        else "",
+    }
+    data = http_json("POST", endpoint(base_url, "/swarm/autogenesis/cycle"), payload, timeout=timeout)
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return {
+            "ok": False,
+            "error": clean((data or {}).get("error") if isinstance(data, dict) else "agp_autonomous_cycle_failed", 120),
+            "http_status": int((data or {}).get("http_status") or 0) if isinstance(data, dict) else 0,
+            "cycle_request": payload,
         }
     return data
 
@@ -1903,6 +1948,13 @@ def main() -> None:
                 a.base_url,
                 a.agent_id,
                 timeout=min(8.0, timeout),
+                report=report,
+                lease=fleet_lease,
+            )
+            report["agp_autonomous_cycle"] = _agp_autonomous_cycle_submit(
+                a.base_url,
+                a.agent_id,
+                timeout=min(10.0, timeout),
                 report=report,
                 lease=fleet_lease,
             )

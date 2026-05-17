@@ -631,6 +631,8 @@ def test_agp_pair_launch_scripts_wire_codex_and_nomad_brain_modes():
     installer = (root / "install_nomad_transition_worker.bat").read_text(encoding="utf-8")
 
     assert "autogenesis_protocol_evolution" in ps1
+    assert "NOMAD_AGP_ROLE" in ps1
+    assert "NOMAD_AGP_VERIFIER_AGENT_ID" in ps1
     assert "--edge-with-ollama" in ps1
     assert "--ollama-model" in ps1
     assert "CodexProposer" in ps1
@@ -639,3 +641,52 @@ def test_agp_pair_launch_scripts_wire_codex_and_nomad_brain_modes():
     assert "NOMAD_AGP_CODEX_PROPOSER=1" in codex_bat
     assert "start_nomad_agp_pair.ps1" in installer
     assert "nomad_codex_agp_pair.bat" in installer
+
+
+def test_transition_worker_submits_autonomous_agp_cycle(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        return {
+            "ok": True,
+            "accepted": True,
+            "decision": "commit_weighted_resource_version",
+            "shadow": {"shadow_score": 0.91},
+            "commit": {"decision": "commit"},
+        }
+
+    monkeypatch.setattr(worker, "http_json", fake_http)
+    monkeypatch.setenv("NOMAD_AGP_ROLE", "proposer")
+    monkeypatch.setenv("NOMAD_AGP_VERIFIER_AGENT_ID", "agp.verifier")
+    result = worker._agp_autonomous_cycle_submit(
+        "https://nomad.example",
+        "agp.proposer",
+        3.0,
+        {"machine_objective": "autogenesis_protocol_evolution", "local_witness": {"digest_hex": "abc"}},
+        {"lease_id": "nomad-worker-lease-proposer"},
+    )
+
+    assert result["accepted"] is True
+    assert calls[0][1].endswith("/swarm/autogenesis/cycle")
+    assert calls[0][2]["proposer_agent_id"] == "agp.proposer"
+    assert calls[0][2]["verifier_agent_id"] == "agp.verifier"
+    assert calls[0][2]["proposer_lease_id"] == "nomad-worker-lease-proposer"
+
+
+def test_transition_worker_verifier_role_skips_autonomous_agp_proposal(monkeypatch):
+    worker = _load_worker()
+    monkeypatch.setenv("NOMAD_AGP_ROLE", "verifier")
+
+    result = worker._agp_autonomous_cycle_submit(
+        "https://nomad.example",
+        "agp.verifier",
+        3.0,
+        {"machine_objective": "autogenesis_protocol_evolution"},
+        {"lease_id": "nomad-worker-lease-verifier"},
+    )
+
+    assert result["ok"] is True
+    assert result["skipped"] is True
+    assert result["reason"] == "verifier_role_waits_for_proposer_cycle"

@@ -110,6 +110,9 @@ function Start-AgpWorker {
     $quotedArgs = (@($Runtime.Args) + $argsList) | ForEach-Object { Quote-PSArg ([string]$_) }
     $command = @(
         "`$env:NOMAD_TRANSITION_WORKER_ID = $(Quote-PSArg $AgentId)",
+        "`$env:NOMAD_AGP_ROLE = $(Quote-PSArg $Role)",
+        "`$env:NOMAD_AGP_PROPOSER_AGENT_ID = $(Quote-PSArg $ProposerAgentId)",
+        "`$env:NOMAD_AGP_VERIFIER_AGENT_ID = $(Quote-PSArg $VerifierAgentId)",
         "`$env:NOMAD_EDGE_WORKER = '1'",
         "`$env:NOMAD_EDGE_WITH_OLLAMA = $(Quote-PSArg $edgeWithOllama)",
         "`$env:NOMAD_SWARM_SURPLUS_OPT_IN = '1'",
