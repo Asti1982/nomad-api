@@ -1405,6 +1405,7 @@ def build_autonomous_agp_cycle_surface(
         "links": {
             "self": _u(root, "/.well-known/nomad-autonomous-agp.json"),
             "cycle": _u(root, "/swarm/autogenesis/cycle"),
+            "run": _u(root, "/swarm/autogenesis/run"),
             "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
@@ -1418,6 +1419,7 @@ def build_autonomous_agp_cycle_surface(
         "degeneration_guards": {
             "default_cooldown_window_cycles": 3,
             "default_max_auto_depth": 2,
+            "default_batch_max_cycles": 3,
             "lineage_digest_inputs": ["resource_id", "current_version", "state", "optional_trigger_digest"],
             "duplicate_policy": "noop_without_version_increment",
         },
@@ -1707,6 +1709,163 @@ def run_autonomous_agp_cycle(
             "verifier_receipt_digest": candidate.get("verifier_receipt_digest"),
         },
         "machine_instruction": "repeat_only_after_new_lineage_or_new_verifier_receipt; duplicate_lineage_must_noop",
+    }
+    if persist:
+        _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def _autonomous_batch_resources(substrate: dict[str, Any], payload: dict[str, Any], *, max_cycles: int) -> list[dict[str, Any]]:
+    explicit = payload.get("resources") or payload.get("candidate_resources")
+    resources: list[dict[str, Any]] = []
+    if isinstance(explicit, list):
+        resources = [_select_autonomous_resource(substrate, {"resource": item}) for item in explicit if isinstance(item, dict)]
+    elif isinstance(payload.get("resource"), dict) or isinstance(payload.get("rspl_resource"), dict):
+        resources = [_select_autonomous_resource(substrate, payload)]
+    else:
+        seen: set[str] = set()
+        for item in _items(substrate.get("resources")) or _default_resources(""):
+            rid = _clean_id(item.get("resource_id"), fallback="")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            kind = _clean_id(item.get("resource_kind"), fallback="workflow")
+            state = _clean_state(item.get("state"))
+            priority = 0.0
+            if state in {"draft", "shadow"}:
+                priority += 1.0
+            elif state in {"tested", "weighted"}:
+                priority += 0.7
+            if rid in {"nomad-autogenesis", "nomad-resource-substrate"}:
+                priority += 0.4
+            if kind in {"workflow", "protocol_layer", "json_contract", "routing_operator"}:
+                priority += 0.2
+            resources.append(
+                {
+                    "resource_id": rid,
+                    "resource_kind": kind,
+                    "entity_type": _clean_entity_type(item.get("entity_type"), resource_kind=kind),
+                    "current_version": _text(item.get("current_version") or item.get("version") or "v1", 80),
+                    "state": state,
+                    "effectiveness_score": round(_num(item.get("effectiveness_score")), 4),
+                    "_priority": priority,
+                }
+            )
+        resources.sort(key=lambda item: (_num(item.get("_priority")), -_num(item.get("effectiveness_score"))), reverse=True)
+    out: list[dict[str, Any]] = []
+    seen_line: set[str] = set()
+    for item in resources:
+        clean_item = {
+            "resource_id": _clean_id(item.get("resource_id"), fallback="autogenesis-resource"),
+            "resource_kind": _clean_id(item.get("resource_kind"), fallback="workflow"),
+            "entity_type": _clean_entity_type(item.get("entity_type"), resource_kind=item.get("resource_kind") or "workflow"),
+            "current_version": _text(item.get("current_version") or item.get("from_version") or "v1", 80),
+            "state": _clean_state(item.get("state") or "shadow"),
+            "effectiveness_score": round(_num(item.get("effectiveness_score")), 4),
+        }
+        key = f"{clean_item['resource_id']}:{clean_item['current_version']}:{clean_item['state']}"
+        if key in seen_line:
+            continue
+        seen_line.add(key)
+        out.append(clean_item)
+        if len(out) >= max_cycles:
+            break
+    return out
+
+
+def run_autonomous_agp_batch(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    resource_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Run a bounded autonomous AGP batch across several resources."""
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.autonomous_agp_batch_receipt.v1",
+            "accepted": False,
+            "decision": "reject_forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    substrate = _dict(resource_substrate)
+    max_cycles = max(1, min(_int(body.get("max_cycles"), 3), 8))
+    resources = _autonomous_batch_resources(substrate, body, max_cycles=max_cycles)
+    if not resources:
+        return {
+            "ok": True,
+            "schema": "nomad.autonomous_agp_batch_receipt.v1",
+            "accepted": False,
+            "decision": "noop_no_resources_available",
+            "generated_at": now,
+            "cycles": [],
+            "summary": {"attempted": 0, "committed": 0, "noop": 0},
+        }
+    cycles: list[dict[str, Any]] = []
+    stop_reason = "max_cycles_reached"
+    for idx, resource in enumerate(resources[:max_cycles], start=1):
+        cycle_payload = {
+            **body,
+            "resource": resource,
+            "batch_index": idx,
+            "batch_size": min(max_cycles, len(resources)),
+        }
+        cycle = run_autonomous_agp_cycle(
+            cycle_payload,
+            base_url=base_url,
+            resource_substrate=substrate,
+            development_surface=development_surface,
+            autogenesis_surface=autogenesis_surface,
+            verifier_lease_index=verifier_lease_index,
+            ledger_path=ledger_path,
+            resource_ledger_path=resource_ledger_path,
+            persist=persist,
+        )
+        cycles.append(cycle)
+        if cycle.get("decision") == "wait_for_independent_verifier_lease":
+            stop_reason = "wait_for_independent_verifier_lease"
+            break
+    committed = [item for item in cycles if str(item.get("decision") or "").startswith("commit_")]
+    noops = [item for item in cycles if str(item.get("decision") or "").startswith("noop_") or not item.get("accepted")]
+    accepted = bool(committed)
+    if committed and len(cycles) >= min(max_cycles, len(resources)):
+        decision = "batch_committed_bounded_resource_versions"
+    elif committed:
+        decision = "batch_partial_commit_then_stop"
+    elif stop_reason == "wait_for_independent_verifier_lease":
+        decision = "batch_wait_for_independent_verifier_lease"
+    else:
+        decision = "batch_noop"
+    batch_id = f"agp-batch-{_digest({'cycles': [item.get('cycle_id') for item in cycles], 'decision': decision})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.autonomous_agp_batch_receipt.v1",
+        "batch_id": batch_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": decision,
+        "max_cycles": max_cycles,
+        "stop_reason": stop_reason,
+        "cycles": cycles,
+        "summary": {
+            "attempted": len(cycles),
+            "committed": len(committed),
+            "noop": len(noops),
+            "resources_considered": len(resources),
+            "decisions": [str(item.get("decision") or "") for item in cycles],
+        },
+        "machine_instruction": "resume_only_after_new_signal_or_remaining_resources; never_expand_beyond_max_cycles",
     }
     if persist:
         _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)

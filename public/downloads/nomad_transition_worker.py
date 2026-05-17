@@ -811,6 +811,10 @@ def _score_run(report: dict) -> float:
             score += min(0.75, float(replay_surface.get("selected_score") or 0.0))
     agp_cycle = report.get("agp_autonomous_cycle") if isinstance(report.get("agp_autonomous_cycle"), dict) else {}
     if agp_cycle:
+        summary = agp_cycle.get("summary") if isinstance(agp_cycle.get("summary"), dict) else {}
+        if summary:
+            score += min(1.5, float(summary.get("committed") or 0.0) * 0.5)
+            score -= min(0.5, float(summary.get("noop") or 0.0) * 0.05)
         if agp_cycle.get("accepted"):
             score += 1.25
         shadow = agp_cycle.get("shadow") if isinstance(agp_cycle.get("shadow"), dict) else {}
@@ -1356,13 +1360,16 @@ def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, r
         "min_effectiveness_score": 0.72,
         "cooldown_window_cycles": 3,
         "max_auto_depth": 2,
+        "max_cycles": int(os.getenv("NOMAD_AGP_BATCH_MAX_CYCLES", "3") or 3),
         "allow_commit": os.getenv("NOMAD_AGP_ALLOW_COMMIT", "").strip().lower() in {"1", "true", "yes", "on"},
         "source_tag": "nomad.transition_worker.autonomous_agp_cycle",
         "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
         if isinstance(report.get("local_witness"), dict)
         else "",
     }
-    data = http_json("POST", endpoint(base_url, "/swarm/autogenesis/cycle"), payload, timeout=timeout)
+    batch_enabled = os.getenv("NOMAD_AGP_BATCH_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}
+    path = "/swarm/autogenesis/run" if batch_enabled else "/swarm/autogenesis/cycle"
+    data = http_json("POST", endpoint(base_url, path), payload, timeout=timeout)
     if not isinstance(data, dict) or data.get("ok") is False:
         return {
             "ok": False,

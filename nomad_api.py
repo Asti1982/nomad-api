@@ -53,6 +53,7 @@ from nomad_autogenesis import (
     record_development_cycle_event as record_autogenesis_development_cycle_event,
     register_resource,
     run_autonomous_agp_cycle,
+    run_autonomous_agp_batch,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -1527,6 +1528,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
                     "autonomous_agp_cycle": f"{b}/swarm/autogenesis/cycle",
+                    "autonomous_agp_run": f"{b}/swarm/autogenesis/run",
                     "autogenesis_shadow_lane": f"{b}/swarm/shadow-lane/candidates?type=autogenesis",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
@@ -1915,7 +1917,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/autogenesis", "/.well-known/nomad-autogenesis.json"}:
             self._json_response(self.__class__._build_autogenesis(base_url=self._base_url()))
             return
-        if parsed.path in {"/swarm/autogenesis/cycle", "/.well-known/nomad-autonomous-agp.json"}:
+        if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis-recruit", "/.well-known/nomad-autogenesis-recruit.json"}:
@@ -3122,6 +3124,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
                     "/swarm/autogenesis/cycle",
+                    "/swarm/autogenesis/run",
                     "/.well-known/nomad-autonomous-agp.json",
                     "/swarm/autogenesis-recruit",
                     "/.well-known/nomad-autogenesis-recruit.json",
@@ -3776,6 +3779,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             development = self.__class__._build_autogenesis_development_cycles(base_url=base)
             autogenesis = self.__class__._build_autogenesis(base_url=base)
             result = run_autonomous_agp_cycle(
+                payload,
+                base_url=base,
+                resource_substrate=substrate,
+                development_surface=development,
+                autogenesis_surface=autogenesis,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/autogenesis/run":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            development = self.__class__._build_autogenesis_development_cycles(base_url=base)
+            autogenesis = self.__class__._build_autogenesis(base_url=base)
+            result = run_autonomous_agp_batch(
                 payload,
                 base_url=base,
                 resource_substrate=substrate,
@@ -4541,6 +4560,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
                     "/swarm/autogenesis/cycle",
+                    "/swarm/autogenesis/run",
                     "/.well-known/nomad-autonomous-agp.json",
                     "/swarm/autogenesis-recruit",
                     "/.well-known/nomad-autogenesis-recruit.json",

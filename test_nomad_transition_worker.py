@@ -669,12 +669,13 @@ def test_transition_worker_submits_autonomous_agp_cycle(monkeypatch):
     )
 
     assert result["accepted"] is True
-    assert calls[0][1].endswith("/swarm/autogenesis/cycle")
+    assert calls[0][1].endswith("/swarm/autogenesis/run")
     assert calls[0][2]["proposer_agent_id"] == "agp.proposer"
     assert calls[0][2]["verifier_agent_id"] == "agp.verifier"
     assert calls[0][2]["proposer_lease_id"] == "nomad-worker-lease-proposer"
     assert calls[0][2]["cooldown_window_cycles"] == 3
     assert calls[0][2]["max_auto_depth"] == 2
+    assert calls[0][2]["max_cycles"] == 3
 
 
 def test_transition_worker_verifier_role_skips_autonomous_agp_proposal(monkeypatch):

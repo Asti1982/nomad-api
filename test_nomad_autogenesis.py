@@ -7,6 +7,7 @@ from nomad_autogenesis import (
     build_resource_substrate_surface,
     record_development_cycle_event,
     register_resource,
+    run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
     submit_autogenesis_shadow_candidate,
     version_resource,
@@ -238,6 +239,7 @@ def test_autonomous_agp_cycle_commits_weighted_descriptor_and_dedupes(tmp_path):
 
     assert surface["schema"] == "nomad.autonomous_agp_cycle.v1"
     assert surface["links"]["cycle"].endswith("/swarm/autogenesis/cycle")
+    assert surface["links"]["run"].endswith("/swarm/autogenesis/run")
     assert cycle["accepted"] is True
     assert cycle["decision"] == "commit_weighted_resource_version"
     assert cycle["shadow"]["accepted"] is True
@@ -248,6 +250,79 @@ def test_autonomous_agp_cycle_commits_weighted_descriptor_and_dedupes(tmp_path):
     assert cycle["lineage"]["proof_digest"].startswith("sha256:")
     assert duplicate["accepted"] is False
     assert duplicate["decision"] == "noop_duplicate_lineage"
+
+
+def test_autonomous_agp_batch_rotates_resources_and_summarizes(tmp_path):
+    auto_ledger = tmp_path / "auto.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+
+    batch = run_autonomous_agp_batch(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_cycles": 2,
+            "resources": [
+                {
+                    "resource_id": "nomad-autogenesis",
+                    "resource_kind": "protocol_layer",
+                    "entity_type": "agent",
+                    "current_version": "v1",
+                    "state": "shadow",
+                    "effectiveness_score": 0.64,
+                },
+                {
+                    "resource_id": "nomad-resource-substrate",
+                    "resource_kind": "json_contract",
+                    "entity_type": "tool",
+                    "current_version": "v1",
+                    "state": "shadow",
+                    "effectiveness_score": 0.66,
+                },
+            ],
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=auto_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+
+    assert batch["schema"] == "nomad.autonomous_agp_batch_receipt.v1"
+    assert batch["accepted"] is True
+    assert batch["decision"] == "batch_committed_bounded_resource_versions"
+    assert batch["summary"]["attempted"] == 2
+    assert batch["summary"]["committed"] == 2
+    assert [cycle["decision"] for cycle in batch["cycles"]] == [
+        "commit_weighted_resource_version",
+        "commit_weighted_resource_version",
+    ]
+
+
+def test_autonomous_agp_batch_stops_without_verifier(tmp_path):
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example")
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+
+    batch = run_autonomous_agp_batch(
+        {"agent_id": "agp.proposer", "verifier_agent_id": "agp.verifier", "max_cycles": 3},
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index={},
+        ledger_path=tmp_path / "auto.jsonl",
+        resource_ledger_path=tmp_path / "resources.jsonl",
+    )
+
+    assert batch["accepted"] is False
+    assert batch["decision"] == "batch_wait_for_independent_verifier_lease"
+    assert batch["summary"]["attempted"] == 1
+    assert batch["cycles"][0]["decision"] == "wait_for_independent_verifier_lease"
 
 
 def test_autonomous_agp_cycle_cools_down_same_resource_after_weight(tmp_path):
