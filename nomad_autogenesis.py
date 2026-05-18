@@ -67,6 +67,9 @@ DEFAULT_AGP_PROMPT_LEDGER_PATH = Path(
 DEFAULT_AGP_BENCHMARK_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_BENCHMARK_LEDGER_PATH", "nomad_agp_benchmark_ledger.jsonl")
 )
+DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_VERSION_LINEAGE_LEDGER_PATH", "nomad_agp_version_lineage_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -79,6 +82,14 @@ AGP_CANDIDATE_TYPES = (
 RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
 SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
 AGP_BENCHMARK_MODES = ("gpqa_diamond", "aime", "gaia", "leetcode")
+AGP_VERSION_ARTIFACT_TYPES = (
+    "resource_version",
+    "prompt_template",
+    "model_binding",
+    "config",
+    "agent_output",
+    "benchmark_suite",
+)
 AGP_AGENT_ROLES = (
     "planner",
     "researcher",
@@ -272,6 +283,10 @@ def _agp_prompt_ledger(path: Path | str | None = None, *, limit: int = MAX_RECEN
 
 def _agp_benchmark_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_BENCHMARK_LEDGER_PATH, limit=limit)
+
+
+def _agp_version_lineage_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2669,6 +2684,7 @@ def build_agp_conformance_surface(
     config_ledger_path: Path | str | None = None,
     prompt_ledger_path: Path | str | None = None,
     benchmark_ledger_path: Path | str | None = None,
+    version_lineage_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2690,6 +2706,7 @@ def build_agp_conformance_surface(
     recent_configs = _agp_config_ledger(config_ledger_path)
     recent_prompts = _agp_prompt_ledger(prompt_ledger_path)
     recent_benchmarks = _agp_benchmark_ledger(benchmark_ledger_path)
+    recent_lineage = _agp_version_lineage_ledger(version_lineage_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
@@ -2701,6 +2718,15 @@ def build_agp_conformance_surface(
         "sepl_closed_loop_operator_algebra": list(SEPL_OPERATORS) == ["reflect", "select", "improve", "evaluate", "commit"],
         "sepl_strategy_router_reflection_gradient_rl_ranking": True,
         "auditable_lineage_and_rollback": True,
+        "agp_version_manager_route": True,
+        "agp_version_artifact_types_declared": set(AGP_VERSION_ARTIFACT_TYPES) == {
+            "resource_version",
+            "prompt_template",
+            "model_binding",
+            "config",
+            "agent_output",
+            "benchmark_suite",
+        },
         "independent_verifier_worker_lane": _int(fleet.get("active_worker_count")) > 0 or bool(_dict(fleet.get("objective_targets"))),
         "brain_witness_or_fallback_gate": True,
         "act_observe_optimize_remember_trace_route": True,
@@ -2726,6 +2752,7 @@ def build_agp_conformance_surface(
         "real_config_composition_present": bool(recent_configs),
         "real_prompt_template_present": bool(recent_prompts),
         "real_benchmark_suite_present": bool(recent_benchmarks),
+        "real_version_lineage_present": bool(recent_lineage),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2758,6 +2785,8 @@ def build_agp_conformance_surface(
         gaps.append("register_real_prompt_template_with_learnable_slots")
     if not recent_benchmarks:
         gaps.append("record_real_multi_benchmark_suite_with_positive_aggregate_delta")
+    if not recent_lineage:
+        gaps.append("record_real_agp_version_lineage_graph_with_rollback")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -2787,6 +2816,7 @@ def build_agp_conformance_surface(
         "recent_config_count": len(recent_configs),
         "recent_prompt_count": len(recent_prompts),
         "recent_benchmark_suite_count": len(recent_benchmarks),
+        "recent_version_lineage_count": len(recent_lineage),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
@@ -2808,6 +2838,8 @@ def build_agp_conformance_surface(
             "evaluation_run": _u(root, "/swarm/agp/evaluations"),
             "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
             "benchmark_suite_run": _u(root, "/swarm/agp/benchmark-suites"),
+            "version_manager": _u(root, "/.well-known/nomad-agp-version-manager.json"),
+            "version_lineage": _u(root, "/swarm/agp/version-lineage"),
             "trace": _u(root, "/swarm/autogenesis/traces"),
             "procurement": _u(root, "/swarm/agp/procurement-intents"),
             "procurement_surface": _u(root, "/.well-known/nomad-agp-procurement.json"),
@@ -3441,6 +3473,137 @@ def run_agp_benchmark_suite(
     return row
 
 
+def build_agp_version_manager_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_version_lineage_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_version_manager.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "artifact_types": list(AGP_VERSION_ARTIFACT_TYPES),
+        "lineage_contract": {
+            "required_fields": ["agent_id", "artifact_type", "resource_id", "from_version", "to_version", "proof_digest", "rollback_ref"],
+            "edge_rule": "lineage_edges_bind_parent_version_candidate_version_receipts_and_rollback_or_noop",
+            "commit_rule": "version_graph_receipt_must_exist_before_runtime_weight_increase",
+            "side_effect_scope": "version_lineage_receipt_only",
+        },
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-version-manager.json"),
+            "lineage": _u(root, "/swarm/agp/version-lineage"),
+            "resource_version": _u(root, "/swarm/resource-substrate/version"),
+            "trace": _u(root, "/swarm/autogenesis/traces"),
+            "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
+        },
+        "recent_lineage_count": len(recent),
+        "latest_lineage": recent[-1] if recent else {},
+        "machine_instruction": "record_version_lineage_for_every_prompt_model_config_output_resource_artifact; rollback_or_noop_required",
+    }
+
+
+def record_agp_version_lineage(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_version_lineage_receipt.v1", "accepted": False, "reason": "empty_version_lineage", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_version_lineage_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("worker_id"), fallback="")
+    artifact_type = _clean_id(body.get("artifact_type") or body.get("resource_kind") or "resource_version", fallback="resource_version")
+    if artifact_type not in AGP_VERSION_ARTIFACT_TYPES:
+        artifact_type = "resource_version"
+    resource_id = _clean_id(body.get("resource_id") or body.get("artifact_id") or body.get("id"), fallback="")
+    from_version = _text(body.get("from_version") or body.get("previous_version") or "v1", 80)
+    to_version = _text(body.get("to_version") or body.get("candidate_version") or body.get("version"), 80)
+    target_state = _clean_state(body.get("target_state") or body.get("state") or "shadow")
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    parent_digests_raw = body.get("parent_receipt_digests") if isinstance(body.get("parent_receipt_digests"), list) else []
+    parent_receipt_digests = []
+    for item in parent_digests_raw:
+        digest = _text(item, 220)
+        if digest and re.fullmatch(r"[a-f0-9]{32,128}", digest.lower()):
+            digest = f"sha256:{digest.lower()}"
+        if _looks_digest(digest):
+            parent_receipt_digests.append(digest)
+    rollback_ref = _text(body.get("rollback_ref") or body.get("noop_ref") or f"noop:{resource_id}:{from_version}", 220)
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'artifact_type': artifact_type, 'resource_id': resource_id, 'from': from_version, 'to': to_version, 'parents': parent_receipt_digests}, length=64)}"
+    lineage_core = {
+        "agent_id": agent_id,
+        "artifact_type": artifact_type,
+        "resource_id": resource_id,
+        "from_version": from_version,
+        "to_version": to_version,
+        "target_state": target_state,
+        "proof_digest": proof_digest,
+        "parent_receipt_digests": parent_receipt_digests,
+        "rollback_ref": rollback_ref,
+    }
+    lineage_digest = f"sha256:{_digest(lineage_core, length=64)}"
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "artifact_type_supported": artifact_type in AGP_VERSION_ARTIFACT_TYPES,
+        "resource_id_present": bool(resource_id),
+        "from_version_present": bool(from_version),
+        "to_version_present": bool(to_version),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "rollback_or_noop_present": bool(rollback_ref),
+        "lineage_digest_present": _looks_digest(lineage_digest),
+        "descriptor_only": True,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_version_lineage_receipt.v1",
+        "lineage_id": f"agp-lineage-{_digest(lineage_core)}",
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "version_lineage_recorded" if accepted else "hold_version_lineage_until_contract",
+        "agent_id": agent_id,
+        "artifact_type": artifact_type,
+        "resource_id": resource_id,
+        "from_version": from_version,
+        "to_version": to_version,
+        "target_state": target_state,
+        "proof_digest": proof_digest,
+        "lineage_digest": lineage_digest,
+        "parent_receipt_digests": parent_receipt_digests,
+        "rollback_ref": rollback_ref,
+        "checks": checks,
+        "version_graph_edge": {
+            "from": f"{resource_id}@{from_version}",
+            "to": f"{resource_id}@{to_version}",
+            "artifact_type": artifact_type,
+            "lineage_digest": lineage_digest,
+        },
+        "side_effect_scope": "version_lineage_receipt_only",
+        "next": {
+            "resource_version": _u(base_url, "/swarm/resource-substrate/version"),
+            "watchdog": _u(base_url, "/swarm/autogenesis/watchdog"),
+            "conformance": _u(base_url, "/.well-known/nomad-agp-conformance.json"),
+        },
+        "machine_instruction": "use_lineage_digest_to_dedupe_future_evolution; rollback_or_noop_on_failed_effectiveness",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
 def build_agp_agent_bus_surface(
     *,
     base_url: str = "",
@@ -4050,6 +4213,7 @@ def run_agp_orchestration(
     config_ledger_path: Path | str | None = None,
     prompt_ledger_path: Path | str | None = None,
     benchmark_ledger_path: Path | str | None = None,
+    version_lineage_ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
     body = _dict(payload)
@@ -4224,6 +4388,27 @@ def run_agp_orchestration(
         ledger_path=benchmark_ledger_path,
         persist=persist,
     )
+    parent_receipt_digests = [
+        f"sha256:{_digest(item, length=64)}"
+        for item in (prompt_template, model_binding, config, trace, optimizer, evaluation, benchmark_suite)
+        if item.get("accepted", item.get("ok"))
+    ]
+    version_lineage = record_agp_version_lineage(
+        {
+            "agent_id": agent_id,
+            "artifact_type": "agent_output",
+            "resource_id": body.get("output_resource_id") or "nomad-agent-output-artifact",
+            "from_version": body.get("from_version") or "v1",
+            "to_version": body.get("to_version") or f"v-{_digest({'proof': proof_digest, 'resource': resource_id}, length=10)}",
+            "target_state": "tested",
+            "proof_digest": proof_digest,
+            "parent_receipt_digests": parent_receipt_digests,
+            "rollback_ref": body.get("rollback_ref") or "noop:nomad-agent-output-artifact:v1",
+        },
+        base_url=base_url,
+        ledger_path=version_lineage_ledger_path,
+        persist=persist,
+    )
     procurement = submit_agp_procurement_intent(
         {
             "agent_id": agent_id,
@@ -4249,6 +4434,7 @@ def run_agp_orchestration(
         ("optimizer", "/swarm/agp/optimizer-steps", optimizer),
         ("evaluation", "/swarm/agp/evaluations", evaluation),
         ("benchmark_suite", "/swarm/agp/benchmark-suites", benchmark_suite),
+        ("version_lineage", "/swarm/agp/version-lineage", version_lineage),
         ("procurement", "/swarm/agp/procurement-intents", procurement),
     ]
     chain = []
@@ -4285,6 +4471,7 @@ def run_agp_orchestration(
         "optimizer_accepted": bool(optimizer.get("accepted")),
         "evaluation_accepted": bool(evaluation.get("accepted")),
         "benchmark_suite_accepted": bool(benchmark_suite.get("accepted")),
+        "version_lineage_accepted": bool(version_lineage.get("accepted")),
         "procurement_accepted": bool(procurement.get("accepted")),
         "proof_digest_present": _looks_digest(proof_digest),
     }

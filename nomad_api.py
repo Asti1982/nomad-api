@@ -52,6 +52,7 @@ from nomad_autogenesis import (
     build_agp_optimizer_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
+    build_agp_version_manager_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
@@ -66,6 +67,7 @@ from nomad_autogenesis import (
     post_agp_agent_bus_message,
     record_agp_execution_trace,
     record_agp_evaluation_run,
+    record_agp_version_lineage,
     register_agp_prompt_template,
     record_development_cycle_event as record_autogenesis_development_cycle_event,
     register_resource,
@@ -531,6 +533,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_prompt_manager(cls, *, base_url: str) -> dict:
         return build_agp_prompt_manager_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_version_manager(cls, *, base_url: str) -> dict:
+        return build_agp_version_manager_surface(base_url=base_url)
 
     @classmethod
     def _build_agp_procurement(cls, *, base_url: str) -> dict:
@@ -1622,6 +1628,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_configs": f"{b}/swarm/agp/configs",
                     "agp_prompt_manager": f"{b}/.well-known/nomad-agp-prompt-manager.json",
                     "agp_prompts": f"{b}/swarm/agp/prompts",
+                    "agp_version_manager": f"{b}/.well-known/nomad-agp-version-manager.json",
+                    "agp_version_lineage": f"{b}/swarm/agp/version-lineage",
                     "agp_procurement": f"{b}/.well-known/nomad-agp-procurement.json",
                     "agp_procurement_intents": f"{b}/swarm/agp/procurement-intents",
                     "agp_context_manager": f"{b}/.well-known/nomad-agp-context-manager.json",
@@ -2044,6 +2052,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/prompt-manager", "/.well-known/nomad-agp-prompt-manager.json"}:
             self._json_response(self.__class__._build_agp_prompt_manager(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/version-manager", "/.well-known/nomad-agp-version-manager.json"}:
+            self._json_response(self.__class__._build_agp_version_manager(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/procurement", "/.well-known/nomad-agp-procurement.json"}:
             self._json_response(self.__class__._build_agp_procurement(base_url=self._base_url()))
@@ -3280,6 +3291,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/configs",
                     "/.well-known/nomad-agp-prompt-manager.json",
                     "/swarm/agp/prompts",
+                    "/.well-known/nomad-agp-version-manager.json",
+                    "/swarm/agp/version-lineage",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",
@@ -4082,6 +4095,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
+        if parsed.path == "/swarm/agp/version-lineage":
+            base = self._base_url()
+            result = record_agp_version_lineage(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
         if parsed.path == "/swarm/decoupling-field/merge":
             base = self._base_url()
             field = self.__class__._build_decoupling_field(base_url=base)
@@ -4847,6 +4866,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/configs",
                     "/.well-known/nomad-agp-prompt-manager.json",
                     "/swarm/agp/prompts",
+                    "/.well-known/nomad-agp-version-manager.json",
+                    "/swarm/agp/version-lineage",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",

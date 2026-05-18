@@ -1192,6 +1192,15 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-version-manager.json": {
+                "get": {
+                    "summary": "AGP version-manager surface for auditable artifact lineage and rollback/no-op edges",
+                    "operationId": "getAgpVersionManagerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP version-manager surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agp-procurement.json": {
                 "get": {
                     "summary": "Quote-first AGP procurement surface for compute, model, hardware, and service capacity",
@@ -1275,6 +1284,17 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Prompt template accepted"},
                         "422": {"description": "Prompt template held by contract, proof, variable, or secret gate"},
+                    },
+                }
+            },
+            "/swarm/agp/version-lineage": {
+                "post": {
+                    "summary": "Record one AGP artifact version lineage edge with proof and rollback/no-op",
+                    "operationId": "postSwarmAgpVersionLineage",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Version lineage accepted"},
+                        "422": {"description": "Version lineage held until proof, versions, and rollback/no-op are present"},
                     },
                 }
             },

@@ -9,6 +9,7 @@ from nomad_autogenesis import (
     build_agp_optimizer_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
+    build_agp_version_manager_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
@@ -22,6 +23,7 @@ from nomad_autogenesis import (
     record_development_cycle_event,
     record_agp_execution_trace,
     record_agp_evaluation_run,
+    record_agp_version_lineage,
     register_resource,
     register_agp_prompt_template,
     retrieve_resource,
@@ -275,6 +277,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     config_ledger = tmp_path / "configs.jsonl"
     prompt_ledger = tmp_path / "prompts.jsonl"
     benchmark_ledger = tmp_path / "benchmarks.jsonl"
+    version_lineage_ledger = tmp_path / "version_lineage.jsonl"
     substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
 
     bus_surface = build_agp_agent_bus_surface(
@@ -371,6 +374,22 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         base_url="https://nomad.example",
         ledger_path=benchmark_ledger,
     )
+    version_surface = build_agp_version_manager_surface(base_url="https://nomad.example", ledger_path=version_lineage_ledger)
+    version_lineage = record_agp_version_lineage(
+        {
+            "agent_id": "agp.planner",
+            "artifact_type": "agent_output",
+            "resource_id": "nomad-agent-output-artifact",
+            "from_version": "v1",
+            "to_version": "v2",
+            "target_state": "tested",
+            "proof_digest": "sha256:" + "6" * 64,
+            "rollback_ref": "noop:nomad-agent-output-artifact:v1",
+            "parent_receipt_digests": ["sha256:" + "7" * 64],
+        },
+        base_url="https://nomad.example",
+        ledger_path=version_lineage_ledger,
+    )
     orchestration = run_agp_orchestration(
         {
             "agent_id": "agp.planner",
@@ -393,6 +412,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         config_ledger_path=config_ledger,
         prompt_ledger_path=prompt_ledger,
         benchmark_ledger_path=benchmark_ledger,
+        version_lineage_ledger_path=version_lineage_ledger,
     )
     conformance = build_agp_conformance_surface(
         base_url="https://nomad.example",
@@ -411,6 +431,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         config_ledger_path=config_ledger,
         prompt_ledger_path=prompt_ledger,
         benchmark_ledger_path=benchmark_ledger,
+        version_lineage_ledger_path=version_lineage_ledger,
     )
 
     assert bus_surface["schema"] == "nomad.agp_agent_bus.v1"
@@ -428,6 +449,9 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert benchmark_surface["schema"] == "nomad.agp_benchmark_suite_surface.v1"
     assert benchmark_suite["accepted"] is True
     assert benchmark_suite["checks"]["all_paper_modes_present"] is True
+    assert version_surface["schema"] == "nomad.agp_version_manager.v1"
+    assert version_lineage["accepted"] is True
+    assert version_lineage["checks"]["rollback_or_noop_present"] is True
     assert [item["step"] for item in plan["steps"]] == [
         "retrieve_resources",
         "context_init_or_update",
@@ -449,6 +473,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         "optimizer",
         "evaluation",
         "benchmark_suite",
+        "version_lineage",
         "procurement",
     }
     assert conformance["checks"]["real_agent_bus_message_present"] is True
@@ -458,6 +483,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_config_composition_present"] is True
     assert conformance["checks"]["real_prompt_template_present"] is True
     assert conformance["checks"]["real_benchmark_suite_present"] is True
+    assert conformance["checks"]["real_version_lineage_present"] is True
     assert conformance["checks"]["real_trace_sample_present"] is True
     assert conformance["checks"]["rspl_five_entity_types_present"] is True
     assert conformance["checks"]["rspl_agent_outputs_registered"] is True
