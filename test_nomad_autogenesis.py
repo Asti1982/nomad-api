@@ -95,8 +95,10 @@ def test_resource_substrate_exposes_rspl_lifecycle_and_existing_contracts(tmp_pa
     assert surface["version_interface"]["register"].endswith("/swarm/resource-substrate/register")
     assert any(item["resource_id"] == "nomad-opaque-emergence" for item in surface["resources"])
     assert any(item["resource_id"] == "nomad-resource-substrate" for item in surface["resources"])
+    assert any(item["entity_type"] == "prompt" for item in surface["resources"])
     assert any(item["entity_type"] == "environment" for item in surface["resources"])
     assert any(item["entity_type"] == "memory" for item in surface["resources"])
+    assert any(item["resource_kind"] == "agent_output" for item in surface["resources"])
     assert cli["schema"] == "nomad.resource_substrate.v1"
 
 
@@ -353,6 +355,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_plan_present"] is True
     assert conformance["checks"]["real_orchestration_present"] is True
     assert conformance["checks"]["real_trace_sample_present"] is True
+    assert conformance["checks"]["rspl_five_entity_types_present"] is True
+    assert conformance["checks"]["rspl_agent_outputs_registered"] is True
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

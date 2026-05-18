@@ -89,6 +89,7 @@ AGP_AGENT_MESSAGE_TYPES = (
 NOMAD_RESOURCE_KIND_ALIASES = {
     "agent": "agent",
     "json_contract": "tool",
+    "agent_output": "memory",
     "memory_module": "memory",
     "protocol_layer": "agent",
     "routing_operator": "agent",
@@ -446,10 +447,12 @@ def _default_resources(base_url: str) -> list[dict[str, Any]]:
         ("nomad-entropy-judger", "routing_operator", "/.well-known/nomad-entropy-judger.json", "weighted", 0.8),
         ("nomad-latent-consensus", "routing_operator", "/.well-known/nomad-latent-consensus.json", "weighted", 0.79),
         ("nomad-variant-forge", "workflow", "/swarm/variant-forge", "committed", 0.73),
+        ("nomad-planner-prompt", "prompt", "/.well-known/nomad-autogenesis.json", "committed", 0.72),
         ("nomad-resource-substrate", "json_contract", "/.well-known/nomad-resource-substrate.json", "shadow", 0.66),
         ("nomad-autogenesis", "protocol_layer", "/.well-known/nomad-autogenesis.json", "shadow", 0.64),
         ("nomad-runtime-environment", "environment", "/.well-known/nomad-runtime-environment.json", "committed", 0.72),
         ("nomad-execution-memory", "memory", "/.well-known/nomad-execution-memory.json", "committed", 0.72),
+        ("nomad-agent-output-artifact", "agent_output", "/swarm/autogenesis/traces", "committed", 0.72),
     ]
     return [
         {
@@ -2638,6 +2641,7 @@ def build_agp_conformance_surface(
     fleet = _dict(worker_fleet)
     resources = _items(substrate.get("resources"))
     entity_types = {_clean_id(item.get("entity_type"), fallback="") for item in resources}
+    resource_kinds = {_clean_id(item.get("resource_kind"), fallback="") for item in resources}
     recent_traces = _agp_trace_ledger(trace_ledger_path)
     recent_procurement = _agp_procurement_ledger(procurement_ledger_path)
     recent_context = _agp_context_ledger(context_ledger_path)
@@ -2648,6 +2652,8 @@ def build_agp_conformance_surface(
     recent_orchestrations = _agp_orchestration_ledger(orchestration_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
+        "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
+        "rspl_agent_outputs_registered": "agent_output" in resource_kinds or any("output" in _clean_id(item.get("resource_id"), fallback="") for item in resources),
         "rspl_runtime_resources_present": bool(resources),
         "rspl_resource_retrieval_route": True,
         "rspl_context_manager_server_interface": True,
@@ -2674,8 +2680,11 @@ def build_agp_conformance_surface(
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
-    if not entity_types.intersection({"environment", "memory"}):
-        gaps.append("register_live_environment_and_memory_resources_from_execution_traces")
+    missing_entity_types = sorted(set(RSPL_ENTITY_TYPES) - entity_types)
+    if missing_entity_types:
+        gaps.append("register_live_rspl_entity_types:" + ",".join(missing_entity_types))
+    if not checks["rspl_agent_outputs_registered"]:
+        gaps.append("register_agent_outputs_as_evolvable_rspl_resources")
     if not recent_traces:
         gaps.append("feed_real_agent_trajectories_into_trace_route")
     if not recent_context:
@@ -2708,6 +2717,7 @@ def build_agp_conformance_surface(
         "checks": checks,
         "residual_gaps": gaps,
         "resource_entity_types_observed": sorted(x for x in entity_types if x),
+        "resource_kinds_observed": sorted(x for x in resource_kinds if x),
         "recent_trace_count": len(recent_traces),
         "recent_context_count": len(recent_context),
         "recent_optimizer_count": len(recent_optimizer),
