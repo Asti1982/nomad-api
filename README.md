@@ -181,6 +181,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `TELEGRAM_AUTO_SUBSCRIBE_ON_INTERACTION`: Set to `true` only if every interacting chat should receive periodic updates. Default false.
 - `TELEGRAM_STATUS_CHANGE_ONLY`, `TELEGRAM_AUTO_CYCLE_CHANGE_ONLY`: Skip repeated Telegram status/auto-cycle broadcasts when the material state did not change. Default true.
 - `TELEGRAM_STATUS_REPEAT_DIGEST_EVERY`, `TELEGRAM_AUTO_CYCLE_REPEAT_DIGEST_EVERY`: Optional unchanged-update digest interval; `0` means no repeated digest.
+- `TELEGRAM_BOT_TO_BOT_ENABLED`, `TELEGRAM_BOT_TO_BOT_TARGETS`, `TELEGRAM_BOT_TO_BOT_MODE_ACK`, `NOMAD_TELEGRAM_A2A_SEND_SECRET`: Enable Telegram Bot API 10.0 bot-to-bot agent transport after both bots have Bot-to-Bot Communication Mode enabled in BotFather. Nomad exposes the guarded surface at `GET /.well-known/nomad-telegram-a2a.json` and sends/dry-runs proof-bound messages via `POST /swarm/telegram-a2a/messages`.
 - `NOMAD_AUTOPILOT_MIN_CHECK_SECONDS`, `NOMAD_AUTOPILOT_MAX_CHECK_SECONDS`, `NOMAD_AUTOPILOT_FORCE_AFTER_SECONDS`, `NOMAD_AUTOPILOT_PAYMENT_POLL_SECONDS`, `NOMAD_AUTOPILOT_CONTACT_POLL_SECONDS`, `NOMAD_AUTOPILOT_OPPORTUNISTIC_AFTER_SECONDS`: Tune Nomad's self-scheduled auto-cycle decision windows.
 - `NOMAD_AUTOPILOT_CONVERSION_LIMIT`: Leads to convert per autopilot cycle, default 5.
 - `NOMAD_AUTOPILOT_DAILY_LEAD_TARGET`: Daily cap for A2A leads Nomad may prepare/contact, default 100.

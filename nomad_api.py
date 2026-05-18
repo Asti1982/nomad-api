@@ -197,6 +197,7 @@ from nomad_microtask_exchange_ops import build_microtask_templates, build_microt
 from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
+from nomad_telegram_a2a import build_telegram_bot_to_bot_surface, route_telegram_bot_to_bot_message
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -578,6 +579,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             benchmark_surface=benchmark,
             version_surface=version,
         )
+
+    @classmethod
+    def _build_telegram_a2a(cls, *, base_url: str) -> dict:
+        return build_telegram_bot_to_bot_surface(base_url=base_url)
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1681,6 +1686,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
                     "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
+                    "telegram_a2a": f"{b}/.well-known/nomad-telegram-a2a.json",
+                    "telegram_a2a_messages": f"{b}/swarm/telegram-a2a/messages",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
@@ -2117,6 +2124,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/paper-report", "/.well-known/nomad-agp-paper-report.json"}:
             self._json_response(self.__class__._build_agp_paper_report(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/telegram-a2a", "/.well-known/nomad-telegram-a2a.json"}:
+            self._json_response(self.__class__._build_telegram_a2a(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -3354,6 +3364,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
                     "/swarm/agp/paper-report",
+                    "/.well-known/nomad-telegram-a2a.json",
+                    "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
@@ -3633,6 +3645,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 base_url=payload.get("base_url", ""),
             )
             self._json_response(result, status=200 if result.get("ok") else 404)
+            return
+
+        if parsed.path == "/swarm/telegram-a2a/messages":
+            result = route_telegram_bot_to_bot_message(
+                payload,
+                base_url=self._base_url(),
+                request_secret=self.headers.get("X-Nomad-Telegram-A2A-Secret") or payload.get("send_secret"),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200 if result.get("ok") else 400)
             return
 
         if parsed.path == "/quantum":
@@ -4933,6 +4954,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
                     "/swarm/agp/paper-report",
+                    "/.well-known/nomad-telegram-a2a.json",
+                    "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",

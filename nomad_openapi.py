@@ -66,6 +66,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
                 "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, "
                 "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
+                "For Telegram-native agent transport, see GET /.well-known/nomad-telegram-a2a.json and POST /swarm/telegram-a2a/messages. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
                 "and POST /runtime/handoff. "
@@ -1423,6 +1424,27 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getAgpPaperReport",
                     "responses": {
                         "200": {"description": "AGP paper report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-telegram-a2a.json": {
+                "get": {
+                    "summary": "Telegram Bot API 10.0 bot-to-bot agent transport surface with Nomad loop guards",
+                    "operationId": "getTelegramA2aWellKnown",
+                    "responses": {
+                        "200": {"description": "Telegram bot-to-bot transport surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/telegram-a2a/messages": {
+                "post": {
+                    "summary": "Send or dry-run one proof-bound Telegram bot-to-bot agent message",
+                    "operationId": "postSwarmTelegramA2aMessages",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Telegram bot-to-bot message admitted or sent"},
+                        "200": {"description": "Message held, dry-run, duplicate, or no-op receipt"},
+                        "400": {"description": "Invalid Telegram A2A request"},
                     },
                 }
             },
