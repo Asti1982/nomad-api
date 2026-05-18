@@ -28,6 +28,9 @@ DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH = Path(
 DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH = Path(
     os.getenv("NOMAD_AUTONOMOUS_AGP_LEDGER_PATH", "nomad_autonomous_agp_ledger.jsonl")
 )
+DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH", "nomad_autonomous_agp_watchdog_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -156,6 +159,10 @@ def _cycle_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) ->
 
 def _autonomous_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH, limit=limit)
+
+
+def _autonomous_watchdog_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -1406,6 +1413,8 @@ def build_autonomous_agp_cycle_surface(
             "self": _u(root, "/.well-known/nomad-autonomous-agp.json"),
             "cycle": _u(root, "/swarm/autogenesis/cycle"),
             "run": _u(root, "/swarm/autogenesis/run"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+            "watchdog_surface": _u(root, "/.well-known/nomad-agp-watchdog.json"),
             "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
@@ -1869,6 +1878,360 @@ def run_autonomous_agp_batch(
     }
     if persist:
         _append_jsonl(row, ledger_path or DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def _watchdog_actionable_resources(substrate: dict[str, Any], *, score_floor: float = 0.72) -> list[dict[str, Any]]:
+    resources = _items(substrate.get("resources")) or _default_resources("")
+    actionable: list[dict[str, Any]] = []
+    for item in resources:
+        rid = _clean_id(item.get("resource_id"), fallback="")
+        if not rid:
+            continue
+        state = _clean_state(item.get("state"))
+        score = round(_num(item.get("effectiveness_score")), 4)
+        reasons: list[str] = []
+        if state in {"draft", "shadow", "tested"}:
+            reasons.append("lifecycle_not_weighted")
+        if score < score_floor:
+            reasons.append("effectiveness_below_floor")
+        if rid in {"nomad-autogenesis", "nomad-resource-substrate"} and state in {"draft", "shadow", "tested"}:
+            reasons.append("core_agp_surface_not_committed")
+        if not reasons:
+            continue
+        actionable.append(
+            {
+                "resource_id": rid,
+                "resource_kind": _clean_id(item.get("resource_kind"), fallback="workflow"),
+                "entity_type": _clean_entity_type(item.get("entity_type"), resource_kind=item.get("resource_kind") or "workflow"),
+                "current_version": _text(item.get("current_version") or item.get("version") or "v1", 80),
+                "state": state,
+                "effectiveness_score": score,
+                "trigger_reasons": reasons[:4],
+            }
+        )
+    actionable.sort(
+        key=lambda item: (
+            item["resource_id"] not in {"nomad-autogenesis", "nomad-resource-substrate"},
+            -len(item.get("trigger_reasons") or []),
+            _num(item.get("effectiveness_score")),
+            item.get("resource_id", ""),
+        )
+    )
+    return actionable
+
+
+def _autonomous_agp_watchdog_signal(
+    payload: dict[str, Any],
+    *,
+    resource_substrate: dict[str, Any],
+    worker_fleet: dict[str, Any] | None = None,
+    score_floor: float = 0.72,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    fleet = _dict(worker_fleet)
+    objective_targets = _dict(fleet.get("objective_targets"))
+    explicit_signal = _dict(body.get("signal") or body.get("external_signal") or body.get("runtime_signal"))
+    explicit_digest = _text(
+        body.get("trigger_digest")
+        or body.get("signal_digest")
+        or body.get("novelty_digest")
+        or explicit_signal.get("digest")
+        or explicit_signal.get("signal_digest"),
+        220,
+    )
+    actionable = _watchdog_actionable_resources(resource_substrate, score_floor=score_floor)
+    low_score_count = sum(1 for item in actionable if _num(item.get("effectiveness_score")) < score_floor)
+    core_resources = [
+        {
+            "resource_id": item.get("resource_id"),
+            "state": item.get("state"),
+            "version": item.get("current_version"),
+            "score_bucket": int(_num(item.get("effectiveness_score")) * 10),
+            "reasons": item.get("trigger_reasons", []),
+        }
+        for item in actionable[:8]
+    ]
+    core = {
+        "schema": "nomad.autonomous_agp_watchdog_signal.v1",
+        "actionable_resources": core_resources,
+        "explicit_signal_digest": explicit_digest,
+        "score_floor": round(score_floor, 4),
+        "agp_objective_target": round(_num(objective_targets.get("autogenesis_protocol_evolution")), 4),
+    }
+    signal_digest = f"sha256:{_digest(core, length=64)}"
+    trigger_score = _clamp(
+        0.30 * bool(actionable)
+        + 0.20 * min(len(actionable) / 3.0, 1.0)
+        + 0.18 * min(low_score_count / 2.0, 1.0)
+        + 0.12 * any(item.get("resource_id") in {"nomad-autogenesis", "nomad-resource-substrate"} for item in actionable)
+        + 0.10 * bool(explicit_digest)
+        + 0.06 * min(_num(fleet.get("active_worker_count")) / 2.0, 1.0)
+        + 0.04 * min(_num(fleet.get("active_lease_count")), 1.0)
+    )
+    return {
+        "schema": "nomad.autonomous_agp_watchdog_signal.v1",
+        "generated_at": _iso_now(),
+        "signal_digest": signal_digest,
+        "trigger_score": round(trigger_score, 4),
+        "score_floor": round(score_floor, 4),
+        "actionable_resources": actionable,
+        "actionable_resource_count": len(actionable),
+        "low_score_count": low_score_count,
+        "explicit_signal_digest": explicit_digest,
+        "core": core,
+        "reason_codes": (
+            ["fresh_actionable_resources"]
+            if actionable
+            else (["explicit_external_signal"] if explicit_digest else ["no_actionable_resource_signal"])
+        ),
+    }
+
+
+def _recent_watchdog_signal(recent: list[dict[str, Any]], signal_digest: str) -> dict[str, Any]:
+    for row in reversed(recent):
+        if row.get("signal_digest") == signal_digest and row.get("decision") in {
+            "watchdog_committed_autonomous_agp_batch",
+            "watchdog_partial_autonomous_agp_batch",
+            "watchdog_noop_duplicate_signal",
+            "watchdog_noop_no_actionable_signal",
+            "watchdog_noop_below_trigger_threshold",
+        }:
+            return row
+    return {}
+
+
+def build_autonomous_agp_watchdog_surface(
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    worker_fleet: dict[str, Any] | None = None,
+    cycle_ledger_path: Path | str | None = None,
+    watchdog_ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Expose the signal-gated AGP watchdog that can drive bounded cycles without manual prompts."""
+    root = (base_url or "").strip().rstrip("/")
+    substrate = _dict(resource_substrate)
+    agp = _dict(autogenesis_surface)
+    fleet = _dict(worker_fleet)
+    recent_watchdog = _autonomous_watchdog_ledger(watchdog_ledger_path)
+    recent_cycles = _autonomous_ledger(cycle_ledger_path)
+    signal = _autonomous_agp_watchdog_signal(
+        {},
+        resource_substrate=substrate,
+        worker_fleet=fleet,
+        score_floor=0.72,
+    )
+    return {
+        "ok": True,
+        "schema": "nomad.autonomous_agp_watchdog.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "surface_digest": f"nomad-agp-watchdog-{_digest({'watchdog': len(recent_watchdog), 'signal': signal.get('signal_digest'), 'agp': agp.get('surface_digest')})}",
+        "mode": "fully_autonomous_signal_gated_agp",
+        "scheduler_contract": {
+            "entrypoint": _u(root, "/swarm/autogenesis/watchdog"),
+            "safe_interval_seconds": 300,
+            "max_cycles_per_tick": 3,
+            "requires_manual_payload": False,
+            "noop_without_fresh_signal": True,
+        },
+        "signal_detector": signal,
+        "hard_gates": [
+            "fresh_trigger_digest",
+            "duplicate_signal_noop",
+            "independent_verifier_lease_checked",
+            "bounded_batch_max_cycles",
+            "rspl_resource_lifecycle_gate",
+            "sepl_operator_trace_exact",
+            "learnability_mask_required",
+            "rollback_or_noop_ref",
+            "descriptor_only_side_effect_scope",
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-watchdog.json"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+            "autonomous_agp": _u(root, "/.well-known/nomad-autonomous-agp.json"),
+            "run": _u(root, "/swarm/autogenesis/run"),
+            "cycle": _u(root, "/swarm/autogenesis/cycle"),
+            "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+        },
+        "recent_watchdog_count": len(recent_watchdog),
+        "recent_cycle_count": len(recent_cycles),
+        "latest_watchdog": recent_watchdog[-1] if recent_watchdog else {},
+        "latest_cycle": recent_cycles[-1] if recent_cycles else {},
+        "machine_instruction": "periodically_post_watchdog; if signal_digest_seen_or_no_actionable_resource_then_noop",
+    }
+
+
+def run_autonomous_agp_watchdog(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    worker_fleet: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
+    cycle_ledger_path: Path | str | None = None,
+    watchdog_ledger_path: Path | str | None = None,
+    resource_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Run one signal-gated watchdog tick and launch a bounded AGP batch only on fresh pressure."""
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.autonomous_agp_watchdog_receipt.v1",
+            "accepted": False,
+            "decision": "reject_forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    substrate = _dict(resource_substrate)
+    fleet = _dict(worker_fleet)
+    score_floor = max(0.0, min(_num(body.get("score_floor"), 0.72), 1.0))
+    min_trigger_score = max(0.0, min(_num(body.get("min_trigger_score"), 0.55), 1.0))
+    signal = _autonomous_agp_watchdog_signal(
+        body,
+        resource_substrate=substrate,
+        worker_fleet=fleet,
+        score_floor=score_floor,
+    )
+    signal_digest = _text(signal.get("signal_digest"), 220)
+    recent_watchdog = _autonomous_watchdog_ledger(watchdog_ledger_path)
+    previous = _recent_watchdog_signal(recent_watchdog, signal_digest)
+    proposer_id = _clean_id(body.get("proposer_agent_id") or body.get("agent_id") or "nomad-agp-watchdog", fallback="nomad-agp-watchdog")
+    wanted_verifier = _clean_id(body.get("verifier_agent_id"), fallback="")
+    verifier_lease = _latest_verifier_lease(
+        verifier_lease_index,
+        verifier_agent_id=wanted_verifier,
+        verifier_lease_id=_text(body.get("verifier_lease_id"), 160),
+    )
+    verifier_id = _clean_id(body.get("verifier_agent_id") or verifier_lease.get("agent_id"), fallback="")
+    verifier_lease_id = _text(body.get("verifier_lease_id") or verifier_lease.get("lease_id"), 160)
+
+    row_base = {
+        "ok": True,
+        "schema": "nomad.autonomous_agp_watchdog_receipt.v1",
+        "watchdog_id": f"agp-watchdog-{_digest({'signal': signal_digest, 'generated_at': now})}",
+        "generated_at": now,
+        "signal_digest": signal_digest,
+        "signal": signal,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": verifier_lease_id,
+        "min_trigger_score": min_trigger_score,
+        "side_effect_scope": "nomad_shadow_lane_only",
+    }
+
+    if not signal.get("actionable_resources"):
+        row = {
+            **row_base,
+            "accepted": False,
+            "decision": "watchdog_noop_no_actionable_signal",
+            "commit": {"decision": "noop", "reason": "no_actionable_resource_signal"},
+            "machine_instruction": "sleep_until_resource_signal_or_external_trigger_digest_changes",
+        }
+        if persist:
+            _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    if _num(signal.get("trigger_score")) < min_trigger_score:
+        row = {
+            **row_base,
+            "accepted": False,
+            "decision": "watchdog_noop_below_trigger_threshold",
+            "commit": {"decision": "noop", "reason": "trigger_score_below_threshold"},
+            "machine_instruction": "wait_for_stronger_signal_before_autogenesis_batch",
+        }
+        if persist:
+            _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    if previous and not body.get("force"):
+        row = {
+            **row_base,
+            "accepted": False,
+            "decision": "watchdog_noop_duplicate_signal",
+            "duplicate_of": previous.get("watchdog_id", ""),
+            "commit": {"decision": "noop", "reason": "signal_digest_already_processed"},
+            "machine_instruction": "do_not_run_agp_batch_until_signal_digest_changes",
+        }
+        if persist:
+            _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    if not verifier_id or not verifier_lease_id or verifier_id == proposer_id:
+        row = {
+            **row_base,
+            "accepted": False,
+            "decision": "watchdog_wait_for_independent_verifier_lease",
+            "commit": {"decision": "noop", "reason": "independent_verifier_lease_required"},
+            "machine_instruction": "keep_watchdog_alive_but_wait_for_distinct_verifier_worker_lease",
+        }
+        if persist:
+            _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+
+    max_cycles = max(1, min(_int(body.get("max_cycles"), 3), 8))
+    batch_payload = {
+        **body,
+        "schema": "nomad.autonomous_agp_watchdog_batch_request.v1",
+        "agent_id": proposer_id,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": verifier_lease_id,
+        "trigger_digest": signal_digest,
+        "signal_digest": signal_digest,
+        "max_cycles": max_cycles,
+        "resources": signal.get("actionable_resources", [])[:max_cycles],
+        "source_tag": body.get("source_tag") or "nomad.autonomous_agp_watchdog",
+    }
+    batch = run_autonomous_agp_batch(
+        batch_payload,
+        base_url=base_url,
+        resource_substrate=substrate,
+        development_surface=development_surface,
+        autogenesis_surface=autogenesis_surface,
+        verifier_lease_index=verifier_lease_index,
+        ledger_path=cycle_ledger_path,
+        resource_ledger_path=resource_ledger_path,
+        persist=persist,
+    )
+    committed = _int(_dict(batch.get("summary")).get("committed"))
+    if committed > 0 and batch.get("decision") == "batch_committed_bounded_resource_versions":
+        decision = "watchdog_committed_autonomous_agp_batch"
+    elif committed > 0:
+        decision = "watchdog_partial_autonomous_agp_batch"
+    elif batch.get("decision") == "batch_wait_for_independent_verifier_lease":
+        decision = "watchdog_wait_for_independent_verifier_lease"
+    else:
+        decision = "watchdog_batch_noop"
+    row = {
+        **row_base,
+        "accepted": bool(batch.get("accepted")),
+        "decision": decision,
+        "batch": batch,
+        "commit": {
+            "decision": "commit" if committed > 0 else "noop",
+            "committed": committed,
+            "observed_effectiveness_score": max(
+                [_num(_dict(item.get("commit")).get("observed_effectiveness_score")) for item in _items(batch.get("cycles"))] or [0.0]
+            ),
+            "side_effect_scope": "descriptor_only_resource_version",
+        },
+        "machine_instruction": "next_tick_must_recompute_signal_digest; duplicate_signal_returns_noop",
+    }
+    if persist:
+        _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False

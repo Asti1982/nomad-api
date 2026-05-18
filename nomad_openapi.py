@@ -1139,6 +1139,64 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-autonomous-agp.json": {
+                "get": {
+                    "summary": "Autonomous AGP cycle and batch surface with proof-gated shadow-lane links",
+                    "operationId": "getAutonomousAgpWellKnown",
+                    "responses": {
+                        "200": {"description": "Autonomous AGP surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/autogenesis/cycle": {
+                "post": {
+                    "summary": "Run one bounded AGP RSPL+SEPL cycle when an independent verifier lease exists",
+                    "operationId": "postSwarmAutogenesisCycle",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Cycle committed a descriptor-only resource version"},
+                        "200": {"description": "Cycle no-op, duplicate, or verifier wait"},
+                    },
+                }
+            },
+            "/swarm/autogenesis/run": {
+                "post": {
+                    "summary": "Run a bounded AGP batch across selected RSPL resources",
+                    "operationId": "postSwarmAutogenesisRun",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Batch committed at least one descriptor-only resource version"},
+                        "200": {"description": "Batch no-op, duplicate, or verifier wait"},
+                    },
+                }
+            },
+            "/swarm/autogenesis/watchdog": {
+                "get": {
+                    "summary": "Signal-gated fully autonomous AGP watchdog surface",
+                    "operationId": "getSwarmAutogenesisWatchdog",
+                    "responses": {
+                        "200": {"description": "Autonomous AGP watchdog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Run one AGP watchdog tick; emits a bounded batch only for a fresh trigger digest",
+                    "operationId": "postSwarmAutogenesisWatchdog",
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Watchdog committed an autonomous AGP batch"},
+                        "200": {"description": "Watchdog no-op, duplicate signal, threshold hold, or verifier wait"},
+                    },
+                },
+            },
+            "/.well-known/nomad-agp-watchdog.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/autogenesis/watchdog",
+                    "operationId": "getAgpWatchdogWellKnown",
+                    "responses": {
+                        "200": {"description": "Autonomous AGP watchdog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/autogenesis-recruit": {
                 "get": {
                     "summary": "Machine-economy recruit surface for AGP protocol-patch packets and agent CTAs",

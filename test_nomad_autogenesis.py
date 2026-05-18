@@ -1,6 +1,7 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
     build_autonomous_agp_cycle_surface,
+    build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
     build_development_cycles_surface,
@@ -9,6 +10,7 @@ from nomad_autogenesis import (
     register_resource,
     run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
+    run_autonomous_agp_watchdog,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -323,6 +325,126 @@ def test_autonomous_agp_batch_stops_without_verifier(tmp_path):
     assert batch["decision"] == "batch_wait_for_independent_verifier_lease"
     assert batch["summary"]["attempted"] == 1
     assert batch["cycles"][0]["decision"] == "wait_for_independent_verifier_lease"
+
+
+def test_autonomous_agp_watchdog_runs_only_on_fresh_signal(tmp_path):
+    auto_ledger = tmp_path / "auto.jsonl"
+    watchdog_ledger = tmp_path / "watchdog.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+    surface = build_autonomous_agp_watchdog_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface=agp,
+        worker_fleet={"active_worker_count": 2, "active_lease_count": 1},
+        cycle_ledger_path=auto_ledger,
+        watchdog_ledger_path=watchdog_ledger,
+    )
+
+    first = run_autonomous_agp_watchdog(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_cycles": 2,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        worker_fleet={"active_worker_count": 2, "active_lease_count": 1},
+        verifier_lease_index=_verifier_lease_index(),
+        cycle_ledger_path=auto_ledger,
+        watchdog_ledger_path=watchdog_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+    duplicate = run_autonomous_agp_watchdog(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_cycles": 2,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        worker_fleet={"active_worker_count": 2, "active_lease_count": 1},
+        verifier_lease_index=_verifier_lease_index(),
+        cycle_ledger_path=auto_ledger,
+        watchdog_ledger_path=watchdog_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+
+    assert surface["schema"] == "nomad.autonomous_agp_watchdog.v1"
+    assert surface["links"]["watchdog"].endswith("/swarm/autogenesis/watchdog")
+    assert surface["scheduler_contract"]["requires_manual_payload"] is False
+    assert first["accepted"] is True
+    assert first["decision"] == "watchdog_committed_autonomous_agp_batch"
+    assert first["batch"]["summary"]["committed"] == 2
+    assert first["signal_digest"].startswith("sha256:")
+    assert duplicate["accepted"] is False
+    assert duplicate["decision"] == "watchdog_noop_duplicate_signal"
+    assert duplicate["duplicate_of"] == first["watchdog_id"]
+
+
+def test_autonomous_agp_watchdog_noops_after_resources_are_weighted(tmp_path):
+    auto_ledger = tmp_path / "auto.jsonl"
+    watchdog_ledger = tmp_path / "watchdog.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    initial_substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=initial_substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=initial_substrate, development_cycles=cycles)
+    first = run_autonomous_agp_watchdog(
+        {"agent_id": "agp.proposer", "verifier_agent_id": "agp.verifier", "max_cycles": 2},
+        base_url="https://nomad.example",
+        resource_substrate=initial_substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        cycle_ledger_path=auto_ledger,
+        watchdog_ledger_path=watchdog_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+    updated_substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    second = run_autonomous_agp_watchdog(
+        {"agent_id": "agp.proposer", "verifier_agent_id": "agp.verifier", "max_cycles": 2},
+        base_url="https://nomad.example",
+        resource_substrate=updated_substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index=_verifier_lease_index(),
+        cycle_ledger_path=auto_ledger,
+        watchdog_ledger_path=watchdog_ledger,
+        resource_ledger_path=resource_ledger,
+    )
+
+    assert first["accepted"] is True
+    assert second["accepted"] is False
+    assert second["decision"] == "watchdog_noop_no_actionable_signal"
+    assert second["signal"]["actionable_resource_count"] == 0
+
+
+def test_autonomous_agp_watchdog_waits_for_independent_verifier(tmp_path):
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example")
+    cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    agp = build_autogenesis_surface(base_url="https://nomad.example", resource_substrate=substrate, development_cycles=cycles)
+
+    tick = run_autonomous_agp_watchdog(
+        {"agent_id": "agp.proposer", "verifier_agent_id": "agp.verifier", "max_cycles": 2},
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=cycles,
+        autogenesis_surface=agp,
+        verifier_lease_index={},
+        cycle_ledger_path=tmp_path / "auto.jsonl",
+        watchdog_ledger_path=tmp_path / "watchdog.jsonl",
+        resource_ledger_path=tmp_path / "resources.jsonl",
+    )
+
+    assert tick["accepted"] is False
+    assert tick["decision"] == "watchdog_wait_for_independent_verifier_lease"
+    assert tick["commit"]["reason"] == "independent_verifier_lease_required"
 
 
 def test_autonomous_agp_cycle_cools_down_same_resource_after_weight(tmp_path):

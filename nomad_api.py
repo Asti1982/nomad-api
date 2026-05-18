@@ -44,6 +44,7 @@ from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_autogenesis import (
     build_autonomous_agp_cycle_surface,
+    build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
     build_development_cycles_surface as build_autogenesis_development_cycles_surface,
@@ -54,6 +55,7 @@ from nomad_autogenesis import (
     register_resource,
     run_autonomous_agp_cycle,
     run_autonomous_agp_batch,
+    run_autonomous_agp_watchdog,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -460,6 +462,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
         autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=summary)
         return build_autonomous_agp_cycle_surface(
+            base_url=base_url,
+            resource_substrate=substrate,
+            autogenesis_surface=autogenesis,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_autonomous_agp_watchdog(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
+        autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=summary)
+        return build_autonomous_agp_watchdog_surface(
             base_url=base_url,
             resource_substrate=substrate,
             autogenesis_surface=autogenesis,
@@ -1529,6 +1546,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
                     "autonomous_agp_cycle": f"{b}/swarm/autogenesis/cycle",
                     "autonomous_agp_run": f"{b}/swarm/autogenesis/run",
+                    "autonomous_agp_watchdog": f"{b}/swarm/autogenesis/watchdog",
+                    "autonomous_agp_watchdog_surface": f"{b}/.well-known/nomad-agp-watchdog.json",
                     "autogenesis_shadow_lane": f"{b}/swarm/shadow-lane/candidates?type=autogenesis",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
@@ -1919,6 +1938,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis/watchdog", "/.well-known/nomad-agp-watchdog.json"}:
+            self._json_response(self.__class__._build_autonomous_agp_watchdog(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis-recruit", "/.well-known/nomad-autogenesis-recruit.json"}:
             self._json_response(self.__class__._build_autogenesis_recruit(base_url=self._base_url()))
@@ -3125,7 +3147,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-autogenesis.json",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
+                    "/swarm/autogenesis/watchdog",
                     "/.well-known/nomad-autonomous-agp.json",
+                    "/.well-known/nomad-agp-watchdog.json",
                     "/swarm/autogenesis-recruit",
                     "/.well-known/nomad-autogenesis-recruit.json",
                     "/swarm/shadow-lane/candidates?type=autogenesis",
@@ -3800,6 +3824,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 resource_substrate=substrate,
                 development_surface=development,
                 autogenesis_surface=autogenesis,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/autogenesis/watchdog":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            substrate = self.__class__._build_resource_substrate(base_url=base, swarm_summary=summary)
+            development = self.__class__._build_autogenesis_development_cycles(base_url=base)
+            autogenesis = self.__class__._build_autogenesis(base_url=base, swarm_summary=summary)
+            result = run_autonomous_agp_watchdog(
+                payload,
+                base_url=base,
+                resource_substrate=substrate,
+                development_surface=development,
+                autogenesis_surface=autogenesis,
+                worker_fleet=worker_fleet,
                 verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
@@ -4561,7 +4606,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-autogenesis.json",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
+                    "/swarm/autogenesis/watchdog",
                     "/.well-known/nomad-autonomous-agp.json",
+                    "/.well-known/nomad-agp-watchdog.json",
                     "/swarm/autogenesis-recruit",
                     "/.well-known/nomad-autogenesis-recruit.json",
                     "/swarm/shadow-lane/candidates?type=autogenesis",
