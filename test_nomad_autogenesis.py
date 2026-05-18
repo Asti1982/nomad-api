@@ -4,9 +4,11 @@ from nomad_autogenesis import (
     build_agp_benchmark_suite_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
+    build_agp_durable_ledger_surface,
     build_agp_evaluation_surface,
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
+    build_agp_paper_report_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
     build_agp_version_manager_surface,
@@ -487,6 +489,57 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_trace_sample_present"] is True
     assert conformance["checks"]["rspl_five_entity_types_present"] is True
     assert conformance["checks"]["rspl_agent_outputs_registered"] is True
+
+
+def test_agp_durable_ledger_sqlite_backend_and_paper_report(tmp_path, monkeypatch):
+    sqlite_path = tmp_path / "agp.sqlite3"
+    benchmark_ledger = tmp_path / "benchmarks.jsonl"
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "sqlite")
+    monkeypatch.setenv("NOMAD_AGP_SQLITE_LEDGER_PATH", str(sqlite_path))
+
+    benchmark_suite = run_agp_benchmark_suite(
+        {
+            "agent_id": "agp.verifier",
+            "suite_id": "sqlite-paper-suite",
+            "resource_id": "nomad-autogenesis",
+            "runs": [
+                {"mode": "gpqa_diamond", "benchmark_id": "gpqa", "baseline_score": 0.50, "candidate_score": 0.61},
+                {"mode": "aime", "benchmark_id": "aime", "baseline_score": 0.49, "candidate_score": 0.59},
+                {"mode": "gaia", "benchmark_id": "gaia", "baseline_score": 0.51, "candidate_score": 0.64},
+                {"mode": "leetcode", "benchmark_id": "leetcode", "baseline_score": 0.47, "candidate_score": 0.56},
+            ],
+        },
+        base_url="https://nomad.example",
+        ledger_path=benchmark_ledger,
+    )
+    benchmark_surface = build_agp_benchmark_suite_surface(base_url="https://nomad.example", ledger_path=benchmark_ledger)
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=tmp_path / "rspl.jsonl"),
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 1},
+        benchmark_ledger_path=benchmark_ledger,
+    )
+    durable = build_agp_durable_ledger_surface(base_url="https://nomad.example")
+    report = build_agp_paper_report_surface(
+        base_url="https://nomad.example",
+        conformance_surface=conformance,
+        durable_ledger_surface=durable,
+        benchmark_surface=benchmark_surface,
+    )
+
+    assert benchmark_suite["accepted"] is True
+    assert benchmark_suite["persisted"] is True
+    assert sqlite_path.exists()
+    assert not benchmark_ledger.exists()
+    assert benchmark_surface["recent_suite_count"] == 1
+    assert conformance["checks"]["real_benchmark_suite_present"] is True
+    assert durable["configured_backend"] == "sqlite"
+    assert durable["checks"]["sqlite_backend_available"] is True
+    assert durable["streams"]["sqlite_total_rows"] >= 1
+    assert report["schema"] == "nomad.agp_paper_report.v1"
+    assert report["implemented_layers"]["durable_ledger"]["configured_backend"] == "sqlite"
+    assert any(item["name"] == "Render Disk or external database" for item in report["external_requirements"])
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

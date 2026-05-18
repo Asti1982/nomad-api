@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,9 @@ DEFAULT_AGP_BENCHMARK_LEDGER_PATH = Path(
 )
 DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_VERSION_LINEAGE_LEDGER_PATH", "nomad_agp_version_lineage_ledger.jsonl")
+)
+DEFAULT_AGP_SQLITE_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH", "nomad_agp_ledger.sqlite3")
 )
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
@@ -195,8 +199,100 @@ def _contains_forbidden(payload: Any) -> bool:
     return walk(payload)
 
 
+def _ledger_backend() -> str:
+    backend = str(os.getenv("NOMAD_AGP_LEDGER_BACKEND") or "jsonl").strip().lower()
+    if backend in {"sqlite", "sql"}:
+        return "sqlite"
+    if backend in {"dual", "jsonl+sqlite", "sqlite+jsonl"}:
+        return "dual"
+    return "jsonl"
+
+
+def _sqlite_ledger_path() -> Path:
+    return Path(os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH") or DEFAULT_AGP_SQLITE_LEDGER_PATH)
+
+
+def _ledger_stream(path: Path | str | None) -> str:
+    p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    return _clean_id(p.name or str(p), fallback="nomad_resource_substrate_ledger")
+
+
+def _ensure_sqlite_ledger(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agp_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stream TEXT NOT NULL,
+            row_digest TEXT NOT NULL,
+            schema TEXT,
+            accepted INTEGER,
+            generated_at TEXT,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_agp_ledger_stream_id ON agp_ledger(stream, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_agp_ledger_digest ON agp_ledger(row_digest)")
+
+
+def _append_sqlite(row: dict[str, Any], path: Path | str | None) -> None:
+    p = _sqlite_ledger_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str)
+    accepted = row.get("accepted")
+    accepted_value = None if accepted is None else int(bool(accepted))
+    with sqlite3.connect(p, timeout=5) as conn:
+        _ensure_sqlite_ledger(conn)
+        conn.execute(
+            """
+            INSERT INTO agp_ledger(stream, row_digest, schema, accepted, generated_at, payload)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _ledger_stream(path),
+                _digest(row, length=64),
+                _text(row.get("schema"), 160),
+                accepted_value,
+                _text(row.get("generated_at"), 80),
+                payload,
+            ),
+        )
+
+
+def _read_sqlite(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    p = _sqlite_ledger_path()
+    if not p.exists():
+        return []
+    try:
+        with sqlite3.connect(p, timeout=5) as conn:
+            _ensure_sqlite_ledger(conn)
+            rows = conn.execute(
+                "SELECT payload FROM agp_ledger WHERE stream = ? ORDER BY id DESC LIMIT ?",
+                (_ledger_stream(path), max(1, int(limit))),
+            ).fetchall()
+    except (OSError, sqlite3.Error, ValueError):
+        return []
+    out: list[dict[str, Any]] = []
+    for (payload,) in reversed(rows):
+        try:
+            item = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(item, dict):
+            out.append(item)
+    return out[-limit:]
+
+
 def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    backend = _ledger_backend()
+    if backend == "sqlite":
+        return _read_sqlite(p, limit=limit)
+    if backend == "dual":
+        rows = _read_sqlite(p, limit=limit)
+        if rows:
+            return rows
     if not p.exists():
         return []
     try:
@@ -216,9 +312,15 @@ def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dic
 
 def _append_jsonl(row: dict[str, Any], path: Path | str | None) -> None:
     p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    backend = _ledger_backend()
+    if backend == "sqlite":
+        _append_sqlite(row, p)
+        return
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+    if backend == "dual":
+        _append_sqlite(row, p)
 
 
 def _resource_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
@@ -2733,6 +2835,8 @@ def build_agp_conformance_surface(
         "benchmark_evaluation_harness": True,
         "paper_benchmark_modes_declared": set(AGP_BENCHMARK_MODES) == {"gpqa_diamond", "aime", "gaia", "leetcode"},
         "benchmark_suite_route": True,
+        "durable_agp_ledger_backend_route": True,
+        "paper_report_route": True,
         "procurement_route_for_compute_and_services": True,
         "external_spend_receipt_gate": True,
         "ags_agent_bus_route": True,
@@ -2838,6 +2942,8 @@ def build_agp_conformance_surface(
             "evaluation_run": _u(root, "/swarm/agp/evaluations"),
             "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
             "benchmark_suite_run": _u(root, "/swarm/agp/benchmark-suites"),
+            "durable_ledger": _u(root, "/.well-known/nomad-agp-durable-ledger.json"),
+            "paper_report": _u(root, "/.well-known/nomad-agp-paper-report.json"),
             "version_manager": _u(root, "/.well-known/nomad-agp-version-manager.json"),
             "version_lineage": _u(root, "/swarm/agp/version-lineage"),
             "trace": _u(root, "/swarm/autogenesis/traces"),
@@ -2846,6 +2952,250 @@ def build_agp_conformance_surface(
             "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
         },
         "machine_instruction": "close_residual_gaps_by_posting_real_traces_and_budgeted_procurement_intents; never_spend_without_receipt_gate",
+    }
+
+
+def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
+    """Expose how AGP receipts are persisted without changing the receipt contracts."""
+    root = (base_url or "").strip().rstrip("/")
+    backend = _ledger_backend()
+    sqlite_path = _sqlite_ledger_path()
+    stream_paths = {
+        "resource_substrate": DEFAULT_RESOURCE_LEDGER_PATH,
+        "development_cycles": DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH,
+        "autonomous_agp": DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH,
+        "autonomous_watchdog": DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH,
+        "trace": DEFAULT_AGP_TRACE_LEDGER_PATH,
+        "procurement": DEFAULT_AGP_PROCUREMENT_LEDGER_PATH,
+        "context": DEFAULT_AGP_CONTEXT_LEDGER_PATH,
+        "optimizer": DEFAULT_AGP_OPTIMIZER_LEDGER_PATH,
+        "evaluation": DEFAULT_AGP_EVALUATION_LEDGER_PATH,
+        "agent_bus": DEFAULT_AGP_AGENT_BUS_LEDGER_PATH,
+        "plans": DEFAULT_AGP_PLAN_LEDGER_PATH,
+        "orchestrations": DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH,
+        "model_bindings": DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH,
+        "configs": DEFAULT_AGP_CONFIG_LEDGER_PATH,
+        "prompts": DEFAULT_AGP_PROMPT_LEDGER_PATH,
+        "benchmark_suites": DEFAULT_AGP_BENCHMARK_LEDGER_PATH,
+        "version_lineage": DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH,
+    }
+    sqlite_streams: list[dict[str, Any]] = []
+    sqlite_total_rows = 0
+    sqlite_readable = False
+    if sqlite_path.exists():
+        try:
+            with sqlite3.connect(sqlite_path, timeout=5) as conn:
+                _ensure_sqlite_ledger(conn)
+                rows = conn.execute(
+                    "SELECT stream, COUNT(*) FROM agp_ledger GROUP BY stream ORDER BY stream"
+                ).fetchall()
+            sqlite_readable = True
+            sqlite_streams = [{"stream": str(stream), "rows": int(count)} for stream, count in rows]
+            sqlite_total_rows = sum(item["rows"] for item in sqlite_streams)
+        except (OSError, sqlite3.Error, ValueError):
+            sqlite_readable = False
+    def count_jsonl_rows(path: Path) -> int:
+        if not path.exists():
+            return 0
+        try:
+            return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        except OSError:
+            return 0
+
+    jsonl_streams = [
+        {
+            "stream": name,
+            "path": str(path),
+            "row_count": count_jsonl_rows(path),
+        }
+        for name, path in stream_paths.items()
+    ]
+    checks = {
+        "backend_declared": backend in {"jsonl", "sqlite", "dual"},
+        "jsonl_compatibility_preserved": backend in {"jsonl", "dual"},
+        "sqlite_backend_available": backend in {"sqlite", "dual"},
+        "sqlite_file_readable_when_present": (not sqlite_path.exists()) or sqlite_readable,
+        "receipt_payloads_remain_canonical_json": True,
+        "no_secret_material_required": True,
+        "render_free_requires_external_durability_for_restart_survival": True,
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.agp_durable_ledger.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "configured_backend": backend,
+        "backend_env": {
+            "NOMAD_AGP_LEDGER_BACKEND": "jsonl|sqlite|dual",
+            "NOMAD_AGP_SQLITE_LEDGER_PATH": str(sqlite_path),
+        },
+        "durability_profile": {
+            "local_default": "jsonl_file",
+            "local_durable_option": "sqlite_or_dual",
+            "hosted_render_free": "ephemeral_filesystem_projection_only",
+            "hosted_durable_requirement": "persistent_disk_or_external_database_before_autonomous_public_commit_reliance",
+        },
+        "streams": {
+            "jsonl": jsonl_streams,
+            "sqlite_total_rows": sqlite_total_rows,
+            "sqlite": sqlite_streams,
+        },
+        "checks": checks,
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-durable-ledger.json"),
+            "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
+            "paper_report": _u(root, "/.well-known/nomad-agp-paper-report.json"),
+            "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
+            "version_manager": _u(root, "/.well-known/nomad-agp-version-manager.json"),
+        },
+        "machine_instruction": "use_sqlite_or_dual_backend_for_local_receipt_durability; use_persistent_disk_or_external_db_for_render_restart_durability",
+    }
+
+
+def build_agp_paper_report_surface(
+    *,
+    base_url: str = "",
+    conformance_surface: dict[str, Any] | None = None,
+    durable_ledger_surface: dict[str, Any] | None = None,
+    benchmark_surface: dict[str, Any] | None = None,
+    version_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize paper-relevant AGP behavior and the operational gaps that code alone cannot close."""
+    root = (base_url or "").strip().rstrip("/")
+    conformance = _dict(conformance_surface) or build_agp_conformance_surface(base_url=root)
+    durable = _dict(durable_ledger_surface) or build_agp_durable_ledger_surface(base_url=root)
+    benchmark = _dict(benchmark_surface) or build_agp_benchmark_suite_surface(base_url=root)
+    version = _dict(version_surface) or build_agp_version_manager_surface(base_url=root)
+    score = _num(conformance.get("conformance_score"))
+    residual_gaps = [str(item) for item in conformance.get("residual_gaps") or []]
+    backend = str(durable.get("configured_backend") or "jsonl")
+    implemented_layers = {
+        "RSPL": {
+            "status": "implemented",
+            "resource_states": list(RESOURCE_STATES),
+            "entity_types": list(RSPL_ENTITY_TYPES),
+            "route": _u(root, "/.well-known/nomad-resource-substrate.json"),
+        },
+        "SEPL": {
+            "status": "implemented",
+            "operators": list(SEPL_OPERATORS),
+            "optimizer_route": _u(root, "/.well-known/nomad-agp-optimizer.json"),
+        },
+        "AGS": {
+            "status": "implemented",
+            "agent_bus_route": _u(root, "/.well-known/nomad-agp-agent-bus.json"),
+            "orchestration_route": _u(root, "/swarm/agp/orchestrations"),
+        },
+        "model_manager": {
+            "status": "implemented_descriptor_and_fallback_bindings",
+            "route": _u(root, "/.well-known/nomad-agp-model-manager.json"),
+        },
+        "prompt_manager": {
+            "status": "implemented_versioned_templates_with_learnable_slots",
+            "route": _u(root, "/.well-known/nomad-agp-prompt-manager.json"),
+        },
+        "benchmark_suite": {
+            "status": "implemented_receipt_gate",
+            "declared_modes": list(AGP_BENCHMARK_MODES),
+            "recent_suite_count": _int(benchmark.get("recent_suite_count")),
+        },
+        "version_manager": {
+            "status": "implemented_lineage_receipts",
+            "artifact_types": list(AGP_VERSION_ARTIFACT_TYPES),
+            "recent_lineage_count": _int(version.get("recent_lineage_count")),
+        },
+        "durable_ledger": {
+            "status": "implemented_switchable_backend",
+            "configured_backend": backend,
+        },
+    }
+    external_requirements = [
+        {
+            "name": "NOMAD_AGP_LEDGER_BACKEND=sqlite|dual",
+            "secret": False,
+            "needed_for": "local durable AGP receipt persistence beyond append-only JSONL",
+            "free_tier_ok": True,
+            "required_now": False,
+        },
+        {
+            "name": "Render Disk or external database",
+            "secret": False,
+            "needed_for": "hosted AGP ledger survival across Render restarts",
+            "free_tier_ok": False,
+            "required_now": backend == "jsonl",
+        },
+        {
+            "name": "RENDER_API_KEY",
+            "secret": True,
+            "needed_for": "programmatic deploy verification and service metadata checks",
+            "free_tier_ok": True,
+            "required_now": False,
+        },
+        {
+            "name": "GITHUB_TOKEN",
+            "secret": True,
+            "needed_for": "GitHub Models as a managed low-cost AGP verifier/proposer brain",
+            "free_tier_ok": True,
+            "required_now": False,
+        },
+        {
+            "name": "OPENROUTER_API_KEY",
+            "secret": True,
+            "needed_for": "multi-provider model fallback when local Ollama is too weak or offline",
+            "free_tier_ok": "smoke_tests_only",
+            "required_now": False,
+        },
+        {
+            "name": "XAI_API_KEY",
+            "secret": True,
+            "needed_for": "Grok-backed model-manager binding when an external verifier brain is desired",
+            "free_tier_ok": "provider_dependent",
+            "required_now": False,
+        },
+    ]
+    local_capacity = {
+        "ollama_or_deterministic_fallback_enough_for": [
+            "descriptor-only RSPL/SEPL receipt tests",
+            "manual Codex proposer runs against Nomad verifier routes",
+            "small local shadow-lane cycles",
+            "offline regression and conformance checks",
+        ],
+        "ollama_or_free_tier_not_enough_for": [
+            "paper-grade GPQA/AIME/GAIA/LeetCode evaluation at meaningful scale",
+            "continuous public autonomous loops with restart-proof state",
+            "independent high-capability verifier pressure under sustained load",
+            "paid procurement or real-world service leasing without receipts and budgets",
+        ],
+    }
+    paper_status = "paper_surface_implemented_with_operational_gates"
+    if score >= 1.0 and not residual_gaps:
+        paper_status = "paper_surface_conformant_for_receipt_gated_descriptor_execution"
+    return {
+        "ok": True,
+        "schema": "nomad.agp_paper_report.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "paper_source": {
+            "arxiv": "https://arxiv.org/abs/2604.15034v3",
+            "reference_code": "https://github.com/DVampire/Autogenesis",
+        },
+        "paper_status": paper_status,
+        "conformance_score": round(score, 4),
+        "checks_passed": _int(conformance.get("checks_passed")),
+        "checks_total": _int(conformance.get("checks_total")),
+        "residual_gaps": residual_gaps,
+        "implemented_layers": implemented_layers,
+        "local_capacity": local_capacity,
+        "external_requirements": external_requirements,
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-paper-report.json"),
+            "durable_ledger": _u(root, "/.well-known/nomad-agp-durable-ledger.json"),
+            "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
+            "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
+            "version_manager": _u(root, "/.well-known/nomad-agp-version-manager.json"),
+            "orchestration": _u(root, "/swarm/agp/orchestrations"),
+        },
+        "machine_instruction": "treat_free_local_models_as_smoke_test_capacity; require_independent_verifier_receipts_and_durable_state_before_autonomous_public_weight_increase",
     }
 
 

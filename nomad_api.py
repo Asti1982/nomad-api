@@ -47,9 +47,11 @@ from nomad_autogenesis import (
     build_agp_benchmark_suite_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
+    build_agp_durable_ledger_surface,
     build_agp_evaluation_surface,
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
+    build_agp_paper_report_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
     build_agp_version_manager_surface,
@@ -558,6 +560,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_benchmark_suite(cls, *, base_url: str) -> dict:
         return build_agp_benchmark_suite_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_durable_ledger(cls, *, base_url: str) -> dict:
+        return build_agp_durable_ledger_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_paper_report(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        conformance = cls._build_agp_conformance(base_url=base_url, swarm_summary=swarm_summary)
+        durable = cls._build_agp_durable_ledger(base_url=base_url)
+        benchmark = cls._build_agp_benchmark_suite(base_url=base_url)
+        version = cls._build_agp_version_manager(base_url=base_url)
+        return build_agp_paper_report_surface(
+            base_url=base_url,
+            conformance_surface=conformance,
+            durable_ledger_surface=durable,
+            benchmark_surface=benchmark,
+            version_surface=version,
+        )
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1640,6 +1660,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_evaluations": f"{b}/swarm/agp/evaluations",
                     "agp_benchmark_suite": f"{b}/.well-known/nomad-agp-benchmark-suite.json",
                     "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
+                    "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
+                    "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
@@ -2070,6 +2092,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/benchmark-suite", "/.well-known/nomad-agp-benchmark-suite.json"}:
             self._json_response(self.__class__._build_agp_benchmark_suite(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/durable-ledger", "/.well-known/nomad-agp-durable-ledger.json"}:
+            self._json_response(self.__class__._build_agp_durable_ledger(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/paper-report", "/.well-known/nomad-agp-paper-report.json"}:
+            self._json_response(self.__class__._build_agp_paper_report(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -3303,6 +3331,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/evaluations",
                     "/.well-known/nomad-agp-benchmark-suite.json",
                     "/swarm/agp/benchmark-suites",
+                    "/.well-known/nomad-agp-durable-ledger.json",
+                    "/swarm/agp/durable-ledger",
+                    "/.well-known/nomad-agp-paper-report.json",
+                    "/swarm/agp/paper-report",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
@@ -4878,6 +4910,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/evaluations",
                     "/.well-known/nomad-agp-benchmark-suite.json",
                     "/swarm/agp/benchmark-suites",
+                    "/.well-known/nomad-agp-durable-ledger.json",
+                    "/swarm/agp/durable-ledger",
+                    "/.well-known/nomad-agp-paper-report.json",
+                    "/swarm/agp/paper-report",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",

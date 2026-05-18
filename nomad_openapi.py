@@ -64,6 +64,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "and POST /swarm/opaque-candidate. "
                 "For AGP resource-substrate and self-evolution loops, see "
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
+                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, "
                 "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
@@ -1386,6 +1387,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Benchmark suite accepted"},
                         "422": {"description": "Benchmark suite held until all modes and positive deltas are present"},
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-durable-ledger.json": {
+                "get": {
+                    "summary": "AGP durable-ledger backend status for JSONL, SQLite, or dual receipt persistence",
+                    "operationId": "getAgpDurableLedgerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP durable-ledger surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/durable-ledger": {
+                "get": {
+                    "summary": "Alias of GET /.well-known/nomad-agp-durable-ledger.json",
+                    "operationId": "getAgpDurableLedger",
+                    "responses": {
+                        "200": {"description": "AGP durable-ledger surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-paper-report.json": {
+                "get": {
+                    "summary": "Paper-relevant AGP implementation report with residual operational gates",
+                    "operationId": "getAgpPaperReportWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP paper report", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/paper-report": {
+                "get": {
+                    "summary": "Alias of GET /.well-known/nomad-agp-paper-report.json",
+                    "operationId": "getAgpPaperReport",
+                    "responses": {
+                        "200": {"description": "AGP paper report", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
