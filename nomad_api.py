@@ -1520,8 +1520,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
 
+        if parsed.path in {"/handyoracle", "/handyoracle.html", "/oracle", "/swarm-oracle", "/gadget"}:
+            self._html_file_response(PUBLIC_DIR / "handyoracle.html")
+            return
+
         if parsed.path in {"/.well-known/syndiode-gadgets.json", "/gadgets/manifest", "/gadgets.json"}:
             self._public_download_file_response(PUBLIC_DIR / "downloads" / "syndiode_gadgets_manifest.json")
+            return
+
+        if parsed.path.startswith("/assets/"):
+            rel = parsed.path[len("/assets/") :].strip("/")
+            if not rel or ".." in rel or "\\" in rel:
+                self._json_response(
+                    machine_error_response(
+                        error="invalid_asset_path",
+                        message="Asset path is invalid.",
+                        hints=["Use GET /assets/<filename> for published page media."],
+                    ),
+                    status=400,
+                )
+                return
+            self._public_asset_file_response(PUBLIC_DIR / "assets" / rel)
             return
 
         if parsed.path.startswith("/downloads/"):
@@ -6282,6 +6301,32 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _public_asset_file_response(self, path: Path, status: int = 200) -> None:
+        if not path.exists() or not path.is_file():
+            self._json_response(
+                machine_error_response(
+                    error="asset_not_found",
+                    message=f"Missing page asset: {path.name}",
+                    hints=["GET /assets/swarm-oracle-app-screenshot.png for the Swarm Oracle page screenshot."],
+                ),
+                status=404,
+            )
+            return
+        ctype, _ = mimetypes.guess_type(str(path))
+        size = path.stat().st_size
+        self.send_response(status)
+        self.send_header("Content-Type", ctype or "application/octet-stream")
+        self._send_common_headers()
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Content-Length", str(size))
+        self.end_headers()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     def _public_download_file_response(self, path: Path, status: int = 200) -> None:
         if path.name == HANDYORACLE_APK_NAME:

@@ -1,6 +1,6 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
-  "generated_at": "2026-05-16T00:00:00+02:00",
+  "generated_at": "2026-05-18T11:03:00+02:00",
   "base_url": "https://www.syndiode.com",
   "gadgets": [
     {
@@ -48,7 +48,7 @@
     },
     {
       "id": "handyoracle_android_edge",
-      "name": "HandyOracle",
+      "name": "Swarm Oracle",
       "version": "0.1.1-foreground-shake",
       "kind": [
         "ok_message_oracle",
@@ -56,7 +56,7 @@
         "nomad_transition_worker"
       ],
       "human_surface": {
-        "summary": "A small Android OK-message oracle gadget.",
+        "summary": "A small Android OK-message oracle gadget with a bundled on-device model.",
         "private_by_default": true,
         "private_data_boundary": "oracle text and raw phone context stay on device",
         "shake_policy": "foreground_only",
@@ -79,17 +79,19 @@
         "apk_size_bytes": 125108304,
         "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.1-foreground-shake",
         "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
-        "public_page": "https://www.syndiode.com/nomad.html#handyoracle",
+        "public_page": "https://www.syndiode.com/swarm-oracle",
         "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
         "primary_cta": "Download APK",
         "fallback_cta": "Latest GitHub release"
       },
       "installation_notes": [
-        "Tap Download APK from https://www.syndiode.com/nomad.html#handyoracle on the Android phone.",
-        "Open the downloaded file; Android may ask to allow installation from this source.",
-        "Start HandyOracle and keep it in the foreground before shaking.",
+        "Tap Download APK from https://www.syndiode.com/swarm-oracle on the Android phone.",
+        "Open the downloaded file; Android or Google Play Protect may warn because this is a direct APK and not a Google Play Store app.",
+        "Continue only if you trust this syndiode release, then allow the browser or file manager as an install source and tap OK or Install.",
+        "Start Swarm Oracle and keep it in the foreground before shaking.",
+        "The current APK bundles smollm2_135m_q4km.gguf and uses the local llama.cpp path for oracle messages.",
         "The top-right badge shows active Nomad agents or workers.",
-        "The app can run without a bundled model through its fallback oracle path.",
+        "If local model initialization fails, the app does not send private oracle text to a hosted model by default.",
         "The Nomad edge worker is secondary to the user experience and does not receive private oracle text."
       ]
     }

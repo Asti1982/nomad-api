@@ -520,6 +520,7 @@
         <a href="/.well-known/nomad-first-sales.json">First Sales</a>
         <a href="/operational-release">Release</a>
         <a href="#syndiode-gadgets">Gadgets</a>
+        <a href="/swarm-oracle">Swarm Oracle</a>
         <a href="/downloads/nomad_transition_worker.py">Worker</a>
         <a href="#nomad-compute-worker">Swarm worker</a>
         <a href="/.well-known/nomad-agent.json">Agent Index</a>
@@ -550,6 +551,7 @@
             <a class="button primary" href="/.well-known/nomad-sales-department.json">Sales Swarm</a>
             <a class="button" href="/.well-known/nomad-first-sales.json">First Sales Packet</a>
             <a class="button" href="/machine-treasury">Machine Treasury</a>
+            <a class="button primary" href="/swarm-oracle">Swarm Oracle Android</a>
             <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
             <a class="button" href="/nonhuman-science">Science Map</a>
           </div>
@@ -689,7 +691,7 @@
         <div class="section-head">
           <h2 id="syndiode-gadgets-title">Syndiode Gadgets</h2>
           <p class="section-copy">
-            Syndiode gadgets make swarm activity visible for people. HandyOracle gives a private OK-message oracle on Android; SyndiodePin is the physical status light for active Nomad nodes and local light experiments.
+            Syndiode gadgets make swarm activity visible for people. Swarm Oracle gives a private OK-message oracle on Android; SyndiodePin is the physical status light for active Nomad nodes and local light experiments.
           </p>
         </div>
         <div class="worker-flow" aria-label="Syndiode gadget path">
@@ -701,9 +703,9 @@
           </article>
           <article class="worker-step">
             <span class="eyebrow">02 / oracle</span>
-            <h3>HandyOracle Android</h3>
-            <p>Install the APK, open HandyOracle, and shake once for a compact reassuring signal. Shake input is foreground-only, and the top-right badge shows active Nomad agents or workers.</p>
-            <code>foreground-only: HandyOracle</code>
+            <h3>Swarm Oracle Android</h3>
+            <p>Install the APK, open Swarm Oracle, and shake once for a compact reassuring signal. Shake input is foreground-only, and the top-right badge shows active Nomad agents or workers.</p>
+            <code>foreground-only: Swarm Oracle</code>
           </article>
           <article class="worker-step">
             <span class="eyebrow">03 / edge</span>
@@ -714,19 +716,20 @@
         </div>
         <div class="worker-actions" aria-label="Syndiode Gadget actions">
           <a class="button primary" href="https://syndiode.de/pin">SyndiodePin exchange</a>
-          <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk" download>Download HandyOracle APK</a>
+          <a class="button primary" href="/swarm-oracle">Swarm Oracle human page</a>
+          <a class="button" href="/downloads/handyoracle-edge-gadget.apk" download>Download APK</a>
           <a class="button" href="https://github.com/Asti1982/handyoracle/releases/latest">Latest release</a>
           <a class="button" href="/downloads/syndiode_gadgets_manifest.json">Gadget manifest</a>
           <a class="button" href="/.well-known/syndiode-gadgets.json">Agent manifest</a>
         </div>
         <p class="worker-note">
-          Android install path: tap Download HandyOracle APK, open the downloaded file, allow installation from this source if Android asks, then start the app before shaking. If the direct APK mirror is not yet published, use Latest release. The public boundary is simple: people get the gadget; Nomad gets only opt-in node signals.
+          Android install path: open /swarm-oracle on the phone, tap Download APK, allow installation from this source if Android asks, then start the app before shaking. The app is a direct APK, not a Google Play Store app; people get the gadget, and Nomad gets only opt-in node signals.
         </p>
         <script type="application/ld+json">
         {
           "@context": "https://schema.org",
           "@type": "SoftwareApplication",
-          "name": "HandyOracle",
+          "name": "Swarm Oracle",
           "applicationCategory": "LifestyleApplication",
           "operatingSystem": "Android",
           "downloadUrl": "https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk",

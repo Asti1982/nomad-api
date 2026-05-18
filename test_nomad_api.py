@@ -96,8 +96,9 @@ def test_nomad_public_html_page_exists():
     assert "bootstrap growth" in text
     assert "Syndiode Gadgets" in text
     assert "Sales Department Swarm" in text
-    assert "HandyOracle" in text
-    assert "HandyOracle Android" in text
+    assert "Swarm Oracle" in text
+    assert "Swarm Oracle Android" in text
+    assert "/swarm-oracle" in text
     assert "foreground-only" in text
     assert "/downloads/syndiode_gadgets_manifest.json" in text
     assert "/downloads/handyoracle-edge-gadget.apk" in text
@@ -231,15 +232,53 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert pin["light_ai"]["stripe_subscription_required"] is False
     gadget = next(item for item in manifest["gadgets"] if item["id"] == "handyoracle_android_edge")
     assert gadget["id"] == "handyoracle_android_edge"
+    assert gadget["name"] == "Swarm Oracle"
     assert gadget["version"] == "0.1.1-foreground-shake"
     assert gadget["human_surface"]["private_by_default"] is True
     assert gadget["human_surface"]["shake_policy"] == "foreground_only"
     assert gadget["nomad_surface"]["sends_private_oracle_text"] is False
-    assert gadget["download"]["public_page"].endswith("/nomad.html#handyoracle")
+    assert gadget["download"]["public_page"].endswith("/swarm-oracle")
     assert gadget["download"]["apk"].endswith("/downloads/handyoracle-edge-gadget.apk")
     assert gadget["download"]["apk_sha256"] == "a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854"
     assert gadget["download"]["apk_size_bytes"] == 125108304
     assert gadget["download"]["release"].endswith("/v0.1.1-foreground-shake")
+    assert any("smollm2_135m_q4km.gguf" in note for note in gadget["installation_notes"])
+
+
+def test_handyoracle_public_html_page_exists():
+    html = Path(__file__).resolve().parent / "public" / "handyoracle.html"
+    text = html.read_text(encoding="utf-8")
+
+    assert "Swarm Oracle by syndiode" in text
+    assert "Download APK" in text
+    assert "/downloads/handyoracle-edge-gadget.apk" in text
+    assert "not a Google Play Store app" in text
+    assert "Google Play Protect may warn" in text
+    assert "/assets/swarm-oracle-app-screenshot.png" in text
+    assert "smollm2_135m_q4km.gguf" in text
+
+
+def test_handyoracle_public_routes_render_human_page():
+    for route in ["/handyoracle", "/handyoracle.html", "/oracle", "/swarm-oracle", "/gadget"]:
+        handler = NomadApiHandler.__new__(NomadApiHandler)
+        seen = []
+        handler.path = route
+        handler._html_file_response = lambda path: seen.append(path)
+
+        handler.do_GET()
+
+        assert seen == [Path(__file__).resolve().parent / "public" / "handyoracle.html"]
+
+
+def test_public_asset_route_serves_swarm_oracle_screenshot():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    seen = []
+    handler.path = "/assets/swarm-oracle-app-screenshot.png"
+    handler._public_asset_file_response = lambda path: seen.append(path)
+
+    handler.do_GET()
+
+    assert seen == [Path(__file__).resolve().parent / "public" / "assets" / "swarm-oracle-app-screenshot.png"]
 
 
 def test_handyoracle_apk_download_redirects_to_release():
