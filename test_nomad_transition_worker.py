@@ -401,6 +401,35 @@ def test_transition_worker_requests_and_completes_fleet_lease(monkeypatch):
     assert calls[1][2]["lease_id"] == "nomad-worker-lease-test"
 
 
+def test_transition_worker_agp_fleet_lease_is_fixed_to_autogenesis(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        return {
+            "ok": True,
+            "lease_id": "nomad-worker-lease-agp",
+            "objective": "autogenesis_protocol_evolution",
+        }
+
+    monkeypatch.setattr(worker, "http_json", fake_http_json)
+    lease = worker._worker_fleet_lease(
+        "https://nomad.example",
+        "nomad-agp-proposer",
+        timeout=1.0,
+        proposed_objective="autogenesis_protocol_evolution",
+        last_report=None,
+        machine_surfaces={},
+        fixed_objective=True,
+    )
+
+    assert lease["objective"] == "autogenesis_protocol_evolution"
+    assert calls[0][2]["known_objectives"] == ["autogenesis_protocol_evolution"]
+    assert calls[0][2]["fixed_objective"] is True
+    assert "verifier" in calls[0][2]["capabilities"]
+
+
 def test_transition_worker_posts_proof_link_when_digest_present(monkeypatch):
     worker = _load_worker()
 

@@ -1142,7 +1142,10 @@ def _surface_objective_choice(requested: str, surfaces: dict | None) -> tuple[st
     return selected or "compute_auth", {"policy": "local_meta_fallback", "objective": selected or "compute_auth"}
 
 
-def _fleet_known_objectives() -> list[str]:
+def _fleet_known_objectives(fixed_objective: str = "") -> list[str]:
+    objective = clean(fixed_objective, 80)
+    if objective in MACHINE_OBJECTIVES:
+        return [objective]
     return sorted(MACHINE_OBJECTIVES.keys())
 
 def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
@@ -1199,13 +1202,17 @@ def _worker_fleet_lease(
     proposed_objective: str,
     last_report: dict | None,
     machine_surfaces: dict | None = None,
+    fixed_objective: bool = False,
 ) -> dict[str, object]:
+    fixed = clean(proposed_objective, 80) if fixed_objective else ""
     payload = {
         "agent_id": agent_id,
-        "known_objectives": _fleet_known_objectives(),
+        "known_objectives": _fleet_known_objectives(fixed),
         "proposed_objective": proposed_objective,
+        "fixed_objective": bool(fixed),
         "capabilities": [
             "transition_worker",
+            "verifier",
             "proof_artifacts",
             "machine_economy_probe",
             "nonhuman_science_probe",
@@ -1884,6 +1891,7 @@ def main() -> None:
         try:
             selected = a.machine_objective
             meta_decision: dict[str, object] = {}
+            fixed_objective = a.machine_objective == "autogenesis_protocol_evolution"
             machine_surfaces = _machine_surface_signal(a.base_url, timeout=min(8.0, float(a.timeout)))
             surface_selected, surface_decision = _surface_objective_choice(a.machine_objective, machine_surfaces)
             if a.machine_objective == "unhuman_supremacy":
@@ -1895,7 +1903,7 @@ def main() -> None:
                         "surface_policy": surface_decision.get("policy"),
                         "surface_objective": surface_selected,
                     }
-            elif surface_selected in MACHINE_OBJECTIVES:
+            elif surface_selected in MACHINE_OBJECTIVES and not fixed_objective:
                 selected = surface_selected
             timeout = float(a.timeout)
             meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}
@@ -1918,9 +1926,10 @@ def main() -> None:
                     proposed_objective=selected,
                     last_report=last_report,
                     machine_surfaces=machine_surfaces,
+                    fixed_objective=fixed_objective,
                 )
                 leased_objective = clean(fleet_lease.get("objective"), 80)
-                if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES:
+                if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES and not fixed_objective:
                     selected = leased_objective
             report = (
                 run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
