@@ -16,6 +16,9 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from nomad_variant_forge import _canonical_verifier_receipt_digest as _variant_verifier_receipt_digest
 
@@ -205,6 +208,14 @@ def _ledger_backend() -> str:
         return "sqlite"
     if backend in {"dual", "jsonl+sqlite", "sqlite+jsonl"}:
         return "dual"
+    if backend in {"firebase", "firestore"}:
+        return "firebase"
+    if backend in {"firebase+jsonl", "jsonl+firebase", "firestore+jsonl", "jsonl+firestore"}:
+        return "firebase+jsonl"
+    if backend in {"firebase+sqlite", "sqlite+firebase", "firestore+sqlite", "sqlite+firestore"}:
+        return "firebase+sqlite"
+    if backend in {"firebase+dual", "dual+firebase", "firestore+dual", "dual+firestore"}:
+        return "firebase+dual"
     return "jsonl"
 
 
@@ -284,15 +295,291 @@ def _read_sqlite(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[di
     return out[-limit:]
 
 
-def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
-    p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
-    backend = _ledger_backend()
-    if backend == "sqlite":
-        return _read_sqlite(p, limit=limit)
-    if backend == "dual":
-        rows = _read_sqlite(p, limit=limit)
-        if rows:
-            return rows
+def _firebase_project_id() -> str:
+    return (
+        os.getenv("FIREBASE_PROJECT_ID")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCLOUD_PROJECT")
+        or ""
+    ).strip()
+
+
+def _firebase_database_id() -> str:
+    return (os.getenv("FIREBASE_DATABASE_ID") or "(default)").strip() or "(default)"
+
+
+def _firebase_collection() -> str:
+    return _clean_id(os.getenv("NOMAD_AGP_FIREBASE_COLLECTION") or "nomad_agp_ledger", fallback="nomad_agp_ledger")
+
+
+def _firebase_timeout() -> int:
+    return max(1, min(30, _int(os.getenv("NOMAD_AGP_FIREBASE_TIMEOUT_SECONDS"), 8)))
+
+
+def _firebase_proxy_url() -> str:
+    return (os.getenv("NOMAD_AGP_FIREBASE_LEDGER_URL") or "").strip()
+
+
+def _firebase_service_account_info() -> dict[str, Any]:
+    raw_json = (os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON") or os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            return parsed
+    credentials_path = (os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+    if credentials_path:
+        try:
+            parsed = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            return parsed
+    project_id = _firebase_project_id()
+    client_email = (os.getenv("FIREBASE_CLIENT_EMAIL") or "").strip()
+    private_key = (os.getenv("FIREBASE_PRIVATE_KEY") or "").strip().replace("\\n", "\n")
+    if project_id and client_email and private_key:
+        return {
+            "type": "service_account",
+            "project_id": project_id,
+            "private_key": private_key,
+            "client_email": client_email,
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    return {}
+
+
+def _firebase_config_status() -> dict[str, Any]:
+    proxy_url = _firebase_proxy_url()
+    service_account = _firebase_service_account_info()
+    api_key_present = bool((os.getenv("FIREBASE_API_KEY") or "").strip())
+    project_id = _firebase_project_id() or str(service_account.get("project_id") or "").strip()
+    auth_mode = "none"
+    missing: list[str] = []
+    if proxy_url:
+        auth_mode = "proxy_url"
+    elif service_account:
+        auth_mode = "service_account"
+    elif project_id and api_key_present:
+        auth_mode = "api_key"
+    else:
+        if not project_id:
+            missing.append("FIREBASE_PROJECT_ID")
+        if not api_key_present and not service_account:
+            missing.append("FIREBASE_API_KEY_or_service_account")
+    return {
+        "configured": bool(proxy_url or (project_id and (api_key_present or service_account))),
+        "auth_mode": auth_mode,
+        "project_id_present": bool(project_id),
+        "api_key_present": api_key_present,
+        "service_account_present": bool(service_account),
+        "proxy_url_present": bool(proxy_url),
+        "database_id": _firebase_database_id(),
+        "collection": _firebase_collection(),
+        "missing_env": missing,
+        "secret_env_names": [
+            "FIREBASE_API_KEY",
+            "FIREBASE_CLIENT_EMAIL",
+            "FIREBASE_PRIVATE_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+            "FIREBASE_SERVICE_ACCOUNT_JSON",
+            "NOMAD_AGP_FIREBASE_LEDGER_TOKEN",
+        ],
+    }
+
+
+def _firestore_value(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"nullValue": None}
+    if isinstance(value, bool):
+        return {"booleanValue": value}
+    if isinstance(value, int):
+        return {"integerValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    return {"stringValue": str(value)}
+
+
+def _firebase_auth() -> tuple[dict[str, str], str, str]:
+    service_account = _firebase_service_account_info()
+    if service_account:
+        try:
+            from google.auth.transport.requests import Request as GoogleAuthRequest
+            from google.oauth2 import service_account as google_service_account
+
+            credentials = google_service_account.Credentials.from_service_account_info(
+                service_account,
+                scopes=["https://www.googleapis.com/auth/datastore"],
+            )
+            credentials.refresh(GoogleAuthRequest())
+            return {"Authorization": f"Bearer {credentials.token}"}, "", "service_account"
+        except Exception:  # noqa: BLE001
+            return {}, "", "service_account_unavailable"
+    api_key = (os.getenv("FIREBASE_API_KEY") or "").strip()
+    if api_key:
+        return {}, "?" + urlencode({"key": api_key}), "api_key"
+    return {}, "", "none"
+
+
+def _firebase_request_json(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    body = None if payload is None else json.dumps(payload, ensure_ascii=True).encode("utf-8")
+    request_headers = {"Accept": "application/json"}
+    if body is not None:
+        request_headers["Content-Type"] = "application/json"
+    request_headers.update(headers or {})
+    request = Request(url, data=body, headers=request_headers, method=method)
+    with urlopen(request, timeout=_firebase_timeout()) as response:
+        raw = response.read()
+    if not raw:
+        return {}
+    parsed = json.loads(raw.decode("utf-8"))
+    return parsed if isinstance(parsed, dict) else {"rows": parsed}
+
+
+def _append_firebase(row: dict[str, Any], path: Path | str | None) -> bool:
+    stream = _ledger_stream(path)
+    row_digest = _digest(row, length=64)
+    payload_json = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str)
+    proxy_url = _firebase_proxy_url()
+    if proxy_url:
+        payload = {
+            "op": "append",
+            "stream": stream,
+            "row_digest": row_digest,
+            "schema": _text(row.get("schema"), 160),
+            "accepted": row.get("accepted"),
+            "generated_at": _text(row.get("generated_at"), 80),
+            "payload": row,
+        }
+        token = (os.getenv("NOMAD_AGP_FIREBASE_LEDGER_TOKEN") or "").strip()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        try:
+            _firebase_request_json(proxy_url, method="POST", payload=payload, headers=headers)
+            return True
+        except (OSError, HTTPError, URLError, json.JSONDecodeError):
+            return False
+    status = _firebase_config_status()
+    if not status["configured"] or status["auth_mode"] == "proxy_url":
+        return False
+    project_id = _firebase_project_id() or str(_firebase_service_account_info().get("project_id") or "").strip()
+    headers, query, auth_mode = _firebase_auth()
+    if auth_mode in {"none", "service_account_unavailable"}:
+        return False
+    collection = _firebase_collection()
+    database = _firebase_database_id()
+    document_id = _clean_id(f"{stream}-{row_digest}", fallback=row_digest)
+    url = (
+        f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents/"
+        f"{collection}?{urlencode({'documentId': document_id})}"
+    )
+    if query:
+        url = f"{url}&{query[1:]}"
+    document = {
+        "fields": {
+            "stream": {"stringValue": stream},
+            "row_digest": {"stringValue": row_digest},
+            "schema": {"stringValue": _text(row.get("schema"), 160)},
+            "accepted": _firestore_value(row.get("accepted")),
+            "generated_at": {"stringValue": _text(row.get("generated_at"), 80)},
+            "created_at": {"timestampValue": _iso_now()},
+            "payload_json": {"stringValue": payload_json},
+        }
+    }
+    try:
+        _firebase_request_json(url, method="POST", payload=document, headers=headers)
+        return True
+    except (OSError, HTTPError, URLError, json.JSONDecodeError):
+        return False
+
+
+def _rows_from_firebase_payload(data: Any, *, limit: int) -> list[dict[str, Any]]:
+    if isinstance(data, dict):
+        raw_rows = data.get("rows") or data.get("items") or data.get("documents") or []
+    elif isinstance(data, list):
+        raw_rows = data
+    else:
+        raw_rows = []
+    rows: list[dict[str, Any]] = []
+    for item in raw_rows:
+        if not isinstance(item, dict):
+            continue
+        payload = item.get("payload")
+        if isinstance(payload, dict):
+            rows.append(payload)
+            continue
+        payload_json = item.get("payload_json")
+        if not payload_json and isinstance(item.get("fields"), dict):
+            field = item["fields"].get("payload_json")
+            if isinstance(field, dict):
+                payload_json = field.get("stringValue")
+        if isinstance(payload_json, str):
+            try:
+                parsed = json.loads(payload_json)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                rows.append(parsed)
+                continue
+        if "document" in item and isinstance(item["document"], dict):
+            fields = _dict(item["document"].get("fields"))
+            field = _dict(fields.get("payload_json"))
+            payload_json = field.get("stringValue")
+            if isinstance(payload_json, str):
+                try:
+                    parsed = json.loads(payload_json)
+                except json.JSONDecodeError:
+                    parsed = {}
+                if isinstance(parsed, dict):
+                    rows.append(parsed)
+    return rows[-limit:]
+
+
+def _read_firebase(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    stream = _ledger_stream(path)
+    proxy_url = _firebase_proxy_url()
+    if proxy_url:
+        token = (os.getenv("NOMAD_AGP_FIREBASE_LEDGER_TOKEN") or "").strip()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        query = urlencode({"op": "read", "stream": stream, "limit": max(1, int(limit))})
+        sep = "&" if "?" in proxy_url else "?"
+        try:
+            data = _firebase_request_json(f"{proxy_url}{sep}{query}", headers=headers)
+        except (OSError, HTTPError, URLError, json.JSONDecodeError):
+            return []
+        return _rows_from_firebase_payload(data, limit=limit)
+    status = _firebase_config_status()
+    if not status["configured"] or status["auth_mode"] == "proxy_url":
+        return []
+    project_id = _firebase_project_id() or str(_firebase_service_account_info().get("project_id") or "").strip()
+    headers, query, auth_mode = _firebase_auth()
+    if auth_mode in {"none", "service_account_unavailable"}:
+        return []
+    database = _firebase_database_id()
+    url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents:runQuery{query}"
+    structured_query = {
+        "structuredQuery": {
+            "from": [{"collectionId": _firebase_collection()}],
+            "where": {
+                "fieldFilter": {
+                    "field": {"fieldPath": "stream"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": stream},
+                }
+            },
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
+            "limit": max(1, int(limit)),
+        }
+    }
+    try:
+        data = _firebase_request_json(url, method="POST", payload=structured_query, headers=headers)
+    except (OSError, HTTPError, URLError, json.JSONDecodeError):
+        return []
+    return list(reversed(_rows_from_firebase_payload(data.get("rows", []), limit=limit)))
+
+
+def _read_jsonl_file(p: Path, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     if not p.exists():
         return []
     try:
@@ -310,17 +597,52 @@ def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dic
     return rows[-limit:]
 
 
+def _append_jsonl_file(row: dict[str, Any], p: Path) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+
+
+def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    backend = _ledger_backend()
+    if backend == "sqlite":
+        return _read_sqlite(p, limit=limit)
+    if backend == "dual":
+        rows = _read_sqlite(p, limit=limit)
+        return rows if rows else _read_jsonl_file(p, limit=limit)
+    if backend.startswith("firebase"):
+        rows = _read_firebase(p, limit=limit)
+        if rows:
+            return rows
+        if backend in {"firebase+sqlite", "firebase+dual"}:
+            rows = _read_sqlite(p, limit=limit)
+            if rows:
+                return rows
+        if backend in {"firebase", "firebase+jsonl", "firebase+dual"}:
+            return _read_jsonl_file(p, limit=limit)
+        return []
+    return _read_jsonl_file(p, limit=limit)
+
+
 def _append_jsonl(row: dict[str, Any], path: Path | str | None) -> None:
     p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
     backend = _ledger_backend()
     if backend == "sqlite":
         _append_sqlite(row, p)
         return
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
     if backend == "dual":
+        _append_jsonl_file(row, p)
         _append_sqlite(row, p)
+        return
+    if backend.startswith("firebase"):
+        firebase_ok = _append_firebase(row, p)
+        if backend in {"firebase+jsonl", "firebase+dual"} or (backend == "firebase" and not firebase_ok):
+            _append_jsonl_file(row, p)
+        if backend in {"firebase+sqlite", "firebase+dual"}:
+            _append_sqlite(row, p)
+        return
+    _append_jsonl_file(row, p)
 
 
 def _resource_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
@@ -2960,6 +3282,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
     root = (base_url or "").strip().rstrip("/")
     backend = _ledger_backend()
     sqlite_path = _sqlite_ledger_path()
+    firebase_status = _firebase_config_status()
     stream_paths = {
         "resource_substrate": DEFAULT_RESOURCE_LEDGER_PATH,
         "development_cycles": DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH,
@@ -3011,13 +3334,15 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         for name, path in stream_paths.items()
     ]
     checks = {
-        "backend_declared": backend in {"jsonl", "sqlite", "dual"},
-        "jsonl_compatibility_preserved": backend in {"jsonl", "dual"},
-        "sqlite_backend_available": backend in {"sqlite", "dual"},
+        "backend_declared": backend in {"jsonl", "sqlite", "dual", "firebase", "firebase+jsonl", "firebase+sqlite", "firebase+dual"},
+        "jsonl_compatibility_preserved": backend in {"jsonl", "dual", "firebase+jsonl", "firebase+dual"} or (backend == "firebase" and not firebase_status["configured"]),
+        "sqlite_backend_available": backend in {"sqlite", "dual", "firebase+sqlite", "firebase+dual"},
+        "firebase_backend_available": backend.startswith("firebase"),
+        "firebase_configured_when_selected": (not backend.startswith("firebase")) or bool(firebase_status["configured"]),
         "sqlite_file_readable_when_present": (not sqlite_path.exists()) or sqlite_readable,
         "receipt_payloads_remain_canonical_json": True,
         "no_secret_material_required": True,
-        "render_free_requires_external_durability_for_restart_survival": True,
+        "render_free_requires_external_durability_for_restart_survival": not backend.startswith("firebase"),
     }
     return {
         "ok": True,
@@ -3026,19 +3351,23 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "public_base_url": root,
         "configured_backend": backend,
         "backend_env": {
-            "NOMAD_AGP_LEDGER_BACKEND": "jsonl|sqlite|dual",
+            "NOMAD_AGP_LEDGER_BACKEND": "jsonl|sqlite|dual|firebase|firebase+jsonl|firebase+sqlite|firebase+dual",
             "NOMAD_AGP_SQLITE_LEDGER_PATH": str(sqlite_path),
+            "NOMAD_AGP_FIREBASE_COLLECTION": firebase_status["collection"],
+            "FIREBASE_DATABASE_ID": firebase_status["database_id"],
         },
         "durability_profile": {
             "local_default": "jsonl_file",
             "local_durable_option": "sqlite_or_dual",
+            "firebase_option": "firestore_or_https_proxy_receipt_ledger",
             "hosted_render_free": "ephemeral_filesystem_projection_only",
-            "hosted_durable_requirement": "persistent_disk_or_external_database_before_autonomous_public_commit_reliance",
+            "hosted_durable_requirement": "firebase_firestore_persistent_disk_or_external_database_before_autonomous_public_commit_reliance",
         },
         "streams": {
             "jsonl": jsonl_streams,
             "sqlite_total_rows": sqlite_total_rows,
             "sqlite": sqlite_streams,
+            "firebase": firebase_status,
         },
         "checks": checks,
         "links": {
@@ -3107,13 +3436,35 @@ def build_agp_paper_report_surface(
         "durable_ledger": {
             "status": "implemented_switchable_backend",
             "configured_backend": backend,
+            "firebase_configured": bool(_dict(_dict(durable.get("streams")).get("firebase")).get("configured")),
         },
     }
     external_requirements = [
         {
-            "name": "NOMAD_AGP_LEDGER_BACKEND=sqlite|dual",
+            "name": "NOMAD_AGP_LEDGER_BACKEND=sqlite|dual|firebase|firebase+jsonl",
             "secret": False,
-            "needed_for": "local durable AGP receipt persistence beyond append-only JSONL",
+            "needed_for": "local durable AGP receipt persistence or hosted Firebase receipt persistence beyond append-only JSONL",
+            "free_tier_ok": True,
+            "required_now": False,
+        },
+        {
+            "name": "FIREBASE_PROJECT_ID",
+            "secret": False,
+            "needed_for": "direct Firestore AGP receipt ledger routing",
+            "free_tier_ok": True,
+            "required_now": backend.startswith("firebase"),
+        },
+        {
+            "name": "FIREBASE_API_KEY or service account env",
+            "secret": True,
+            "needed_for": "Firestore REST access; service account preferred for server-side writes",
+            "free_tier_ok": True,
+            "required_now": backend.startswith("firebase"),
+        },
+        {
+            "name": "NOMAD_AGP_FIREBASE_LEDGER_URL",
+            "secret": False,
+            "needed_for": "optional syndiode.de Cloud Function/HTTPS proxy for AGP ledger writes and reads",
             "free_tier_ok": True,
             "required_now": False,
         },
@@ -3121,7 +3472,7 @@ def build_agp_paper_report_surface(
             "name": "Render Disk or external database",
             "secret": False,
             "needed_for": "hosted AGP ledger survival across Render restarts",
-            "free_tier_ok": False,
+            "free_tier_ok": backend.startswith("firebase"),
             "required_now": backend == "jsonl",
         },
         {

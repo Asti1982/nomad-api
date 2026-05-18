@@ -542,6 +542,54 @@ def test_agp_durable_ledger_sqlite_backend_and_paper_report(tmp_path, monkeypatc
     assert any(item["name"] == "Render Disk or external database" for item in report["external_requirements"])
 
 
+def test_agp_firebase_ledger_backend_falls_back_without_credentials(tmp_path, monkeypatch):
+    benchmark_ledger = tmp_path / "benchmarks.jsonl"
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "firebase")
+    for name in [
+        "FIREBASE_PROJECT_ID",
+        "FIREBASE_API_KEY",
+        "FIREBASE_CLIENT_EMAIL",
+        "FIREBASE_PRIVATE_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+        "FIREBASE_SERVICE_ACCOUNT_JSON",
+        "NOMAD_AGP_FIREBASE_LEDGER_URL",
+        "NOMAD_AGP_FIREBASE_LEDGER_TOKEN",
+    ]:
+        monkeypatch.delenv(name, raising=False)
+
+    benchmark_suite = run_agp_benchmark_suite(
+        {
+            "agent_id": "agp.verifier",
+            "suite_id": "firebase-fallback-suite",
+            "resource_id": "nomad-autogenesis",
+            "proof_digest": "sha256:" + "9" * 64,
+            "candidate_score": 0.66,
+            "baseline_score": 0.55,
+        },
+        base_url="https://nomad.example",
+        ledger_path=benchmark_ledger,
+    )
+    benchmark_surface = build_agp_benchmark_suite_surface(base_url="https://nomad.example", ledger_path=benchmark_ledger)
+    durable = build_agp_durable_ledger_surface(base_url="https://nomad.example")
+    report = build_agp_paper_report_surface(
+        base_url="https://nomad.example",
+        durable_ledger_surface=durable,
+        benchmark_surface=benchmark_surface,
+    )
+
+    assert benchmark_suite["accepted"] is True
+    assert benchmark_suite["persisted"] is True
+    assert benchmark_ledger.exists()
+    assert benchmark_surface["recent_suite_count"] == 1
+    assert durable["configured_backend"] == "firebase"
+    assert durable["streams"]["firebase"]["configured"] is False
+    assert durable["checks"]["firebase_backend_available"] is True
+    assert durable["checks"]["firebase_configured_when_selected"] is False
+    assert report["implemented_layers"]["durable_ledger"]["firebase_configured"] is False
+    assert any(item["name"] == "FIREBASE_PROJECT_ID" for item in report["external_requirements"])
+
+
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):
     ledger = tmp_path / "rspl.jsonl"
     surface = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=ledger)
