@@ -47,6 +47,7 @@ from nomad_autogenesis import (
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
+    build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
@@ -57,6 +58,8 @@ from nomad_autogenesis import (
     build_resource_substrate_surface,
     compact_autogenesis_surface,
     compact_resource_substrate_surface,
+    bind_agp_model,
+    compose_agp_config,
     create_agp_plan,
     post_agp_agent_bus_message,
     record_agp_execution_trace,
@@ -516,6 +519,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_agent_bus(cls, *, base_url: str) -> dict:
         return build_agp_agent_bus_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_model_manager(cls, *, base_url: str) -> dict:
+        return build_agp_model_manager_surface(base_url=base_url)
 
     @classmethod
     def _build_agp_procurement(cls, *, base_url: str) -> dict:
@@ -1598,6 +1605,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_agent_bus_messages": f"{b}/swarm/agp/agent-bus/messages",
                     "agp_plans": f"{b}/swarm/agp/plans",
                     "agp_orchestrations": f"{b}/swarm/agp/orchestrations",
+                    "agp_model_manager": f"{b}/.well-known/nomad-agp-model-manager.json",
+                    "agp_model_bindings": f"{b}/swarm/agp/model-bindings",
+                    "agp_configs": f"{b}/swarm/agp/configs",
                     "agp_procurement": f"{b}/.well-known/nomad-agp-procurement.json",
                     "agp_procurement_intents": f"{b}/swarm/agp/procurement-intents",
                     "agp_context_manager": f"{b}/.well-known/nomad-agp-context-manager.json",
@@ -2012,6 +2022,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/agent-bus", "/.well-known/nomad-agp-agent-bus.json"}:
             self._json_response(self.__class__._build_agp_agent_bus(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/model-manager", "/.well-known/nomad-agp-model-manager.json"}:
+            self._json_response(self.__class__._build_agp_model_manager(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/procurement", "/.well-known/nomad-agp-procurement.json"}:
             self._json_response(self.__class__._build_agp_procurement(base_url=self._base_url()))
@@ -3240,6 +3253,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/agent-bus/messages",
                     "/swarm/agp/plans",
                     "/swarm/agp/orchestrations",
+                    "/.well-known/nomad-agp-model-manager.json",
+                    "/swarm/agp/model-bindings",
+                    "/swarm/agp/configs",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",
@@ -3988,6 +4004,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             substrate = self.__class__._build_resource_substrate(base_url=base)
             result = run_agp_orchestration(payload, base_url=base, resource_substrate=substrate)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/model-bindings":
+            base = self._base_url()
+            result = bind_agp_model(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/configs":
+            base = self._base_url()
+            result = compose_agp_config(payload, base_url=base)
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
@@ -4776,6 +4804,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/agent-bus/messages",
                     "/swarm/agp/plans",
                     "/swarm/agp/orchestrations",
+                    "/.well-known/nomad-agp-model-manager.json",
+                    "/swarm/agp/model-bindings",
+                    "/swarm/agp/configs",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",

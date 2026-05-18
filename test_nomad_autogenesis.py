@@ -4,6 +4,7 @@ from nomad_autogenesis import (
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
+    build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
@@ -12,6 +13,8 @@ from nomad_autogenesis import (
     build_autogenesis_surface,
     build_development_cycles_surface,
     build_resource_substrate_surface,
+    bind_agp_model,
+    compose_agp_config,
     create_agp_plan,
     post_agp_agent_bus_message,
     record_development_cycle_event,
@@ -264,6 +267,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     optimizer_ledger = tmp_path / "optimizer.jsonl"
     evaluation_ledger = tmp_path / "evaluation.jsonl"
     procurement_ledger = tmp_path / "procurement.jsonl"
+    model_ledger = tmp_path / "models.jsonl"
+    config_ledger = tmp_path / "configs.jsonl"
     substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
 
     bus_surface = build_agp_agent_bus_surface(
@@ -294,6 +299,42 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         base_url="https://nomad.example",
         ledger_path=plan_ledger,
     )
+    model_surface = build_agp_model_manager_surface(
+        base_url="https://nomad.example",
+        model_ledger_path=model_ledger,
+        config_ledger_path=config_ledger,
+    )
+    model_binding = bind_agp_model(
+        {
+            "agent_id": "agp.planner",
+            "binding_id": "agp-planner-runtime",
+            "role": "planner",
+            "provider": "deterministic_fallback",
+            "model": "nomad-agp-fallback",
+            "fallback_chain": ["deterministic_fallback"],
+            "capabilities": ["planning", "tool_use", "verification"],
+            "proof_digest": "sha256:" + "2" * 64,
+        },
+        base_url="https://nomad.example",
+        ledger_path=model_ledger,
+    )
+    config = compose_agp_config(
+        {
+            "agent_id": "agp.planner",
+            "config_id": "agp-runtime-config",
+            "model_binding_id": model_binding["binding_id"],
+            "proof_digest": "sha256:" + "3" * 64,
+            "resource_bindings": [
+                {"resource_id": "nomad-planner-prompt", "entity_type": "prompt"},
+                {"resource_id": "nomad-autogenesis", "entity_type": "agent"},
+                {"resource_id": "nomad-agent-index", "entity_type": "tool"},
+                {"resource_id": "nomad-runtime-environment", "entity_type": "environment"},
+                {"resource_id": "nomad-execution-memory", "entity_type": "memory"},
+            ],
+        },
+        base_url="https://nomad.example",
+        ledger_path=config_ledger,
+    )
     orchestration = run_agp_orchestration(
         {
             "agent_id": "agp.planner",
@@ -312,6 +353,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         optimizer_ledger_path=optimizer_ledger,
         evaluation_ledger_path=evaluation_ledger,
         procurement_ledger_path=procurement_ledger,
+        model_binding_ledger_path=model_ledger,
+        config_ledger_path=config_ledger,
     )
     conformance = build_agp_conformance_surface(
         base_url="https://nomad.example",
@@ -326,12 +369,19 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         agent_bus_ledger_path=agent_bus_ledger,
         plan_ledger_path=plan_ledger,
         orchestration_ledger_path=orchestration_ledger,
+        model_binding_ledger_path=model_ledger,
+        config_ledger_path=config_ledger,
     )
 
     assert bus_surface["schema"] == "nomad.agp_agent_bus.v1"
     assert "planner" in bus_surface["agent_roles"]
     assert message["accepted"] is True
     assert plan["accepted"] is True
+    assert model_surface["schema"] == "nomad.agp_model_manager.v1"
+    assert "deterministic_fallback" in model_surface["provider_backends"]
+    assert model_binding["accepted"] is True
+    assert config["accepted"] is True
+    assert config["checks"]["five_rspl_entity_types_bound"] is True
     assert [item["step"] for item in plan["steps"]] == [
         "retrieve_resources",
         "context_init_or_update",
@@ -345,6 +395,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert {item["step"] for item in orchestration["orchestration_chain"]} >= {
         "agent_bus_message",
         "plan",
+        "model_binding",
+        "config",
         "context",
         "trace",
         "optimizer",
@@ -354,6 +406,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_agent_bus_message_present"] is True
     assert conformance["checks"]["real_plan_present"] is True
     assert conformance["checks"]["real_orchestration_present"] is True
+    assert conformance["checks"]["real_model_binding_present"] is True
+    assert conformance["checks"]["real_config_composition_present"] is True
     assert conformance["checks"]["real_trace_sample_present"] is True
     assert conformance["checks"]["rspl_five_entity_types_present"] is True
     assert conformance["checks"]["rspl_agent_outputs_registered"] is True

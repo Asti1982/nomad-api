@@ -55,6 +55,12 @@ DEFAULT_AGP_PLAN_LEDGER_PATH = Path(
 DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_ORCHESTRATION_LEDGER_PATH", "nomad_agp_orchestration_ledger.jsonl")
 )
+DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_MODEL_BINDING_LEDGER_PATH", "nomad_agp_model_binding_ledger.jsonl")
+)
+DEFAULT_AGP_CONFIG_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_CONFIG_LEDGER_PATH", "nomad_agp_config_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -90,6 +96,8 @@ NOMAD_RESOURCE_KIND_ALIASES = {
     "agent": "agent",
     "json_contract": "tool",
     "agent_output": "memory",
+    "model_binding": "agent",
+    "model_provider": "tool",
     "memory_module": "memory",
     "protocol_layer": "agent",
     "routing_operator": "agent",
@@ -240,6 +248,14 @@ def _agp_plan_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT)
 
 def _agp_orchestration_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH, limit=limit)
+
+
+def _agp_model_binding_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH, limit=limit)
+
+
+def _agp_config_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_CONFIG_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2633,6 +2649,8 @@ def build_agp_conformance_surface(
     agent_bus_ledger_path: Path | str | None = None,
     plan_ledger_path: Path | str | None = None,
     orchestration_ledger_path: Path | str | None = None,
+    model_binding_ledger_path: Path | str | None = None,
+    config_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2650,6 +2668,8 @@ def build_agp_conformance_surface(
     recent_agent_bus = _agp_agent_bus_ledger(agent_bus_ledger_path)
     recent_plans = _agp_plan_ledger(plan_ledger_path)
     recent_orchestrations = _agp_orchestration_ledger(orchestration_ledger_path)
+    recent_model_bindings = _agp_model_binding_ledger(model_binding_ledger_path)
+    recent_configs = _agp_config_ledger(config_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
@@ -2670,6 +2690,8 @@ def build_agp_conformance_surface(
         "ags_agent_bus_route": True,
         "ags_planner_decomposition_route": True,
         "ags_orchestration_receipt_chain_route": True,
+        "ags_model_manager_route": True,
+        "ags_config_composition_route": True,
         "real_trace_sample_present": bool(recent_traces),
         "real_context_operation_present": bool(recent_context),
         "real_optimizer_step_present": bool(recent_optimizer),
@@ -2677,6 +2699,8 @@ def build_agp_conformance_surface(
         "real_agent_bus_message_present": bool(recent_agent_bus),
         "real_plan_present": bool(recent_plans),
         "real_orchestration_present": bool(recent_orchestrations),
+        "real_model_binding_present": bool(recent_model_bindings),
+        "real_config_composition_present": bool(recent_configs),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2701,6 +2725,10 @@ def build_agp_conformance_surface(
         gaps.append("create_real_ags_plan_decomposition_for_long_horizon_task")
     if not recent_orchestrations:
         gaps.append("run_real_ags_orchestration_receipt_chain")
+    if not recent_model_bindings:
+        gaps.append("bind_real_ags_model_provider_descriptor")
+    if not recent_configs:
+        gaps.append("compose_real_ags_runtime_config_across_rspl_entities")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -2726,6 +2754,8 @@ def build_agp_conformance_surface(
         "recent_agent_bus_message_count": len(recent_agent_bus),
         "recent_plan_count": len(recent_plans),
         "recent_orchestration_count": len(recent_orchestrations),
+        "recent_model_binding_count": len(recent_model_bindings),
+        "recent_config_count": len(recent_configs),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
@@ -2733,6 +2763,9 @@ def build_agp_conformance_surface(
             "agent_bus_message": _u(root, "/swarm/agp/agent-bus/messages"),
             "plan": _u(root, "/swarm/agp/plans"),
             "orchestration": _u(root, "/swarm/agp/orchestrations"),
+            "model_manager": _u(root, "/.well-known/nomad-agp-model-manager.json"),
+            "model_binding": _u(root, "/swarm/agp/model-bindings"),
+            "config": _u(root, "/swarm/agp/configs"),
             "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
             "context_manager": _u(root, "/.well-known/nomad-agp-context-manager.json"),
             "context_operation": _u(root, "/swarm/agp/context"),
@@ -3295,6 +3328,215 @@ def build_agp_agent_bus_surface(
     }
 
 
+def build_agp_model_manager_surface(
+    *,
+    base_url: str = "",
+    model_ledger_path: Path | str | None = None,
+    config_ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent_models = _agp_model_binding_ledger(model_ledger_path)
+    recent_configs = _agp_config_ledger(config_ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_model_manager.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "purpose": "Bind AGS agents to versioned model/provider descriptors and compose runtime configs across RSPL resources.",
+        "provider_backends": ["local_ollama", "github_models", "xai_grok", "openrouter", "deterministic_fallback"],
+        "config_entities": ["agent", "tool", "environment", "memory", "prompt", "model_binding"],
+        "guards": [
+            "no_secret_material",
+            "fallback_chain_required",
+            "model_binding_is_descriptor_only",
+            "config_composition_must_reference_rspl_entities",
+            "provider_receipt_required_before_paid_external_calls",
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-model-manager.json"),
+            "model_bindings": _u(root, "/swarm/agp/model-bindings"),
+            "configs": _u(root, "/swarm/agp/configs"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "agent_bus": _u(root, "/.well-known/nomad-agp-agent-bus.json"),
+            "procurement": _u(root, "/swarm/agp/procurement-intents"),
+        },
+        "recent_model_binding_count": len(recent_models),
+        "recent_config_count": len(recent_configs),
+        "latest_model_binding": recent_models[-1] if recent_models else {},
+        "latest_config": recent_configs[-1] if recent_configs else {},
+        "machine_instruction": "bind_model_provider_descriptor_then_compose_config_before_ags_orchestration",
+    }
+
+
+def bind_agp_model(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_model_binding_receipt.v1", "accepted": False, "reason": "empty_model_binding", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_model_binding_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("worker_id"), fallback="")
+    binding_id = _clean_id(body.get("binding_id") or body.get("model_binding_id") or body.get("role"), fallback="")
+    role = _clean_id(body.get("role") or "executor", fallback="executor")
+    provider = _clean_id(body.get("provider") or body.get("backend") or "deterministic_fallback", fallback="deterministic_fallback")
+    supported_providers = {"local_ollama", "github_models", "xai_grok", "openrouter", "deterministic_fallback"}
+    if provider not in supported_providers:
+        provider = "deterministic_fallback"
+    model = _text(body.get("model") or body.get("model_name") or provider, 180)
+    fallback_raw = body.get("fallback_chain") if isinstance(body.get("fallback_chain"), list) else []
+    fallback_chain = [
+        _clean_id(item, fallback="")
+        for item in fallback_raw
+        if _clean_id(item, fallback="") in supported_providers
+    ]
+    if provider not in fallback_chain:
+        fallback_chain.insert(0, provider)
+    if "deterministic_fallback" not in fallback_chain:
+        fallback_chain.append("deterministic_fallback")
+    capabilities_raw = body.get("capabilities") if isinstance(body.get("capabilities"), list) else []
+    capabilities = [_clean_id(item, fallback="") for item in capabilities_raw if _clean_id(item, fallback="")]
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'binding': binding_id, 'provider': provider, 'model': model}, length=64)}"
+    paid_provider = provider in {"xai_grok", "openrouter", "github_models"} and bool(body.get("external_paid"))
+    receipt_digest = _text(body.get("provider_receipt_digest") or body.get("payment_receipt_digest"), 220)
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "binding_id_present": bool(binding_id),
+        "provider_supported": provider in supported_providers,
+        "model_present": bool(model),
+        "fallback_chain_present": bool(fallback_chain),
+        "deterministic_fallback_present": "deterministic_fallback" in fallback_chain,
+        "proof_digest_present": _looks_digest(proof_digest),
+        "paid_provider_receipt_gate": (not paid_provider) or _looks_digest(receipt_digest),
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_model_binding_receipt.v1",
+        "binding_id": binding_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "model_binding_descriptor_registered" if accepted else "hold_model_binding_until_contract",
+        "agent_id": agent_id,
+        "role": role,
+        "provider": provider,
+        "model": model,
+        "fallback_chain": fallback_chain,
+        "capabilities": capabilities,
+        "proof_digest": proof_digest,
+        "provider_receipt_digest": receipt_digest,
+        "checks": checks,
+        "resource_hint": {
+            "resource_id": f"model-{binding_id}",
+            "resource_kind": "model_binding",
+            "entity_type": "agent",
+            "state": "shadow",
+            "version": "v1",
+        },
+        "side_effect_scope": "model_binding_descriptor_only",
+        "next": {
+            "configs": _u(base_url, "/swarm/agp/configs"),
+            "procurement": _u(base_url, "/swarm/agp/procurement-intents"),
+            "model_manager": _u(base_url, "/.well-known/nomad-agp-model-manager.json"),
+        },
+        "machine_instruction": "compose_config_with_binding; do_not_call_paid_provider_without_receipt_digest",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def compose_agp_config(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_config_receipt.v1", "accepted": False, "reason": "empty_config", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_config_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("composer_agent_id"), fallback="")
+    config_id = _clean_id(body.get("config_id") or body.get("name"), fallback="")
+    model_binding_id = _clean_id(body.get("model_binding_id") or _dict(body.get("model_binding")).get("binding_id"), fallback="")
+    raw_bindings = body.get("resource_bindings") or body.get("resources")
+    bindings = _items(raw_bindings)
+    normalized_bindings = []
+    entity_types: set[str] = set()
+    for item in bindings:
+        resource_id = _clean_id(item.get("resource_id") or item.get("id"), fallback="")
+        entity_type = _clean_entity_type(item.get("entity_type"), resource_kind=item.get("resource_kind") or item.get("kind"))
+        if not resource_id:
+            continue
+        entity_types.add(entity_type)
+        normalized_bindings.append(
+            {
+                "resource_id": resource_id,
+                "entity_type": entity_type,
+                "role": _clean_id(item.get("role") or entity_type, fallback=entity_type),
+                "state": _clean_state(item.get("state") or "committed"),
+            }
+        )
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'config_id': config_id, 'bindings': normalized_bindings, 'model_binding_id': model_binding_id}, length=64)}"
+    missing = sorted(set(RSPL_ENTITY_TYPES) - entity_types)
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "config_id_present": bool(config_id),
+        "model_binding_present": bool(model_binding_id),
+        "rspl_bindings_present": bool(normalized_bindings),
+        "five_rspl_entity_types_bound": not missing,
+        "proof_digest_present": _looks_digest(proof_digest),
+        "descriptor_only": True,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_config_receipt.v1",
+        "config_id": config_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "config_composition_registered" if accepted else "hold_config_until_rspl_bindings",
+        "agent_id": agent_id,
+        "model_binding_id": model_binding_id,
+        "resource_bindings": normalized_bindings,
+        "missing_entity_types": missing,
+        "proof_digest": proof_digest,
+        "checks": checks,
+        "side_effect_scope": "config_descriptor_only",
+        "next": {
+            "agent_bus": _u(base_url, "/swarm/agp/agent-bus/messages"),
+            "orchestrations": _u(base_url, "/swarm/agp/orchestrations"),
+            "model_manager": _u(base_url, "/.well-known/nomad-agp-model-manager.json"),
+        },
+        "machine_instruction": "use_config_as_ags_runtime_descriptor; mutate_config_only_through_rspl_version_gate",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_CONFIG_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
 def post_agp_agent_bus_message(
     payload: dict[str, Any],
     *,
@@ -3488,6 +3730,8 @@ def run_agp_orchestration(
     optimizer_ledger_path: Path | str | None = None,
     evaluation_ledger_path: Path | str | None = None,
     procurement_ledger_path: Path | str | None = None,
+    model_binding_ledger_path: Path | str | None = None,
+    config_ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
     body = _dict(payload)
@@ -3531,6 +3775,21 @@ def run_agp_orchestration(
         ledger_path=plan_ledger_path,
         persist=persist,
     )
+    model_binding = bind_agp_model(
+        {
+            "agent_id": agent_id,
+            "binding_id": body.get("model_binding_id") or f"{agent_id}-runtime",
+            "role": "planner",
+            "provider": body.get("provider") or "deterministic_fallback",
+            "model": body.get("model") or "nomad-agp-fallback",
+            "fallback_chain": body.get("fallback_chain") or ["deterministic_fallback"],
+            "capabilities": ["planning", "tool_use", "verification", "resource_routing"],
+            "proof_digest": proof_digest,
+        },
+        base_url=base_url,
+        ledger_path=model_binding_ledger_path,
+        persist=persist,
+    )
     retrieval = retrieve_resource(
         {"query": resource_query, "limit": body.get("limit") or 5},
         base_url=base_url,
@@ -3540,6 +3799,24 @@ def run_agp_orchestration(
     selected = retrieved[0] if retrieved else {"resource_id": resource_query, "entity_type": body.get("entity_type") or "agent", "resource_kind": "agent"}
     resource_id = _clean_id(selected.get("resource_id"), fallback=resource_query)
     entity_type = _clean_entity_type(selected.get("entity_type"), resource_kind=selected.get("resource_kind") or body.get("resource_kind") or "agent")
+    config = compose_agp_config(
+        {
+            "agent_id": agent_id,
+            "config_id": body.get("config_id") or f"{agent_id}-ags-runtime",
+            "model_binding_id": model_binding.get("binding_id"),
+            "proof_digest": proof_digest,
+            "resource_bindings": [
+                {"resource_id": "nomad-planner-prompt", "entity_type": "prompt", "role": "prompt"},
+                {"resource_id": resource_id, "entity_type": "agent", "role": "agent"},
+                {"resource_id": "nomad-agent-index", "entity_type": "tool", "role": "tool"},
+                {"resource_id": "nomad-runtime-environment", "entity_type": "environment", "role": "environment"},
+                {"resource_id": "nomad-execution-memory", "entity_type": "memory", "role": "memory"},
+            ],
+        },
+        base_url=base_url,
+        ledger_path=config_ledger_path,
+        persist=persist,
+    )
     context = run_agp_context_operation(
         {
             "agent_id": agent_id,
@@ -3617,6 +3894,8 @@ def run_agp_orchestration(
     receipts = [
         ("agent_bus_message", "/swarm/agp/agent-bus/messages", bus_message),
         ("plan", "/swarm/agp/plans", plan),
+        ("model_binding", "/swarm/agp/model-bindings", model_binding),
+        ("config", "/swarm/agp/configs", config),
         ("resource_retrieval", "/swarm/resource-substrate/retrieve", retrieval),
         ("context", "/swarm/agp/context", context),
         ("trace", "/swarm/autogenesis/traces", trace),
@@ -3649,6 +3928,8 @@ def run_agp_orchestration(
     checks = {
         "agent_bus_message_accepted": bool(bus_message.get("accepted")),
         "plan_accepted": bool(plan.get("accepted")),
+        "model_binding_accepted": bool(model_binding.get("accepted")),
+        "config_accepted": bool(config.get("accepted")),
         "retrieval_ok": bool(retrieval.get("ok")),
         "context_accepted": bool(context.get("accepted")),
         "trace_accepted": bool(trace.get("accepted")),

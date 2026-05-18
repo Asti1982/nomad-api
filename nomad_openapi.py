@@ -1174,6 +1174,15 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-model-manager.json": {
+                "get": {
+                    "summary": "AGS model-manager and config-composition surface for versioned provider bindings",
+                    "operationId": "getAgpModelManagerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP model-manager surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agp-procurement.json": {
                 "get": {
                     "summary": "Quote-first AGP procurement surface for compute, model, hardware, and service capacity",
@@ -1224,6 +1233,28 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Orchestration receipt chain accepted"},
                         "422": {"description": "Orchestration held until all receipts pass"},
+                    },
+                }
+            },
+            "/swarm/agp/model-bindings": {
+                "post": {
+                    "summary": "Register one AGS model/provider binding descriptor with fallback and receipt gates",
+                    "operationId": "postSwarmAgpModelBindings",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Model binding accepted"},
+                        "422": {"description": "Model binding held by contract, fallback, receipt, or secret gate"},
+                    },
+                }
+            },
+            "/swarm/agp/configs": {
+                "post": {
+                    "summary": "Compose one AGS runtime config across model and RSPL resource bindings",
+                    "operationId": "postSwarmAgpConfigs",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Config composition accepted"},
+                        "422": {"description": "Config composition held until all RSPL bindings are present"},
                     },
                 }
             },
