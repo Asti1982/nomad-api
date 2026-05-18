@@ -1183,6 +1183,15 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-prompt-manager.json": {
+                "get": {
+                    "summary": "AGS prompt-manager surface for versioned prompt templates and learnable slots",
+                    "operationId": "getAgpPromptManagerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP prompt-manager surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agp-procurement.json": {
                 "get": {
                     "summary": "Quote-first AGP procurement surface for compute, model, hardware, and service capacity",
@@ -1255,6 +1264,17 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Config composition accepted"},
                         "422": {"description": "Config composition held until all RSPL bindings are present"},
+                    },
+                }
+            },
+            "/swarm/agp/prompts": {
+                "post": {
+                    "summary": "Register one versioned prompt template as an RSPL prompt resource",
+                    "operationId": "postSwarmAgpPrompts",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Prompt template accepted"},
+                        "422": {"description": "Prompt template held by contract, proof, variable, or secret gate"},
                     },
                 }
             },

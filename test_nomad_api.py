@@ -699,6 +699,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-agp-model-manager.json" in doc["paths"]
     assert "/swarm/agp/model-bindings" in doc["paths"]
     assert "/swarm/agp/configs" in doc["paths"]
+    assert "/.well-known/nomad-agp-prompt-manager.json" in doc["paths"]
+    assert "/swarm/agp/prompts" in doc["paths"]
     assert "/.well-known/nomad-agp-procurement.json" in doc["paths"]
     assert "/swarm/autogenesis/traces" in doc["paths"]
     assert "/swarm/agp/procurement-intents" in doc["paths"]

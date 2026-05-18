@@ -61,6 +61,9 @@ DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH = Path(
 DEFAULT_AGP_CONFIG_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_CONFIG_LEDGER_PATH", "nomad_agp_config_ledger.jsonl")
 )
+DEFAULT_AGP_PROMPT_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_PROMPT_LEDGER_PATH", "nomad_agp_prompt_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -98,6 +101,7 @@ NOMAD_RESOURCE_KIND_ALIASES = {
     "agent_output": "memory",
     "model_binding": "agent",
     "model_provider": "tool",
+    "prompt_template": "prompt",
     "memory_module": "memory",
     "protocol_layer": "agent",
     "routing_operator": "agent",
@@ -256,6 +260,10 @@ def _agp_model_binding_ledger(path: Path | str | None = None, *, limit: int = MA
 
 def _agp_config_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_CONFIG_LEDGER_PATH, limit=limit)
+
+
+def _agp_prompt_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_PROMPT_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2651,6 +2659,7 @@ def build_agp_conformance_surface(
     orchestration_ledger_path: Path | str | None = None,
     model_binding_ledger_path: Path | str | None = None,
     config_ledger_path: Path | str | None = None,
+    prompt_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2670,6 +2679,7 @@ def build_agp_conformance_surface(
     recent_orchestrations = _agp_orchestration_ledger(orchestration_ledger_path)
     recent_model_bindings = _agp_model_binding_ledger(model_binding_ledger_path)
     recent_configs = _agp_config_ledger(config_ledger_path)
+    recent_prompts = _agp_prompt_ledger(prompt_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
@@ -2692,6 +2702,7 @@ def build_agp_conformance_surface(
         "ags_orchestration_receipt_chain_route": True,
         "ags_model_manager_route": True,
         "ags_config_composition_route": True,
+        "ags_prompt_manager_route": True,
         "real_trace_sample_present": bool(recent_traces),
         "real_context_operation_present": bool(recent_context),
         "real_optimizer_step_present": bool(recent_optimizer),
@@ -2701,6 +2712,7 @@ def build_agp_conformance_surface(
         "real_orchestration_present": bool(recent_orchestrations),
         "real_model_binding_present": bool(recent_model_bindings),
         "real_config_composition_present": bool(recent_configs),
+        "real_prompt_template_present": bool(recent_prompts),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2729,6 +2741,8 @@ def build_agp_conformance_surface(
         gaps.append("bind_real_ags_model_provider_descriptor")
     if not recent_configs:
         gaps.append("compose_real_ags_runtime_config_across_rspl_entities")
+    if not recent_prompts:
+        gaps.append("register_real_prompt_template_with_learnable_slots")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -2756,6 +2770,7 @@ def build_agp_conformance_surface(
         "recent_orchestration_count": len(recent_orchestrations),
         "recent_model_binding_count": len(recent_model_bindings),
         "recent_config_count": len(recent_configs),
+        "recent_prompt_count": len(recent_prompts),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
@@ -2766,6 +2781,8 @@ def build_agp_conformance_surface(
             "model_manager": _u(root, "/.well-known/nomad-agp-model-manager.json"),
             "model_binding": _u(root, "/swarm/agp/model-bindings"),
             "config": _u(root, "/swarm/agp/configs"),
+            "prompt_manager": _u(root, "/.well-known/nomad-agp-prompt-manager.json"),
+            "prompt_template": _u(root, "/swarm/agp/prompts"),
             "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
             "context_manager": _u(root, "/.well-known/nomad-agp-context-manager.json"),
             "context_operation": _u(root, "/swarm/agp/context"),
@@ -3368,6 +3385,148 @@ def build_agp_model_manager_surface(
     }
 
 
+def build_agp_prompt_manager_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_prompt_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_prompt_manager.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "purpose": "Register prompt templates as RSPL prompt resources with versioned variables and SEPL-ready optimization slots.",
+        "template_contract": {
+            "required_fields": ["agent_id", "prompt_id", "template", "variables", "proof_digest"],
+            "resource_kind": "prompt_template",
+            "entity_type": "prompt",
+            "mutation_rule": "candidate_prompt_changes_must_flow_through_rspl_version_and_positive_evaluation",
+        },
+        "guards": [
+            "no_secret_material",
+            "variables_declared",
+            "learnability_mask_for_mutable_slots",
+            "rollback_or_noop_reference",
+            "descriptor_only_until_version_gate",
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-prompt-manager.json"),
+            "templates": _u(root, "/swarm/agp/prompts"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "optimizer": _u(root, "/swarm/agp/optimizer-steps"),
+            "evaluation": _u(root, "/swarm/agp/evaluations"),
+        },
+        "recent_prompt_count": len(recent),
+        "latest_prompt": recent[-1] if recent else {},
+        "machine_instruction": "register_prompt_template_then_bind_prompt_resource_into_config_or_optimizer_step",
+    }
+
+
+def register_agp_prompt_template(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_prompt_template_receipt.v1", "accepted": False, "reason": "empty_prompt_template", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_prompt_template_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("worker_id"), fallback="")
+    prompt_id = _clean_id(body.get("prompt_id") or body.get("template_id") or body.get("resource_id"), fallback="")
+    template = _text(body.get("template") or body.get("prompt") or body.get("content"), 2400)
+    version = _text(body.get("version") or body.get("to_version") or "v1", 80)
+    raw_variables = body.get("variables")
+    variable_names: list[str] = []
+    if isinstance(raw_variables, list):
+        for item in raw_variables:
+            if isinstance(item, dict):
+                name = _clean_id(item.get("name") or item.get("variable") or item.get("id"), fallback="")
+            else:
+                name = _clean_id(item, fallback="")
+            if name and name not in variable_names:
+                variable_names.append(name)
+    elif isinstance(raw_variables, dict):
+        for key in raw_variables:
+            name = _clean_id(key, fallback="")
+            if name and name not in variable_names:
+                variable_names.append(name)
+    if not variable_names:
+        variable_names = re.findall(r"{([a-zA-Z_][a-zA-Z0-9_]*)}", template)
+        variable_names = [_clean_id(item, fallback="") for item in variable_names if _clean_id(item, fallback="")]
+    learnability_raw = body.get("learnability_mask")
+    if isinstance(learnability_raw, dict):
+        learnability_mask = {_clean_id(k, fallback=str(k)): bool(v) for k, v in learnability_raw.items()}
+    else:
+        learnability_mask = {name: True for name in variable_names}
+    variable_lifting = {
+        "variables": [
+            {"name": name, "require_grad": bool(learnability_mask.get(name, True)), "source": "prompt_template"}
+            for name in variable_names
+        ]
+    }
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'prompt_id': prompt_id, 'template': template, 'version': version}, length=64)}"
+    rollback_ref = _text(body.get("rollback_ref") or body.get("noop_ref") or f"noop:{prompt_id}:{version}", 220)
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "prompt_id_present": bool(prompt_id),
+        "template_present": bool(template),
+        "variables_declared": bool(variable_names),
+        "learnability_mask_present": bool(learnability_mask),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "rollback_or_noop_present": bool(rollback_ref),
+        "descriptor_only": True,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_prompt_template_receipt.v1",
+        "prompt_id": prompt_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "prompt_template_registered" if accepted else "hold_prompt_template_until_contract",
+        "agent_id": agent_id,
+        "version": version,
+        "template_digest": f"sha256:{_digest({'template': template, 'variables': variable_names}, length=64)}",
+        "variables": variable_names,
+        "variable_lifting": variable_lifting,
+        "learnability_mask": learnability_mask,
+        "proof_digest": proof_digest,
+        "rollback_ref": rollback_ref,
+        "checks": checks,
+        "resource_hint": {
+            "resource_id": prompt_id,
+            "resource_kind": "prompt_template",
+            "entity_type": "prompt",
+            "state": "shadow",
+            "version": version,
+        },
+        "side_effect_scope": "prompt_template_descriptor_only",
+        "next": {
+            "resource_version": _u(base_url, "/swarm/resource-substrate/version"),
+            "optimizer": _u(base_url, "/swarm/agp/optimizer-steps"),
+            "configs": _u(base_url, "/swarm/agp/configs"),
+            "prompt_manager": _u(base_url, "/.well-known/nomad-agp-prompt-manager.json"),
+        },
+        "machine_instruction": "bind_prompt_template_to_config; mutate_template_only_via_rspl_version_with_positive_evaluation",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_PROMPT_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
 def bind_agp_model(
     payload: dict[str, Any],
     *,
@@ -3732,6 +3891,7 @@ def run_agp_orchestration(
     procurement_ledger_path: Path | str | None = None,
     model_binding_ledger_path: Path | str | None = None,
     config_ledger_path: Path | str | None = None,
+    prompt_ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
     body = _dict(payload)
@@ -3775,6 +3935,21 @@ def run_agp_orchestration(
         ledger_path=plan_ledger_path,
         persist=persist,
     )
+    prompt_template = register_agp_prompt_template(
+        {
+            "agent_id": agent_id,
+            "prompt_id": body.get("prompt_id") or "nomad-planner-prompt",
+            "version": body.get("prompt_version") or "v1",
+            "template": body.get("prompt_template") or "Plan {task} against {resource_id}; emit only receipt-bound AGP actions with rollback/noop gates.",
+            "variables": ["task", "resource_id"],
+            "learnability_mask": {"task": True, "resource_id": True},
+            "proof_digest": proof_digest,
+            "rollback_ref": "noop:nomad-planner-prompt:v1",
+        },
+        base_url=base_url,
+        ledger_path=prompt_ledger_path,
+        persist=persist,
+    )
     model_binding = bind_agp_model(
         {
             "agent_id": agent_id,
@@ -3806,7 +3981,7 @@ def run_agp_orchestration(
             "model_binding_id": model_binding.get("binding_id"),
             "proof_digest": proof_digest,
             "resource_bindings": [
-                {"resource_id": "nomad-planner-prompt", "entity_type": "prompt", "role": "prompt"},
+                {"resource_id": prompt_template.get("prompt_id") or "nomad-planner-prompt", "entity_type": "prompt", "role": "prompt"},
                 {"resource_id": resource_id, "entity_type": "agent", "role": "agent"},
                 {"resource_id": "nomad-agent-index", "entity_type": "tool", "role": "tool"},
                 {"resource_id": "nomad-runtime-environment", "entity_type": "environment", "role": "environment"},
@@ -3894,6 +4069,7 @@ def run_agp_orchestration(
     receipts = [
         ("agent_bus_message", "/swarm/agp/agent-bus/messages", bus_message),
         ("plan", "/swarm/agp/plans", plan),
+        ("prompt_template", "/swarm/agp/prompts", prompt_template),
         ("model_binding", "/swarm/agp/model-bindings", model_binding),
         ("config", "/swarm/agp/configs", config),
         ("resource_retrieval", "/swarm/resource-substrate/retrieve", retrieval),
@@ -3928,6 +4104,7 @@ def run_agp_orchestration(
     checks = {
         "agent_bus_message_accepted": bool(bus_message.get("accepted")),
         "plan_accepted": bool(plan.get("accepted")),
+        "prompt_template_accepted": bool(prompt_template.get("accepted")),
         "model_binding_accepted": bool(model_binding.get("accepted")),
         "config_accepted": bool(config.get("accepted")),
         "retrieval_ok": bool(retrieval.get("ok")),
