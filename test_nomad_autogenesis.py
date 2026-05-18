@@ -1,5 +1,6 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
+    build_agp_agent_bus_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
@@ -11,11 +12,14 @@ from nomad_autogenesis import (
     build_autogenesis_surface,
     build_development_cycles_surface,
     build_resource_substrate_surface,
+    create_agp_plan,
+    post_agp_agent_bus_message,
     record_development_cycle_event,
     record_agp_execution_trace,
     record_agp_evaluation_run,
     register_resource,
     retrieve_resource,
+    run_agp_orchestration,
     run_agp_context_operation,
     run_agp_optimizer_step,
     run_autonomous_agp_batch,
@@ -244,6 +248,109 @@ def test_agp_context_optimizer_and_evaluation_close_dynamic_loop(tmp_path):
     assert conformance["checks"]["real_context_operation_present"] is True
     assert conformance["checks"]["real_optimizer_step_present"] is True
     assert conformance["checks"]["real_evaluation_run_present"] is True
+
+
+def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
+    resource_ledger = tmp_path / "rspl.jsonl"
+    agent_bus_ledger = tmp_path / "agent_bus.jsonl"
+    plan_ledger = tmp_path / "plans.jsonl"
+    orchestration_ledger = tmp_path / "orchestrations.jsonl"
+    context_ledger = tmp_path / "context.jsonl"
+    trace_ledger = tmp_path / "traces.jsonl"
+    optimizer_ledger = tmp_path / "optimizer.jsonl"
+    evaluation_ledger = tmp_path / "evaluation.jsonl"
+    procurement_ledger = tmp_path / "procurement.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+
+    bus_surface = build_agp_agent_bus_surface(
+        base_url="https://nomad.example",
+        message_ledger_path=agent_bus_ledger,
+        plan_ledger_path=plan_ledger,
+        orchestration_ledger_path=orchestration_ledger,
+    )
+    message = post_agp_agent_bus_message(
+        {
+            "agent_id": "agp.planner",
+            "role": "planner",
+            "message_type": "task",
+            "content": {"task": "wire AGS planner to AGP receipt chain"},
+            "proof_digest": "sha256:" + "e" * 64,
+        },
+        base_url="https://nomad.example",
+        ledger_path=agent_bus_ledger,
+    )
+    plan = create_agp_plan(
+        {
+            "agent_id": "agp.planner",
+            "task": "wire AGS planner to AGP receipt chain",
+            "goal": "positive evaluation delta after descriptor-only orchestration",
+            "resource": {"resource_id": "nomad-autogenesis", "entity_type": "agent"},
+            "proof_digest": "sha256:" + "f" * 64,
+        },
+        base_url="https://nomad.example",
+        ledger_path=plan_ledger,
+    )
+    orchestration = run_agp_orchestration(
+        {
+            "agent_id": "agp.planner",
+            "task": "wire AGS planner to AGP receipt chain",
+            "goal": "positive evaluation delta after descriptor-only orchestration",
+            "resource_id": "nomad-autogenesis",
+            "proof_digest": "sha256:" + "1" * 64,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        ledger_path=orchestration_ledger,
+        agent_bus_ledger_path=agent_bus_ledger,
+        plan_ledger_path=plan_ledger,
+        context_ledger_path=context_ledger,
+        trace_ledger_path=trace_ledger,
+        optimizer_ledger_path=optimizer_ledger,
+        evaluation_ledger_path=evaluation_ledger,
+        procurement_ledger_path=procurement_ledger,
+    )
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+        trace_ledger_path=trace_ledger,
+        procurement_ledger_path=procurement_ledger,
+        context_ledger_path=context_ledger,
+        optimizer_ledger_path=optimizer_ledger,
+        evaluation_ledger_path=evaluation_ledger,
+        agent_bus_ledger_path=agent_bus_ledger,
+        plan_ledger_path=plan_ledger,
+        orchestration_ledger_path=orchestration_ledger,
+    )
+
+    assert bus_surface["schema"] == "nomad.agp_agent_bus.v1"
+    assert "planner" in bus_surface["agent_roles"]
+    assert message["accepted"] is True
+    assert plan["accepted"] is True
+    assert [item["step"] for item in plan["steps"]] == [
+        "retrieve_resources",
+        "context_init_or_update",
+        "trace_act_observe_optimize_remember",
+        "optimizer_step",
+        "evaluation_run",
+        "procurement_intent_if_capacity_gap",
+        "watchdog_trigger",
+    ]
+    assert orchestration["accepted"] is True
+    assert {item["step"] for item in orchestration["orchestration_chain"]} >= {
+        "agent_bus_message",
+        "plan",
+        "context",
+        "trace",
+        "optimizer",
+        "evaluation",
+        "procurement",
+    }
+    assert conformance["checks"]["real_agent_bus_message_present"] is True
+    assert conformance["checks"]["real_plan_present"] is True
+    assert conformance["checks"]["real_orchestration_present"] is True
+    assert conformance["checks"]["real_trace_sample_present"] is True
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

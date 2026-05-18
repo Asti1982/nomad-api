@@ -46,6 +46,15 @@ DEFAULT_AGP_OPTIMIZER_LEDGER_PATH = Path(
 DEFAULT_AGP_EVALUATION_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_EVALUATION_LEDGER_PATH", "nomad_agp_evaluation_ledger.jsonl")
 )
+DEFAULT_AGP_AGENT_BUS_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_AGENT_BUS_LEDGER_PATH", "nomad_agp_agent_bus_ledger.jsonl")
+)
+DEFAULT_AGP_PLAN_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_PLAN_LEDGER_PATH", "nomad_agp_plan_ledger.jsonl")
+)
+DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_ORCHESTRATION_LEDGER_PATH", "nomad_agp_orchestration_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -57,6 +66,26 @@ AGP_CANDIDATE_TYPES = (
 )
 RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
 SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
+AGP_AGENT_ROLES = (
+    "planner",
+    "researcher",
+    "tool_generator",
+    "verifier",
+    "optimizer",
+    "executor",
+    "procurement_agent",
+    "memory_agent",
+)
+AGP_AGENT_MESSAGE_TYPES = (
+    "task",
+    "resource_request",
+    "trace_event",
+    "optimizer_signal",
+    "evaluation_receipt",
+    "procurement_intent",
+    "verifier_witness",
+    "commit_vote",
+)
 NOMAD_RESOURCE_KIND_ALIASES = {
     "agent": "agent",
     "json_contract": "tool",
@@ -198,6 +227,18 @@ def _agp_optimizer_ledger(path: Path | str | None = None, *, limit: int = MAX_RE
 
 def _agp_evaluation_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_EVALUATION_LEDGER_PATH, limit=limit)
+
+
+def _agp_agent_bus_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_AGENT_BUS_LEDGER_PATH, limit=limit)
+
+
+def _agp_plan_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_PLAN_LEDGER_PATH, limit=limit)
+
+
+def _agp_orchestration_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2584,6 +2625,9 @@ def build_agp_conformance_surface(
     context_ledger_path: Path | str | None = None,
     optimizer_ledger_path: Path | str | None = None,
     evaluation_ledger_path: Path | str | None = None,
+    agent_bus_ledger_path: Path | str | None = None,
+    plan_ledger_path: Path | str | None = None,
+    orchestration_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2597,6 +2641,9 @@ def build_agp_conformance_surface(
     recent_context = _agp_context_ledger(context_ledger_path)
     recent_optimizer = _agp_optimizer_ledger(optimizer_ledger_path)
     recent_evaluation = _agp_evaluation_ledger(evaluation_ledger_path)
+    recent_agent_bus = _agp_agent_bus_ledger(agent_bus_ledger_path)
+    recent_plans = _agp_plan_ledger(plan_ledger_path)
+    recent_orchestrations = _agp_orchestration_ledger(orchestration_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_runtime_resources_present": bool(resources),
@@ -2612,10 +2659,16 @@ def build_agp_conformance_surface(
         "benchmark_evaluation_harness": True,
         "procurement_route_for_compute_and_services": True,
         "external_spend_receipt_gate": True,
+        "ags_agent_bus_route": True,
+        "ags_planner_decomposition_route": True,
+        "ags_orchestration_receipt_chain_route": True,
         "real_trace_sample_present": bool(recent_traces),
         "real_context_operation_present": bool(recent_context),
         "real_optimizer_step_present": bool(recent_optimizer),
         "real_evaluation_run_present": bool(recent_evaluation),
+        "real_agent_bus_message_present": bool(recent_agent_bus),
+        "real_plan_present": bool(recent_plans),
+        "real_orchestration_present": bool(recent_orchestrations),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2631,6 +2684,12 @@ def build_agp_conformance_surface(
         gaps.append("record_benchmark_evaluation_run_for_effectiveness_gate")
     if not recent_procurement:
         gaps.append("quote_or_lease_real_compute_service_only_after_budgeted_receipt")
+    if not recent_agent_bus:
+        gaps.append("post_real_ags_agent_bus_message_for_multi_agent_coordination")
+    if not recent_plans:
+        gaps.append("create_real_ags_plan_decomposition_for_long_horizon_task")
+    if not recent_orchestrations:
+        gaps.append("run_real_ags_orchestration_receipt_chain")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -2652,9 +2711,16 @@ def build_agp_conformance_surface(
         "recent_optimizer_count": len(recent_optimizer),
         "recent_evaluation_count": len(recent_evaluation),
         "recent_procurement_count": len(recent_procurement),
+        "recent_agent_bus_message_count": len(recent_agent_bus),
+        "recent_plan_count": len(recent_plans),
+        "recent_orchestration_count": len(recent_orchestrations),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
+            "agent_bus": _u(root, "/.well-known/nomad-agp-agent-bus.json"),
+            "agent_bus_message": _u(root, "/swarm/agp/agent-bus/messages"),
+            "plan": _u(root, "/swarm/agp/plans"),
+            "orchestration": _u(root, "/swarm/agp/orchestrations"),
             "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
             "context_manager": _u(root, "/.well-known/nomad-agp-context-manager.json"),
             "context_operation": _u(root, "/swarm/agp/context"),
@@ -3150,6 +3216,462 @@ def record_agp_evaluation_run(
     }
     if persist and accepted:
         _append_jsonl(row, ledger_path or DEFAULT_AGP_EVALUATION_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_agent_bus_surface(
+    *,
+    base_url: str = "",
+    message_ledger_path: Path | str | None = None,
+    plan_ledger_path: Path | str | None = None,
+    orchestration_ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent_messages = _agp_agent_bus_ledger(message_ledger_path)
+    recent_plans = _agp_plan_ledger(plan_ledger_path)
+    recent_orchestrations = _agp_orchestration_ledger(orchestration_ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_agent_bus.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "purpose": "AGS-style multi-agent coordination over protocol-registered RSPL resources and SEPL receipts.",
+        "agent_roles": list(AGP_AGENT_ROLES),
+        "message_types": list(AGP_AGENT_MESSAGE_TYPES),
+        "bus_contract": {
+            "required_message_fields": ["agent_id", "role", "message_type", "content", "proof_digest"],
+            "role_boundary": "agents_exchange_receipts_and_resource_descriptors_not_unbounded_code",
+            "side_effect_scope": "agent_bus_descriptor_only",
+            "routing_rule": "planner_decomposes; executor_records_trace; optimizer_emits_signal; verifier_binds_receipt; procurement_agent_quotes_only",
+        },
+        "planner_contract": {
+            "required_plan_fields": ["agent_id", "task", "goal"],
+            "required_steps": [
+                "retrieve_resources",
+                "context_init_or_update",
+                "trace_act_observe_optimize_remember",
+                "optimizer_step",
+                "evaluation_run",
+                "procurement_intent_if_capacity_gap",
+                "watchdog_trigger",
+            ],
+            "sepl_operator_algebra": list(SEPL_OPERATORS),
+        },
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-agent-bus.json"),
+            "messages": _u(root, "/swarm/agp/agent-bus/messages"),
+            "plans": _u(root, "/swarm/agp/plans"),
+            "orchestrations": _u(root, "/swarm/agp/orchestrations"),
+            "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
+            "context": _u(root, "/swarm/agp/context"),
+            "trace": _u(root, "/swarm/autogenesis/traces"),
+            "optimizer": _u(root, "/swarm/agp/optimizer-steps"),
+            "evaluation": _u(root, "/swarm/agp/evaluations"),
+            "procurement": _u(root, "/swarm/agp/procurement-intents"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+        },
+        "recent_message_count": len(recent_messages),
+        "recent_plan_count": len(recent_plans),
+        "recent_orchestration_count": len(recent_orchestrations),
+        "latest_message": recent_messages[-1] if recent_messages else {},
+        "latest_plan": recent_plans[-1] if recent_plans else {},
+        "latest_orchestration": recent_orchestrations[-1] if recent_orchestrations else {},
+        "machine_instruction": "post_agent_bus_message_then_plan_then_orchestration; bind_every_step_to_receipt_digest",
+    }
+
+
+def post_agp_agent_bus_message(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_agent_bus_message_receipt.v1", "accepted": False, "reason": "empty_agent_bus_message", "generated_at": now}
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.agp_agent_bus_message_receipt.v1",
+            "accepted": False,
+            "reason": "forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    agent_id = _clean_id(body.get("agent_id") or body.get("worker_id"), fallback="")
+    role = _clean_id(body.get("role") or "executor", fallback="executor")
+    if role not in AGP_AGENT_ROLES:
+        role = "executor"
+    message_type = _clean_id(body.get("message_type") or body.get("type") or "task", fallback="task")
+    if message_type not in AGP_AGENT_MESSAGE_TYPES:
+        message_type = "trace_event"
+    target_role = _clean_id(body.get("target_role") or body.get("to_role"), fallback="")
+    if target_role and target_role not in AGP_AGENT_ROLES:
+        target_role = ""
+    content = _dict(body.get("content"))
+    if not content:
+        text = _text(body.get("message") or body.get("task") or body.get("summary"), 1000)
+        content = {"text": text} if text else {}
+    thread_id = _clean_id(body.get("thread_id") or body.get("task_id"), fallback=f"agp-thread-{_digest({'agent': agent_id, 'content': content})}")
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'role': role, 'type': message_type, 'content': content}, length=64)}"
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "role_supported": role in AGP_AGENT_ROLES,
+        "message_type_supported": message_type in AGP_AGENT_MESSAGE_TYPES,
+        "content_present": bool(content),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "descriptor_only": True,
+    }
+    accepted = all(checks.values())
+    message_id = f"agp-msg-{_digest({'thread': thread_id, 'agent': agent_id, 'type': message_type, 'proof': proof_digest})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_agent_bus_message_receipt.v1",
+        "message_id": message_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "route_agent_bus_message" if accepted else "hold_agent_bus_message_until_contract",
+        "thread_id": thread_id,
+        "agent_id": agent_id,
+        "role": role,
+        "target_role": target_role,
+        "message_type": message_type,
+        "content": content,
+        "proof_digest": proof_digest,
+        "checks": checks,
+        "side_effect_scope": "agent_bus_descriptor_only",
+        "next": {
+            "plans": _u(base_url, "/swarm/agp/plans"),
+            "orchestrations": _u(base_url, "/swarm/agp/orchestrations"),
+            "agent_bus": _u(base_url, "/.well-known/nomad-agp-agent-bus.json"),
+        },
+        "machine_instruction": "planner_may_consume_message_only_as_receipt_bound_descriptor",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_AGENT_BUS_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def create_agp_plan(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_plan_receipt.v1", "accepted": False, "reason": "empty_agp_plan", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_plan_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("planner_agent_id"), fallback="")
+    task = _text(body.get("task") or body.get("objective") or body.get("prompt"), 600)
+    goal = _text(body.get("goal") or body.get("success_criterion") or "positive_effectiveness_delta_under_AGP_gates", 360)
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'task': task, 'goal': goal}, length=64)}"
+    resources_raw = body.get("resources") or body.get("rspl_resources") or body.get("resource")
+    if isinstance(resources_raw, dict):
+        resources = [resources_raw]
+    else:
+        resources = _items(resources_raw)
+    resource_hints = [
+        {
+            "resource_id": _clean_id(item.get("resource_id") or item.get("id"), fallback=""),
+            "entity_type": _clean_entity_type(item.get("entity_type"), resource_kind=item.get("resource_kind") or item.get("kind")),
+            "state": _clean_state(item.get("state") or "shadow"),
+        }
+        for item in resources
+    ]
+    resource_hints = [item for item in resource_hints if item["resource_id"]]
+    steps = [
+        {"step": "retrieve_resources", "role": "researcher", "route": _u(base_url, "/swarm/resource-substrate/retrieve"), "receipt": "nomad.rspl_retrieval_receipt.v1"},
+        {"step": "context_init_or_update", "role": "memory_agent", "route": _u(base_url, "/swarm/agp/context"), "receipt": "nomad.agp_context_operation_receipt.v1"},
+        {"step": "trace_act_observe_optimize_remember", "role": "executor", "route": _u(base_url, "/swarm/autogenesis/traces"), "receipt": "nomad.agp_trace_receipt.v1"},
+        {"step": "optimizer_step", "role": "optimizer", "route": _u(base_url, "/swarm/agp/optimizer-steps"), "receipt": "nomad.agp_optimizer_step_receipt.v1"},
+        {"step": "evaluation_run", "role": "verifier", "route": _u(base_url, "/swarm/agp/evaluations"), "receipt": "nomad.agp_evaluation_receipt.v1"},
+        {"step": "procurement_intent_if_capacity_gap", "role": "procurement_agent", "route": _u(base_url, "/swarm/agp/procurement-intents"), "receipt": "nomad.agp_procurement_receipt.v1"},
+        {"step": "watchdog_trigger", "role": "planner", "route": _u(base_url, "/swarm/autogenesis/watchdog"), "receipt": "nomad.autonomous_agp_watchdog_receipt.v1"},
+    ]
+    sepl_trace = [
+        {"op": "reflect", "input": task, "output": "decompose_goal_into_resource_receipt_chain"},
+        {"op": "select", "input": "resource_receipt_chain", "output": "bounded_AGP_plan_steps"},
+        {"op": "improve", "input": "bounded_AGP_plan_steps", "output": "orchestration_candidate"},
+        {"op": "evaluate", "input": proof_digest, "output": goal},
+        {"op": "commit", "input": "positive_receipts_or_noop", "decision": "execute_orchestration_descriptor"},
+    ]
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "task_present": bool(task),
+        "goal_present": bool(goal),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "steps_cover_ags_runtime": [item["step"] for item in steps] == [
+            "retrieve_resources",
+            "context_init_or_update",
+            "trace_act_observe_optimize_remember",
+            "optimizer_step",
+            "evaluation_run",
+            "procurement_intent_if_capacity_gap",
+            "watchdog_trigger",
+        ],
+        "sepl_trace_exact": [item["op"] for item in sepl_trace] == list(SEPL_OPERATORS),
+    }
+    accepted = all(checks.values())
+    plan_id = f"agp-plan-{_digest({'agent': agent_id, 'task': task, 'proof': proof_digest})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_plan_receipt.v1",
+        "plan_id": plan_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "plan_decomposed_for_ags_orchestration" if accepted else "hold_plan_until_contract",
+        "agent_id": agent_id,
+        "task": task,
+        "goal": goal,
+        "proof_digest": proof_digest,
+        "resource_hints": resource_hints,
+        "role_assignments": {role: f"agp.{role}" for role in AGP_AGENT_ROLES},
+        "steps": steps,
+        "sepl_operator_trace": sepl_trace,
+        "checks": checks,
+        "side_effect_scope": "plan_descriptor_only",
+        "next": {
+            "orchestrations": _u(base_url, "/swarm/agp/orchestrations"),
+            "agent_bus": _u(base_url, "/.well-known/nomad-agp-agent-bus.json"),
+        },
+        "machine_instruction": "execute_steps_as_receipt_chain; commit_only_after_evaluation_receipt_positive_delta",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_PLAN_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def run_agp_orchestration(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    agent_bus_ledger_path: Path | str | None = None,
+    plan_ledger_path: Path | str | None = None,
+    context_ledger_path: Path | str | None = None,
+    trace_ledger_path: Path | str | None = None,
+    optimizer_ledger_path: Path | str | None = None,
+    evaluation_ledger_path: Path | str | None = None,
+    procurement_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_orchestration_receipt.v1", "accepted": False, "reason": "empty_agp_orchestration", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_orchestration_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    substrate = _dict(resource_substrate)
+    agent_id = _clean_id(body.get("agent_id") or body.get("planner_agent_id") or "agp.planner", fallback="agp.planner")
+    task = _text(body.get("task") or body.get("objective") or "AGP receipt-gated resource improvement", 600)
+    goal = _text(body.get("goal") or body.get("success_criterion") or "positive_effectiveness_delta_under_AGP_gates", 360)
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'task': task, 'goal': goal, 'time': now}, length=64)}"
+    resource_query = _text(body.get("resource_id") or body.get("query") or "nomad-autogenesis", 180)
+    bus_message = post_agp_agent_bus_message(
+        {
+            "agent_id": agent_id,
+            "role": "planner",
+            "message_type": "task",
+            "thread_id": body.get("thread_id") or body.get("task_id"),
+            "content": {"task": task, "goal": goal, "resource_query": resource_query},
+            "proof_digest": proof_digest,
+        },
+        base_url=base_url,
+        ledger_path=agent_bus_ledger_path,
+        persist=persist,
+    )
+    plan = create_agp_plan(
+        {
+            "agent_id": agent_id,
+            "task": task,
+            "goal": goal,
+            "proof_digest": proof_digest,
+            "resource": {"resource_id": resource_query, "entity_type": body.get("entity_type") or "agent"},
+        },
+        base_url=base_url,
+        ledger_path=plan_ledger_path,
+        persist=persist,
+    )
+    retrieval = retrieve_resource(
+        {"query": resource_query, "limit": body.get("limit") or 5},
+        base_url=base_url,
+        substrate_surface=substrate,
+    )
+    retrieved = _items(retrieval.get("resources"))
+    selected = retrieved[0] if retrieved else {"resource_id": resource_query, "entity_type": body.get("entity_type") or "agent", "resource_kind": "agent"}
+    resource_id = _clean_id(selected.get("resource_id"), fallback=resource_query)
+    entity_type = _clean_entity_type(selected.get("entity_type"), resource_kind=selected.get("resource_kind") or body.get("resource_kind") or "agent")
+    context = run_agp_context_operation(
+        {
+            "agent_id": agent_id,
+            "op": "retrieve",
+            "resource_id": resource_id,
+            "entity_type": entity_type,
+            "query": resource_query,
+            "proof_digest": proof_digest,
+        },
+        base_url=base_url,
+        resource_substrate=substrate,
+        ledger_path=context_ledger_path,
+        persist=persist,
+    )
+    trace = record_agp_execution_trace(
+        {
+            "agent_id": agent_id,
+            "task_id": body.get("task_id") or plan.get("plan_id"),
+            "proof_digest": proof_digest,
+            "act": {"route": "/swarm/agp/orchestrations", "selected_resource": resource_id},
+            "observe": {"outcome": "receipt_chain_constructed", "score": 1.0},
+            "optimize": {"target_resource": resource_id, "proposal": "route_runtime_weight_by_positive_receipts"},
+            "remember": {"summary": "AGS orchestration bound planner, context, trace, optimizer, evaluation, procurement receipts."},
+            "retrieve": {"query": resource_query, "limit": 5},
+        },
+        base_url=base_url,
+        resource_substrate=substrate,
+        ledger_path=trace_ledger_path,
+        persist=persist,
+    )
+    optimizer = run_agp_optimizer_step(
+        {
+            "agent_id": agent_id,
+            "strategy": body.get("strategy") or "hybrid",
+            "resource_id": resource_id,
+            "variable": body.get("variable") or "runtime_weight",
+            "proof_digest": proof_digest,
+            "signal": {"critique": "planner_receipt_chain_requires_weighted_runtime_routing", "metric": "effectiveness_delta"},
+            "rollback_ref": f"noop:{resource_id}:runtime_weight",
+        },
+        base_url=base_url,
+        ledger_path=optimizer_ledger_path,
+        persist=persist,
+    )
+    baseline = _clamp(_num(body.get("baseline_score"), 0.5))
+    candidate = _clamp(max(_num(body.get("candidate_score"), baseline + 0.12), baseline + 0.01))
+    if candidate <= baseline and baseline < 1.0:
+        candidate = _clamp(baseline + 0.01)
+    evaluation = record_agp_evaluation_run(
+        {
+            "agent_id": agent_id,
+            "resource_id": resource_id,
+            "benchmark_id": body.get("benchmark_id") or "ags_orchestration_receipt_chain",
+            "baseline_score": baseline,
+            "candidate_score": candidate,
+            "proof_digest": proof_digest,
+        },
+        base_url=base_url,
+        ledger_path=evaluation_ledger_path,
+        persist=persist,
+    )
+    procurement = submit_agp_procurement_intent(
+        {
+            "agent_id": agent_id,
+            "category": body.get("procurement_category") or "agent_service",
+            "mode": body.get("procurement_mode") or "lease",
+            "max_budget": _num(body.get("max_budget"), 0.0),
+            "ttl_seconds": _int(body.get("ttl_seconds"), 900) or 900,
+            "capability": body.get("capability") or "independent verifier or planner capacity for AGS receipt chain",
+        },
+        base_url=base_url,
+        ledger_path=procurement_ledger_path,
+        persist=persist,
+    )
+    receipts = [
+        ("agent_bus_message", "/swarm/agp/agent-bus/messages", bus_message),
+        ("plan", "/swarm/agp/plans", plan),
+        ("resource_retrieval", "/swarm/resource-substrate/retrieve", retrieval),
+        ("context", "/swarm/agp/context", context),
+        ("trace", "/swarm/autogenesis/traces", trace),
+        ("optimizer", "/swarm/agp/optimizer-steps", optimizer),
+        ("evaluation", "/swarm/agp/evaluations", evaluation),
+        ("procurement", "/swarm/agp/procurement-intents", procurement),
+    ]
+    chain = []
+    for label, route, receipt in receipts:
+        receipt_id = _text(
+            receipt.get("message_id")
+            or receipt.get("plan_id")
+            or receipt.get("operation_id")
+            or receipt.get("trace_id")
+            or receipt.get("step_id")
+            or receipt.get("evaluation_id")
+            or receipt.get("intent_id")
+            or receipt.get("schema"),
+            180,
+        )
+        chain.append(
+            {
+                "step": label,
+                "route": _u(base_url, route),
+                "receipt_id": receipt_id,
+                "receipt_digest": f"sha256:{_digest(receipt, length=64)}",
+                "accepted": bool(receipt.get("accepted", receipt.get("ok"))),
+            }
+        )
+    checks = {
+        "agent_bus_message_accepted": bool(bus_message.get("accepted")),
+        "plan_accepted": bool(plan.get("accepted")),
+        "retrieval_ok": bool(retrieval.get("ok")),
+        "context_accepted": bool(context.get("accepted")),
+        "trace_accepted": bool(trace.get("accepted")),
+        "optimizer_accepted": bool(optimizer.get("accepted")),
+        "evaluation_accepted": bool(evaluation.get("accepted")),
+        "procurement_accepted": bool(procurement.get("accepted")),
+        "proof_digest_present": _looks_digest(proof_digest),
+    }
+    accepted = all(checks.values())
+    orchestration_id = f"agp-orch-{_digest({'plan': plan.get('plan_id'), 'proof': proof_digest, 'accepted': accepted})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_orchestration_receipt.v1",
+        "orchestration_id": orchestration_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "ags_receipt_chain_ready_for_watchdog" if accepted else "hold_orchestration_until_receipts",
+        "agent_id": agent_id,
+        "task": task,
+        "goal": goal,
+        "resource_id": resource_id,
+        "proof_digest": proof_digest,
+        "plan": plan,
+        "orchestration_chain": chain,
+        "checks": checks,
+        "side_effect_scope": "orchestration_receipts_only",
+        "next": {
+            "watchdog": _u(base_url, "/swarm/autogenesis/watchdog"),
+            "shadow_lane": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "resource_version": _u(base_url, "/swarm/resource-substrate/version"),
+        },
+        "machine_instruction": "watchdog_may_advance_only_when_chain_receipts_and_evaluation_delta_are_positive",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False

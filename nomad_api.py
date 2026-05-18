@@ -43,6 +43,7 @@ from nomad_anti_consensus_reservoir import (
 from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_judger
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_autogenesis import (
+    build_agp_agent_bus_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
@@ -56,11 +57,14 @@ from nomad_autogenesis import (
     build_resource_substrate_surface,
     compact_autogenesis_surface,
     compact_resource_substrate_surface,
+    create_agp_plan,
+    post_agp_agent_bus_message,
     record_agp_execution_trace,
     record_agp_evaluation_run,
     record_development_cycle_event as record_autogenesis_development_cycle_event,
     register_resource,
     retrieve_resource,
+    run_agp_orchestration,
     run_agp_context_operation,
     run_agp_optimizer_step,
     run_autonomous_agp_cycle,
@@ -508,6 +512,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             autogenesis_surface=autogenesis,
             worker_fleet=worker_fleet,
         )
+
+    @classmethod
+    def _build_agp_agent_bus(cls, *, base_url: str) -> dict:
+        return build_agp_agent_bus_surface(base_url=base_url)
 
     @classmethod
     def _build_agp_procurement(cls, *, base_url: str) -> dict:
@@ -1586,6 +1594,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "resource_substrate_version": f"{b}/swarm/resource-substrate/version",
                     "autogenesis": f"{b}/.well-known/nomad-autogenesis.json",
                     "agp_conformance": f"{b}/.well-known/nomad-agp-conformance.json",
+                    "agp_agent_bus": f"{b}/.well-known/nomad-agp-agent-bus.json",
+                    "agp_agent_bus_messages": f"{b}/swarm/agp/agent-bus/messages",
+                    "agp_plans": f"{b}/swarm/agp/plans",
+                    "agp_orchestrations": f"{b}/swarm/agp/orchestrations",
                     "agp_procurement": f"{b}/.well-known/nomad-agp-procurement.json",
                     "agp_procurement_intents": f"{b}/swarm/agp/procurement-intents",
                     "agp_context_manager": f"{b}/.well-known/nomad-agp-context-manager.json",
@@ -1997,6 +2009,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/conformance", "/.well-known/nomad-agp-conformance.json"}:
             self._json_response(self.__class__._build_agp_conformance(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/agent-bus", "/.well-known/nomad-agp-agent-bus.json"}:
+            self._json_response(self.__class__._build_agp_agent_bus(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/procurement", "/.well-known/nomad-agp-procurement.json"}:
             self._json_response(self.__class__._build_agp_procurement(base_url=self._base_url()))
@@ -3221,6 +3236,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
                     "/.well-known/nomad-agp-conformance.json",
+                    "/.well-known/nomad-agp-agent-bus.json",
+                    "/swarm/agp/agent-bus/messages",
+                    "/swarm/agp/plans",
+                    "/swarm/agp/orchestrations",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",
@@ -3950,6 +3969,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 base_url=base,
                 resource_substrate=substrate,
             )
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/agent-bus/messages":
+            base = self._base_url()
+            result = post_agp_agent_bus_message(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/plans":
+            base = self._base_url()
+            result = create_agp_plan(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/orchestrations":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = run_agp_orchestration(payload, base_url=base, resource_substrate=substrate)
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
@@ -4734,6 +4772,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
                     "/.well-known/nomad-agp-conformance.json",
+                    "/.well-known/nomad-agp-agent-bus.json",
+                    "/swarm/agp/agent-bus/messages",
+                    "/swarm/agp/plans",
+                    "/swarm/agp/orchestrations",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
                     "/.well-known/nomad-agp-context-manager.json",

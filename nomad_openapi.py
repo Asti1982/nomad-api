@@ -1165,6 +1165,15 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-agent-bus.json": {
+                "get": {
+                    "summary": "AGS agent-bus surface for planner, verifier, optimizer, executor, memory, and procurement roles",
+                    "operationId": "getAgpAgentBusWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP agent-bus surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agp-procurement.json": {
                 "get": {
                     "summary": "Quote-first AGP procurement surface for compute, model, hardware, and service capacity",
@@ -1182,6 +1191,39 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Trace accepted and persisted"},
                         "422": {"description": "Trace missing required AGP loop fields or proof boundary"},
+                    },
+                }
+            },
+            "/swarm/agp/agent-bus/messages": {
+                "post": {
+                    "summary": "Post one proof-bound AGS agent-bus message",
+                    "operationId": "postSwarmAgpAgentBusMessages",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Agent-bus message accepted"},
+                        "422": {"description": "Agent-bus message held by contract or secret gate"},
+                    },
+                }
+            },
+            "/swarm/agp/plans": {
+                "post": {
+                    "summary": "Create one AGS planner decomposition bound to AGP receipt routes",
+                    "operationId": "postSwarmAgpPlans",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Plan accepted"},
+                        "422": {"description": "Plan held by contract gate"},
+                    },
+                }
+            },
+            "/swarm/agp/orchestrations": {
+                "post": {
+                    "summary": "Run one descriptor-only AGS orchestration receipt chain",
+                    "operationId": "postSwarmAgpOrchestrations",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Orchestration receipt chain accepted"},
+                        "422": {"description": "Orchestration held until all receipts pass"},
                     },
                 }
             },
