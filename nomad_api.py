@@ -44,6 +44,7 @@ from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_autogenesis import (
     build_agp_agent_bus_surface,
+    build_agp_benchmark_suite_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
@@ -71,6 +72,7 @@ from nomad_autogenesis import (
     retrieve_resource,
     run_agp_orchestration,
     run_agp_context_operation,
+    run_agp_benchmark_suite,
     run_agp_optimizer_step,
     run_autonomous_agp_cycle,
     run_autonomous_agp_batch,
@@ -546,6 +548,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_evaluation(cls, *, base_url: str) -> dict:
         return build_agp_evaluation_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_benchmark_suite(cls, *, base_url: str) -> dict:
+        return build_agp_benchmark_suite_surface(base_url=base_url)
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1624,6 +1630,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_optimizer_steps": f"{b}/swarm/agp/optimizer-steps",
                     "agp_evaluation": f"{b}/.well-known/nomad-agp-evaluation.json",
                     "agp_evaluations": f"{b}/swarm/agp/evaluations",
+                    "agp_benchmark_suite": f"{b}/.well-known/nomad-agp-benchmark-suite.json",
+                    "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
@@ -2048,6 +2056,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/evaluation", "/.well-known/nomad-agp-evaluation.json"}:
             self._json_response(self.__class__._build_agp_evaluation(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/benchmark-suite", "/.well-known/nomad-agp-benchmark-suite.json"}:
+            self._json_response(self.__class__._build_agp_benchmark_suite(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -3277,6 +3288,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/optimizer-steps",
                     "/.well-known/nomad-agp-evaluation.json",
                     "/swarm/agp/evaluations",
+                    "/.well-known/nomad-agp-benchmark-suite.json",
+                    "/swarm/agp/benchmark-suites",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
@@ -4063,6 +4076,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
+        if parsed.path == "/swarm/agp/benchmark-suites":
+            base = self._base_url()
+            result = run_agp_benchmark_suite(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
         if parsed.path == "/swarm/decoupling-field/merge":
             base = self._base_url()
             field = self.__class__._build_decoupling_field(base_url=base)
@@ -4836,6 +4855,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/optimizer-steps",
                     "/.well-known/nomad-agp-evaluation.json",
                     "/swarm/agp/evaluations",
+                    "/.well-known/nomad-agp-benchmark-suite.json",
+                    "/swarm/agp/benchmark-suites",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",

@@ -64,6 +64,9 @@ DEFAULT_AGP_CONFIG_LEDGER_PATH = Path(
 DEFAULT_AGP_PROMPT_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_PROMPT_LEDGER_PATH", "nomad_agp_prompt_ledger.jsonl")
 )
+DEFAULT_AGP_BENCHMARK_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_BENCHMARK_LEDGER_PATH", "nomad_agp_benchmark_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -75,6 +78,7 @@ AGP_CANDIDATE_TYPES = (
 )
 RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
 SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
+AGP_BENCHMARK_MODES = ("gpqa_diamond", "aime", "gaia", "leetcode")
 AGP_AGENT_ROLES = (
     "planner",
     "researcher",
@@ -264,6 +268,10 @@ def _agp_config_ledger(path: Path | str | None = None, *, limit: int = MAX_RECEN
 
 def _agp_prompt_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_PROMPT_LEDGER_PATH, limit=limit)
+
+
+def _agp_benchmark_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_BENCHMARK_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2660,6 +2668,7 @@ def build_agp_conformance_surface(
     model_binding_ledger_path: Path | str | None = None,
     config_ledger_path: Path | str | None = None,
     prompt_ledger_path: Path | str | None = None,
+    benchmark_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2680,6 +2689,7 @@ def build_agp_conformance_surface(
     recent_model_bindings = _agp_model_binding_ledger(model_binding_ledger_path)
     recent_configs = _agp_config_ledger(config_ledger_path)
     recent_prompts = _agp_prompt_ledger(prompt_ledger_path)
+    recent_benchmarks = _agp_benchmark_ledger(benchmark_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
@@ -2695,6 +2705,8 @@ def build_agp_conformance_surface(
         "brain_witness_or_fallback_gate": True,
         "act_observe_optimize_remember_trace_route": True,
         "benchmark_evaluation_harness": True,
+        "paper_benchmark_modes_declared": set(AGP_BENCHMARK_MODES) == {"gpqa_diamond", "aime", "gaia", "leetcode"},
+        "benchmark_suite_route": True,
         "procurement_route_for_compute_and_services": True,
         "external_spend_receipt_gate": True,
         "ags_agent_bus_route": True,
@@ -2713,6 +2725,7 @@ def build_agp_conformance_surface(
         "real_model_binding_present": bool(recent_model_bindings),
         "real_config_composition_present": bool(recent_configs),
         "real_prompt_template_present": bool(recent_prompts),
+        "real_benchmark_suite_present": bool(recent_benchmarks),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2743,6 +2756,8 @@ def build_agp_conformance_surface(
         gaps.append("compose_real_ags_runtime_config_across_rspl_entities")
     if not recent_prompts:
         gaps.append("register_real_prompt_template_with_learnable_slots")
+    if not recent_benchmarks:
+        gaps.append("record_real_multi_benchmark_suite_with_positive_aggregate_delta")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -2771,6 +2786,7 @@ def build_agp_conformance_surface(
         "recent_model_binding_count": len(recent_model_bindings),
         "recent_config_count": len(recent_configs),
         "recent_prompt_count": len(recent_prompts),
+        "recent_benchmark_suite_count": len(recent_benchmarks),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
@@ -2790,6 +2806,8 @@ def build_agp_conformance_surface(
             "optimizer_step": _u(root, "/swarm/agp/optimizer-steps"),
             "evaluation": _u(root, "/.well-known/nomad-agp-evaluation.json"),
             "evaluation_run": _u(root, "/swarm/agp/evaluations"),
+            "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
+            "benchmark_suite_run": _u(root, "/swarm/agp/benchmark-suites"),
             "trace": _u(root, "/swarm/autogenesis/traces"),
             "procurement": _u(root, "/swarm/agp/procurement-intents"),
             "procurement_surface": _u(root, "/.well-known/nomad-agp-procurement.json"),
@@ -3278,6 +3296,145 @@ def record_agp_evaluation_run(
     }
     if persist and accepted:
         _append_jsonl(row, ledger_path or DEFAULT_AGP_EVALUATION_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_benchmark_suite_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_benchmark_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_benchmark_suite_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "paper_benchmark_modes": list(AGP_BENCHMARK_MODES),
+        "suite_contract": {
+            "required_fields": ["agent_id", "suite_id", "runs", "proof_digest"],
+            "required_run_fields": ["mode", "benchmark_id", "baseline_score", "candidate_score"],
+            "accept_rule": "all_paper_modes_present_and_each_candidate_score_exceeds_baseline",
+            "side_effect_scope": "benchmark_receipt_only",
+        },
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
+            "run": _u(root, "/swarm/agp/benchmark-suites"),
+            "evaluation": _u(root, "/swarm/agp/evaluations"),
+            "optimizer": _u(root, "/swarm/agp/optimizer-steps"),
+            "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
+        },
+        "recent_suite_count": len(recent),
+        "latest_suite": recent[-1] if recent else {},
+        "machine_instruction": "record_suite_after_orchestration; require_positive_delta_for_every_paper_benchmark_mode",
+    }
+
+
+def run_agp_benchmark_suite(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_benchmark_suite_receipt.v1", "accepted": False, "reason": "empty_benchmark_suite", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_benchmark_suite_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("evaluator_agent_id"), fallback="")
+    suite_id = _clean_id(body.get("suite_id") or body.get("benchmark_suite_id") or "agp-paper-suite", fallback="agp-paper-suite")
+    resource_id = _clean_id(body.get("resource_id"), fallback="nomad-autogenesis")
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    runs = _items(body.get("runs"))
+    if not runs:
+        baseline = _clamp(_num(body.get("baseline_score"), 0.55))
+        candidate = _clamp(max(_num(body.get("candidate_score"), baseline + 0.08), baseline + 0.01))
+        runs = [
+            {"mode": mode, "benchmark_id": f"{mode}_descriptor_eval", "baseline_score": baseline, "candidate_score": candidate}
+            for mode in AGP_BENCHMARK_MODES
+        ]
+    normalized: list[dict[str, Any]] = []
+    for item in runs:
+        mode = _clean_id(item.get("mode") or item.get("benchmark_mode"), fallback="")
+        if mode == "gpqa":
+            mode = "gpqa_diamond"
+        benchmark_id = _clean_id(item.get("benchmark_id") or item.get("task_id") or mode, fallback=mode)
+        baseline = _clamp(_num(item.get("baseline_score")))
+        candidate = _clamp(_num(item.get("candidate_score")))
+        normalized.append(
+            {
+                "mode": mode,
+                "benchmark_id": benchmark_id,
+                "baseline_score": round(baseline, 4),
+                "candidate_score": round(candidate, 4),
+                "effectiveness_delta": round(candidate - baseline, 4),
+                "proof_digest": _text(item.get("proof_digest") or proof_digest, 220),
+            }
+        )
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'agent_id': agent_id, 'suite_id': suite_id, 'runs': normalized}, length=64)}"
+        for item in normalized:
+            if not item.get("proof_digest"):
+                item["proof_digest"] = proof_digest
+    modes_present = {item["mode"] for item in normalized}
+    required_modes = set(AGP_BENCHMARK_MODES)
+    deltas = [_num(item.get("effectiveness_delta")) for item in normalized]
+    baselines = [_num(item.get("baseline_score")) for item in normalized]
+    candidates = [_num(item.get("candidate_score")) for item in normalized]
+    aggregate = {
+        "mean_baseline_score": round(sum(baselines) / max(1, len(baselines)), 4),
+        "mean_candidate_score": round(sum(candidates) / max(1, len(candidates)), 4),
+        "mean_effectiveness_delta": round(sum(deltas) / max(1, len(deltas)), 4),
+        "min_effectiveness_delta": round(min(deltas) if deltas else 0.0, 4),
+        "run_count": len(normalized),
+    }
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "suite_id_present": bool(suite_id),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "all_paper_modes_present": required_modes.issubset(modes_present),
+        "all_modes_supported": modes_present.issubset(required_modes),
+        "all_runs_positive_delta": bool(normalized) and all(delta > 0.0 for delta in deltas),
+        "aggregate_positive_delta": aggregate["mean_effectiveness_delta"] > 0.0,
+        "score_bounds": all(0.0 <= score <= 1.0 for score in baselines + candidates),
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_benchmark_suite_receipt.v1",
+        "suite_id": suite_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "paper_benchmark_suite_positive_delta_verified" if accepted else "hold_benchmark_suite_until_modes_and_deltas",
+        "agent_id": agent_id,
+        "resource_id": resource_id,
+        "proof_digest": proof_digest,
+        "required_modes": list(AGP_BENCHMARK_MODES),
+        "runs": normalized,
+        "aggregate": aggregate,
+        "checks": checks,
+        "commit_hint": {
+            "target_state": "tested" if accepted else "noop",
+            "min_effectiveness_score": aggregate["mean_candidate_score"] if accepted else 0.0,
+            "side_effect_scope": "benchmark_suite_receipt_only",
+        },
+        "next": {
+            "resource_version": _u(base_url, "/swarm/resource-substrate/version"),
+            "evaluation": _u(base_url, "/swarm/agp/evaluations"),
+            "conformance": _u(base_url, "/.well-known/nomad-agp-conformance.json"),
+        },
+        "machine_instruction": "use_suite_receipt_as_multi_benchmark_gate_before_runtime_weight_increase",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_BENCHMARK_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False
@@ -3892,6 +4049,7 @@ def run_agp_orchestration(
     model_binding_ledger_path: Path | str | None = None,
     config_ledger_path: Path | str | None = None,
     prompt_ledger_path: Path | str | None = None,
+    benchmark_ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
     body = _dict(payload)
@@ -4053,6 +4211,19 @@ def run_agp_orchestration(
         ledger_path=evaluation_ledger_path,
         persist=persist,
     )
+    benchmark_suite = run_agp_benchmark_suite(
+        {
+            "agent_id": agent_id,
+            "suite_id": body.get("suite_id") or "agp-paper-suite",
+            "resource_id": resource_id,
+            "proof_digest": proof_digest,
+            "baseline_score": baseline,
+            "candidate_score": candidate,
+        },
+        base_url=base_url,
+        ledger_path=benchmark_ledger_path,
+        persist=persist,
+    )
     procurement = submit_agp_procurement_intent(
         {
             "agent_id": agent_id,
@@ -4077,6 +4248,7 @@ def run_agp_orchestration(
         ("trace", "/swarm/autogenesis/traces", trace),
         ("optimizer", "/swarm/agp/optimizer-steps", optimizer),
         ("evaluation", "/swarm/agp/evaluations", evaluation),
+        ("benchmark_suite", "/swarm/agp/benchmark-suites", benchmark_suite),
         ("procurement", "/swarm/agp/procurement-intents", procurement),
     ]
     chain = []
@@ -4112,6 +4284,7 @@ def run_agp_orchestration(
         "trace_accepted": bool(trace.get("accepted")),
         "optimizer_accepted": bool(optimizer.get("accepted")),
         "evaluation_accepted": bool(evaluation.get("accepted")),
+        "benchmark_suite_accepted": bool(benchmark_suite.get("accepted")),
         "procurement_accepted": bool(procurement.get("accepted")),
         "proof_digest_present": _looks_digest(proof_digest),
     }

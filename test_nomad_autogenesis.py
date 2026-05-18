@@ -1,6 +1,7 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
     build_agp_agent_bus_surface,
+    build_agp_benchmark_suite_surface,
     build_agp_conformance_surface,
     build_agp_context_manager_surface,
     build_agp_evaluation_surface,
@@ -24,6 +25,7 @@ from nomad_autogenesis import (
     register_resource,
     register_agp_prompt_template,
     retrieve_resource,
+    run_agp_benchmark_suite,
     run_agp_orchestration,
     run_agp_context_operation,
     run_agp_optimizer_step,
@@ -272,6 +274,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     model_ledger = tmp_path / "models.jsonl"
     config_ledger = tmp_path / "configs.jsonl"
     prompt_ledger = tmp_path / "prompts.jsonl"
+    benchmark_ledger = tmp_path / "benchmarks.jsonl"
     substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
 
     bus_surface = build_agp_agent_bus_surface(
@@ -351,6 +354,23 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         base_url="https://nomad.example",
         ledger_path=config_ledger,
     )
+    benchmark_surface = build_agp_benchmark_suite_surface(base_url="https://nomad.example", ledger_path=benchmark_ledger)
+    benchmark_suite = run_agp_benchmark_suite(
+        {
+            "agent_id": "agp.planner",
+            "suite_id": "agp-paper-suite",
+            "resource_id": "nomad-autogenesis",
+            "proof_digest": "sha256:" + "5" * 64,
+            "runs": [
+                {"mode": "gpqa_diamond", "benchmark_id": "gpqa", "baseline_score": 0.50, "candidate_score": 0.62},
+                {"mode": "aime", "benchmark_id": "aime", "baseline_score": 0.48, "candidate_score": 0.58},
+                {"mode": "gaia", "benchmark_id": "gaia", "baseline_score": 0.52, "candidate_score": 0.65},
+                {"mode": "leetcode", "benchmark_id": "leetcode", "baseline_score": 0.46, "candidate_score": 0.57},
+            ],
+        },
+        base_url="https://nomad.example",
+        ledger_path=benchmark_ledger,
+    )
     orchestration = run_agp_orchestration(
         {
             "agent_id": "agp.planner",
@@ -371,6 +391,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         procurement_ledger_path=procurement_ledger,
         model_binding_ledger_path=model_ledger,
         config_ledger_path=config_ledger,
+        prompt_ledger_path=prompt_ledger,
+        benchmark_ledger_path=benchmark_ledger,
     )
     conformance = build_agp_conformance_surface(
         base_url="https://nomad.example",
@@ -388,6 +410,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         model_binding_ledger_path=model_ledger,
         config_ledger_path=config_ledger,
         prompt_ledger_path=prompt_ledger,
+        benchmark_ledger_path=benchmark_ledger,
     )
 
     assert bus_surface["schema"] == "nomad.agp_agent_bus.v1"
@@ -402,6 +425,9 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert model_binding["accepted"] is True
     assert config["accepted"] is True
     assert config["checks"]["five_rspl_entity_types_bound"] is True
+    assert benchmark_surface["schema"] == "nomad.agp_benchmark_suite_surface.v1"
+    assert benchmark_suite["accepted"] is True
+    assert benchmark_suite["checks"]["all_paper_modes_present"] is True
     assert [item["step"] for item in plan["steps"]] == [
         "retrieve_resources",
         "context_init_or_update",
@@ -422,6 +448,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         "trace",
         "optimizer",
         "evaluation",
+        "benchmark_suite",
         "procurement",
     }
     assert conformance["checks"]["real_agent_bus_message_present"] is True
@@ -430,6 +457,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_model_binding_present"] is True
     assert conformance["checks"]["real_config_composition_present"] is True
     assert conformance["checks"]["real_prompt_template_present"] is True
+    assert conformance["checks"]["real_benchmark_suite_present"] is True
     assert conformance["checks"]["real_trace_sample_present"] is True
     assert conformance["checks"]["rspl_five_entity_types_present"] is True
     assert conformance["checks"]["rspl_agent_outputs_registered"] is True

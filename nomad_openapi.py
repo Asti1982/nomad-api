@@ -1349,6 +1349,26 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-benchmark-suite.json": {
+                "get": {
+                    "summary": "AGP paper benchmark-suite surface for GPQA/AIME/GAIA/LeetCode-style positive-delta receipts",
+                    "operationId": "getAgpBenchmarkSuiteWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP benchmark-suite surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/benchmark-suites": {
+                "post": {
+                    "summary": "Record one multi-benchmark suite where every paper mode improves over baseline",
+                    "operationId": "postSwarmAgpBenchmarkSuites",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Benchmark suite accepted"},
+                        "422": {"description": "Benchmark suite held until all modes and positive deltas are present"},
+                    },
+                }
+            },
             "/.well-known/nomad-autonomous-agp.json": {
                 "get": {
                     "summary": "Autonomous AGP cycle and batch surface with proof-gated shadow-lane links",

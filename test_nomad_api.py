@@ -710,6 +710,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/agp/optimizer-steps" in doc["paths"]
     assert "/.well-known/nomad-agp-evaluation.json" in doc["paths"]
     assert "/swarm/agp/evaluations" in doc["paths"]
+    assert "/.well-known/nomad-agp-benchmark-suite.json" in doc["paths"]
+    assert "/swarm/agp/benchmark-suites" in doc["paths"]
     assert "/.well-known/nomad-autonomous-agp.json" in doc["paths"]
     assert "/swarm/autogenesis/cycle" in doc["paths"]
     assert "/swarm/autogenesis/run" in doc["paths"]
