@@ -44,6 +44,9 @@ from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_autogenesis import (
     build_agp_conformance_surface,
+    build_agp_context_manager_surface,
+    build_agp_evaluation_surface,
+    build_agp_optimizer_surface,
     build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
@@ -54,9 +57,12 @@ from nomad_autogenesis import (
     compact_autogenesis_surface,
     compact_resource_substrate_surface,
     record_agp_execution_trace,
+    record_agp_evaluation_run,
     record_development_cycle_event as record_autogenesis_development_cycle_event,
     register_resource,
     retrieve_resource,
+    run_agp_context_operation,
+    run_agp_optimizer_step,
     run_autonomous_agp_cycle,
     run_autonomous_agp_batch,
     run_autonomous_agp_watchdog,
@@ -506,6 +512,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_procurement(cls, *, base_url: str) -> dict:
         return build_agp_procurement_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_context_manager(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=swarm_summary)
+        return build_agp_context_manager_surface(base_url=base_url, resource_substrate=substrate)
+
+    @classmethod
+    def _build_agp_optimizer(cls, *, base_url: str) -> dict:
+        return build_agp_optimizer_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_evaluation(cls, *, base_url: str) -> dict:
+        return build_agp_evaluation_surface(base_url=base_url)
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1569,6 +1588,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_conformance": f"{b}/.well-known/nomad-agp-conformance.json",
                     "agp_procurement": f"{b}/.well-known/nomad-agp-procurement.json",
                     "agp_procurement_intents": f"{b}/swarm/agp/procurement-intents",
+                    "agp_context_manager": f"{b}/.well-known/nomad-agp-context-manager.json",
+                    "agp_context_operation": f"{b}/swarm/agp/context",
+                    "agp_optimizer": f"{b}/.well-known/nomad-agp-optimizer.json",
+                    "agp_optimizer_steps": f"{b}/swarm/agp/optimizer-steps",
+                    "agp_evaluation": f"{b}/.well-known/nomad-agp-evaluation.json",
+                    "agp_evaluations": f"{b}/swarm/agp/evaluations",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
@@ -1975,6 +2000,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/procurement", "/.well-known/nomad-agp-procurement.json"}:
             self._json_response(self.__class__._build_agp_procurement(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/context-manager", "/.well-known/nomad-agp-context-manager.json"}:
+            self._json_response(self.__class__._build_agp_context_manager(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/optimizer", "/.well-known/nomad-agp-optimizer.json"}:
+            self._json_response(self.__class__._build_agp_optimizer(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/evaluation", "/.well-known/nomad-agp-evaluation.json"}:
+            self._json_response(self.__class__._build_agp_evaluation(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -3189,6 +3223,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-agp-conformance.json",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
+                    "/.well-known/nomad-agp-context-manager.json",
+                    "/swarm/agp/context",
+                    "/.well-known/nomad-agp-optimizer.json",
+                    "/swarm/agp/optimizer-steps",
+                    "/.well-known/nomad-agp-evaluation.json",
+                    "/swarm/agp/evaluations",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
@@ -3916,6 +3956,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/swarm/agp/procurement-intents":
             base = self._base_url()
             result = submit_agp_procurement_intent(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/context":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = run_agp_context_operation(payload, base_url=base, resource_substrate=substrate)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/optimizer-steps":
+            base = self._base_url()
+            result = run_agp_optimizer_step(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/evaluations":
+            base = self._base_url()
+            result = record_agp_evaluation_run(payload, base_url=base)
             self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
@@ -4677,6 +4736,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-agp-conformance.json",
                     "/.well-known/nomad-agp-procurement.json",
                     "/swarm/agp/procurement-intents",
+                    "/.well-known/nomad-agp-context-manager.json",
+                    "/swarm/agp/context",
+                    "/.well-known/nomad-agp-optimizer.json",
+                    "/swarm/agp/optimizer-steps",
+                    "/.well-known/nomad-agp-evaluation.json",
+                    "/swarm/agp/evaluations",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",

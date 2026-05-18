@@ -1196,6 +1196,66 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-agp-context-manager.json": {
+                "get": {
+                    "summary": "AGP RSPL context manager surface for init/retrieve/evaluate/update/restore/diff/hot_swap",
+                    "operationId": "getAgpContextManagerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP context manager surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/context": {
+                "post": {
+                    "summary": "Run one descriptor-only AGP context-manager operation for an RSPL resource",
+                    "operationId": "postSwarmAgpContext",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Context operation accepted"},
+                        "422": {"description": "Context operation held by proof, rollback, or secret gate"},
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-optimizer.json": {
+                "get": {
+                    "summary": "AGP SEPL optimizer surface for reflection, TextGrad, RL, ranking, and hybrid strategies",
+                    "operationId": "getAgpOptimizerWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP optimizer surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/optimizer-steps": {
+                "post": {
+                    "summary": "Normalize one optimizer signal into a proof-bounded SEPL operator trace",
+                    "operationId": "postSwarmAgpOptimizerSteps",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Optimizer step accepted"},
+                        "422": {"description": "Optimizer step held by proof or SEPL gate"},
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-evaluation.json": {
+                "get": {
+                    "summary": "AGP evaluation harness for benchmark and regression receipts",
+                    "operationId": "getAgpEvaluationWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP evaluation surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/evaluations": {
+                "post": {
+                    "summary": "Record one benchmark evaluation with positive-effectiveness proof gate",
+                    "operationId": "postSwarmAgpEvaluations",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Evaluation accepted"},
+                        "422": {"description": "Evaluation held by proof or non-positive delta"},
+                    },
+                }
+            },
             "/.well-known/nomad-autonomous-agp.json": {
                 "get": {
                     "summary": "Autonomous AGP cycle and batch surface with proof-gated shadow-lane links",

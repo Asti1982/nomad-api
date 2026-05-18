@@ -1,6 +1,9 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
     build_agp_conformance_surface,
+    build_agp_context_manager_surface,
+    build_agp_evaluation_surface,
+    build_agp_optimizer_surface,
     build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
@@ -10,8 +13,11 @@ from nomad_autogenesis import (
     build_resource_substrate_surface,
     record_development_cycle_event,
     record_agp_execution_trace,
+    record_agp_evaluation_run,
     register_resource,
     retrieve_resource,
+    run_agp_context_operation,
+    run_agp_optimizer_step,
     run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
     run_autonomous_agp_watchdog,
@@ -161,6 +167,83 @@ def test_agp_conformance_retrieval_trace_and_procurement_routes(tmp_path):
     assert any(item["provider"] == "github_models" for item in procurement["provider_candidates"])
     assert held_purchase["decision"] == "hold_paid_acquisition_until_approval_and_receipt"
     assert held_purchase["spend_policy"]["external_purchase_executed"] is False
+
+
+def test_agp_context_optimizer_and_evaluation_close_dynamic_loop(tmp_path):
+    resource_ledger = tmp_path / "rspl.jsonl"
+    context_ledger = tmp_path / "context.jsonl"
+    optimizer_ledger = tmp_path / "optimizer.jsonl"
+    evaluation_ledger = tmp_path / "evaluation.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+
+    context_surface = build_agp_context_manager_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        ledger_path=context_ledger,
+    )
+    context = run_agp_context_operation(
+        {
+            "op": "hot_swap",
+            "resource_id": "nomad-autogenesis",
+            "entity_type": "agent",
+            "from_version": "v1",
+            "to_version": "v1-hot-swap",
+            "proof_digest": "sha256:" + "b" * 64,
+            "rollback_ref": "noop:nomad-autogenesis:v1",
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        ledger_path=context_ledger,
+    )
+    optimizer_surface = build_agp_optimizer_surface(base_url="https://nomad.example", ledger_path=optimizer_ledger)
+    optimizer = run_agp_optimizer_step(
+        {
+            "strategy": "textgrad",
+            "resource_id": "nomad-autogenesis",
+            "variable": "runtime_weight",
+            "signal": {"critique": "increase verifier brain weight", "metric": "shadow_score"},
+            "proof_digest": "sha256:" + "c" * 64,
+        },
+        base_url="https://nomad.example",
+        ledger_path=optimizer_ledger,
+    )
+    evaluation_surface = build_agp_evaluation_surface(base_url="https://nomad.example", ledger_path=evaluation_ledger)
+    evaluation = record_agp_evaluation_run(
+        {
+            "agent_id": "agp.worker",
+            "resource_id": "nomad-autogenesis",
+            "benchmark_id": "long-horizon-tool-use",
+            "baseline_score": 0.62,
+            "candidate_score": 0.71,
+            "proof_digest": "sha256:" + "d" * 64,
+        },
+        base_url="https://nomad.example",
+        ledger_path=evaluation_ledger,
+    )
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+        trace_ledger_path=tmp_path / "missing_trace.jsonl",
+        procurement_ledger_path=tmp_path / "missing_procurement.jsonl",
+        context_ledger_path=context_ledger,
+        optimizer_ledger_path=optimizer_ledger,
+        evaluation_ledger_path=evaluation_ledger,
+    )
+
+    assert context_surface["operations"] == ["init", "retrieve", "evaluate", "update", "restore", "diff", "hot_swap"]
+    assert context["accepted"] is True
+    assert context["version_payload"]["to_version"] == "v1-hot-swap"
+    assert optimizer_surface["optimizer_strategies"] == ["reflection", "textgrad", "rl", "ranking", "hybrid"]
+    assert optimizer["accepted"] is True
+    assert [item["op"] for item in optimizer["sepl_operator_trace"]] == ["reflect", "select", "improve", "evaluate", "commit"]
+    assert evaluation_surface["commit_rule"].startswith("candidate_score_must_exceed")
+    assert evaluation["accepted"] is True
+    assert evaluation["effectiveness_delta"] == 0.09
+    assert conformance["checks"]["real_context_operation_present"] is True
+    assert conformance["checks"]["real_optimizer_step_present"] is True
+    assert conformance["checks"]["real_evaluation_run_present"] is True
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

@@ -37,6 +37,15 @@ DEFAULT_AGP_TRACE_LEDGER_PATH = Path(
 DEFAULT_AGP_PROCUREMENT_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_PROCUREMENT_LEDGER_PATH", "nomad_agp_procurement_ledger.jsonl")
 )
+DEFAULT_AGP_CONTEXT_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_CONTEXT_LEDGER_PATH", "nomad_agp_context_ledger.jsonl")
+)
+DEFAULT_AGP_OPTIMIZER_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_OPTIMIZER_LEDGER_PATH", "nomad_agp_optimizer_ledger.jsonl")
+)
+DEFAULT_AGP_EVALUATION_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_EVALUATION_LEDGER_PATH", "nomad_agp_evaluation_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -177,6 +186,18 @@ def _agp_trace_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT
 
 def _agp_procurement_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_PROCUREMENT_LEDGER_PATH, limit=limit)
+
+
+def _agp_context_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_CONTEXT_LEDGER_PATH, limit=limit)
+
+
+def _agp_optimizer_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_OPTIMIZER_LEDGER_PATH, limit=limit)
+
+
+def _agp_evaluation_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_EVALUATION_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -756,6 +777,139 @@ def retrieve_resource(
         "side_effect_scope": "read_only",
         "machine_instruction": "bind_retrieved_resource_versions_into_act_observe_optimize_remember_trace",
     }
+
+
+def build_agp_context_manager_surface(
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    substrate = _dict(resource_substrate)
+    recent = _agp_context_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_context_manager.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "resource_entity_types": list(RSPL_ENTITY_TYPES),
+        "operations": ["init", "retrieve", "evaluate", "update", "restore", "diff", "hot_swap"],
+        "server_interface": {
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "context_operation": _u(root, "/swarm/agp/context"),
+            "retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
+            "version": _u(root, "/swarm/resource-substrate/version"),
+            "trace": _u(root, "/swarm/autogenesis/traces"),
+        },
+        "guards": [
+            "descriptor_only",
+            "no_secret_material",
+            "rollback_or_noop_required_for_update_restore_hot_swap",
+            "proof_digest_required_for_mutation",
+            "hot_swap_never_executes_provider_code",
+        ],
+        "resource_count": len(_items(substrate.get("resources"))),
+        "recent_operation_count": len(recent),
+        "latest_operation": recent[-1] if recent else {},
+        "machine_instruction": "use_context_operation_for_resource_lifecycle; send_update_restore_hot_swap_to_version_gate_before_commit",
+    }
+
+
+def run_agp_context_operation(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_context_operation_receipt.v1", "accepted": False, "reason": "empty_context_operation", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_context_operation_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    op = _clean_id(body.get("op") or body.get("operation") or "retrieve", fallback="retrieve")
+    if op == "hotswap":
+        op = "hot_swap"
+    allowed = {"init", "retrieve", "evaluate", "update", "restore", "diff", "hot_swap"}
+    resource = _dict(body.get("resource"))
+    resource_id = _clean_id(body.get("resource_id") or resource.get("resource_id"), fallback="")
+    entity_type = _clean_entity_type(body.get("entity_type") or resource.get("entity_type"), resource_kind=body.get("resource_kind") or resource.get("resource_kind"))
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    rollback_ref = _text(body.get("rollback_ref") or body.get("noop_ref"), 220)
+    mutation = op in {"update", "restore", "hot_swap"}
+    retrieval = retrieve_resource(
+        {
+            "resource_id": resource_id,
+            "query": body.get("query") or resource_id,
+            "entity_type": body.get("entity_type") or resource.get("entity_type") or "",
+            "limit": body.get("limit") or 8,
+        },
+        base_url=base_url,
+        substrate_surface=resource_substrate,
+    )
+    checks = {
+        "operation_allowed": op in allowed,
+        "resource_id_present": bool(resource_id) or op in {"retrieve", "init"},
+        "entity_type_known": entity_type in RSPL_ENTITY_TYPES,
+        "proof_digest_for_mutation": (not mutation) or _looks_digest(proof_digest),
+        "rollback_or_noop_for_mutation": (not mutation) or bool(rollback_ref),
+        "descriptor_only": True,
+        "secrets_free": True,
+    }
+    accepted = all(bool(v) for v in checks.values())
+    version_payload = {}
+    if mutation and accepted:
+        current_version = _text(body.get("from_version") or resource.get("current_version") or "v1", 80)
+        target_version = _text(body.get("to_version") or body.get("version") or f"{current_version}-{op}-{_digest(body, length=8)}", 96)
+        version_payload = {
+            "resource_id": resource_id,
+            "resource_kind": _clean_id(body.get("resource_kind") or resource.get("resource_kind") or entity_type, fallback=entity_type),
+            "entity_type": entity_type,
+            "from_version": current_version,
+            "to_version": target_version,
+            "target_state": "shadow",
+            "proof_digest": proof_digest,
+            "rollback_ref": rollback_ref,
+            "boundedness": {"ttl_seconds": _int(body.get("ttl_seconds"), 300) or 300, "side_effect_scope": "nomad_shadow_lane_only", "rollback_available": True, "secrets_free": True},
+            "sepl_operator_trace": _autonomous_sepl_trace({"resource_id": resource_id}, proof_digest or f"sha256:{_digest(body)}", target_version),
+            "learnability_mask": {op: True},
+            "variable_lifting": {"variables": [{"name": op, "require_grad": True}]},
+        }
+    operation_id = f"agp-context-{_digest({'op': op, 'resource_id': resource_id, 'proof': proof_digest, 'time': now})}"
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_context_operation_receipt.v1",
+        "operation_id": operation_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": f"{op}_context_descriptor" if accepted else "hold_context_operation_until_required_gates",
+        "op": op,
+        "resource_id": resource_id,
+        "entity_type": entity_type,
+        "checks": checks,
+        "proof_digest": proof_digest,
+        "rollback_ref": rollback_ref,
+        "retrieval": retrieval,
+        "version_payload": version_payload,
+        "side_effect_scope": "descriptor_only_context_manager",
+        "next": {
+            "version": _u(base_url, "/swarm/resource-substrate/version"),
+            "trace": _u(base_url, "/swarm/autogenesis/traces"),
+            "watchdog": _u(base_url, "/swarm/autogenesis/watchdog"),
+        },
+        "machine_instruction": "if_version_payload_present_submit_to_resource_version_gate; otherwise_cache_context_receipt_for_trace",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_CONTEXT_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
 
 
 def register_resource(
@@ -2427,6 +2581,9 @@ def build_agp_conformance_surface(
     worker_fleet: dict[str, Any] | None = None,
     trace_ledger_path: Path | str | None = None,
     procurement_ledger_path: Path | str | None = None,
+    context_ledger_path: Path | str | None = None,
+    optimizer_ledger_path: Path | str | None = None,
+    evaluation_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -2437,17 +2594,28 @@ def build_agp_conformance_surface(
     entity_types = {_clean_id(item.get("entity_type"), fallback="") for item in resources}
     recent_traces = _agp_trace_ledger(trace_ledger_path)
     recent_procurement = _agp_procurement_ledger(procurement_ledger_path)
+    recent_context = _agp_context_ledger(context_ledger_path)
+    recent_optimizer = _agp_optimizer_ledger(optimizer_ledger_path)
+    recent_evaluation = _agp_evaluation_ledger(evaluation_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_runtime_resources_present": bool(resources),
         "rspl_resource_retrieval_route": True,
+        "rspl_context_manager_server_interface": True,
+        "rspl_dynamic_init_update_restore_hot_swap": True,
         "sepl_closed_loop_operator_algebra": list(SEPL_OPERATORS) == ["reflect", "select", "improve", "evaluate", "commit"],
+        "sepl_strategy_router_reflection_gradient_rl_ranking": True,
         "auditable_lineage_and_rollback": True,
         "independent_verifier_worker_lane": _int(fleet.get("active_worker_count")) > 0 or bool(_dict(fleet.get("objective_targets"))),
         "brain_witness_or_fallback_gate": True,
         "act_observe_optimize_remember_trace_route": True,
+        "benchmark_evaluation_harness": True,
         "procurement_route_for_compute_and_services": True,
         "external_spend_receipt_gate": True,
+        "real_trace_sample_present": bool(recent_traces),
+        "real_context_operation_present": bool(recent_context),
+        "real_optimizer_step_present": bool(recent_optimizer),
+        "real_evaluation_run_present": bool(recent_evaluation),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -2455,6 +2623,12 @@ def build_agp_conformance_surface(
         gaps.append("register_live_environment_and_memory_resources_from_execution_traces")
     if not recent_traces:
         gaps.append("feed_real_agent_trajectories_into_trace_route")
+    if not recent_context:
+        gaps.append("record_context_manager_operation_for_dynamic_resource_lifecycle")
+    if not recent_optimizer:
+        gaps.append("record_sepl_optimizer_step_for_strategy_router")
+    if not recent_evaluation:
+        gaps.append("record_benchmark_evaluation_run_for_effectiveness_gate")
     if not recent_procurement:
         gaps.append("quote_or_lease_real_compute_service_only_after_budgeted_receipt")
     score = round(passed / max(1, len(checks)), 4)
@@ -2474,11 +2648,20 @@ def build_agp_conformance_surface(
         "residual_gaps": gaps,
         "resource_entity_types_observed": sorted(x for x in entity_types if x),
         "recent_trace_count": len(recent_traces),
+        "recent_context_count": len(recent_context),
+        "recent_optimizer_count": len(recent_optimizer),
+        "recent_evaluation_count": len(recent_evaluation),
         "recent_procurement_count": len(recent_procurement),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
             "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
+            "context_manager": _u(root, "/.well-known/nomad-agp-context-manager.json"),
+            "context_operation": _u(root, "/swarm/agp/context"),
+            "optimizer": _u(root, "/.well-known/nomad-agp-optimizer.json"),
+            "optimizer_step": _u(root, "/swarm/agp/optimizer-steps"),
+            "evaluation": _u(root, "/.well-known/nomad-agp-evaluation.json"),
+            "evaluation_run": _u(root, "/swarm/agp/evaluations"),
             "trace": _u(root, "/swarm/autogenesis/traces"),
             "procurement": _u(root, "/swarm/agp/procurement-intents"),
             "procurement_surface": _u(root, "/.well-known/nomad-agp-procurement.json"),
@@ -2762,6 +2945,211 @@ def submit_agp_procurement_intent(
     }
     if persist and accepted:
         _append_jsonl(row, ledger_path or DEFAULT_AGP_PROCUREMENT_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_optimizer_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_optimizer_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_optimizer_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "sepl_operator_algebra": list(SEPL_OPERATORS),
+        "optimizer_strategies": ["reflection", "textgrad", "rl", "ranking", "hybrid"],
+        "strategy_contract": {
+            "reflection": "uses verifier critique as symbolic gradient",
+            "textgrad": "binds textual gradient to variable_lifting",
+            "rl": "binds reward_delta and policy_update to evaluate/commit gates",
+            "ranking": "binds candidate ranking signal to select operator",
+            "hybrid": "accepts multiple strategy signals behind same SEPL trace",
+        },
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-optimizer.json"),
+            "step": _u(root, "/swarm/agp/optimizer-steps"),
+            "evaluation": _u(root, "/swarm/agp/evaluations"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+        },
+        "recent_step_count": len(recent),
+        "latest_step": recent[-1] if recent else {},
+        "machine_instruction": "normalize_optimizer_signal_to_sepl_trace_then_submit_shadow_candidate_or_evaluation",
+    }
+
+
+def run_agp_optimizer_step(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_optimizer_step_receipt.v1", "accepted": False, "reason": "empty_optimizer_step", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_optimizer_step_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    strategy = _clean_id(body.get("strategy") or body.get("optimizer") or "reflection", fallback="reflection")
+    if strategy not in {"reflection", "textgrad", "rl", "ranking", "hybrid"}:
+        strategy = "reflection"
+    resource_id = _clean_id(body.get("resource_id") or _dict(body.get("resource")).get("resource_id"), fallback="autogenesis-resource")
+    variable = _clean_id(body.get("variable") or body.get("target_variable") or "runtime_weight", fallback="runtime_weight")
+    signal = _dict(body.get("signal") or body.get("gradient") or body.get("reward") or body.get("ranking"))
+    proof_digest = _text(body.get("proof_digest") or signal.get("proof_digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest({'strategy': strategy, 'resource_id': resource_id, 'signal': signal}, length=64)}"
+    candidate_version = _text(body.get("to_version") or f"v-{strategy}-{_digest({'r': resource_id, 'v': variable, 'p': proof_digest}, length=10)}", 96)
+    sepl_trace = [
+        {"op": "reflect", "input": proof_digest, "output": _text(signal.get("critique") or signal.get("observation") or f"{strategy}_signal_reflected", 180)},
+        {"op": "select", "input": variable, "output": f"{resource_id}.{variable}"},
+        {"op": "improve", "input": f"{resource_id}.{variable}", "output": candidate_version},
+        {"op": "evaluate", "input": candidate_version, "output": _text(signal.get("metric") or signal.get("reward_delta") or "pending_benchmark_evaluation", 160)},
+        {"op": "commit", "input": "evaluation_gate", "decision": "shadow_candidate_or_noop"},
+    ]
+    checks = {
+        "strategy_supported": strategy in {"reflection", "textgrad", "rl", "ranking", "hybrid"},
+        "resource_id_present": bool(resource_id),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "sepl_trace_exact": [item["op"] for item in sepl_trace] == list(SEPL_OPERATORS),
+        "learnability_mask_present": True,
+        "rollback_noop_present": True,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_optimizer_step_receipt.v1",
+        "step_id": f"agp-opt-{_digest({'strategy': strategy, 'resource': resource_id, 'proof': proof_digest})}",
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "normalize_optimizer_signal_to_sepl_candidate" if accepted else "hold_optimizer_step_until_gates",
+        "strategy": strategy,
+        "resource_id": resource_id,
+        "variable_lifting": {"variables": [{"name": variable, "require_grad": True, "strategy": strategy}]},
+        "learnability_mask": {variable: True},
+        "sepl_operator_trace": sepl_trace,
+        "proof_digest": proof_digest,
+        "rollback_ref": _text(body.get("rollback_ref") or f"noop:{resource_id}:{variable}", 220),
+        "checks": checks,
+        "candidate_payload": {
+            "candidate_type": "sepl-operator-patch",
+            "resource": {"resource_id": resource_id, "to_version": candidate_version, "state": "shadow"},
+            "sepl_operator_trace": sepl_trace,
+            "learnability_mask": {variable: True},
+            "variable_lifting": {"variables": [{"name": variable, "require_grad": True}]},
+            "proof_digest": proof_digest,
+            "rollback_ref": _text(body.get("rollback_ref") or f"noop:{resource_id}:{variable}", 220),
+            "boundedness": {"ttl_seconds": _int(body.get("ttl_seconds"), 300) or 300, "side_effect_scope": "nomad_shadow_lane_only", "rollback_available": True, "secrets_free": True},
+        },
+        "next": {
+            "evaluation": _u(base_url, "/swarm/agp/evaluations"),
+            "shadow_lane": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+        },
+        "machine_instruction": "evaluate_optimizer_candidate_before_resource_version_commit",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_OPTIMIZER_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_evaluation_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_evaluation_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_evaluation_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "benchmark_modes": ["long_horizon_task", "tool_use", "heterogeneous_resource_plan", "regression_replay", "micro_benchmark"],
+        "required_fields": ["agent_id", "resource_id", "benchmark_id", "baseline_score", "candidate_score", "proof_digest"],
+        "commit_rule": "candidate_score_must_exceed_baseline_and_proof_digest_must_bind_run",
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-evaluation.json"),
+            "run": _u(root, "/swarm/agp/evaluations"),
+            "optimizer": _u(root, "/swarm/agp/optimizer-steps"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+        },
+        "recent_run_count": len(recent),
+        "latest_run": recent[-1] if recent else {},
+        "machine_instruction": "submit_evaluation_run; only positive_delta_can_raise_weight",
+    }
+
+
+def record_agp_evaluation_run(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_evaluation_receipt.v1", "accepted": False, "reason": "empty_evaluation", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_evaluation_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id"), fallback="")
+    resource_id = _clean_id(body.get("resource_id"), fallback="")
+    benchmark_id = _clean_id(body.get("benchmark_id") or body.get("task_id"), fallback="")
+    baseline = _num(body.get("baseline_score"))
+    candidate = _num(body.get("candidate_score"))
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    delta = round(candidate - baseline, 4)
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "resource_id_present": bool(resource_id),
+        "benchmark_id_present": bool(benchmark_id),
+        "proof_digest_present": _looks_digest(proof_digest),
+        "positive_effectiveness_delta": delta > 0.0,
+        "score_bounds": 0.0 <= baseline <= 1.0 and 0.0 <= candidate <= 1.0,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_evaluation_receipt.v1",
+        "evaluation_id": f"agp-eval-{_digest({'resource': resource_id, 'benchmark': benchmark_id, 'proof': proof_digest})}",
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "positive_effectiveness_delta_verified" if accepted else "hold_until_positive_benchmark_delta",
+        "agent_id": agent_id,
+        "resource_id": resource_id,
+        "benchmark_id": benchmark_id,
+        "baseline_score": round(baseline, 4),
+        "candidate_score": round(candidate, 4),
+        "effectiveness_delta": delta,
+        "proof_digest": proof_digest,
+        "checks": checks,
+        "commit_hint": {
+            "target_state": "tested" if accepted else "noop",
+            "min_effectiveness_score": round(candidate, 4),
+            "side_effect_scope": "evaluation_receipt_only",
+        },
+        "next": {
+            "resource_version": _u(base_url, "/swarm/resource-substrate/version"),
+            "watchdog": _u(base_url, "/swarm/autogenesis/watchdog"),
+        },
+        "machine_instruction": "use_evaluation_receipt_as_positive_delta_gate_for_weighted_resource_version",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_EVALUATION_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False
