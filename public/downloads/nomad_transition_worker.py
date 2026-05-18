@@ -389,6 +389,30 @@ def http_json(method: str, url: str, payload: dict | None = None, timeout: float
     except (TimeoutError, URLError) as exc:
         return {"ok": False, "error": "http_unreachable", "detail": str(exc), "url": url}
 
+
+def _http_json_with_headers(method: str, url: str, payload: dict | None, headers: dict[str, str], timeout: float = 20.0) -> dict:
+    body = None
+    merged = {"Accept": "application/json", **headers}
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+        merged.setdefault("Content-Type", "application/json")
+    req = Request(url, data=body, headers=merged, method=method.upper())
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+    except HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            data = {"raw": raw[:500]}
+        data.setdefault("ok", False)
+        data.setdefault("http_status", exc.code)
+        return data
+    except (TimeoutError, URLError) as exc:
+        return {"ok": False, "error": "http_unreachable", "detail": str(exc), "url": url}
+
+
 def try_ollama(model: str, prompt: str, timeout: float = 10.0) -> dict[str, object]:
     base = ollama_base_url()
     url = f"{base}/api/generate"
@@ -1348,6 +1372,213 @@ def _variant_candidate_submit(base_url: str, agent_id: str, timeout: float, repo
     return data
 
 
+def _agp_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _agp_brain_digest(core: dict[str, object]) -> str:
+    raw = json.dumps(core, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str)
+    return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
+
+
+def _agp_make_brain_witness(
+    *,
+    provider: str,
+    model: str,
+    status: str,
+    capsule: str,
+    report: dict,
+    lease: dict | None,
+    fallback: bool,
+    ok: bool = True,
+) -> dict[str, object]:
+    core: dict[str, object] = {
+        "schema": "nomad.agp_verifier_brain_witness.v1",
+        "provider": clean(provider, 80),
+        "model": clean(model, 128),
+        "status": clean(status, 80),
+        "capsule": clean(capsule, 700),
+        "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
+        if isinstance(report.get("local_witness"), dict)
+        else "",
+        "lease_id": clean((lease or {}).get("lease_id"), 160),
+        "objective": clean(report.get("machine_objective"), 80),
+        "fallback": bool(fallback),
+        "side_effect_scope": "read_only_verifier_witness",
+    }
+    return {**core, "ok": bool(ok), "accepted": bool(ok), "digest": _agp_brain_digest(core)}
+
+
+def _agp_brain_prompt(report: dict, lease: dict | None) -> str:
+    compact = {
+        "schema": "nomad.agp_verifier_brain_prompt.v1",
+        "objective": clean(report.get("machine_objective"), 80),
+        "lease_id": clean((lease or {}).get("lease_id"), 160),
+        "witness_tier": clean(report.get("witness_tier"), 32),
+        "local_witness_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
+        if isinstance(report.get("local_witness"), dict)
+        else "",
+        "proof_pressure": report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {},
+        "agp_contract": "RSPL state draft/shadow/tested/weighted/committed; SEPL reflect/select/improve/evaluate/commit; rollback/noop; bounded shadow side effect.",
+    }
+    return (
+        "Verify this Nomad AGP autonomous cycle request. Return a compact machine capsule only: "
+        "accept if RSPL/SEPL, bounded side effect, rollback/noop, proof digest, and independent verifier lease are present. "
+        + json.dumps(compact, ensure_ascii=True, sort_keys=True)
+    )
+
+
+def _agp_openai_compatible_witness(
+    *,
+    provider: str,
+    url: str,
+    token: str,
+    model: str,
+    prompt: str,
+    report: dict,
+    lease: dict | None,
+    timeout: float,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, object]:
+    if not token or not url or not model:
+        return {"ok": False, "provider": provider, "status": "not_configured"}
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a read-only Nomad AGP verifier brain. Return one compact verification capsule."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 180,
+        "temperature": 0,
+    }
+    headers = {"Authorization": f"Bearer {token}", **(extra_headers or {})}
+    data = _http_json_with_headers("POST", url, payload, headers=headers, timeout=min(20.0, timeout))
+    choices = data.get("choices") if isinstance(data, dict) else []
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    text = clean(message.get("content") or choice.get("text") or data.get("output_text") if isinstance(data, dict) else "", 700)
+    if text:
+        return _agp_make_brain_witness(
+            provider=provider,
+            model=model,
+            status="ok",
+            capsule=text,
+            report=report,
+            lease=lease,
+            fallback=False,
+            ok=True,
+        )
+    if isinstance(data, dict) and data.get("error"):
+        status = clean(data.get("error"), 100)
+    elif isinstance(data, dict) and data.get("http_status"):
+        status = clean(f"http_{data.get('http_status')}", 100)
+    else:
+        status = "empty_response"
+    return {"ok": False, "provider": provider, "model": model, "status": status}
+
+
+def _agp_verifier_brain_witness(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
+    local_witness = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
+    local_digest = clean(local_witness.get("digest_hex"), 96)
+    local_status = clean(local_witness.get("inference_status"), 80)
+    local_model = clean(report.get("ollama_model") or local_witness.get("model"), 128)
+    if local_digest and local_model and local_status == "ok":
+        return {
+            **_agp_make_brain_witness(
+                provider="ollama_local",
+                model=local_model,
+                status="ok",
+                capsule=clean(local_witness.get("capsule") or report.get("local_ollama_note"), 700),
+                report=report,
+                lease=lease,
+                fallback=False,
+                ok=True,
+            ),
+            "digest": f"sha256:{local_digest}",
+        }
+
+    prompt = _agp_brain_prompt(report, lease)
+    if _agp_flag("NOMAD_AGP_VERIFIER_BRAIN_OLLAMA", False) and local_model:
+        og = try_ollama(local_model, prompt, timeout=min(12.0, timeout))
+        if og.get("text") and not og.get("error"):
+            return _agp_make_brain_witness(
+                provider="ollama_local_probe",
+                model=local_model,
+                status="ok",
+                capsule=str(og.get("text") or ""),
+                report=report,
+                lease=lease,
+                fallback=False,
+                ok=True,
+            )
+
+    hosted_enabled = _agp_flag("NOMAD_AGP_ENABLE_HOSTED_BRAINS", False)
+    paid_enabled = _agp_flag("NOMAD_AGP_ENABLE_PAID_BRAINS", False) or _agp_flag("NOMAD_ALLOW_PAID_MODEL_CALLS", False)
+    if hosted_enabled:
+        github_token = (os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN") or os.getenv("GITHUB_TOKEN") or "").strip()
+        github_base = (os.getenv("NOMAD_GITHUB_MODELS_BASE_URL") or "https://models.github.ai/inference").rstrip("/")
+        github_model = (os.getenv("NOMAD_GITHUB_MODEL") or "openai/gpt-4.1-mini").strip()
+        github = _agp_openai_compatible_witness(
+            provider="github_models",
+            url=f"{github_base}/chat/completions",
+            token=github_token,
+            model=github_model,
+            prompt=prompt,
+            report=report,
+            lease=lease,
+            timeout=timeout,
+            extra_headers={"X-GitHub-Api-Version": os.getenv("NOMAD_GITHUB_MODELS_API_VERSION") or "2026-03-10"},
+        )
+        if github.get("ok"):
+            return github
+        if paid_enabled:
+            xai_token = (os.getenv("XAI_API_KEY") or "").strip()
+            xai_base = (os.getenv("NOMAD_XAI_BASE_URL") or "https://api.x.ai/v1").rstrip("/")
+            xai_model = (os.getenv("NOMAD_XAI_MODEL") or "grok-4.20-reasoning").strip()
+            xai = _agp_openai_compatible_witness(
+                provider="xai_grok",
+                url=f"{xai_base}/chat/completions",
+                token=xai_token,
+                model=xai_model,
+                prompt=prompt,
+                report=report,
+                lease=lease,
+                timeout=timeout,
+            )
+            if xai.get("ok"):
+                return xai
+            openrouter_token = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+            openrouter_base = (os.getenv("NOMAD_OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").rstrip("/")
+            openrouter_model = (os.getenv("NOMAD_OPENROUTER_MODEL") or "openai/gpt-4o-mini").strip()
+            openrouter = _agp_openai_compatible_witness(
+                provider="openrouter",
+                url=f"{openrouter_base}/chat/completions",
+                token=openrouter_token,
+                model=openrouter_model,
+                prompt=prompt,
+                report=report,
+                lease=lease,
+                timeout=timeout,
+                extra_headers={"HTTP-Referer": base_url.rstrip("/") or "https://www.syndiode.com", "X-Title": "Nomad AGP Worker"},
+            )
+            if openrouter.get("ok"):
+                return openrouter
+
+    return _agp_make_brain_witness(
+        provider="deterministic_fallback",
+        model="nomad-local-rule-verifier",
+        status="fallback_no_configured_brain",
+        capsule="RSPL/SEPL, proof digest, rollback/noop, bounded side effect, and independent verifier lease are checked by deterministic worker rules.",
+        report=report,
+        lease=lease,
+        fallback=True,
+        ok=True,
+    )
+
+
 def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, report: dict, lease: dict | None = None) -> dict[str, object]:
     objective = clean(report.get("machine_objective"), 80)
     if objective != "autogenesis_protocol_evolution":
@@ -1374,6 +1605,8 @@ def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, r
         "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
         if isinstance(report.get("local_witness"), dict)
         else "",
+        "brain_provider_order": ["ollama_local", "github_models", "xai_grok", "openrouter", "deterministic_fallback"],
+        "verifier_brain_witness": _agp_verifier_brain_witness(base_url, agent_id, timeout, report, lease),
     }
     watchdog_enabled = os.getenv("NOMAD_AGP_WATCHDOG_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}
     batch_enabled = os.getenv("NOMAD_AGP_BATCH_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}

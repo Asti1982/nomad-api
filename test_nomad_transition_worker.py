@@ -664,7 +664,10 @@ def test_agp_pair_launch_scripts_wire_codex_and_nomad_brain_modes():
     assert "NOMAD_AGP_VERIFIER_AGENT_ID" in ps1
     assert "--edge-with-ollama" in ps1
     assert "--ollama-model" in ps1
+    assert "HostedBrains" in ps1
+    assert "NOMAD_AGP_ENABLE_HOSTED_BRAINS" in ps1
     assert "CodexProposer" in ps1
+    assert "HOSTED_BRAINS_FLAG" in bat
     assert "nomad-agp-proposer-local" in bat
     assert "nomad-agp-verifier-local" in bat
     assert "NOMAD_AGP_CODEX_PROPOSER=1" in codex_bat
@@ -707,6 +710,41 @@ def test_transition_worker_submits_autonomous_agp_cycle(monkeypatch):
     assert calls[0][2]["max_cycles"] == 3
     assert calls[0][2]["min_trigger_score"] == 0.55
     assert calls[0][2]["source_tag"] == "nomad.transition_worker.autonomous_agp_watchdog"
+    assert calls[0][2]["brain_provider_order"][-1] == "deterministic_fallback"
+    assert calls[0][2]["verifier_brain_witness"]["provider"] == "deterministic_fallback"
+    assert calls[0][2]["verifier_brain_witness"]["digest"].startswith("sha256:")
+
+
+def test_transition_worker_uses_ollama_witness_as_agp_brain(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        return {"ok": True, "accepted": True}
+
+    monkeypatch.setattr(worker, "http_json", fake_http)
+    monkeypatch.setenv("NOMAD_AGP_ROLE", "proposer")
+    monkeypatch.setenv("NOMAD_AGP_VERIFIER_AGENT_ID", "agp.verifier")
+    digest = "b" * 64
+    worker._agp_autonomous_cycle_submit(
+        "https://nomad.example",
+        "agp.proposer",
+        3.0,
+        {
+            "machine_objective": "autogenesis_protocol_evolution",
+            "ollama_model": "llama3.2:1b",
+            "witness_tier": "strong",
+            "local_witness": {"digest_hex": digest, "inference_status": "ok", "capsule": "agp verifier ok"},
+        },
+        {"lease_id": "nomad-worker-lease-proposer"},
+    )
+
+    brain = calls[0][2]["verifier_brain_witness"]
+    assert brain["provider"] == "ollama_local"
+    assert brain["model"] == "llama3.2:1b"
+    assert brain["digest"] == f"sha256:{digest}"
+    assert brain["fallback"] is False
 
 
 def test_transition_worker_verifier_role_skips_autonomous_agp_proposal(monkeypatch):

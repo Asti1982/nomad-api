@@ -23,5 +23,7 @@ set NO_OLLAMA_FLAG=
 if "%NOMAD_AGP_NO_OLLAMA%"=="1" set NO_OLLAMA_FLAG=-NoOllama
 set CODEX_FLAG=
 if "%NOMAD_AGP_CODEX_PROPOSER%"=="1" set CODEX_FLAG=-CodexProposer
+set HOSTED_BRAINS_FLAG=
+if "%NOMAD_AGP_ENABLE_HOSTED_BRAINS%"=="1" set HOSTED_BRAINS_FLAG=-HostedBrains
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%start_nomad_agp_pair.ps1" -BaseUrl "%BASE_URL%" -ProposerAgentId "%PROPOSER_ID%" -VerifierAgentId "%VERIFIER_ID%" -Model "%MODEL%" -OllamaUrl "%OLLAMA_URL%" -CostMsatPerMinute %COST% -AvailabilityMinutes %AVAIL% -IntervalSeconds %INTERVAL% -TimeoutSeconds %TIMEOUT% %NO_OLLAMA_FLAG% %CODEX_FLAG% -Visible
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%start_nomad_agp_pair.ps1" -BaseUrl "%BASE_URL%" -ProposerAgentId "%PROPOSER_ID%" -VerifierAgentId "%VERIFIER_ID%" -Model "%MODEL%" -OllamaUrl "%OLLAMA_URL%" -CostMsatPerMinute %COST% -AvailabilityMinutes %AVAIL% -IntervalSeconds %INTERVAL% -TimeoutSeconds %TIMEOUT% %NO_OLLAMA_FLAG% %HOSTED_BRAINS_FLAG% %CODEX_FLAG% -Visible

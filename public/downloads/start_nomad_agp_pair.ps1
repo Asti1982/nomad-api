@@ -10,6 +10,7 @@ param(
     [int]$TimeoutSeconds = 30,
     [int]$Cycles = 0,
     [switch]$NoOllama,
+    [switch]$HostedBrains,
     [switch]$CodexProposer,
     [switch]$Visible
 )
@@ -104,6 +105,7 @@ function Start-AgpWorker {
     }
 
     $edgeWithOllama = if ($NoOllama) { "0" } else { "1" }
+    $hostedBrainFlag = if ($HostedBrains) { "1" } else { "0" }
     $roleTitle = "Nomad AGP $Role"
     $baseLine = "base_url=$BaseUrl"
     $agentLine = "agent_id=$AgentId"
@@ -115,6 +117,7 @@ function Start-AgpWorker {
         "`$env:NOMAD_AGP_VERIFIER_AGENT_ID = $(Quote-PSArg $VerifierAgentId)",
         "`$env:NOMAD_EDGE_WORKER = '1'",
         "`$env:NOMAD_EDGE_WITH_OLLAMA = $(Quote-PSArg $edgeWithOllama)",
+        "`$env:NOMAD_AGP_ENABLE_HOSTED_BRAINS = $(Quote-PSArg $hostedBrainFlag)",
         "`$env:NOMAD_SWARM_SURPLUS_OPT_IN = '1'",
         "`$env:NOMAD_EDGE_RESERVE_MIN_SECONDS = $(Quote-PSArg ([string]([Math]::Max(90, $IntervalSeconds))))",
         "`$env:NOMAD_MACHINE_OBJECTIVE = 'autogenesis_protocol_evolution'",
@@ -164,6 +167,7 @@ Write-Host "Nomad AGP pair started"
 Write-Host "base_url=$BaseUrl"
 Write-Host "objective=autogenesis_protocol_evolution"
 Write-Host "ai_mode=$(-not [bool]$NoOllama)"
+Write-Host "hosted_brains=$([bool]$HostedBrains)"
 Write-Host "codex_proposer=$([bool]$CodexProposer)"
 if ($CodexProposer) {
     Write-Host "proposer_agent=external_codex_session"

@@ -1366,6 +1366,79 @@ def _autonomous_sepl_trace(resource: dict[str, Any], lineage_digest: str, target
     ]
 
 
+def _normalize_agp_brain_witness(
+    value: Any,
+    *,
+    body: dict[str, Any],
+    resource: dict[str, Any],
+    lineage_digest: str,
+    verifier_id: str,
+    verifier_lease_id: str,
+) -> dict[str, Any]:
+    supplied = _dict(value)
+    if supplied:
+        provider = _clean_id(
+            supplied.get("provider") or supplied.get("brain_provider") or supplied.get("source"),
+            fallback="external_verifier_brain",
+        )
+        model = _text(supplied.get("model") or supplied.get("brain_model"), 128)
+        status = _clean_id(
+            supplied.get("status") or supplied.get("inference_status") or supplied.get("decision"),
+            fallback="ok",
+        )
+        capsule = _text(supplied.get("capsule") or supplied.get("summary") or supplied.get("text"), 700)
+        digest = _text(supplied.get("digest") or supplied.get("digest_hex") or supplied.get("proof_digest"), 220)
+        if digest and re.fullmatch(r"[a-f0-9]{32,128}", digest.lower()):
+            digest = f"sha256:{digest.lower()}"
+        fallback = bool(supplied.get("fallback")) or provider in {
+            "deterministic_fallback",
+            "nomad_deterministic_fallback",
+            "local_rule_verifier",
+        }
+        core = {
+            "schema": "nomad.agp_verifier_brain_witness.v1",
+            "provider": provider,
+            "model": model,
+            "status": status,
+            "capsule": capsule,
+            "lineage_digest": lineage_digest,
+            "verifier_agent_id": verifier_id,
+            "verifier_lease_id": verifier_lease_id,
+            "fallback": fallback,
+        }
+        if not digest:
+            digest = f"sha256:{_digest(core, length=64)}"
+        accepted = bool(supplied.get("ok", True)) and bool(_looks_digest(digest))
+        return {
+            **core,
+            "ok": accepted,
+            "accepted": accepted,
+            "digest": digest,
+            "side_effect_scope": "read_only_verifier_witness",
+        }
+
+    core = {
+        "schema": "nomad.agp_verifier_brain_witness.v1",
+        "provider": "deterministic_fallback",
+        "model": "nomad-local-rule-verifier",
+        "status": "fallback_no_external_brain_witness",
+        "capsule": "RSPL resource, SEPL trace, rollback/noop, bounded scope, and independent verifier lease checked.",
+        "lineage_digest": lineage_digest,
+        "verifier_agent_id": verifier_id,
+        "verifier_lease_id": verifier_lease_id,
+        "resource_id": _clean_id(resource.get("resource_id"), fallback="autogenesis-resource"),
+        "proposer_agent_id": _clean_id(body.get("proposer_agent_id") or body.get("agent_id"), fallback=""),
+        "fallback": True,
+    }
+    return {
+        **core,
+        "ok": True,
+        "accepted": True,
+        "digest": f"sha256:{_digest(core, length=64)}",
+        "side_effect_scope": "read_only_verifier_witness",
+    }
+
+
 def build_autonomous_agp_cycle_surface(
     *,
     base_url: str = "",
@@ -1402,6 +1475,7 @@ def build_autonomous_agp_cycle_surface(
             "resource_cooldown_window",
             "lineage_depth_limit",
             "independent_verifier_lease_checked",
+            "verifier_brain_witness_or_deterministic_fallback",
             "canonical_verifier_receipt_digest",
             "sepl_operator_trace_exact",
             "learnability_mask_for_lifted_variables",
@@ -1563,6 +1637,14 @@ def run_autonomous_agp_cycle(
     target_version = _text(body.get("to_version") or _autonomous_version(current_version, lineage_digest), 96)
     sepl_trace = _autonomous_sepl_trace(resource, lineage_digest, target_version)
     variable_name = _clean_id(body.get("variable") or "runtime_weight", fallback="runtime_weight")
+    brain_witness = _normalize_agp_brain_witness(
+        body.get("verifier_brain_witness") or body.get("brain_witness"),
+        body=body,
+        resource=resource,
+        lineage_digest=lineage_digest,
+        verifier_id=verifier_id,
+        verifier_lease_id=verifier_lease_id,
+    )
     checks = {
         "rspl_resource_selected": bool(resource.get("resource_id")),
         "sepl_trace_exact": [item.get("op") for item in sepl_trace] == list(SEPL_OPERATORS),
@@ -1570,6 +1652,8 @@ def run_autonomous_agp_cycle(
         "rollback_noop_present": True,
         "verifier_lease_present": bool(verifier_lease_id),
         "verifier_agent_distinct": bool(verifier_id and verifier_id != proposer_id),
+        "verifier_brain_witness_present": bool(_looks_digest(_text(brain_witness.get("digest"), 220))),
+        "verifier_brain_witness_accepted": bool(brain_witness.get("accepted")),
         "side_effect_scope_bounded": True,
         "duplicate_lineage": False,
     }
@@ -1581,6 +1665,13 @@ def run_autonomous_agp_cycle(
         "checks": checks,
         "lineage_digest": lineage_digest,
         "effectiveness_delta": round(max(0.04, 1.0 - _num(resource.get("effectiveness_score"))), 4),
+        "brain_witness": {
+            "provider": brain_witness.get("provider"),
+            "model": brain_witness.get("model"),
+            "status": brain_witness.get("status"),
+            "digest": brain_witness.get("digest"),
+            "fallback": bool(brain_witness.get("fallback")),
+        },
     }
     candidate = {
         "agent_id": proposer_id,
@@ -1621,6 +1712,7 @@ def run_autonomous_agp_cycle(
         },
         "verifier_agent_id": verifier_id,
         "verifier_lease_id": verifier_lease_id,
+        "verifier_brain_witness": brain_witness,
         "verifier_trace_digest": f"sha256:{_digest({'verifier_lease': verifier_lease, 'checks': checks, 'lineage': lineage_digest}, length=64)}",
         "verifier_evaluation": verifier_evaluation,
         "test_digest": f"sha256:{_digest(checks, length=64)}",
@@ -2045,6 +2137,7 @@ def build_autonomous_agp_watchdog_surface(
             "fresh_trigger_digest",
             "duplicate_signal_noop",
             "independent_verifier_lease_checked",
+            "verifier_brain_witness_or_deterministic_fallback",
             "bounded_batch_max_cycles",
             "rspl_resource_lifecycle_gate",
             "sepl_operator_trace_exact",

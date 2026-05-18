@@ -250,6 +250,10 @@ def test_autonomous_agp_cycle_commits_weighted_descriptor_and_dedupes(tmp_path):
     assert cycle["resource_version"]["target_state"] == "weighted"
     assert cycle["commit"]["side_effect_scope"] == "descriptor_only_resource_version"
     assert cycle["lineage"]["proof_digest"].startswith("sha256:")
+    brain = cycle["candidate_payload"]["verifier_brain_witness"]
+    assert brain["provider"] == "deterministic_fallback"
+    assert brain["digest"].startswith("sha256:")
+    assert cycle["candidate_payload"]["verifier_evaluation"]["checks"]["verifier_brain_witness_accepted"] is True
     assert duplicate["accepted"] is False
     assert duplicate["decision"] == "noop_duplicate_lineage"
 
@@ -348,6 +352,13 @@ def test_autonomous_agp_watchdog_runs_only_on_fresh_signal(tmp_path):
             "agent_id": "agp.proposer",
             "verifier_agent_id": "agp.verifier",
             "max_cycles": 2,
+            "verifier_brain_witness": {
+                "provider": "codex_worker",
+                "model": "codex-app",
+                "status": "ok",
+                "capsule": "independent read-only AGP verifier capsule",
+                "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
         },
         base_url="https://nomad.example",
         resource_substrate=substrate,
@@ -383,6 +394,9 @@ def test_autonomous_agp_watchdog_runs_only_on_fresh_signal(tmp_path):
     assert first["decision"] == "watchdog_committed_autonomous_agp_batch"
     assert first["batch"]["summary"]["committed"] == 2
     assert first["signal_digest"].startswith("sha256:")
+    first_brain = first["batch"]["cycles"][0]["candidate_payload"]["verifier_brain_witness"]
+    assert first_brain["provider"] == "codex_worker"
+    assert first_brain["fallback"] is False
     assert duplicate["accepted"] is False
     assert duplicate["decision"] == "watchdog_noop_duplicate_signal"
     assert duplicate["duplicate_of"] == first["watchdog_id"]
