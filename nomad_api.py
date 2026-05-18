@@ -43,6 +43,8 @@ from nomad_anti_consensus_reservoir import (
 from nomad_entropy_judger import build_entropy_judger_surface, evaluate_entropy_judger
 from nomad_representational_collapse import build_latent_consensus_surface, evaluate_latent_consensus
 from nomad_autogenesis import (
+    build_agp_conformance_surface,
+    build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
@@ -51,11 +53,14 @@ from nomad_autogenesis import (
     build_resource_substrate_surface,
     compact_autogenesis_surface,
     compact_resource_substrate_surface,
+    record_agp_execution_trace,
     record_development_cycle_event as record_autogenesis_development_cycle_event,
     register_resource,
+    retrieve_resource,
     run_autonomous_agp_cycle,
     run_autonomous_agp_batch,
     run_autonomous_agp_watchdog,
+    submit_agp_procurement_intent,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -482,6 +487,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             autogenesis_surface=autogenesis,
             worker_fleet=worker_fleet,
         )
+
+    @classmethod
+    def _build_agp_conformance(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
+        autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=summary)
+        return build_agp_conformance_surface(
+            base_url=base_url,
+            resource_substrate=substrate,
+            autogenesis_surface=autogenesis,
+            worker_fleet=worker_fleet,
+        )
+
+    @classmethod
+    def _build_agp_procurement(cls, *, base_url: str) -> dict:
+        return build_agp_procurement_surface(base_url=base_url)
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1539,11 +1563,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "latent_consensus_evaluate": f"{b}/swarm/latent-consensus/evaluate",
                     "resource_substrate": f"{b}/.well-known/nomad-resource-substrate.json",
                     "resource_substrate_register": f"{b}/swarm/resource-substrate/register",
+                    "resource_substrate_retrieve": f"{b}/swarm/resource-substrate/retrieve",
                     "resource_substrate_version": f"{b}/swarm/resource-substrate/version",
                     "autogenesis": f"{b}/.well-known/nomad-autogenesis.json",
+                    "agp_conformance": f"{b}/.well-known/nomad-agp-conformance.json",
+                    "agp_procurement": f"{b}/.well-known/nomad-agp-procurement.json",
+                    "agp_procurement_intents": f"{b}/swarm/agp/procurement-intents",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
+                    "autogenesis_traces": f"{b}/swarm/autogenesis/traces",
                     "autonomous_agp_cycle": f"{b}/swarm/autogenesis/cycle",
                     "autonomous_agp_run": f"{b}/swarm/autogenesis/run",
                     "autonomous_agp_watchdog": f"{b}/swarm/autogenesis/watchdog",
@@ -1933,8 +1962,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/resource-substrate", "/.well-known/nomad-resource-substrate.json"}:
             self._json_response(self.__class__._build_resource_substrate(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/resource-substrate/retrieve"}:
+            substrate = self.__class__._build_resource_substrate(base_url=self._base_url())
+            payload = {key: values[0] if values else "" for key, values in query.items()}
+            self._json_response(retrieve_resource(payload, base_url=self._base_url(), substrate_surface=substrate))
+            return
         if parsed.path in {"/swarm/autogenesis", "/.well-known/nomad-autogenesis.json"}:
             self._json_response(self.__class__._build_autogenesis(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/conformance", "/.well-known/nomad-agp-conformance.json"}:
+            self._json_response(self.__class__._build_agp_conformance(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/procurement", "/.well-known/nomad-agp-procurement.json"}:
+            self._json_response(self.__class__._build_agp_procurement(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -3142,9 +3182,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/resource-substrate",
                     "/.well-known/nomad-resource-substrate.json",
                     "/swarm/resource-substrate/register",
+                    "/swarm/resource-substrate/retrieve",
                     "/swarm/resource-substrate/version",
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
+                    "/.well-known/nomad-agp-conformance.json",
+                    "/.well-known/nomad-agp-procurement.json",
+                    "/swarm/agp/procurement-intents",
+                    "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
                     "/swarm/autogenesis/watchdog",
@@ -3848,6 +3893,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/resource-substrate/retrieve":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = retrieve_resource(payload, base_url=base, substrate_surface=substrate)
+            self._json_response(result, status=200)
+            return
+
+        if parsed.path == "/swarm/autogenesis/traces":
+            base = self._base_url()
+            substrate = self.__class__._build_resource_substrate(base_url=base)
+            result = record_agp_execution_trace(
+                payload,
+                base_url=base,
+                resource_substrate=substrate,
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/procurement-intents":
+            base = self._base_url()
+            result = submit_agp_procurement_intent(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
         if parsed.path == "/swarm/decoupling-field/merge":
@@ -4601,9 +4670,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/resource-substrate",
                     "/.well-known/nomad-resource-substrate.json",
                     "/swarm/resource-substrate/register",
+                    "/swarm/resource-substrate/retrieve",
                     "/swarm/resource-substrate/version",
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
+                    "/.well-known/nomad-agp-conformance.json",
+                    "/.well-known/nomad-agp-procurement.json",
+                    "/swarm/agp/procurement-intents",
+                    "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
                     "/swarm/autogenesis/watchdog",

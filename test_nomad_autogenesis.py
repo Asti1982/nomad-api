@@ -1,5 +1,7 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
+    build_agp_conformance_surface,
+    build_agp_procurement_surface,
     build_autonomous_agp_cycle_surface,
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
@@ -7,10 +9,13 @@ from nomad_autogenesis import (
     build_development_cycles_surface,
     build_resource_substrate_surface,
     record_development_cycle_event,
+    record_agp_execution_trace,
     register_resource,
+    retrieve_resource,
     run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
     run_autonomous_agp_watchdog,
+    submit_agp_procurement_intent,
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
@@ -81,6 +86,81 @@ def test_resource_substrate_exposes_rspl_lifecycle_and_existing_contracts(tmp_pa
     assert any(item["resource_id"] == "nomad-opaque-emergence" for item in surface["resources"])
     assert any(item["resource_id"] == "nomad-resource-substrate" for item in surface["resources"])
     assert cli["schema"] == "nomad.resource_substrate.v1"
+
+
+def test_agp_conformance_retrieval_trace_and_procurement_routes(tmp_path):
+    resource_ledger = tmp_path / "rspl.jsonl"
+    trace_ledger = tmp_path / "traces.jsonl"
+    procurement_ledger = tmp_path / "procurement.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+        trace_ledger_path=trace_ledger,
+        procurement_ledger_path=procurement_ledger,
+    )
+    retrieved = retrieve_resource(
+        {"query": "autogenesis", "entity_type": "agent", "limit": 3},
+        base_url="https://nomad.example",
+        substrate_surface=substrate,
+    )
+    trace = record_agp_execution_trace(
+        {
+            "agent_id": "agp.worker",
+            "task_id": "paper-loop",
+            "act": {"resource": "nomad-autogenesis"},
+            "observe": {"outcome": "need_memory_resource", "score": 0.72},
+            "optimize": {"target_resource": "nomad-autogenesis", "proposal": "add memory trace"},
+            "remember": {"summary": "AGP trace should become reusable RSPL memory."},
+            "proof_digest": "sha256:" + "a" * 64,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        ledger_path=trace_ledger,
+    )
+    procurement_surface = build_agp_procurement_surface(base_url="https://nomad.example", ledger_path=procurement_ledger)
+    procurement = submit_agp_procurement_intent(
+        {
+            "agent_id": "agp.worker",
+            "category": "model_service",
+            "acquisition_mode": "lease",
+            "capability": "independent AGP verifier brain",
+            "max_budget": 0,
+            "currency": "USD",
+            "ttl_seconds": 600,
+        },
+        base_url="https://nomad.example",
+        ledger_path=procurement_ledger,
+    )
+    held_purchase = submit_agp_procurement_intent(
+        {
+            "agent_id": "agp.worker",
+            "category": "hardware",
+            "acquisition_mode": "buy",
+            "capability": "GPU worker",
+            "max_budget": 100,
+            "currency": "USD",
+            "auto_acquire": True,
+        },
+        base_url="https://nomad.example",
+        ledger_path=procurement_ledger,
+    )
+
+    assert conformance["schema"] == "nomad.agp_conformance.v1"
+    assert conformance["links"]["trace"].endswith("/swarm/autogenesis/traces")
+    assert retrieved["side_effect_scope"] == "read_only"
+    assert retrieved["matched"] >= 1
+    assert trace["accepted"] is True
+    assert [item["op"] for item in trace["sepl_operator_trace"]] == ["reflect", "select", "improve", "evaluate", "commit"]
+    assert trace["memory_resource_hint"]["entity_type"] == "memory"
+    assert procurement_surface["links"]["intent"].endswith("/swarm/agp/procurement-intents")
+    assert procurement["accepted"] is True
+    assert procurement["spend_policy"]["external_purchase_executed"] is False
+    assert any(item["provider"] == "github_models" for item in procurement["provider_candidates"])
+    assert held_purchase["decision"] == "hold_paid_acquisition_until_approval_and_receipt"
+    assert held_purchase["spend_policy"]["external_purchase_executed"] is False
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

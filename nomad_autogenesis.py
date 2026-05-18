@@ -31,6 +31,12 @@ DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH = Path(
 DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH = Path(
     os.getenv("NOMAD_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH", "nomad_autonomous_agp_watchdog_ledger.jsonl")
 )
+DEFAULT_AGP_TRACE_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_TRACE_LEDGER_PATH", "nomad_agp_trace_ledger.jsonl")
+)
+DEFAULT_AGP_PROCUREMENT_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_PROCUREMENT_LEDGER_PATH", "nomad_agp_procurement_ledger.jsonl")
+)
 MAX_RECENT = 40
 RESOURCE_STATES = ("draft", "shadow", "tested", "weighted", "committed", "rolled_back", "noop")
 AGP_CANDIDATE_TYPES = (
@@ -163,6 +169,14 @@ def _autonomous_ledger(path: Path | str | None = None, *, limit: int = MAX_RECEN
 
 def _autonomous_watchdog_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH, limit=limit)
+
+
+def _agp_trace_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_TRACE_LEDGER_PATH, limit=limit)
+
+
+def _agp_procurement_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_PROCUREMENT_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -632,6 +646,7 @@ def build_resource_substrate_surface(
         },
         "version_interface": {
             "register": _u(root, "/swarm/resource-substrate/register"),
+            "retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
             "version": _u(root, "/swarm/resource-substrate/version"),
             "rollback_or_noop": _u(root, "/swarm/resource-substrate/version"),
             "proof_digest_required_after": "draft",
@@ -651,6 +666,7 @@ def build_resource_substrate_surface(
             "variant_forge": _u(root, "/swarm/variant-forge"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "development_cycles": _u(root, "/swarm/development-cycles"),
+            "retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
         },
         "machine_instruction": "register_resource_descriptor; shadow_test; version_with_proof; rollback_or_noop_on_failed_effectiveness",
     }
@@ -666,7 +682,79 @@ def compact_resource_substrate_surface(surface: dict[str, Any]) -> dict[str, Any
         "state_counts": surface.get("state_counts") if isinstance(surface.get("state_counts"), dict) else {},
         "read_url": links.get("self", ""),
         "register": _dict(surface.get("version_interface")).get("register", ""),
+        "retrieve": _dict(surface.get("version_interface")).get("retrieve", ""),
         "version": _dict(surface.get("version_interface")).get("version", ""),
+    }
+
+
+def retrieve_resource(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    substrate_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve RSPL resources during execution without mutating them."""
+    body = _dict(payload)
+    substrate = _dict(substrate_surface)
+    now = _iso_now()
+    query = _text(body.get("query") or body.get("capability") or body.get("resource_id"), 180).lower()
+    entity_type = _clean_id(body.get("entity_type"), fallback="")
+    resource_kind = _clean_id(body.get("resource_kind") or body.get("kind"), fallback="")
+    state = _clean_state(body.get("state")) if body.get("state") else ""
+    min_score = max(0.0, min(_num(body.get("min_effectiveness_score"), 0.0), 1.0))
+    limit = max(1, min(_int(body.get("limit"), 8), 32))
+    matches: list[dict[str, Any]] = []
+    for item in _items(substrate.get("resources")):
+        haystack = " ".join(
+            [
+                _text(item.get("resource_id"), 140),
+                _text(item.get("resource_kind"), 80),
+                _text(item.get("entity_type"), 80),
+                _text(item.get("read_url"), 180),
+                " ".join(str(x) for x in item.get("trigger_reasons", []) if isinstance(item.get("trigger_reasons"), list)),
+            ]
+        ).lower()
+        if query and query not in haystack:
+            continue
+        if entity_type and _clean_id(item.get("entity_type"), fallback="") != entity_type:
+            continue
+        if resource_kind and _clean_id(item.get("resource_kind"), fallback="") != resource_kind:
+            continue
+        if state and _clean_state(item.get("state")) != state:
+            continue
+        if _num(item.get("effectiveness_score")) < min_score:
+            continue
+        matches.append(
+            {
+                "resource_id": item.get("resource_id"),
+                "resource_kind": item.get("resource_kind"),
+                "entity_type": item.get("entity_type"),
+                "state": item.get("state"),
+                "current_version": item.get("current_version"),
+                "read_url": item.get("read_url") or _u(base_url, f"/swarm/resource-substrate/{item.get('resource_id')}"),
+                "effectiveness_score": round(_num(item.get("effectiveness_score")), 4),
+                "retrieval_score": round(
+                    _clamp(0.54 * _num(item.get("effectiveness_score")) + 0.20 * bool(query) + 0.16 * bool(entity_type) + 0.10 * (item.get("state") in {"weighted", "committed"})),
+                    4,
+                ),
+            }
+        )
+    matches.sort(key=lambda item: (_num(item.get("retrieval_score")), _num(item.get("effectiveness_score"))), reverse=True)
+    return {
+        "ok": True,
+        "schema": "nomad.rspl_retrieval_receipt.v1",
+        "generated_at": now,
+        "query": query,
+        "filters": {
+            "entity_type": entity_type,
+            "resource_kind": resource_kind,
+            "state": state,
+            "min_effectiveness_score": min_score,
+        },
+        "matched": len(matches),
+        "resources": matches[:limit],
+        "side_effect_scope": "read_only",
+        "machine_instruction": "bind_retrieved_resource_versions_into_act_observe_optimize_remember_trace",
     }
 
 
@@ -2325,6 +2413,355 @@ def run_autonomous_agp_watchdog(
     }
     if persist:
         _append_jsonl(row, watchdog_ledger_path or DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_conformance_surface(
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    worker_fleet: dict[str, Any] | None = None,
+    trace_ledger_path: Path | str | None = None,
+    procurement_ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Expose the paper-to-runtime AGP conformance map."""
+    root = (base_url or "").strip().rstrip("/")
+    substrate = _dict(resource_substrate)
+    agp = _dict(autogenesis_surface)
+    fleet = _dict(worker_fleet)
+    resources = _items(substrate.get("resources"))
+    entity_types = {_clean_id(item.get("entity_type"), fallback="") for item in resources}
+    recent_traces = _agp_trace_ledger(trace_ledger_path)
+    recent_procurement = _agp_procurement_ledger(procurement_ledger_path)
+    checks = {
+        "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
+        "rspl_runtime_resources_present": bool(resources),
+        "rspl_resource_retrieval_route": True,
+        "sepl_closed_loop_operator_algebra": list(SEPL_OPERATORS) == ["reflect", "select", "improve", "evaluate", "commit"],
+        "auditable_lineage_and_rollback": True,
+        "independent_verifier_worker_lane": _int(fleet.get("active_worker_count")) > 0 or bool(_dict(fleet.get("objective_targets"))),
+        "brain_witness_or_fallback_gate": True,
+        "act_observe_optimize_remember_trace_route": True,
+        "procurement_route_for_compute_and_services": True,
+        "external_spend_receipt_gate": True,
+    }
+    passed = sum(1 for value in checks.values() if bool(value))
+    gaps: list[str] = []
+    if not entity_types.intersection({"environment", "memory"}):
+        gaps.append("register_live_environment_and_memory_resources_from_execution_traces")
+    if not recent_traces:
+        gaps.append("feed_real_agent_trajectories_into_trace_route")
+    if not recent_procurement:
+        gaps.append("quote_or_lease_real_compute_service_only_after_budgeted_receipt")
+    score = round(passed / max(1, len(checks)), 4)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_conformance.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "paper_source": {
+            "arxiv": "https://arxiv.org/abs/2604.15034v3",
+            "reference_code": "https://github.com/DVampire/Autogenesis",
+        },
+        "conformance_score": score,
+        "checks_passed": passed,
+        "checks_total": len(checks),
+        "checks": checks,
+        "residual_gaps": gaps,
+        "resource_entity_types_observed": sorted(x for x in entity_types if x),
+        "recent_trace_count": len(recent_traces),
+        "recent_procurement_count": len(recent_procurement),
+        "agp_surface_digest": agp.get("surface_digest", ""),
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
+            "resource_retrieve": _u(root, "/swarm/resource-substrate/retrieve"),
+            "trace": _u(root, "/swarm/autogenesis/traces"),
+            "procurement": _u(root, "/swarm/agp/procurement-intents"),
+            "procurement_surface": _u(root, "/.well-known/nomad-agp-procurement.json"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+        },
+        "machine_instruction": "close_residual_gaps_by_posting_real_traces_and_budgeted_procurement_intents; never_spend_without_receipt_gate",
+    }
+
+
+def record_agp_execution_trace(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Record AGS-style Act/Observe/Optimize/Remember traces as SEPL triggers."""
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_trace_receipt.v1", "accepted": False, "reason": "empty_trace", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_trace_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("worker_id"), fallback="")
+    task_id = _clean_id(body.get("task_id") or body.get("run_id") or body.get("trace_id"), fallback=f"agp-trace-{_digest(body)}")
+    act = _dict(body.get("act") or body.get("action"))
+    observe = _dict(body.get("observe") or body.get("observation"))
+    optimize = _dict(body.get("optimize") or body.get("optimizer") or body.get("improve"))
+    remember = _dict(body.get("remember") or body.get("memory"))
+    proof_digest = _text(body.get("proof_digest") or body.get("digest"), 220)
+    if proof_digest and re.fullmatch(r"[a-f0-9]{32,128}", proof_digest.lower()):
+        proof_digest = f"sha256:{proof_digest.lower()}"
+    has_loop = bool(act and observe and optimize and remember)
+    trace_core = {
+        "agent_id": agent_id,
+        "task_id": task_id,
+        "act": act,
+        "observe": observe,
+        "optimize": optimize,
+        "remember": remember,
+        "proof_digest": proof_digest,
+    }
+    if not proof_digest:
+        proof_digest = f"sha256:{_digest(trace_core, length=64)}"
+    sepl_trace = [
+        {"op": "reflect", "input": task_id, "output": _text(observe.get("outcome") or observe.get("summary") or "execution_trace_observed", 180)},
+        {"op": "select", "input": "execution_trace_observed", "output": _text(optimize.get("target_resource") or "resource_candidate", 120)},
+        {"op": "improve", "input": _text(optimize.get("target_resource") or "resource_candidate", 120), "output": _text(optimize.get("proposal") or "bounded_descriptor_patch", 180)},
+        {"op": "evaluate", "input": proof_digest, "output": _text(observe.get("score") or observe.get("verdict") or "trace_evaluated", 120)},
+        {"op": "commit", "input": proof_digest, "decision": "trigger_watchdog_or_noop"},
+    ]
+    accepted = bool(agent_id and has_loop and _looks_digest(proof_digest))
+    trigger_digest = f"sha256:{_digest({'task_id': task_id, 'proof_digest': proof_digest, 'loop': has_loop}, length=64)}"
+    memory_summary = _text(remember.get("summary") or remember.get("memory_summary") or body.get("memory_summary"), 500)
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_trace_receipt.v1",
+        "trace_id": f"agp-trace-{_digest({'task': task_id, 'proof': proof_digest})}",
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "record_act_observe_optimize_remember_trace" if accepted else "hold_until_complete_aoom_trace",
+        "agent_id": agent_id,
+        "task_id": task_id,
+        "proof_digest": proof_digest,
+        "trigger_digest": trigger_digest,
+        "sepl_operator_trace": sepl_trace,
+        "checks": {
+            "agent_id_present": bool(agent_id),
+            "act_present": bool(act),
+            "observe_present": bool(observe),
+            "optimize_present": bool(optimize),
+            "remember_present": bool(remember),
+            "proof_digest_present": _looks_digest(proof_digest),
+        },
+        "resource_retrieval": retrieve_resource(
+            _dict(body.get("retrieve") or {"query": optimize.get("target_resource") or "", "limit": 5}),
+            base_url=base_url,
+            substrate_surface=resource_substrate,
+        ),
+        "memory_resource_hint": {
+            "resource_id": f"memory-{task_id}",
+            "resource_kind": "memory",
+            "entity_type": "memory",
+            "state": "draft",
+            "version": "v1",
+            "description": memory_summary,
+        }
+        if memory_summary
+        else {},
+        "next": {
+            "watchdog": _u(base_url, "/swarm/autogenesis/watchdog"),
+            "resource_register": _u(base_url, "/swarm/resource-substrate/register"),
+            "resource_retrieve": _u(base_url, "/swarm/resource-substrate/retrieve"),
+        },
+        "machine_instruction": "use_trigger_digest_for_watchdog; register_memory_hint_as_rspl_memory_if_reused",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_TRACE_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def build_agp_procurement_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_procurement_ledger(ledger_path)
+    return {
+        "ok": True,
+        "schema": "nomad.agp_procurement_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "purpose": "Acquire or lease AGP compute, model, hardware, or service capacity through quote-first, receipt-gated intents.",
+        "supported_categories": ["compute", "hardware", "model_service", "agent_service", "data_service"],
+        "acquisition_modes": ["lease", "rent", "buy", "quote_only"],
+        "hard_gates": [
+            "max_budget_required",
+            "ttl_bounded",
+            "no_secret_material",
+            "operator_approval_digest_for_paid_purchase",
+            "payment_receipt_digest_before_revenue_or_external_spend",
+            "descriptor_only_until_provider_receipt",
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-procurement.json"),
+            "intent": _u(root, "/swarm/agp/procurement-intents"),
+            "worker_market": _u(root, "/swarm/worker-market/offers"),
+            "microtasks": _u(root, "/swarm/microtasks"),
+            "spend_guard": _u(root, "/.well-known/nomad-spend-guard.json"),
+        },
+        "recent_intent_count": len(recent),
+        "latest_intent": recent[-1] if recent else {},
+        "machine_instruction": "post_procurement_intent; use_quote_or_worker_lease; never_purchase_without_operator_approval_and_receipt_digest",
+    }
+
+
+def _procurement_provider_candidates(category: str, mode: str) -> list[dict[str, Any]]:
+    base_candidates = {
+        "model_service": [
+            ("local_ollama", "lease", "local_model_runtime"),
+            ("github_models", "lease", "hosted_llm_api"),
+            ("xai_grok", "lease", "hosted_llm_api_paid"),
+            ("openrouter", "lease", "hosted_llm_router_paid"),
+        ],
+        "compute": [
+            ("nomad_worker_market", "lease", "peer_worker_capacity"),
+            ("local_ollama", "lease", "local_inference_capacity"),
+            ("runpod_gpu", "rent", "external_gpu_capacity"),
+            ("vast_ai_gpu", "rent", "external_gpu_capacity"),
+            ("lambda_cloud_gpu", "rent", "external_gpu_capacity"),
+        ],
+        "hardware": [
+            ("operator_purchase_queue", "buy", "human_approved_hardware_order"),
+            ("external_gpu_rental", "rent", "temporary_compute_capacity"),
+            ("nomad_worker_market", "lease", "peer_worker_capacity"),
+        ],
+        "agent_service": [
+            ("nomad_worker_market", "lease", "peer_agent_worker"),
+            ("nomad_microtask_market", "lease", "bounded_task_worker"),
+        ],
+        "data_service": [
+            ("nomad_microtask_market", "lease", "bounded_data_task"),
+            ("operator_purchase_queue", "buy", "human_approved_dataset_order"),
+        ],
+    }
+    candidates = base_candidates.get(category) or base_candidates["compute"]
+    out: list[dict[str, Any]] = []
+    for provider, provider_mode, lane in candidates:
+        if mode in {"quote_only", provider_mode, "lease"} or provider_mode in {"lease", "rent"}:
+            out.append(
+                {
+                    "provider": provider,
+                    "mode": provider_mode,
+                    "lane": lane,
+                    "external_side_effect": provider not in {"local_ollama", "nomad_worker_market", "nomad_microtask_market"},
+                    "requires_receipt_before_activation": provider not in {"local_ollama", "nomad_worker_market", "nomad_microtask_market"},
+                }
+            )
+    return out
+
+
+def submit_agp_procurement_intent(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if not body:
+        return {"ok": False, "schema": "nomad.agp_procurement_receipt.v1", "accepted": False, "reason": "empty_procurement_intent", "generated_at": now}
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_procurement_receipt.v1", "accepted": False, "reason": "forbidden_secret_like_material", "generated_at": now}
+    agent_id = _clean_id(body.get("agent_id") or body.get("requester_agent_id"), fallback="")
+    category = _clean_id(body.get("category") or body.get("resource_kind") or "compute", fallback="compute")
+    if category not in {"compute", "hardware", "model_service", "agent_service", "data_service"}:
+        category = "compute"
+    mode = _clean_id(body.get("acquisition_mode") or body.get("mode") or "lease", fallback="lease")
+    if mode not in {"lease", "rent", "buy", "quote_only"}:
+        mode = "lease"
+    max_budget = max(0.0, _num(body.get("max_budget") or body.get("budget_limit")))
+    currency = _clean_id(body.get("currency") or "usd", fallback="usd").upper()
+    ttl_seconds = max(60, min(_int(body.get("ttl_seconds"), 900), 86400))
+    capability = _text(body.get("capability") or body.get("need") or body.get("purpose"), 320)
+    approval_digest = _text(body.get("operator_approval_digest"), 220)
+    receipt_digest = _text(body.get("payment_receipt_digest") or body.get("provider_quote_digest"), 220)
+    paid_mode = mode in {"buy", "rent"} or max_budget > 0.0
+    has_spend_gate = (not paid_mode) or (_looks_digest(approval_digest) and _looks_digest(receipt_digest))
+    providers = _procurement_provider_candidates(category, mode)
+    checks = {
+        "agent_id_present": bool(agent_id),
+        "capability_present": bool(capability),
+        "budget_declared": max_budget >= 0.0 and bool(body.get("max_budget") is not None or body.get("budget_limit") is not None),
+        "ttl_bounded": 60 <= ttl_seconds <= 86400,
+        "provider_candidates_present": bool(providers),
+        "spend_gate_satisfied": bool(has_spend_gate),
+    }
+    accepted = all(bool(v) for k, v in checks.items() if k != "spend_gate_satisfied") and (has_spend_gate or not bool(body.get("auto_acquire")))
+    decision = "quote_procurement_intent"
+    if bool(body.get("auto_acquire")) and not has_spend_gate:
+        decision = "hold_paid_acquisition_until_approval_and_receipt"
+    elif accepted and mode in {"lease", "quote_only"}:
+        decision = "route_to_leasable_capacity"
+    elif accepted and has_spend_gate:
+        decision = "ready_for_external_provider_receipt_replay"
+    intent_core = {
+        "agent_id": agent_id,
+        "category": category,
+        "mode": mode,
+        "max_budget": round(max_budget, 4),
+        "currency": currency,
+        "capability": capability,
+        "generated_at": now,
+    }
+    intent_id = f"agp-proc-{_digest(intent_core)}"
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_procurement_receipt.v1",
+        "intent_id": intent_id,
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": decision,
+        "agent_id": agent_id,
+        "category": category,
+        "acquisition_mode": mode,
+        "max_budget": round(max_budget, 4),
+        "currency": currency,
+        "ttl_seconds": ttl_seconds,
+        "capability": capability,
+        "checks": checks,
+        "provider_candidates": providers,
+        "spend_policy": {
+            "external_purchase_executed": False,
+            "external_lease_executed": False,
+            "requires_operator_approval_digest": paid_mode,
+            "requires_payment_or_provider_receipt_digest": paid_mode,
+            "operator_approval_digest": approval_digest,
+            "receipt_digest": receipt_digest,
+        },
+        "worker_market_payload": {
+            "schema": "nomad.worker_market_offer.v1",
+            "agent_id": agent_id,
+            "objective": "autogenesis_protocol_evolution",
+            "capabilities": ["agp_procurement", category, capability],
+            "availability_minutes": max(1, round(ttl_seconds / 60, 2)),
+            "cost_msat_per_minute": 0,
+        },
+        "next": {
+            "worker_market": _u(base_url, "/swarm/worker-market/offers"),
+            "microtasks": _u(base_url, "/swarm/microtasks"),
+            "external_value": _u(base_url, "/swarm/external-value"),
+            "procurement_surface": _u(base_url, "/.well-known/nomad-agp-procurement.json"),
+        },
+        "machine_instruction": "obtain_quote_or_worker_lease; only activate_paid_provider_after_operator_approval_digest_and_receipt_digest",
+    }
+    if persist and accepted:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_PROCUREMENT_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False

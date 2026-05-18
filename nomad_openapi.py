@@ -1121,6 +1121,23 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/resource-substrate/retrieve": {
+                "get": {
+                    "summary": "Retrieve RSPL resources by query, kind, state, or entity type during agent execution",
+                    "operationId": "getSwarmResourceSubstrateRetrieve",
+                    "responses": {
+                        "200": {"description": "Read-only RSPL retrieval receipt", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Retrieve RSPL resources by descriptor payload during agent execution",
+                    "operationId": "postSwarmResourceSubstrateRetrieve",
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "200": {"description": "Read-only RSPL retrieval receipt", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+            },
             "/swarm/autogenesis": {
                 "get": {
                     "summary": "AGP RSPL+SEPL protocol surface for bounded self-evolving Nomad resources",
@@ -1136,6 +1153,46 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getAutogenesisWellKnown",
                     "responses": {
                         "200": {"description": "Autogenesis protocol surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-conformance.json": {
+                "get": {
+                    "summary": "Paper-to-runtime AGP conformance map for Nomad",
+                    "operationId": "getAgpConformanceWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP conformance surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-procurement.json": {
+                "get": {
+                    "summary": "Quote-first AGP procurement surface for compute, model, hardware, and service capacity",
+                    "operationId": "getAgpProcurementWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP procurement surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/autogenesis/traces": {
+                "post": {
+                    "summary": "Record AGS Act/Observe/Optimize/Remember execution traces as SEPL triggers",
+                    "operationId": "postSwarmAutogenesisTraces",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Trace accepted and persisted"},
+                        "422": {"description": "Trace missing required AGP loop fields or proof boundary"},
+                    },
+                }
+            },
+            "/swarm/agp/procurement-intents": {
+                "post": {
+                    "summary": "Submit quote-first AGP capacity procurement intent with budget, TTL, and receipt gates",
+                    "operationId": "postSwarmAgpProcurementIntents",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Procurement intent accepted for quote or lease routing"},
+                        "422": {"description": "Procurement intent rejected or held by budget/approval/secret gates"},
                     },
                 }
             },
