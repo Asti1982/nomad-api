@@ -55,7 +55,7 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "prompt": "Return one protocol-drift check with machine-verifiable acceptance criteria for blocker: {blocker}",
     },
     "autogenesis_protocol_evolution": {
-        "problem": "Produce AGP shadow-lane protocol-evolution evidence with RSPL/SEPL gates and verifier-ready receipts.",
+        "problem": "Produce Autogenesis Protocol (AGP) shadow-lane protocol-evolution evidence with RSPL/SEPL gates and verifier-ready receipts.",
         "pain_type": "agent_protocols",
         "capabilities": [
             "autogenesis_protocol_evolution",
@@ -74,7 +74,8 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
             "local_note",
         ],
         "prompt": (
-            "Return one AGP protocol-evolution candidate boundary for blocker '{blocker}' with RSPL entity, "
+            "Return one Autogenesis Protocol (AGP, not graphics hardware) protocol-evolution candidate boundary "
+            "for blocker '{blocker}' with RSPL entity, "
             "SEPL trace reflect/select/improve/evaluate/commit, learnability mask, proof digest, verifier "
             "requirements, and rollback/noop condition. No executable code."
         ),
@@ -1412,6 +1413,15 @@ def _agp_make_brain_witness(
     return {**core, "ok": bool(ok), "accepted": bool(ok), "digest": _agp_brain_digest(core)}
 
 
+def _agp_local_witness_matches_nomad_protocol(local_witness: dict, report: dict) -> bool:
+    text = clean(local_witness.get("capsule") or report.get("local_ollama_note"), 1400).lower()
+    if not text or _is_refusal_note(text):
+        return False
+    if "advanced graphics processing" in text or "graphics processing unit" in text:
+        return False
+    return any(marker in text for marker in ("autogenesis", "rspl", "sepl", "resource substrate", "shadow lane", "nomad"))
+
+
 def _agp_brain_prompt(report: dict, lease: dict | None) -> str:
     compact = {
         "schema": "nomad.agp_verifier_brain_prompt.v1",
@@ -1425,7 +1435,8 @@ def _agp_brain_prompt(report: dict, lease: dict | None) -> str:
         "agp_contract": "RSPL state draft/shadow/tested/weighted/committed; SEPL reflect/select/improve/evaluate/commit; rollback/noop; bounded shadow side effect.",
     }
     return (
-        "Verify this Nomad AGP autonomous cycle request. Return a compact machine capsule only: "
+        "Verify this Nomad Autogenesis Protocol (AGP, not graphics hardware) autonomous cycle request. "
+        "Return a compact machine capsule only: "
         "accept if RSPL/SEPL, bounded side effect, rollback/noop, proof digest, and independent verifier lease are present. "
         + json.dumps(compact, ensure_ascii=True, sort_keys=True)
     )
@@ -1485,7 +1496,7 @@ def _agp_verifier_brain_witness(base_url: str, agent_id: str, timeout: float, re
     local_digest = clean(local_witness.get("digest_hex"), 96)
     local_status = clean(local_witness.get("inference_status"), 80)
     local_model = clean(report.get("ollama_model") or local_witness.get("model"), 128)
-    if local_digest and local_model and local_status == "ok":
+    if local_digest and local_model and local_status == "ok" and _agp_local_witness_matches_nomad_protocol(local_witness, report):
         return {
             **_agp_make_brain_witness(
                 provider="ollama_local",

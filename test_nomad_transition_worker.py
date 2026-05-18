@@ -735,7 +735,7 @@ def test_transition_worker_uses_ollama_witness_as_agp_brain(monkeypatch):
             "machine_objective": "autogenesis_protocol_evolution",
             "ollama_model": "llama3.2:1b",
             "witness_tier": "strong",
-            "local_witness": {"digest_hex": digest, "inference_status": "ok", "capsule": "agp verifier ok"},
+            "local_witness": {"digest_hex": digest, "inference_status": "ok", "capsule": "Nomad RSPL SEPL verifier ok"},
         },
         {"lease_id": "nomad-worker-lease-proposer"},
     )
@@ -745,6 +745,39 @@ def test_transition_worker_uses_ollama_witness_as_agp_brain(monkeypatch):
     assert brain["model"] == "llama3.2:1b"
     assert brain["digest"] == f"sha256:{digest}"
     assert brain["fallback"] is False
+
+
+def test_transition_worker_rejects_graphics_agp_as_brain_witness(monkeypatch):
+    worker = _load_worker()
+    calls = []
+
+    def fake_http(method, url, payload=None, timeout=20.0, redirects_left=4):
+        calls.append((method, url, payload))
+        return {"ok": True, "accepted": True}
+
+    monkeypatch.setattr(worker, "http_json", fake_http)
+    monkeypatch.setenv("NOMAD_AGP_ROLE", "proposer")
+    monkeypatch.setenv("NOMAD_AGP_VERIFIER_AGENT_ID", "agp.verifier")
+    worker._agp_autonomous_cycle_submit(
+        "https://nomad.example",
+        "agp.proposer",
+        3.0,
+        {
+            "machine_objective": "autogenesis_protocol_evolution",
+            "ollama_model": "qwen2.5:0.5b-instruct",
+            "witness_tier": "strong",
+            "local_witness": {
+                "digest_hex": "c" * 64,
+                "inference_status": "ok",
+                "capsule": "AGP means Advanced Graphics Processing Unit.",
+            },
+        },
+        {"lease_id": "nomad-worker-lease-proposer"},
+    )
+
+    brain = calls[0][2]["verifier_brain_witness"]
+    assert brain["provider"] == "deterministic_fallback"
+    assert brain["fallback"] is True
 
 
 def test_transition_worker_verifier_role_skips_autonomous_agp_proposal(monkeypatch):
