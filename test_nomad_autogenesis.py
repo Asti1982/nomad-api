@@ -95,6 +95,8 @@ def test_resource_substrate_exposes_rspl_lifecycle_and_existing_contracts(tmp_pa
     assert surface["version_interface"]["register"].endswith("/swarm/resource-substrate/register")
     assert any(item["resource_id"] == "nomad-opaque-emergence" for item in surface["resources"])
     assert any(item["resource_id"] == "nomad-resource-substrate" for item in surface["resources"])
+    assert any(item["entity_type"] == "environment" for item in surface["resources"])
+    assert any(item["entity_type"] == "memory" for item in surface["resources"])
     assert cli["schema"] == "nomad.resource_substrate.v1"
 
 

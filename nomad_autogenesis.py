@@ -448,6 +448,8 @@ def _default_resources(base_url: str) -> list[dict[str, Any]]:
         ("nomad-variant-forge", "workflow", "/swarm/variant-forge", "committed", 0.73),
         ("nomad-resource-substrate", "json_contract", "/.well-known/nomad-resource-substrate.json", "shadow", 0.66),
         ("nomad-autogenesis", "protocol_layer", "/.well-known/nomad-autogenesis.json", "shadow", 0.64),
+        ("nomad-runtime-environment", "environment", "/.well-known/nomad-runtime-environment.json", "committed", 0.72),
+        ("nomad-execution-memory", "memory", "/.well-known/nomad-execution-memory.json", "committed", 0.72),
     ]
     return [
         {
