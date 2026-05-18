@@ -99,7 +99,7 @@ def test_nomad_public_html_page_exists():
     assert "Swarm Oracle" in text
     assert "Swarm Oracle Android" in text
     assert "/swarm-oracle" in text
-    assert "foreground-only" in text
+    assert "shake once while it is visible" in text
     assert "/downloads/syndiode_gadgets_manifest.json" in text
     assert "/downloads/handyoracle-edge-gadget.apk" in text
     assert "Transition Worker" in text
@@ -242,7 +242,9 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert gadget["download"]["apk_sha256"] == "a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854"
     assert gadget["download"]["apk_size_bytes"] == 125108304
     assert gadget["download"]["release"].endswith("/v0.1.1-foreground-shake")
-    assert any("smollm2_135m_q4km.gguf" in note for note in gadget["installation_notes"])
+    assert any("Tap Download APK" in note for note in gadget["installation_notes"])
+    assert any("shake once" in note for note in gadget["installation_notes"])
+    assert not any("smollm2_135m_q4km.gguf" in note for note in gadget["installation_notes"])
 
 
 def test_handyoracle_public_html_page_exists():
@@ -252,10 +254,15 @@ def test_handyoracle_public_html_page_exists():
     assert "Swarm Oracle by syndiode" in text
     assert "Download APK" in text
     assert "/downloads/handyoracle-edge-gadget.apk" in text
-    assert "not a Google Play Store app" in text
-    assert "Google Play Protect may warn" in text
+    assert "Download the APK directly" in text
+    assert "Android may show an extra warning" in text
+    assert "allow installs from your browser or file manager" in text
+    assert "Foreground shake input only" in text
     assert "/assets/swarm-oracle-app-screenshot.png" in text
-    assert "smollm2_135m_q4km.gguf" in text
+    assert "/assets/swarm-oracle-x-card.png" in text
+    assert "smollm2_135m_q4km.gguf" not in text
+    assert "Google AICore" not in text
+    assert "On-device SLM" not in text
 
 
 def test_handyoracle_public_routes_render_human_page():

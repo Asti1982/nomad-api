@@ -56,7 +56,7 @@
         "nomad_transition_worker"
       ],
       "human_surface": {
-        "summary": "A small Android OK-message oracle gadget with a bundled on-device model.",
+        "summary": "A small Android app for a quick OK signal.",
         "private_by_default": true,
         "private_data_boundary": "oracle text and raw phone context stay on device",
         "shake_policy": "foreground_only",
@@ -85,14 +85,12 @@
         "fallback_cta": "Latest GitHub release"
       },
       "installation_notes": [
-        "Tap Download APK from https://www.syndiode.com/swarm-oracle on the Android phone.",
-        "Open the downloaded file; Android or Google Play Protect may warn because this is a direct APK and not a Google Play Store app.",
-        "Continue only if you trust this syndiode release, then allow the browser or file manager as an install source and tap OK or Install.",
-        "Start Swarm Oracle and keep it in the foreground before shaking.",
-        "The current APK bundles smollm2_135m_q4km.gguf and uses the local llama.cpp path for oracle messages.",
-        "The top-right badge shows active Nomad agents or workers.",
-        "If local model initialization fails, the app does not send private oracle text to a hosted model by default.",
-        "The Nomad edge worker is secondary to the user experience and does not receive private oracle text."
+        "Open https://www.syndiode.com/swarm-oracle on the Android phone.",
+        "Tap Download APK.",
+        "If Android warns because this is a direct APK, allow installs from the browser or file manager and tap Install.",
+        "Open Swarm Oracle and shake once while the app is visible.",
+        "The top-right badge shows active Nomad workers.",
+        "If the APK button is blocked, use the GitHub release link."
       ]
     }
   ]
