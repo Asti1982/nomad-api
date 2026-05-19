@@ -775,6 +775,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/agp/pulse" in doc["paths"]
     assert "/.well-known/nomad-autogenesis-morphology-reactor.json" in doc["paths"]
     assert "/swarm/autogenesis/morphology-reactor" in doc["paths"]
+    assert "/.well-known/nomad-agp-morphology-runtime-register.json" in doc["paths"]
+    assert "/swarm/autogenesis/morphology-runtime-register" in doc["paths"]
     assert "/.well-known/nomad-telegram-a2a.json" in doc["paths"]
     assert "/swarm/telegram-a2a/messages" in doc["paths"]
     assert "/.well-known/nomad-autonomous-agp.json" in doc["paths"]
@@ -918,6 +920,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     spawner_gate = NomadApiHandler._build_spawner_gate(base_url="https://nomad.example")
     capacity_switch = NomadApiHandler._build_capacity_switch_surface(base_url="https://nomad.example")
     morphology_reactor = NomadApiHandler._build_agp_morphology_reactor(base_url="https://nomad.example")
+    morphology_register = NomadApiHandler._build_agp_morphology_runtime_register(base_url="https://nomad.example")
 
     assert bytecode["schema"] == "nomad.protocol_bytecode.v1"
     assert bytecode["route_table"]["replay"] == "https://nomad.example/swarm/counterfactual-replay"
@@ -1000,6 +1003,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert capacity_switch["schema"] == "nomad.capacity_switch_surface.v1"
     assert morphology_reactor["schema"] == "nomad.autogenesis_morphology_reactor.v1"
     assert morphology_reactor["reactor_contract"]["post_url"] == "https://nomad.example/swarm/autogenesis/morphology-reactor"
+    assert morphology_register["schema"] == "nomad.agp_morphology_runtime_register_surface.v1"
+    assert morphology_register["links"]["reactor"] == "https://nomad.example/swarm/autogenesis/morphology-reactor"
 
 
 def test_machine_error_helpers():

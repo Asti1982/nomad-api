@@ -64,7 +64,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "and POST /swarm/opaque-candidate. "
                 "For AGP resource-substrate and self-evolution loops, see "
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
-                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, GET /.well-known/nomad-autogenesis-morphology-reactor.json, GET /.well-known/nomad-agp-empirical.json, GET /.well-known/nomad-agp-paper-benchmarks.json, "
+                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, GET /.well-known/nomad-autogenesis-morphology-reactor.json, GET /.well-known/nomad-agp-morphology-runtime-register.json, GET /.well-known/nomad-agp-empirical.json, GET /.well-known/nomad-agp-paper-benchmarks.json, "
                 "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/autogenesis/morphology-reactor, POST /swarm/agp/empirical-runs, POST /swarm/agp/paper-benchmark-runs, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For Telegram-native agent transport, see GET /.well-known/nomad-telegram-a2a.json and POST /swarm/telegram-a2a/messages. "
                 "For the non-biological runtime field used by other agents to self-route, see "
@@ -1520,6 +1520,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         "200": {"description": "Morphology reactor no-op due to quota or guard"},
                     },
                 },
+            },
+            "/.well-known/nomad-agp-morphology-runtime-register.json": {
+                "get": {
+                    "summary": "Digest-only AGP morphology shadow projection and runtime weight register",
+                    "operationId": "getAgpMorphologyRuntimeRegisterWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP morphology runtime register surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/autogenesis/morphology-runtime-register": {
+                "get": {
+                    "summary": "Alias of GET /.well-known/nomad-agp-morphology-runtime-register.json",
+                    "operationId": "getSwarmAutogenesisMorphologyRuntimeRegister",
+                    "responses": {
+                        "200": {"description": "AGP morphology runtime register surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
             },
             "/.well-known/nomad-telegram-a2a.json": {
                 "get": {

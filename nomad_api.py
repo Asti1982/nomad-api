@@ -52,6 +52,7 @@ from nomad_autogenesis import (
     build_agp_empirical_surface,
     build_agp_model_manager_surface,
     build_agp_morphology_reactor_surface,
+    build_agp_morphology_runtime_register_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
@@ -628,6 +629,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             receipt_predictor={"schema": "nomad.receipt_predictor.v1"},
             external_value_summary=summarize_external_value_ledger(limit=1000, latest_limit=200),
         )
+
+    @classmethod
+    def _build_agp_morphology_runtime_register(cls, *, base_url: str) -> dict:
+        return build_agp_morphology_runtime_register_surface(base_url=base_url)
 
     @classmethod
     def _build_telegram_a2a(cls, *, base_url: str) -> dict:
@@ -1743,6 +1748,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_pulse_surface": f"{b}/.well-known/nomad-agp-pulse.json",
                     "agp_morphology_reactor": f"{b}/swarm/autogenesis/morphology-reactor",
                     "agp_morphology_reactor_surface": f"{b}/.well-known/nomad-autogenesis-morphology-reactor.json",
+                    "agp_morphology_runtime_register": f"{b}/.well-known/nomad-agp-morphology-runtime-register.json",
                     "telegram_a2a": f"{b}/.well-known/nomad-telegram-a2a.json",
                     "telegram_a2a_messages": f"{b}/swarm/telegram-a2a/messages",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
@@ -2193,6 +2199,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/autogenesis/morphology-reactor", "/.well-known/nomad-autogenesis-morphology-reactor.json"}:
             self._json_response(self.__class__._build_agp_morphology_reactor(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis/morphology-runtime-register", "/.well-known/nomad-agp-morphology-runtime-register.json"}:
+            self._json_response(self.__class__._build_agp_morphology_runtime_register(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/telegram-a2a", "/.well-known/nomad-telegram-a2a.json"}:
             self._json_response(self.__class__._build_telegram_a2a(base_url=self._base_url()))
@@ -3441,6 +3450,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/pulse",
                     "/.well-known/nomad-autogenesis-morphology-reactor.json",
                     "/swarm/autogenesis/morphology-reactor",
+                    "/.well-known/nomad-agp-morphology-runtime-register.json",
+                    "/swarm/autogenesis/morphology-runtime-register",
                     "/.well-known/nomad-telegram-a2a.json",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
@@ -4355,6 +4366,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 payload,
                 base_url=base,
                 worker_fleet=worker_fleet,
+                development_surface=self.__class__._build_autogenesis_development_cycles(base_url=base),
+                autogenesis_surface=self.__class__._build_autogenesis(base_url=base, swarm_summary=summary),
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
                 external_value_summary=summarize_external_value_ledger(limit=1000, latest_limit=200),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
@@ -5149,6 +5163,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/paper-report",
                     "/.well-known/nomad-autogenesis-morphology-reactor.json",
                     "/swarm/autogenesis/morphology-reactor",
+                    "/.well-known/nomad-agp-morphology-runtime-register.json",
+                    "/swarm/autogenesis/morphology-runtime-register",
                     "/.well-known/nomad-telegram-a2a.json",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",

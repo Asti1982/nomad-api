@@ -9,6 +9,7 @@ from nomad_autogenesis import (
     build_agp_empirical_surface,
     build_agp_model_manager_surface,
     build_agp_morphology_reactor_surface,
+    build_agp_morphology_runtime_register_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
@@ -876,6 +877,93 @@ def test_agp_morphology_reactor_weighting_requires_positive_receipt(tmp_path, mo
     assert receipt["commit"]["decision"] == "runtime_weight_descriptor_ready"
     assert receipt["commit"]["revenue_state_allowed"] is True
     assert receipt["commit"]["runtime_weight_candidates"]
+
+
+def test_agp_morphology_runtime_register_projects_shadow_and_weights(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
+    ledger = tmp_path / "morphology.jsonl"
+    worker_fleet = {
+        "active_worker_count": 6,
+        "latest_verifier_brain_witness": {
+            "provider": "openrouter_free",
+            "model": "openrouter/free",
+            "status": "ok",
+            "fallback": False,
+            "digest": "sha256:" + "3" * 64,
+        },
+    }
+    external_summary = {
+        "latest_by_external": [{"external_id": "paid:2", "stage": "paid", "settlement_ref": "receipt:ok"}],
+        "revenue_recognized_usd_total": 7.0,
+    }
+
+    run_agp_morphology_reactor(
+        {
+            "agent_id": "agp.proposer",
+            "cell_count": 32,
+            "seed": "runtime-register",
+            "verifier_brain_witness": worker_fleet["latest_verifier_brain_witness"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        external_value_summary=external_summary,
+        ledger_path=ledger,
+    )
+    register = build_agp_morphology_runtime_register_surface(
+        base_url="https://nomad.example",
+        ledger_path=ledger,
+        verifier_agent_id="agp.verifier",
+        verifier_lease_id="nomad-worker-lease-verifier",
+    )
+
+    assert register["schema"] == "nomad.agp_morphology_runtime_register_surface.v1"
+    assert register["source"]["weighted_count"] > 0
+    assert register["shadow_lane_projection"]["projected_count"] > 0
+    assert register["shadow_lane_projection"]["verifier_binding_present"] is True
+    assert register["runtime_weight_register"]["route_count"] > 0
+    projected_payload = register["shadow_lane_projection"]["candidates"][0]["payload"]
+    assert projected_payload["candidate_type"] == "agent-morphology-candidate"
+    assert projected_payload["verifier_receipt_digest"].startswith("sha256:")
+    assert projected_payload["boundedness"]["side_effect_scope"] == "nomad_shadow_lane_only"
+
+
+def test_agp_morphology_reactor_can_submit_projection_with_verifier_lease(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
+    ledger = tmp_path / "morphology.jsonl"
+    worker_fleet = {
+        "active_worker_count": 6,
+        "latest_verifier_brain_witness": {
+            "provider": "openrouter_free",
+            "model": "openrouter/free",
+            "status": "ok",
+            "fallback": False,
+            "digest": "sha256:" + "4" * 64,
+        },
+    }
+    receipt = run_agp_morphology_reactor(
+        {
+            "agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "verifier_lease_id": "nomad-worker-lease-verifier",
+            "project_shadow_lane": True,
+            "shadow_projection_limit": 3,
+            "cell_count": 32,
+            "seed": "shadow-submit",
+            "verifier_brain_witness": worker_fleet["latest_verifier_brain_witness"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        development_surface=build_development_cycles_surface(base_url="https://nomad.example"),
+        autogenesis_surface=build_autogenesis_surface(base_url="https://nomad.example"),
+        verifier_lease_index=_verifier_lease_index(),
+        external_value_summary={"latest_by_external": [], "revenue_recognized_usd_total": 0.0},
+        ledger_path=ledger,
+    )
+
+    assert receipt["shadow_lane_projection"]["submission_requested"] is True
+    assert receipt["aggregate"]["shadow_lane_submitted_count"] == 3
+    assert receipt["aggregate"]["shadow_lane_accepted_count"] == 3
+    assert receipt["shadow_lane_projection"]["receipts"][0]["decision"] == "admit_autogenesis_shadow_lane"
 
 
 def test_agp_empirical_run_measures_candidate_delta_and_verifier_ablation(tmp_path):

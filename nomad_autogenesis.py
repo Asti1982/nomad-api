@@ -3875,6 +3875,186 @@ def _agp_morphology_archive(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _agp_morphology_flatten_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        verifier = _dict(row.get("verifier_brain_witness"))
+        for candidate in _items(row.get("candidates")):
+            item = dict(candidate)
+            item["source_reactor_id"] = row.get("reactor_id", "")
+            item["source_generated_at"] = row.get("generated_at", "")
+            item["source_reactor_digest"] = row.get("reactor_digest", "")
+            item["source_positive_external_receipt_seen"] = bool(
+                _dict(row.get("aggregate")).get("positive_external_receipt_seen")
+                or _dict(row.get("external_value_state")).get("paid_count")
+            )
+            item["source_verifier_brain_witness"] = verifier
+            out.append(item)
+    out.sort(key=lambda item: (_num(item.get("morphology_score")), _text(item.get("proof_digest"), 120)), reverse=True)
+    return out
+
+
+def _agp_morphology_shadow_payload(
+    candidate: dict[str, Any],
+    *,
+    base_url: str,
+    proposer_id: str = "nomad-morphology-reactor",
+    verifier_agent_id: str = "",
+    verifier_lease_id: str = "",
+) -> dict[str, Any]:
+    proof_digest = _text(candidate.get("proof_digest"), 220)
+    local = _dict(candidate.get("local_evaluation"))
+    genome = _dict(candidate.get("genome"))
+    witness = _dict(candidate.get("source_verifier_brain_witness"))
+    verifier_trace_digest = _text(witness.get("digest"), 220)
+    if not _looks_digest(verifier_trace_digest):
+        verifier_trace_digest = f"sha256:{_digest(witness or {'candidate': proof_digest}, length=64)}"
+    variables = [
+        {"name": "topology_weight", "require_grad": True},
+        {"name": "context_mask_weight", "require_grad": True},
+        {"name": "product_packet_weight", "require_grad": True},
+        {"name": "pricing_floor", "require_grad": True},
+        {"name": "routing_policy_weight", "require_grad": True},
+    ]
+    mask = {item["name"]: True for item in variables}
+    evaluation = {
+        "tests_passed": _int(local.get("tests_passed")),
+        "tests_total": _int(local.get("tests_total")),
+        "proof_yield_delta": _num(_dict(candidate.get("fitness")).get("proof_yield")),
+        "settlement_delta": 1.0 if candidate.get("state") == "weighted" else 0.0,
+        "risk_score": _num(_dict(candidate.get("fitness")).get("risk"), 0.18),
+        "novelty": _num(_dict(candidate.get("fitness_extensions")).get("diversity_bonus"), 0.72),
+        "test_digest": f"sha256:{_digest(local, length=64)}",
+    }
+    payload = {
+        "schema": "nomad.agp_morphology_shadow_payload.v1",
+        "agent_id": proposer_id,
+        "proposer_agent_id": proposer_id,
+        "verifier_agent_id": verifier_agent_id,
+        "verifier_lease_id": verifier_lease_id,
+        "candidate_type": "agent-morphology-candidate",
+        "event_type": "agent-morphology-candidate",
+        "objective": "first_verified_receipt_or_proof_yield",
+        "resource_id": f"nomad-agent-morphology-{_digest({'proof': proof_digest, 'cell': candidate.get('cell_id')}, length=16)}",
+        "resource_kind": "workflow",
+        "entity_type": "workflow",
+        "from_version": "morphology-archive",
+        "to_version": f"shadow-{_digest({'proof': proof_digest}, length=12)}",
+        "rollback_ref": _dict(candidate.get("commit_gate")).get("rollback_ref") or f"noop:morphology:{_digest(candidate, length=12)}",
+        "proof_digest": proof_digest,
+        "verifier_trace_digest": verifier_trace_digest,
+        "test_digest": evaluation["test_digest"],
+        "sepl_operator_trace": _items(candidate.get("sepl_operator_trace")),
+        "learnability_mask": mask,
+        "variable_lifting": {"variables": variables},
+        "boundedness": {
+            "ttl_seconds": 300,
+            "side_effect_scope": "nomad_shadow_lane_only",
+            "rollback_available": True,
+            "secrets_free": True,
+        },
+        "evaluation": evaluation,
+        "verifier_evaluation": {
+            "tests_passed": max(1, _int(local.get("tests_passed"))),
+            "tests_total": max(1, _int(local.get("tests_total"))),
+            "verifier_provider": witness.get("provider", ""),
+            "verifier_model": witness.get("model", ""),
+        },
+        "morphology": {
+            "candidate_id": candidate.get("candidate_id"),
+            "cell_id": candidate.get("cell_id"),
+            "state": candidate.get("state"),
+            "morphology_score": candidate.get("morphology_score"),
+            "genome": genome,
+        },
+        "links": {
+            "source_reactor": _u(base_url, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
+            "shadow_lane": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+        },
+        "side_effect_scope": "nomad_shadow_lane_only",
+    }
+    payload["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(payload, payload["verifier_evaluation"])
+    return payload
+
+
+def _agp_morphology_shadow_projection(
+    candidates: list[dict[str, Any]],
+    *,
+    base_url: str,
+    proposer_id: str = "nomad-morphology-reactor",
+    verifier_agent_id: str = "",
+    verifier_lease_id: str = "",
+    limit: int = 8,
+) -> dict[str, Any]:
+    eligible = [
+        item
+        for item in candidates
+        if item.get("state") in {"tested", "weighted"} and _looks_digest(_text(item.get("proof_digest"), 220))
+    ]
+    projected = [
+        {
+            "candidate_id": item.get("candidate_id"),
+            "cell_id": item.get("cell_id"),
+            "state": item.get("state"),
+            "morphology_score": item.get("morphology_score"),
+            "proof_digest": item.get("proof_digest"),
+            "post_url": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "payload": _agp_morphology_shadow_payload(
+                item,
+                base_url=base_url,
+                proposer_id=proposer_id,
+                verifier_agent_id=verifier_agent_id,
+                verifier_lease_id=verifier_lease_id,
+            ),
+        }
+        for item in eligible[: max(0, min(limit, 32))]
+    ]
+    return {
+        "schema": "nomad.agp_morphology_shadow_projection.v1",
+        "eligible_count": len(eligible),
+        "projected_count": len(projected),
+        "requires_independent_verifier_lease": True,
+        "verifier_binding_present": bool(verifier_agent_id and verifier_lease_id),
+        "post_url": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+        "candidates": projected,
+    }
+
+
+def _agp_morphology_runtime_weight_register(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    weighted = [item for item in candidates if item.get("state") == "weighted"]
+    total = sum(_num(item.get("morphology_score")) for item in weighted) or 1.0
+    routes = []
+    for item in weighted[:32]:
+        score = _num(item.get("morphology_score"))
+        witness = _dict(item.get("source_verifier_brain_witness"))
+        routes.append(
+            {
+                "candidate_id": item.get("candidate_id"),
+                "cell_id": item.get("cell_id"),
+                "proof_digest": item.get("proof_digest"),
+                "runtime_weight": round(score / total, 6),
+                "morphology_score": round(score, 4),
+                "product_packet": _dict(item.get("genome")).get("product_packet"),
+                "routing_policy": _dict(item.get("genome")).get("routing_policy"),
+                "verifier_provider": witness.get("provider", ""),
+                "positive_external_receipt_seen": bool(item.get("source_positive_external_receipt_seen")),
+                "side_effect_scope": "descriptor_only_runtime_weight",
+            }
+        )
+    return {
+        "schema": "nomad.agp_morphology_runtime_weight_register.v1",
+        "route_count": len(routes),
+        "routes": routes,
+        "promotion_gate": {
+            "requires_state": "weighted",
+            "requires_positive_external_receipt": True,
+            "requires_nonfallback_verifier": True,
+            "apply_code": False,
+        },
+        "decision": "runtime_weights_available" if routes else "noop_until_weighted_morphology",
+    }
+
+
 def _agp_morphology_pick(seq: tuple[Any, ...], seed: str, offset: int) -> Any:
     if not seq:
         return ""
@@ -4103,6 +4283,7 @@ def build_agp_morphology_reactor_surface(
         "links": {
             "self": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
             "run": _u(root, "/swarm/autogenesis/morphology-reactor"),
+            "runtime_register": _u(root, "/.well-known/nomad-agp-morphology-runtime-register.json"),
             "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "sales_department": _u(root, "/.well-known/nomad-sales-department.json"),
@@ -4114,6 +4295,70 @@ def build_agp_morphology_reactor_surface(
     }
 
 
+def build_agp_morphology_runtime_register_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    projection_limit: int = 8,
+    verifier_agent_id: str = "",
+    verifier_lease_id: str = "",
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_morphology_ledger(ledger_path, limit=240)
+    candidates = _agp_morphology_flatten_candidates(recent)
+    shadow_projection = _agp_morphology_shadow_projection(
+        candidates,
+        base_url=root,
+        verifier_agent_id=_clean_id(verifier_agent_id, fallback=""),
+        verifier_lease_id=_text(verifier_lease_id, 160),
+        limit=projection_limit,
+    )
+    runtime_register = _agp_morphology_runtime_weight_register(candidates)
+    tested_count = sum(1 for item in candidates if item.get("state") in {"tested", "weighted"})
+    weighted_count = sum(1 for item in candidates if item.get("state") == "weighted")
+    checks = {
+        "reactor_receipts_present": bool(recent),
+        "shadow_projection_candidates_present": bool(shadow_projection.get("projected_count")),
+        "runtime_weights_require_weighted_candidates": bool(weighted_count) == bool(runtime_register.get("route_count")),
+        "no_code_apply_in_source_receipts": all(_dict(row.get("commit")).get("apply_code") is False for row in recent) if recent else True,
+        "weighted_candidates_have_paid_receipt_signal": all(
+            bool(item.get("source_positive_external_receipt_seen")) for item in candidates if item.get("state") == "weighted"
+        ),
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.agp_morphology_runtime_register_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "mode": "digest_only_shadow_projection_and_receipt_gated_runtime_weighting",
+        "source": {
+            "reactor": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
+            "reactor_post": _u(root, "/swarm/autogenesis/morphology-reactor"),
+            "reactor_receipt_count": len(recent),
+            "candidate_observation_count": len(candidates),
+            "tested_count": tested_count,
+            "weighted_count": weighted_count,
+        },
+        "quality_diversity_archive": _agp_morphology_archive(recent),
+        "shadow_lane_projection": shadow_projection,
+        "runtime_weight_register": runtime_register,
+        "checks": checks,
+        "promotion_boundary": {
+            "shadow_lane": "tested_or_weighted_morphology_with_proof_digest_can_be_projected_as_payload",
+            "runtime_weight": "weighted_only_after_nonfallback_verifier_and_positive_external_receipt",
+            "code_apply": "not_allowed_by_this_register",
+            "revenue_state": "not_mutated_by_this_register",
+        },
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-morphology-runtime-register.json"),
+            "reactor": _u(root, "/swarm/autogenesis/morphology-reactor"),
+            "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "external_value": _u(root, "/.well-known/nomad-external-value.json"),
+        },
+        "machine_instruction": "post_shadow_projection_payloads_only_after_binding_distinct_verifier_lease; use_runtime_weights_only_when_route_count_positive; never_apply_code_from_register",
+    }
+
+
 def run_agp_morphology_reactor(
     payload: dict[str, Any],
     *,
@@ -4122,6 +4367,9 @@ def run_agp_morphology_reactor(
     sales_surface: dict[str, Any] | None = None,
     receipt_predictor: dict[str, Any] | None = None,
     external_value_summary: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
     persist: bool = True,
 ) -> dict[str, Any]:
@@ -4195,10 +4443,38 @@ def run_agp_morphology_reactor(
     tested_count = sum(1 for item in candidates if item.get("state") in {"tested", "weighted"})
     weighted_count = sum(1 for item in candidates if item.get("state") == "weighted")
     best = candidates[0] if candidates else {}
+    shadow_limit = max(0, min(_int(body.get("shadow_projection_limit"), 8), 32))
+    verifier_agent_id = _clean_id(body.get("verifier_agent_id"), fallback="")
+    verifier_lease_id = _text(body.get("verifier_lease_id"), 160)
+    shadow_projection = _agp_morphology_shadow_projection(
+        candidates,
+        base_url=base_url,
+        proposer_id=proposer_id,
+        verifier_agent_id=verifier_agent_id,
+        verifier_lease_id=verifier_lease_id,
+        limit=shadow_limit,
+    )
+    shadow_lane_receipts: list[dict[str, Any]] = []
+    project_shadow = bool(body.get("project_shadow_lane") or body.get("submit_shadow_lane"))
+    if project_shadow and shadow_projection.get("verifier_binding_present"):
+        for projected in _items(shadow_projection.get("candidates")):
+            payload_for_shadow = _dict(projected.get("payload"))
+            receipt = submit_autogenesis_shadow_candidate(
+                payload_for_shadow,
+                base_url=base_url,
+                autogenesis_surface=autogenesis_surface,
+                development_surface=development_surface,
+                verifier_lease_index=verifier_lease_index,
+                persist=persist,
+            )
+            shadow_lane_receipts.append(receipt)
     aggregate = {
         "candidate_count": len(candidates),
         "tested_count": tested_count,
         "weighted_count": weighted_count,
+        "shadow_projection_count": _int(shadow_projection.get("projected_count")),
+        "shadow_lane_submitted_count": len(shadow_lane_receipts),
+        "shadow_lane_accepted_count": sum(1 for item in shadow_lane_receipts if item.get("accepted")),
         "mean_morphology_score": round(sum(_num(item.get("morphology_score")) for item in candidates) / max(1, len(candidates)), 4),
         "best_score": _num(best.get("morphology_score")),
         "archive_cell_count_before": archive.get("archive_cell_count"),
@@ -4224,6 +4500,19 @@ def run_agp_morphology_reactor(
         },
         "aggregate": aggregate,
         "candidates": candidates,
+        "shadow_lane_projection": {
+            **shadow_projection,
+            "receipts": shadow_lane_receipts,
+            "submission_requested": project_shadow,
+            "submission_decision": (
+                "submitted_to_shadow_lane"
+                if shadow_lane_receipts
+                else "wait_for_verifier_lease_binding"
+                if project_shadow
+                else "projection_only"
+            ),
+        },
+        "runtime_weight_register": _agp_morphology_runtime_weight_register(candidates),
         "commit": {
             "decision": "noop_until_weighted_candidate" if weighted_count == 0 else "runtime_weight_descriptor_ready",
             "apply_code": False,
