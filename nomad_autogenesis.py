@@ -6029,7 +6029,12 @@ def _paper_predictions(payload: dict[str, Any], mode: str) -> dict[str, Any]:
 
 def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     predictions = _paper_predictions(payload, mode)
-    url = _text(source.get("url") or source.get("canonical_url"), 700)
+    supplied_url = _text(source.get("url"), 700)
+    url = supplied_url or (
+        _text(source.get("canonical_url"), 700)
+        if mode == "gpqa_diamond" and _text(source.get("canonical_url"), 700).endswith(".csv")
+        else ""
+    )
     if mode == "gaia" and not (source.get("path") or source.get("url")):
         return {
             "mode": mode,
