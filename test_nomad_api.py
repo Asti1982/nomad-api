@@ -763,6 +763,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/agp/evaluations" in doc["paths"]
     assert "/.well-known/nomad-agp-benchmark-suite.json" in doc["paths"]
     assert "/swarm/agp/benchmark-suites" in doc["paths"]
+    assert "/.well-known/nomad-agp-empirical.json" in doc["paths"]
+    assert "/swarm/agp/empirical-runs" in doc["paths"]
     assert "/.well-known/nomad-agp-durable-ledger.json" in doc["paths"]
     assert "/swarm/agp/durable-ledger" in doc["paths"]
     assert "/.well-known/nomad-agp-paper-report.json" in doc["paths"]

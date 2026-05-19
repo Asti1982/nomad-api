@@ -49,6 +49,7 @@ from nomad_autogenesis import (
     build_agp_context_manager_surface,
     build_agp_durable_ledger_surface,
     build_agp_evaluation_surface,
+    build_agp_empirical_surface,
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
@@ -78,6 +79,7 @@ from nomad_autogenesis import (
     run_agp_orchestration,
     run_agp_context_operation,
     run_agp_benchmark_suite,
+    run_agp_empirical_evaluation,
     run_agp_optimizer_step,
     run_agp_pulse,
     run_autonomous_agp_cycle,
@@ -563,6 +565,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_agp_benchmark_suite(cls, *, base_url: str) -> dict:
         return build_agp_benchmark_suite_surface(base_url=base_url)
+
+    @classmethod
+    def _build_agp_empirical(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        return build_agp_empirical_surface(base_url=base_url, worker_fleet=worker_fleet)
 
     @classmethod
     def _build_agp_durable_ledger(cls, *, base_url: str) -> dict:
@@ -1701,6 +1711,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_evaluations": f"{b}/swarm/agp/evaluations",
                     "agp_benchmark_suite": f"{b}/.well-known/nomad-agp-benchmark-suite.json",
                     "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
+                    "agp_empirical": f"{b}/.well-known/nomad-agp-empirical.json",
+                    "agp_empirical_runs": f"{b}/swarm/agp/empirical-runs",
                     "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
                     "agp_pulse": f"{b}/swarm/agp/pulse",
@@ -2137,6 +2149,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/benchmark-suite", "/.well-known/nomad-agp-benchmark-suite.json"}:
             self._json_response(self.__class__._build_agp_benchmark_suite(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/empirical", "/.well-known/nomad-agp-empirical.json"}:
+            self._json_response(self.__class__._build_agp_empirical(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/durable-ledger", "/.well-known/nomad-agp-durable-ledger.json"}:
             self._json_response(self.__class__._build_agp_durable_ledger(base_url=self._base_url()))
@@ -3382,6 +3397,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/evaluations",
                     "/.well-known/nomad-agp-benchmark-suite.json",
                     "/swarm/agp/benchmark-suites",
+                    "/.well-known/nomad-agp-empirical.json",
+                    "/swarm/agp/empirical-runs",
                     "/.well-known/nomad-agp-durable-ledger.json",
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
@@ -4189,6 +4206,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             result = run_agp_benchmark_suite(payload, base_url=base)
             self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/empirical-runs":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            result = run_agp_empirical_evaluation(
+                payload,
+                base_url=base,
+                worker_fleet=worker_fleet,
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
         if parsed.path == "/swarm/agp/pulse":

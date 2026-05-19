@@ -6,6 +6,7 @@ from nomad_autogenesis import (
     build_agp_context_manager_surface,
     build_agp_durable_ledger_surface,
     build_agp_evaluation_surface,
+    build_agp_empirical_surface,
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
@@ -31,6 +32,7 @@ from nomad_autogenesis import (
     register_agp_prompt_template,
     retrieve_resource,
     run_agp_benchmark_suite,
+    run_agp_empirical_evaluation,
     run_agp_orchestration,
     run_agp_context_operation,
     run_agp_optimizer_step,
@@ -284,6 +286,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     prompt_ledger = tmp_path / "prompts.jsonl"
     benchmark_ledger = tmp_path / "benchmarks.jsonl"
     version_lineage_ledger = tmp_path / "version_lineage.jsonl"
+    empirical_ledger = tmp_path / "empirical.jsonl"
     substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
 
     bus_surface = build_agp_agent_bus_surface(
@@ -420,6 +423,23 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         benchmark_ledger_path=benchmark_ledger,
         version_lineage_ledger_path=version_lineage_ledger,
     )
+    empirical = run_agp_empirical_evaluation(
+        {
+            "agent_id": "agp.planner",
+            "cycle_count": 12,
+            "verifier_brain_witness": {
+                "accepted": True,
+                "provider": "ollama_local",
+                "model": "llama-test",
+                "digest": "sha256:" + "8" * 64,
+                "fallback": False,
+            },
+        },
+        base_url="https://nomad.example",
+        worker_fleet={"active_worker_count": 2},
+        ledger_path=empirical_ledger,
+        benchmark_ledger_path=benchmark_ledger,
+    )
     conformance = build_agp_conformance_surface(
         base_url="https://nomad.example",
         resource_substrate=substrate,
@@ -438,6 +458,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         prompt_ledger_path=prompt_ledger,
         benchmark_ledger_path=benchmark_ledger,
         version_lineage_ledger_path=version_lineage_ledger,
+        empirical_ledger_path=empirical_ledger,
     )
 
     assert bus_surface["schema"] == "nomad.agp_agent_bus.v1"
@@ -468,6 +489,8 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
         "watchdog_trigger",
     ]
     assert orchestration["accepted"] is True
+    assert empirical["accepted"] is True
+    assert empirical["aggregate"]["decision_quality_delta"] > 0
     assert {item["step"] for item in orchestration["orchestration_chain"]} >= {
         "agent_bus_message",
         "plan",
@@ -490,6 +513,7 @@ def test_agp_agent_bus_plan_and_orchestration_chain_close_ags_loop(tmp_path):
     assert conformance["checks"]["real_prompt_template_present"] is True
     assert conformance["checks"]["real_benchmark_suite_present"] is True
     assert conformance["checks"]["real_version_lineage_present"] is True
+    assert conformance["checks"]["real_empirical_multi_cycle_delta_present"] is True
     assert conformance["checks"]["real_trace_sample_present"] is True
     assert conformance["checks"]["rspl_five_entity_types_present"] is True
     assert conformance["checks"]["rspl_agent_outputs_registered"] is True
@@ -758,6 +782,47 @@ def test_agp_pulse_records_pressure_benchmarks_and_watchdog_trigger(tmp_path):
     assert receipt["runtime_routing"]["accepted"] is True
     assert receipt["quota_usage"]["paid_calls"] == 0
     assert receipt["watchdog"]["schema"] == "nomad.autonomous_agp_watchdog_receipt.v1"
+
+
+def test_agp_empirical_run_measures_candidate_delta_and_verifier_ablation(tmp_path):
+    empirical_ledger = tmp_path / "empirical.jsonl"
+    benchmark_ledger = tmp_path / "benchmarks.jsonl"
+    worker_fleet = {
+        "active_worker_count": 2,
+        "latest_verifier_brain_witness": {
+            "accepted": True,
+            "provider": "ollama_local",
+            "model": "llama-test",
+            "digest": "sha256:" + "a" * 64,
+            "fallback": False,
+        },
+    }
+    surface = build_agp_empirical_surface(
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        ledger_path=empirical_ledger,
+    )
+    run = run_agp_empirical_evaluation(
+        {
+            "agent_id": "agp.empirical",
+            "cycle_count": 12,
+            "max_model_calls_per_day": 0,
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        ledger_path=empirical_ledger,
+        benchmark_ledger_path=benchmark_ledger,
+    )
+
+    assert surface["schema"] == "nomad.agp_empirical_surface.v1"
+    assert surface["claim_discipline"]["code_mutation_allowed"] is False
+    assert run["schema"] == "nomad.agp_empirical_run_receipt.v1"
+    assert run["accepted"] is True
+    assert run["aggregate"]["decision_quality_delta"] > 0
+    assert run["benchmark_suite"]["accepted"] is True
+    assert run["verifier_ablation"]["nonfallback_ai_verifier_arm"]["observed"] is True
+    assert run["paper_grade_claim_ready"] is True
+    assert run["side_effect_scope"] == "agp_empirical_receipts_only"
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

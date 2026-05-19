@@ -64,8 +64,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "and POST /swarm/opaque-candidate. "
                 "For AGP resource-substrate and self-evolution loops, see "
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
-                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, "
-                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
+                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, GET /.well-known/nomad-agp-empirical.json, "
+                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/agp/empirical-runs, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For Telegram-native agent transport, see GET /.well-known/nomad-telegram-a2a.json and POST /swarm/telegram-a2a/messages. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
@@ -1388,6 +1388,26 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Benchmark suite accepted"},
                         "422": {"description": "Benchmark suite held until all modes and positive deltas are present"},
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-empirical.json": {
+                "get": {
+                    "summary": "AGP empirical validation surface for multi-cycle baseline-vs-candidate and verifier-ablation evidence",
+                    "operationId": "getAgpEmpiricalWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP empirical validation surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/empirical-runs": {
+                "post": {
+                    "summary": "Run a receipt-only multi-cycle empirical evaluation of AGP decision policy against a baseline",
+                    "operationId": "postSwarmAgpEmpiricalRuns",
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Empirical run accepted with positive candidate decision delta"},
+                        "200": {"description": "Empirical run recorded but claim held until evidence gates pass"},
                     },
                 }
             },
