@@ -176,7 +176,11 @@ from nomad_sales_department_swarm import (
     evaluate_sales_department_event,
 )
 from nomad_acquisition_ignition import build_acquisition_ignition_surface, run_acquisition_ignition
-from nomad_resolution_ladder import build_resolution_ladder_surface, evaluate_resolution_ladder_event
+from nomad_resolution_ladder import (
+    build_resolution_ladder_surface,
+    build_resolution_runtime_register_surface,
+    evaluate_resolution_ladder_event,
+)
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -845,6 +849,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_resolution_ladder(cls, *, base_url: str) -> dict:
         return build_resolution_ladder_surface(base_url=base_url)
+
+    @classmethod
+    def _build_resolution_runtime_register(cls, *, base_url: str) -> dict:
+        return build_resolution_runtime_register_surface(base_url=base_url)
 
     @classmethod
     def _build_external_value_surface(cls, *, base_url: str) -> dict:
@@ -1729,6 +1737,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "acquisition_ignite": f"{b}/swarm/acquisition/ignite",
                     "resolution_ladder": f"{b}/.well-known/nomad-resolution-ladder.json",
                     "resolution_ladder_events": f"{b}/swarm/resolution-ladder/events",
+                    "resolution_runtime_register": f"{b}/.well-known/nomad-resolution-runtime-register.json",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -2122,6 +2131,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/resolution-ladder", "/.well-known/nomad-resolution-ladder.json"}:
             self._json_response(self.__class__._build_resolution_ladder(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/resolution-runtime-register", "/.well-known/nomad-resolution-runtime-register.json"}:
+            self._json_response(self.__class__._build_resolution_runtime_register(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):

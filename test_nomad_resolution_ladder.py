@@ -1,4 +1,8 @@
-from nomad_resolution_ladder import build_resolution_ladder_surface, evaluate_resolution_ladder_event
+from nomad_resolution_ladder import (
+    build_resolution_ladder_surface,
+    build_resolution_runtime_register_surface,
+    evaluate_resolution_ladder_event,
+)
 from nomad_openapi import build_openapi_document
 
 
@@ -93,6 +97,14 @@ def test_resolution_ladder_commits_runtime_weight_only_with_paid_receipt(tmp_pat
     assert receipt["decision"] == "commit_runtime_weight"
     assert receipt["runtime_weight_allowed"] is True
     assert receipt["runtime_weight_delta"] > 0
+    assert receipt["receipt_refs"]["paid_receipt_ref"] == "stripe:test:paid-1"
+
+    register = build_resolution_runtime_register_surface(base_url="https://nomad.example", ledger_path=ledger)
+    assert register["schema"] == "nomad.resolution_runtime_register.v1"
+    assert register["routing_contract"]["runtime_weight_requires_paid_receipt"] is True
+    assert register["summary"]["runtime_route_count"] == 1
+    assert register["summary"]["shadow_route_count"] == 0
+    assert register["runtime_routes"][0]["receipt_refs"]["paid_receipt_ref"] == "stripe:test:paid-1"
 
 
 def test_resolution_ladder_blocks_self_verification_and_duplicate_proofs(tmp_path):
@@ -118,8 +130,21 @@ def test_resolution_ladder_blocks_self_verification_and_duplicate_proofs(tmp_pat
     assert blocked["shadow_weight_allowed"] is False
 
 
+def test_resolution_runtime_register_keeps_unpaid_receipts_in_shadow(tmp_path):
+    ledger = tmp_path / "resolution.jsonl"
+    evaluate_resolution_ladder_event(_payload(), ledger_path=ledger)
+
+    register = build_resolution_runtime_register_surface(base_url="https://nomad.example", ledger_path=ledger)
+
+    assert register["summary"]["runtime_route_count"] == 0
+    assert register["summary"]["shadow_route_count"] == 1
+    assert register["shadow_routes"][0]["runtime"] is False
+    assert register["routing_contract"]["shadow_routes_receive_production_traffic"] is False
+
+
 def test_resolution_ladder_is_exposed_in_openapi():
     doc = build_openapi_document(base_url="https://nomad.example")
 
     assert "/.well-known/nomad-resolution-ladder.json" in doc["paths"]
     assert "/swarm/resolution-ladder/events" in doc["paths"]
+    assert "/.well-known/nomad-resolution-runtime-register.json" in doc["paths"]

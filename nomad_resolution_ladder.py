@@ -20,6 +20,7 @@ from nomad_state_paths import state_file
 
 SCHEMA = "nomad.proof_of_resolution_ladder.v1"
 RECEIPT_SCHEMA = "nomad.proof_of_resolution_receipt.v1"
+RUNTIME_REGISTER_SCHEMA = "nomad.resolution_runtime_register.v1"
 DEFAULT_LEDGER_PATH = Path("nomad_resolution_ladder_ledger.jsonl")
 MAX_RECENT = 80
 
@@ -380,6 +381,7 @@ def build_resolution_ladder_surface(
         "links": {
             "self": _u(root, "/.well-known/nomad-resolution-ladder.json"),
             "post": _u(root, "/swarm/resolution-ladder/events"),
+            "runtime_register": _u(root, "/.well-known/nomad-resolution-runtime-register.json"),
             "worker_lease": _u(root, "/swarm/workers/lease"),
             "worker_complete": _u(root, "/swarm/workers/complete"),
             "morphology_register": _u(root, "/.well-known/nomad-agp-morphology-runtime-register.json"),
@@ -457,6 +459,13 @@ def evaluate_resolution_ladder_event(
         "side_effect_scope": _side_effect_scope(body),
         "ttl_sec": _int(body.get("ttl_sec") or _dict(body.get("task_contract")).get("ttl_sec")),
         "rollback_ref": _text(body.get("rollback_ref") or _dict(body.get("task_contract")).get("rollback_ref") or body.get("noop_ref"), 220),
+        "receipt_refs": {
+            "public_receipt_ref": _text(_dict(body.get("receipt")).get("receipt_ref") or body.get("receipt_ref"), 260),
+            "paid_receipt_ref": _text(_dict(body.get("receipt")).get("paid_receipt_ref") or body.get("paid_receipt_ref"), 260),
+            "settlement_ref": _text(_dict(body.get("receipt")).get("settlement_ref") or body.get("settlement_ref"), 260),
+            "currency": _text(_dict(body.get("receipt")).get("currency") or body.get("currency"), 20),
+            "amount": _num(_dict(body.get("receipt")).get("amount") if "amount" in _dict(body.get("receipt")) else body.get("paid_amount")),
+        },
         "fitness": {
             "proof_yield": _clamp(_num(_dict(body.get("metrics")).get("candidate_score"), 1.0 if checks.get("benchmark_delta") else 0.0)),
             "settlement_delta": _clamp(_num(_dict(body.get("metrics")).get("settlement_delta") or body.get("settlement_delta"))),
@@ -478,3 +487,77 @@ def evaluate_resolution_ladder_event(
     else:
         row["persisted"] = False
     return row
+
+
+def _route_from_receipt(row: dict[str, Any], *, runtime: bool) -> dict[str, Any]:
+    proof_digest = _text(row.get("proof_digest"), 220)
+    worker_id = _text(row.get("worker_id") or row.get("agent_id"), 120)
+    route_id = f"resolution-route-{_digest({'proof': proof_digest, 'worker': worker_id, 'runtime': runtime}, length=16)}"
+    refs = _dict(row.get("receipt_refs"))
+    return {
+        "route_id": route_id,
+        "task_id": _text(row.get("task_id"), 160),
+        "worker_id": worker_id,
+        "verifier_id": _text(row.get("verifier_id"), 120),
+        "proof_digest": proof_digest,
+        "lifecycle_state": _text(row.get("lifecycle_state"), 80),
+        "selection_score": _num(row.get("selection_score")),
+        "weight_delta": _num(row.get("runtime_weight_delta") if runtime else row.get("shadow_weight_delta")),
+        "runtime": runtime,
+        "side_effect_scope": _text(row.get("side_effect_scope"), 120),
+        "rollback_ref": _text(row.get("rollback_ref"), 220),
+        "receipt_refs": refs,
+    }
+
+
+def build_resolution_runtime_register_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Project resolution receipts into shadow and runtime routing tables."""
+    root = (base_url or "").strip().rstrip("/")
+    recent = read_resolution_ladder_ledger(ledger_path)
+    runtime_routes = [
+        _route_from_receipt(row, runtime=True)
+        for row in recent
+        if bool(row.get("runtime_weight_allowed")) and _num(row.get("runtime_weight_delta")) > 0.0
+    ]
+    shadow_routes = [
+        _route_from_receipt(row, runtime=False)
+        for row in recent
+        if bool(row.get("shadow_weight_allowed")) and not bool(row.get("runtime_weight_allowed"))
+    ]
+    runtime_routes.sort(key=lambda item: (_num(item.get("weight_delta")), _num(item.get("selection_score"))), reverse=True)
+    shadow_routes.sort(key=lambda item: (_num(item.get("weight_delta")), _num(item.get("selection_score"))), reverse=True)
+    return {
+        "ok": True,
+        "schema": RUNTIME_REGISTER_SCHEMA,
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "mode": "paid_receipt_only_runtime_routing_from_resolution_ladder",
+        "routing_contract": {
+            "runtime_routes_source": "resolution_ladder_receipts_with_runtime_weight_allowed_true",
+            "shadow_routes_source": "public_or_tested_resolution_receipts_without_paid_receipt",
+            "runtime_weight_requires_paid_receipt": True,
+            "shadow_routes_receive_production_traffic": False,
+            "duplicate_proofs_excluded": True,
+            "rollback_required": True,
+        },
+        "summary": {
+            "recent_receipt_count": len(recent),
+            "runtime_route_count": len(runtime_routes),
+            "shadow_route_count": len(shadow_routes),
+            "total_runtime_weight_delta": round(sum(_num(item.get("weight_delta")) for item in runtime_routes), 4),
+            "total_shadow_weight_delta": round(sum(_num(item.get("weight_delta")) for item in shadow_routes), 4),
+        },
+        "runtime_routes": runtime_routes[:64],
+        "shadow_routes": shadow_routes[:64],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-resolution-runtime-register.json"),
+            "resolution_ladder": _u(root, "/.well-known/nomad-resolution-ladder.json"),
+            "resolution_events": _u(root, "/swarm/resolution-ladder/events"),
+            "agp_readiness": _u(root, "/.well-known/nomad-agp-paper-grade-readiness.json"),
+        },
+        "machine_instruction": "production_runtime_routing_must_use_runtime_routes_only; shadow_routes_are_training_pressure_until_paid_receipt",
+    }
