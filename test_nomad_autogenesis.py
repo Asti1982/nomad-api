@@ -10,6 +10,7 @@ from nomad_autogenesis import (
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
+    build_agp_paper_benchmark_surface,
     build_agp_pulse_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
@@ -34,6 +35,7 @@ from nomad_autogenesis import (
     run_agp_benchmark_suite,
     run_agp_empirical_evaluation,
     run_agp_orchestration,
+    run_agp_paper_benchmark_evaluation,
     run_agp_context_operation,
     run_agp_optimizer_step,
     run_agp_pulse,
@@ -823,6 +825,85 @@ def test_agp_empirical_run_measures_candidate_delta_and_verifier_ablation(tmp_pa
     assert run["verifier_ablation"]["nonfallback_ai_verifier_arm"]["observed"] is True
     assert run["paper_grade_claim_ready"] is True
     assert run["side_effect_scope"] == "agp_empirical_receipts_only"
+
+
+def test_agp_paper_benchmark_adapter_gates_and_evaluates_authorized_data(tmp_path):
+    ledger = tmp_path / "paper_bench.jsonl"
+    bench_ledger = tmp_path / "benchmarks.jsonl"
+    gpqa = tmp_path / "gpqa.csv"
+    aime = tmp_path / "aime.jsonl"
+    gaia = tmp_path / "gaia.jsonl"
+    code = tmp_path / "code.jsonl"
+    gpqa.write_text("id,question,answer\nq1,science?,A\nq2,science2?,B\n", encoding="utf-8")
+    aime.write_text(
+        "\n".join(
+            [
+                json.dumps({"id": "a1", "problem": "1+1", "answer": "2"}),
+                json.dumps({"id": "a2", "problem": "2+2", "answer": "4"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    gaia.write_text(
+        "\n".join(
+            [
+                json.dumps({"id": "g1", "question": "capital", "answer": "Paris"}),
+                json.dumps({"id": "g2", "question": "color", "answer": "blue"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    code.write_text(
+        "\n".join(
+            [
+                json.dumps({"task_id": "c1", "prompt": "pass", "answer": "passed"}),
+                json.dumps({"task_id": "c2", "prompt": "pass", "answer": "passed"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    surface = build_agp_paper_benchmark_surface(base_url="https://nomad.example", ledger_path=ledger)
+    blocked = run_agp_paper_benchmark_evaluation(
+        {"agent_id": "agp.benchmark"},
+        base_url="https://nomad.example",
+        ledger_path=ledger,
+        benchmark_ledger_path=bench_ledger,
+        persist=False,
+    )
+    evaluated = run_agp_paper_benchmark_evaluation(
+        {
+            "agent_id": "agp.benchmark",
+            "datasets": {
+                "gpqa_diamond": {"path": str(gpqa)},
+                "aime": {"path": str(aime)},
+                "gaia": {"path": str(gaia)},
+                "leetcode": {"path": str(code)},
+            },
+            "predictions": {
+                "gpqa_diamond": {"q1": "A", "q2": "B"},
+                "aime": {"a1": "2", "a2": "4"},
+                "gaia": {"g1": "Paris", "g2": "blue"},
+                "leetcode": {"c1": "passed", "c2": "passed"},
+            },
+            "baselines": {"gpqa_diamond": 0.0, "aime": 0.0, "gaia": 0.0, "leetcode": 0.0},
+        },
+        base_url="https://nomad.example",
+        ledger_path=ledger,
+        benchmark_ledger_path=bench_ledger,
+    )
+
+    assert surface["schema"] == "nomad.agp_paper_benchmark_surface.v1"
+    assert surface["truth_boundary"]["no_lite_fixture_substitution_for_full_claim"] is True
+    assert blocked["accepted"] is False
+    assert blocked["blocked_modes"]
+    assert evaluated["schema"] == "nomad.agp_paper_benchmark_run_receipt.v1"
+    assert evaluated["accepted"] is False
+    assert set(evaluated["evaluated_modes"]) == {"gpqa_diamond", "aime", "gaia", "leetcode"}
+    assert all(item["status"] == "evaluated" for item in evaluated["mode_results"])
+    assert evaluated["checks"]["all_required_modes_evaluated"] is True
+    assert evaluated["checks"]["all_datasets_full_enough"] is False
+    assert evaluated["paper_grade_full_benchmark_ready"] is False
+    assert evaluated["side_effect_scope"] == "paper_benchmark_receipts_only"
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

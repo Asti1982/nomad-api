@@ -64,8 +64,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "and POST /swarm/opaque-candidate. "
                 "For AGP resource-substrate and self-evolution loops, see "
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
-                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, GET /.well-known/nomad-agp-empirical.json, "
-                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/agp/empirical-runs, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
+                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, GET /.well-known/nomad-agp-empirical.json, GET /.well-known/nomad-agp-paper-benchmarks.json, "
+                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/agp/empirical-runs, POST /swarm/agp/paper-benchmark-runs, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For Telegram-native agent transport, see GET /.well-known/nomad-telegram-a2a.json and POST /swarm/telegram-a2a/messages. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
@@ -1408,6 +1408,26 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "202": {"description": "Empirical run accepted with positive candidate decision delta"},
                         "200": {"description": "Empirical run recorded but claim held until evidence gates pass"},
+                    },
+                }
+            },
+            "/.well-known/nomad-agp-paper-benchmarks.json": {
+                "get": {
+                    "summary": "Full paper benchmark adapter surface for GPQA, AIME, GAIA, and LeetCode-compatible evaluations",
+                    "operationId": "getAgpPaperBenchmarksWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP full paper benchmark adapter surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/paper-benchmark-runs": {
+                "post": {
+                    "summary": "Evaluate supplied predictions against authorized full GPQA/AIME/GAIA/LeetCode-compatible datasets",
+                    "operationId": "postSwarmAgpPaperBenchmarkRuns",
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Full paper benchmark run accepted"},
+                        "200": {"description": "Run blocked by missing dataset, predictions, or license/access gate"},
                     },
                 }
             },

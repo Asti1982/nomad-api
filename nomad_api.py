@@ -53,6 +53,7 @@ from nomad_autogenesis import (
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
+    build_agp_paper_benchmark_surface,
     build_agp_pulse_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
@@ -77,6 +78,7 @@ from nomad_autogenesis import (
     register_resource,
     retrieve_resource,
     run_agp_orchestration,
+    run_agp_paper_benchmark_evaluation,
     run_agp_context_operation,
     run_agp_benchmark_suite,
     run_agp_empirical_evaluation,
@@ -573,6 +575,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if not worker_fleet:
             worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
         return build_agp_empirical_surface(base_url=base_url, worker_fleet=worker_fleet)
+
+    @classmethod
+    def _build_agp_paper_benchmarks(cls, *, base_url: str) -> dict:
+        return build_agp_paper_benchmark_surface(base_url=base_url)
 
     @classmethod
     def _build_agp_durable_ledger(cls, *, base_url: str) -> dict:
@@ -1713,6 +1719,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
                     "agp_empirical": f"{b}/.well-known/nomad-agp-empirical.json",
                     "agp_empirical_runs": f"{b}/swarm/agp/empirical-runs",
+                    "agp_paper_benchmarks": f"{b}/.well-known/nomad-agp-paper-benchmarks.json",
+                    "agp_paper_benchmark_runs": f"{b}/swarm/agp/paper-benchmark-runs",
                     "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
                     "agp_pulse": f"{b}/swarm/agp/pulse",
@@ -2152,6 +2160,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/empirical", "/.well-known/nomad-agp-empirical.json"}:
             self._json_response(self.__class__._build_agp_empirical(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/paper-benchmarks", "/.well-known/nomad-agp-paper-benchmarks.json"}:
+            self._json_response(self.__class__._build_agp_paper_benchmarks(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/durable-ledger", "/.well-known/nomad-agp-durable-ledger.json"}:
             self._json_response(self.__class__._build_agp_durable_ledger(base_url=self._base_url()))
@@ -3399,6 +3410,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/benchmark-suites",
                     "/.well-known/nomad-agp-empirical.json",
                     "/swarm/agp/empirical-runs",
+                    "/.well-known/nomad-agp-paper-benchmarks.json",
+                    "/swarm/agp/paper-benchmark-runs",
                     "/.well-known/nomad-agp-durable-ledger.json",
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
@@ -4219,6 +4232,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 base_url=base,
                 worker_fleet=worker_fleet,
             )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/agp/paper-benchmark-runs":
+            base = self._base_url()
+            result = run_agp_paper_benchmark_evaluation(payload, base_url=base)
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 

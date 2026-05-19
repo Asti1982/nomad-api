@@ -9,7 +9,10 @@ more weight.
 from __future__ import annotations
 
 import base64
+import csv
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
@@ -81,6 +84,9 @@ DEFAULT_AGP_PULSE_LEDGER_PATH = Path(
 DEFAULT_AGP_EMPIRICAL_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_EMPIRICAL_LEDGER_PATH", "nomad_agp_empirical_ledger.jsonl")
 )
+DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_PAPER_BENCHMARK_LEDGER_PATH", "nomad_agp_paper_benchmark_ledger.jsonl")
+)
 DEFAULT_AGP_SQLITE_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH", "nomad_agp_ledger.sqlite3")
 )
@@ -142,6 +148,44 @@ AGP_EMPIRICAL_FIXTURES = (
         "mode": "leetcode",
         "fixture_id": "leetcode-lite-lineage-dedupe",
         "measured_skill": "duplicate lineage detection before runtime weight promotion",
+    },
+)
+AGP_PAPER_BENCHMARK_SOURCES = (
+    {
+        "mode": "gpqa_diamond",
+        "dataset_id": "gpqa_diamond",
+        "canonical_url": "https://huggingface.co/datasets/Wanfq/gpqa/resolve/main/gpqa_diamond.csv",
+        "format": "csv",
+        "expected_min_examples": 198,
+        "license": "cc-by-4.0",
+        "gate": "remote_fetch_or_local_csv",
+    },
+    {
+        "mode": "aime",
+        "dataset_id": "Maxwell-Jia/AIME_2024",
+        "canonical_url": "https://huggingface.co/datasets/Maxwell-Jia/AIME_2024",
+        "format": "parquet_or_local_jsonl",
+        "expected_min_examples": 30,
+        "license": "mit",
+        "gate": "local_jsonl_or_optional_parquet_dependency",
+    },
+    {
+        "mode": "gaia",
+        "dataset_id": "gaia-benchmark/GAIA",
+        "canonical_url": "https://huggingface.co/datasets/gaia-benchmark/GAIA",
+        "format": "gated_dataset",
+        "expected_min_examples": 450,
+        "license": "gated_no_redistribution",
+        "gate": "requires_local_authorized_copy_or_hf_token",
+    },
+    {
+        "mode": "leetcode",
+        "dataset_id": "leetcode_export_or_humaneval_proxy",
+        "canonical_url": "https://github.com/openai/human-eval",
+        "format": "local_results_or_humaneval_jsonl_gz",
+        "expected_min_examples": 164,
+        "license": "leetcode_requires_user_export; humaneval_proxy_mit",
+        "gate": "no_proprietary_leetcode_redistribution",
     },
 )
 AGP_VERSION_ARTIFACT_TYPES = (
@@ -866,6 +910,10 @@ def _agp_pulse_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT
 
 def _agp_empirical_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_EMPIRICAL_LEDGER_PATH, limit=limit)
+
+
+def _agp_paper_benchmark_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -3948,6 +3996,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "version_lineage": DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH,
         "pulse": DEFAULT_AGP_PULSE_LEDGER_PATH,
         "empirical_runs": DEFAULT_AGP_EMPIRICAL_LEDGER_PATH,
+        "paper_benchmark_runs": DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH,
     }
     sqlite_streams: list[dict[str, Any]] = []
     sqlite_total_rows = 0
@@ -5846,6 +5895,337 @@ def run_agp_empirical_evaluation(
     }
     if persist:
         _append_jsonl(row, ledger_path or DEFAULT_AGP_EMPIRICAL_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def _paper_benchmark_sources_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    body = _dict(payload)
+    sources = body.get("datasets") if isinstance(body.get("datasets"), dict) else {}
+    out: dict[str, dict[str, Any]] = {}
+    env_map = {
+        "gpqa_diamond": ("NOMAD_AGP_GPQA_DATASET_PATH", "NOMAD_AGP_GPQA_DATASET_URL"),
+        "aime": ("NOMAD_AGP_AIME_DATASET_PATH", "NOMAD_AGP_AIME_DATASET_URL"),
+        "gaia": ("NOMAD_AGP_GAIA_DATASET_PATH", "NOMAD_AGP_GAIA_DATASET_URL"),
+        "leetcode": ("NOMAD_AGP_LEETCODE_DATASET_PATH", "NOMAD_AGP_LEETCODE_DATASET_URL"),
+    }
+    canonical = {item["mode"]: item for item in AGP_PAPER_BENCHMARK_SOURCES}
+    for mode, item in canonical.items():
+        raw = sources.get(mode) if isinstance(sources.get(mode), dict) else {}
+        path_env, url_env = env_map[mode]
+        out[mode] = {
+            **item,
+            "path": _text(raw.get("path") or body.get(f"{mode}_path") or os.getenv(path_env), 400),
+            "url": _text(raw.get("url") or body.get(f"{mode}_url") or os.getenv(url_env), 700),
+            "allow_remote_fetch": bool(raw.get("allow_remote_fetch") or body.get("allow_remote_fetch")),
+            "prediction_key": _text(raw.get("prediction_key") or "predictions", 80),
+        }
+    return out
+
+
+def _read_text_source(*, path: str = "", url: str = "", allow_remote_fetch: bool = False, max_bytes: int = 4_000_000) -> tuple[str, dict[str, Any]]:
+    if path:
+        p = Path(path)
+        if not p.exists():
+            return "", {"ok": False, "reason": "local_dataset_path_missing", "path": path}
+        try:
+            raw = p.read_bytes()
+        except OSError as exc:
+            return "", {"ok": False, "reason": "local_dataset_read_failed", "error": _text(exc, 180)}
+        if len(raw) > max_bytes:
+            return "", {"ok": False, "reason": "local_dataset_too_large_for_free_tier", "bytes": len(raw), "max_bytes": max_bytes}
+        if str(path).endswith(".gz"):
+            try:
+                raw = gzip.decompress(raw)
+            except OSError as exc:
+                return "", {"ok": False, "reason": "gzip_decode_failed", "error": _text(exc, 120)}
+        return raw.decode("utf-8", errors="replace"), {"ok": True, "source": "local_path", "bytes": len(raw)}
+    if url and allow_remote_fetch:
+        try:
+            request = Request(url, headers={"User-Agent": "Nomad-AGP-PaperBenchmark/1.0"})
+            with urlopen(request, timeout=20) as response:
+                raw = response.read(max_bytes + 1)
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            return "", {"ok": False, "reason": "remote_dataset_fetch_failed", "error": _text(exc, 180), "url": url}
+        if len(raw) > max_bytes:
+            return "", {"ok": False, "reason": "remote_dataset_too_large_for_free_tier", "bytes": len(raw), "max_bytes": max_bytes}
+        if url.endswith(".gz"):
+            try:
+                raw = gzip.decompress(raw)
+            except OSError as exc:
+                return "", {"ok": False, "reason": "gzip_decode_failed", "error": _text(exc, 120)}
+        return raw.decode("utf-8", errors="replace"), {"ok": True, "source": "remote_url", "bytes": len(raw)}
+    return "", {"ok": False, "reason": "dataset_source_not_supplied_or_remote_fetch_disabled"}
+
+
+def _parse_records(text: str, source: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    fmt = _clean_id(source.get("format"), fallback="")
+    url = _text(source.get("url") or source.get("canonical_url"), 700)
+    path = _text(source.get("path"), 400)
+    hint = (path or url or fmt).lower()
+    if "parquet" in hint and not text:
+        return [], {"ok": False, "reason": "parquet_requires_optional_local_jsonl_or_pyarrow_adapter"}
+    if not text.strip():
+        return [], {"ok": False, "reason": "empty_dataset_text"}
+    try:
+        if ".csv" in hint or fmt == "csv":
+            rows = list(csv.DictReader(io.StringIO(text)))
+        else:
+            rows = [json.loads(line) for line in text.splitlines() if line.strip()]
+    except (csv.Error, json.JSONDecodeError) as exc:
+        return [], {"ok": False, "reason": "dataset_parse_failed", "error": _text(exc, 160)}
+    return [row for row in rows if isinstance(row, dict)], {"ok": True, "record_count": len(rows)}
+
+
+def _paper_record_id(record: dict[str, Any], index: int) -> str:
+    for key in ("id", "ID", "task_id", "question_id", "record_id", "Record ID", "problem_id", "name"):
+        value = _text(record.get(key), 180)
+        if value:
+            return value
+    return str(index + 1)
+
+
+def _paper_answer(record: dict[str, Any]) -> str:
+    for key in (
+        "answer",
+        "Answer",
+        "correct_answer",
+        "Correct Answer",
+        "final_answer",
+        "Final answer",
+        "target",
+        "canonical_solution",
+    ):
+        value = _text(record.get(key), 700)
+        if value:
+            return value
+    return ""
+
+
+def _paper_normalize_answer(value: Any) -> str:
+    text = " ".join(str(value or "").strip().lower().split())
+    text = re.sub(r"^answer\s*[:=]\s*", "", text)
+    text = text.strip(" .`'\"")
+    return text
+
+
+def _paper_predictions(payload: dict[str, Any], mode: str) -> dict[str, Any]:
+    preds = payload.get("predictions") if isinstance(payload.get("predictions"), dict) else {}
+    mode_preds = preds.get(mode)
+    if isinstance(mode_preds, dict):
+        return mode_preds
+    if isinstance(mode_preds, list):
+        out: dict[str, Any] = {}
+        for item in mode_preds:
+            if isinstance(item, dict):
+                rid = _text(item.get("id") or item.get("task_id") or item.get("question_id"), 180)
+                if rid:
+                    out[rid] = item.get("answer", item.get("prediction", item.get("passed")))
+        return out
+    return {}
+
+
+def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    predictions = _paper_predictions(payload, mode)
+    url = _text(source.get("url") or source.get("canonical_url"), 700)
+    if mode == "gaia" and not (source.get("path") or source.get("url")):
+        return {
+            "mode": mode,
+            "status": "blocked_by_dataset_gate",
+            "reason": "gaia_is_gated_and_must_be_supplied_as_authorized_local_copy",
+            "observed_examples": 0,
+            "prediction_count": len(predictions),
+        }
+    if mode == "leetcode" and not (source.get("path") or source.get("url")):
+        return {
+            "mode": mode,
+            "status": "blocked_by_dataset_gate",
+            "reason": "leetcode_requires_user_export_or_open_humaneval_proxy_results",
+            "observed_examples": 0,
+            "prediction_count": len(predictions),
+        }
+    text, load = _read_text_source(
+        path=_text(source.get("path"), 400),
+        url=url,
+        allow_remote_fetch=bool(source.get("allow_remote_fetch")),
+    )
+    if not load.get("ok"):
+        return {
+            "mode": mode,
+            "status": "blocked_by_dataset_gate",
+            "reason": load.get("reason", "dataset_unavailable"),
+            "load": load,
+            "observed_examples": 0,
+            "prediction_count": len(predictions),
+        }
+    records, parsed = _parse_records(text, source)
+    if not parsed.get("ok"):
+        return {
+            "mode": mode,
+            "status": "blocked_by_dataset_gate",
+            "reason": parsed.get("reason", "dataset_parse_failed"),
+            "load": load,
+            "parse": parsed,
+            "observed_examples": 0,
+            "prediction_count": len(predictions),
+        }
+    correct = 0
+    evaluated = 0
+    missing_answer = 0
+    for index, record in enumerate(records):
+        rid = _paper_record_id(record, index)
+        expected = _paper_answer(record)
+        if not expected:
+            missing_answer += 1
+            continue
+        if rid not in predictions and str(index) not in predictions and str(index + 1) not in predictions:
+            continue
+        predicted = predictions.get(rid, predictions.get(str(index), predictions.get(str(index + 1))))
+        if mode == "leetcode" and isinstance(predicted, dict):
+            score = 1.0 if bool(predicted.get("passed") or predicted.get("ok")) else 0.0
+        else:
+            score = 1.0 if _paper_normalize_answer(predicted) == _paper_normalize_answer(expected) else 0.0
+        correct += int(score)
+        evaluated += 1
+    accuracy = round(correct / max(1, evaluated), 4) if evaluated else 0.0
+    expected_min = _int(source.get("expected_min_examples"))
+    return {
+        "mode": mode,
+        "status": "evaluated" if evaluated else "blocked_by_missing_predictions",
+        "dataset_id": source.get("dataset_id"),
+        "license": source.get("license"),
+        "observed_examples": len(records),
+        "expected_min_examples": expected_min,
+        "dataset_full_enough": len(records) >= expected_min,
+        "prediction_count": len(predictions),
+        "evaluated_predictions": evaluated,
+        "correct": correct,
+        "accuracy": accuracy,
+        "missing_answer_count": missing_answer,
+        "dataset_digest": f"sha256:{_digest({'mode': mode, 'count': len(records), 'head': records[:3]}, length=64)}",
+        "side_effect_scope": "benchmark_evaluation_receipt_only",
+    }
+
+
+def build_agp_paper_benchmark_surface(
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_paper_benchmark_ledger(ledger_path)
+    latest = recent[-1] if recent else {}
+    return {
+        "ok": True,
+        "schema": "nomad.agp_paper_benchmark_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "mode": "full_benchmark_adapter_harness",
+        "sources": list(AGP_PAPER_BENCHMARK_SOURCES),
+        "truth_boundary": {
+            "no_lite_fixture_substitution_for_full_claim": True,
+            "gaia_requires_authorized_dataset_copy": True,
+            "leetcode_requires_user_export_or_explicit_humaneval_proxy_label": True,
+            "no_code_execution_in_server_evaluator": True,
+        },
+        "recent_run_count": len(recent),
+        "latest_run": latest,
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-paper-benchmarks.json"),
+            "run": _u(root, "/swarm/agp/paper-benchmark-runs"),
+            "empirical": _u(root, "/.well-known/nomad-agp-empirical.json"),
+            "benchmark_suite": _u(root, "/swarm/agp/benchmark-suites"),
+        },
+        "machine_instruction": "supply_authorized_datasets_and_predictions; full_claim_only_when_all_modes_evaluated_and_dataset_full_enough",
+    }
+
+
+def run_agp_paper_benchmark_evaluation(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    ledger_path: Path | str | None = None,
+    benchmark_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.agp_paper_benchmark_run_receipt.v1",
+            "accepted": False,
+            "decision": "reject_forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    agent_id = _clean_id(body.get("agent_id") or "nomad-agp-paper-benchmark-runner", fallback="nomad-agp-paper-benchmark-runner")
+    sources = _paper_benchmark_sources_from_payload(body)
+    mode_results = [_evaluate_paper_mode(mode, source, body) for mode, source in sources.items()]
+    evaluated = [item for item in mode_results if item.get("status") == "evaluated"]
+    benchmark_runs = [
+        {
+            "mode": item["mode"],
+            "benchmark_id": f"full-{item['mode']}",
+            "baseline_score": _num(_dict(body.get("baselines")).get(item["mode"]), 0.0),
+            "candidate_score": _num(item.get("accuracy")),
+        }
+        for item in evaluated
+    ]
+    proof_digest = f"sha256:{_digest({'agent': agent_id, 'modes': mode_results, 'generated_at': now}, length=64)}"
+    for run in benchmark_runs:
+        run["proof_digest"] = proof_digest
+    benchmark_suite = {"accepted": False, "decision": "skipped_until_all_modes_evaluated"}
+    if benchmark_runs:
+        benchmark_suite = run_agp_benchmark_suite(
+            {
+                "agent_id": agent_id,
+                "suite_id": f"agp-paper-full-suite-{_digest(proof_digest, length=12)}",
+                "resource_id": "nomad-agp-full-paper-benchmark",
+                "proof_digest": proof_digest,
+                "runs": benchmark_runs,
+            },
+            base_url=base_url,
+            ledger_path=benchmark_ledger_path,
+            persist=persist,
+        )
+    required_modes = set(AGP_BENCHMARK_MODES)
+    evaluated_modes = {item.get("mode") for item in evaluated}
+    full_enough = all(bool(item.get("dataset_full_enough")) for item in evaluated) and evaluated_modes == required_modes
+    checks = {
+        "all_required_modes_evaluated": evaluated_modes == required_modes,
+        "all_datasets_full_enough": full_enough,
+        "predictions_supplied_for_all_modes": all(_int(item.get("evaluated_predictions")) > 0 for item in evaluated) and evaluated_modes == required_modes,
+        "benchmark_suite_accepted": bool(benchmark_suite.get("accepted")) if evaluated_modes == required_modes else False,
+        "receipt_only_side_effect_scope": True,
+        "no_lite_substitution": True,
+    }
+    accepted = all(checks.values())
+    row = {
+        "ok": True,
+        "schema": "nomad.agp_paper_benchmark_run_receipt.v1",
+        "run_id": f"agp-paper-bench-{_digest({'proof': proof_digest, 'accepted': accepted})}",
+        "generated_at": now,
+        "accepted": accepted,
+        "decision": "full_paper_benchmarks_evaluated" if accepted else "blocked_until_full_datasets_and_predictions",
+        "agent_id": agent_id,
+        "proof_digest": proof_digest,
+        "mode_results": mode_results,
+        "evaluated_modes": sorted(evaluated_modes),
+        "blocked_modes": [
+            {"mode": item.get("mode"), "status": item.get("status"), "reason": item.get("reason")}
+            for item in mode_results
+            if item.get("status") != "evaluated"
+        ],
+        "benchmark_suite": benchmark_suite,
+        "checks": checks,
+        "paper_grade_full_benchmark_ready": accepted,
+        "side_effect_scope": "paper_benchmark_receipts_only",
+        "machine_instruction": "do_not_claim_full_gpqa_aime_gaia_leetcode_until_all_required_modes_are_evaluated",
+    }
+    if persist:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False
