@@ -9,6 +9,7 @@ from nomad_autogenesis import (
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
+    build_agp_pulse_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
     build_agp_version_manager_surface,
@@ -33,6 +34,7 @@ from nomad_autogenesis import (
     run_agp_orchestration,
     run_agp_context_operation,
     run_agp_optimizer_step,
+    run_agp_pulse,
     run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
     run_autonomous_agp_watchdog,
@@ -704,6 +706,56 @@ def test_agp_firebase_readiness_accepts_existing_receipt_document(monkeypatch):
     assert durable["checks"]["firebase_write_permission_verified_when_selected"] is True
     assert durable["checks"]["restart_durable_backend_ready"] is True
     assert durable["streams"]["firebase"]["readiness"]["receipt_write_observed"] is True
+
+
+def test_agp_pulse_records_pressure_benchmarks_and_watchdog_trigger(tmp_path):
+    pulse_ledger = tmp_path / "pulse.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+    )
+    pulse_surface = build_agp_pulse_surface(
+        base_url="https://nomad.example",
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+        conformance_surface=conformance,
+        resource_substrate=substrate,
+        ledger_path=pulse_ledger,
+    )
+
+    receipt = run_agp_pulse(
+        {
+            "agent_id": "agp.proposer",
+            "proposer_agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_cycles": 1,
+            "force": True,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate),
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 2, "objective_targets": {"autogenesis_protocol_evolution": 0.12}},
+        conformance_surface=conformance,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=pulse_ledger,
+        resource_ledger_path=resource_ledger,
+        persist=False,
+    )
+
+    assert pulse_surface["schema"] == "nomad.agp_pulse_surface.v1"
+    assert pulse_surface["scheduler_contract"]["safe_interval_seconds"] == 300
+    assert pulse_surface["quota"]["max_model_calls_per_day"] == 0
+    assert receipt["schema"] == "nomad.agp_pulse_receipt.v1"
+    assert receipt["accepted"] is True
+    assert receipt["open_benchmark_suite"]["accepted"] is True
+    assert receipt["model_binding"]["accepted"] is True
+    assert receipt["runtime_routing"]["accepted"] is True
+    assert receipt["quota_usage"]["paid_calls"] == 0
+    assert receipt["watchdog"]["schema"] == "nomad.autonomous_agp_watchdog_receipt.v1"
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):

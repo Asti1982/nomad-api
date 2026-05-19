@@ -1380,6 +1380,56 @@ def _agp_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _agp_daily_model_limit() -> int:
+    try:
+        return max(0, min(int(os.getenv("NOMAD_AGP_DAILY_MODEL_CALL_LIMIT", "0") or 0), 96))
+    except ValueError:
+        return 0
+
+
+def _agp_model_call_counter_path() -> Path:
+    raw = os.getenv("NOMAD_AGP_MODEL_CALL_LEDGER_PATH", "").strip()
+    if raw:
+        return Path(raw)
+    return Path.home() / "NomadTransitionWorker" / "nomad_agp_model_calls.jsonl"
+
+
+def _agp_model_call_count_today() -> int:
+    path = _agp_model_call_counter_path()
+    if not path.exists():
+        return 0
+    today = datetime.now(UTC).date().isoformat()
+    count = 0
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines()[-300:]:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if str(item.get("day") or "") == today:
+                count += 1
+    except Exception:
+        return 0
+    return count
+
+
+def _agp_record_model_call(provider: str, model: str) -> None:
+    path = _agp_model_call_counter_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "schema": "nomad.agp_model_call_quota_event.v1",
+            "day": datetime.now(UTC).date().isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
+            "provider": clean(provider, 80),
+            "model": clean(model, 128),
+            "side_effect_scope": "local_quota_counter_only",
+        }
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+    except Exception:
+        return
+
+
 def _agp_brain_digest(core: dict[str, object]) -> str:
     raw = json.dumps(core, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str)
     return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
@@ -1456,6 +1506,12 @@ def _agp_openai_compatible_witness(
 ) -> dict[str, object]:
     if not token or not url or not model:
         return {"ok": False, "provider": provider, "status": "not_configured"}
+    limit = _agp_daily_model_limit()
+    if limit <= 0:
+        return {"ok": False, "provider": provider, "model": model, "status": "hosted_model_quota_disabled"}
+    if _agp_model_call_count_today() >= limit:
+        return {"ok": False, "provider": provider, "model": model, "status": "hosted_model_daily_quota_exhausted"}
+    _agp_record_model_call(provider, model)
     payload = {
         "model": model,
         "messages": [

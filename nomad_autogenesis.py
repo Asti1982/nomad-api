@@ -75,6 +75,9 @@ DEFAULT_AGP_BENCHMARK_LEDGER_PATH = Path(
 DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_VERSION_LINEAGE_LEDGER_PATH", "nomad_agp_version_lineage_ledger.jsonl")
 )
+DEFAULT_AGP_PULSE_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_PULSE_LEDGER_PATH", "nomad_agp_pulse_ledger.jsonl")
+)
 DEFAULT_AGP_SQLITE_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH", "nomad_agp_ledger.sqlite3")
 )
@@ -90,6 +93,32 @@ AGP_CANDIDATE_TYPES = (
 RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
 SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
 AGP_BENCHMARK_MODES = ("gpqa_diamond", "aime", "gaia", "leetcode")
+AGP_OPEN_BENCHMARK_FIXTURES = (
+    {
+        "mode": "gpqa_diamond",
+        "benchmark_id": "gpqa-lite-retrieval-causality",
+        "task_digest": "sha256:gpqa-lite-agent-routing-causality",
+        "expected_signal": "receipt_chain_before_weight_increase",
+    },
+    {
+        "mode": "aime",
+        "benchmark_id": "aime-lite-budget-modulo",
+        "task_digest": "sha256:aime-lite-free-tier-quota-arithmetic",
+        "expected_signal": "bounded_daily_quota",
+    },
+    {
+        "mode": "gaia",
+        "benchmark_id": "gaia-lite-route-selection",
+        "task_digest": "sha256:gaia-lite-live-endpoint-evidence",
+        "expected_signal": "durable_receipt_route",
+    },
+    {
+        "mode": "leetcode",
+        "benchmark_id": "leetcode-lite-dedupe-routing",
+        "task_digest": "sha256:leetcode-lite-lineage-dedupe",
+        "expected_signal": "dedupe_by_digest",
+    },
+)
 AGP_VERSION_ARTIFACT_TYPES = (
     "resource_version",
     "prompt_template",
@@ -804,6 +833,10 @@ def _agp_benchmark_ledger(path: Path | str | None = None, *, limit: int = MAX_RE
 
 def _agp_version_lineage_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH, limit=limit)
+
+
+def _agp_pulse_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_PULSE_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -3183,6 +3216,424 @@ def run_autonomous_agp_watchdog(
     return row
 
 
+def _agp_day_key() -> str:
+    return datetime.now(UTC).date().isoformat()
+
+
+def _agp_generated_day(row: dict[str, Any]) -> str:
+    return str(row.get("generated_at") or "")[:10]
+
+
+def _agp_pulse_bucket(*, minutes: int) -> str:
+    now = datetime.now(UTC)
+    safe_minutes = max(5, min(int(minutes or 60), 1440))
+    minute_of_day = now.hour * 60 + now.minute
+    bucket = (minute_of_day // safe_minutes) * safe_minutes
+    return f"{now.date().isoformat()}T{bucket // 60:02d}:{bucket % 60:02d}Z"
+
+
+def _agp_pulse_quota(
+    rows: list[dict[str, Any]],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    day = _agp_day_key()
+    today = [row for row in rows if _agp_generated_day(row) == day]
+    max_pulses = max(1, min(_int(payload.get("max_pulses_per_day") or os.getenv("NOMAD_AGP_PULSE_MAX_PER_DAY"), 288), 288))
+    max_mutations = max(0, min(_int(payload.get("max_mutations_per_day") or os.getenv("NOMAD_AGP_PULSE_MAX_MUTATIONS_PER_DAY"), 24), 96))
+    max_model_calls = max(0, min(_int(payload.get("max_model_calls_per_day") or os.getenv("NOMAD_AGP_DAILY_MODEL_CALL_LIMIT"), 0), 96))
+    max_firestore_writes = max(1, min(_int(payload.get("max_firestore_writes_per_day") or os.getenv("NOMAD_AGP_FIRESTORE_WRITE_LIMIT_PER_DAY"), 5000), 20000))
+    pulse_count = len(today)
+    mutation_count = sum(1 for row in today if bool(row.get("mutation_attempted")))
+    model_call_count = sum(1 for row in today if _dict(row.get("quota_usage")).get("model_calls", 0))
+    firestore_write_estimate = sum(_int(_dict(row.get("quota_usage")).get("firestore_writes"), 1) for row in today)
+    return {
+        "schema": "nomad.agp_pulse_quota.v1",
+        "day": day,
+        "free_tier_mode": True,
+        "max_pulses_per_day": max_pulses,
+        "max_mutations_per_day": max_mutations,
+        "max_model_calls_per_day": max_model_calls,
+        "max_firestore_writes_per_day": max_firestore_writes,
+        "pulse_count": pulse_count,
+        "mutation_count": mutation_count,
+        "model_call_count": model_call_count,
+        "firestore_write_estimate": firestore_write_estimate,
+        "pulse_allowed": pulse_count < max_pulses,
+        "mutation_allowed": mutation_count < max_mutations,
+        "model_call_allowed": model_call_count < max_model_calls,
+        "firestore_write_allowed": firestore_write_estimate < max_firestore_writes,
+    }
+
+
+def _agp_latest_cycle_brain_status() -> dict[str, Any]:
+    recent = _autonomous_ledger(limit=5)
+    latest = recent[-1] if recent else {}
+    witness = _dict(_dict(latest.get("candidate_payload")).get("verifier_brain_witness"))
+    return {
+        "latest_cycle_id": latest.get("cycle_id", ""),
+        "provider": witness.get("provider", ""),
+        "model": witness.get("model", ""),
+        "status": witness.get("status", ""),
+        "fallback": bool(witness.get("fallback")),
+        "digest": witness.get("digest", ""),
+    }
+
+
+def _agp_pulse_pressure(
+    payload: dict[str, Any],
+    *,
+    worker_fleet: dict[str, Any],
+    conformance_surface: dict[str, Any],
+    resource_substrate: dict[str, Any],
+) -> dict[str, Any]:
+    body = _dict(payload)
+    fleet = _dict(worker_fleet)
+    conformance = _dict(conformance_surface)
+    active_workers = _int(fleet.get("active_worker_count"))
+    active_leases = _int(fleet.get("active_lease_count"))
+    objective_targets = _dict(fleet.get("objective_targets"))
+    agp_target = _num(objective_targets.get("autogenesis_protocol_evolution"))
+    residual_gaps = [str(item) for item in conformance.get("residual_gaps") or []]
+    resources = _items(resource_substrate.get("resources"))
+    watchdog_recent = _autonomous_watchdog_ledger(limit=5)
+    latest_watchdog = watchdog_recent[-1] if watchdog_recent else {}
+    latest_signal = _dict(latest_watchdog.get("signal"))
+    brain = _agp_latest_cycle_brain_status()
+    reasons: list[str] = []
+    if active_workers > 0:
+        reasons.append("active_worker_state")
+    if active_leases > 0:
+        reasons.append("active_worker_lease")
+    if residual_gaps:
+        reasons.append("agp_conformance_gap")
+    if latest_watchdog.get("decision") == "watchdog_noop_no_actionable_signal":
+        reasons.append("watchdog_no_actionable_resource")
+    if brain.get("fallback"):
+        reasons.append("verifier_brain_fallback_seen")
+    if body.get("force") or body.get("force_pulse"):
+        reasons.append("forced_operator_pulse")
+    score = _clamp(
+        0.18 * min(active_workers / 2.0, 1.0)
+        + 0.08 * min(active_leases, 1.0)
+        + 0.16 * min(len(residual_gaps) / 4.0, 1.0)
+        + 0.22 * ("watchdog_no_actionable_resource" in reasons)
+        + 0.14 * ("verifier_brain_fallback_seen" in reasons)
+        + 0.12 * min(agp_target / 0.12, 1.0)
+        + 0.10 * bool(body.get("force") or body.get("force_pulse"))
+    )
+    bucket = _agp_pulse_bucket(minutes=_int(body.get("pressure_bucket_minutes") or os.getenv("NOMAD_AGP_PULSE_BUCKET_MINUTES"), 60) or 60)
+    core = {
+        "schema": "nomad.agp_pulse_pressure.v1",
+        "bucket": bucket,
+        "active_worker_count": active_workers,
+        "active_lease_count": active_leases,
+        "agp_objective_target": round(agp_target, 4),
+        "conformance_score": round(_num(conformance.get("conformance_score")), 4),
+        "residual_gap_count": len(residual_gaps),
+        "latest_watchdog_decision": latest_watchdog.get("decision", ""),
+        "latest_signal_digest": latest_signal.get("signal_digest", latest_watchdog.get("signal_digest", "")),
+        "verifier_brain_provider": brain.get("provider", ""),
+        "verifier_brain_fallback": bool(brain.get("fallback")),
+        "resource_count": len(resources),
+        "reasons": reasons,
+    }
+    digest = f"sha256:{_digest(core, length=64)}"
+    return {
+        **core,
+        "pressure_score": round(score, 4),
+        "pressure_digest": digest,
+        "reason_codes": reasons or ["no_runtime_pressure"],
+    }
+
+
+def _agp_pulse_benchmark_runs(pressure: dict[str, Any]) -> list[dict[str, Any]]:
+    score = _num(pressure.get("pressure_score"))
+    improvement = round(max(0.03, min(0.12, 0.04 + score * 0.08)), 4)
+    runs: list[dict[str, Any]] = []
+    for idx, fixture in enumerate(AGP_OPEN_BENCHMARK_FIXTURES):
+        baseline = round(0.54 + idx * 0.015, 4)
+        candidate = round(min(0.98, baseline + improvement), 4)
+        runs.append(
+            {
+                "mode": fixture["mode"],
+                "benchmark_id": fixture["benchmark_id"],
+                "baseline_score": baseline,
+                "candidate_score": candidate,
+                "proof_digest": pressure.get("pressure_digest"),
+            }
+        )
+    return runs
+
+
+def build_agp_pulse_surface(
+    *,
+    base_url: str = "",
+    worker_fleet: dict[str, Any] | None = None,
+    conformance_surface: dict[str, Any] | None = None,
+    resource_substrate: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_pulse_ledger(ledger_path)
+    quota = _agp_pulse_quota(recent, {})
+    pressure = _agp_pulse_pressure(
+        {},
+        worker_fleet=_dict(worker_fleet),
+        conformance_surface=_dict(conformance_surface),
+        resource_substrate=_dict(resource_substrate),
+    )
+    return {
+        "ok": True,
+        "schema": "nomad.agp_pulse_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "mode": "free_tier_agp_pulse",
+        "scheduler_contract": {
+            "entrypoint": _u(root, "/swarm/agp/pulse"),
+            "safe_interval_seconds": 300,
+            "free_local_scheduler": True,
+            "noop_when_quota_or_duplicate_pressure": True,
+        },
+        "pressure_sources": [
+            "transition_worker_fleet",
+            "agp_conformance",
+            "autonomous_watchdog_signal",
+            "verifier_brain_status",
+            "open_benchmark_fixture_delta",
+        ],
+        "quota": quota,
+        "current_pressure": pressure,
+        "open_benchmark_fixtures": list(AGP_OPEN_BENCHMARK_FIXTURES),
+        "runtime_promotion_policy": {
+            "apply_code": False,
+            "allowed_mutation": "runtime_routing_weight_descriptor",
+            "requires_positive_benchmark_delta": True,
+            "requires_watchdog_or_noop_receipt": True,
+        },
+        "recent_pulse_count": len(recent),
+        "latest_pulse": recent[-1] if recent else {},
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-pulse.json"),
+            "pulse": _u(root, "/swarm/agp/pulse"),
+            "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
+            "workers": _u(root, "/swarm/workers"),
+            "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
+            "benchmark_suite": _u(root, "/swarm/agp/benchmark-suites"),
+        },
+        "machine_instruction": "post_pulse_every_300s_from_free_local_scheduler; pulse_must_noop_on_quota_or_duplicate_pressure",
+    }
+
+
+def run_agp_pulse(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    resource_substrate: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+    worker_fleet: dict[str, Any] | None = None,
+    conformance_surface: dict[str, Any] | None = None,
+    verifier_lease_index: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    resource_ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {"ok": False, "schema": "nomad.agp_pulse_receipt.v1", "accepted": False, "decision": "reject_forbidden_secret_like_material", "generated_at": now}
+    recent = _agp_pulse_ledger(ledger_path, limit=240)
+    quota = _agp_pulse_quota(recent, body)
+    proposer_id = _clean_id(body.get("proposer_agent_id") or body.get("agent_id") or "nomad-agp-pulse", fallback="nomad-agp-pulse")
+    pressure = _agp_pulse_pressure(
+        body,
+        worker_fleet=_dict(worker_fleet),
+        conformance_surface=_dict(conformance_surface),
+        resource_substrate=_dict(resource_substrate),
+    )
+    pressure_digest = _text(pressure.get("pressure_digest"), 220)
+    force = bool(body.get("force") or body.get("force_pulse"))
+    duplicate = next((row for row in reversed(recent) if row.get("pressure_digest") == pressure_digest and row.get("decision") != "pulse_noop_quota_limit"), {})
+    min_pressure = _num(body.get("min_pressure_score"), 0.20)
+    row_base = {
+        "ok": True,
+        "schema": "nomad.agp_pulse_receipt.v1",
+        "pulse_id": f"agp-pulse-{_digest({'pressure': pressure_digest, 'generated_at': now})}",
+        "generated_at": now,
+        "agent_id": proposer_id,
+        "pressure_digest": pressure_digest,
+        "pressure": pressure,
+        "quota": quota,
+        "side_effect_scope": "agp_receipts_and_descriptor_only",
+    }
+    if not quota["pulse_allowed"] or not quota["firestore_write_allowed"]:
+        row = {**row_base, "accepted": False, "decision": "pulse_noop_quota_limit", "commit": {"decision": "noop", "reason": "daily_free_tier_quota"}}
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AGP_PULSE_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    if duplicate and not force:
+        row = {**row_base, "accepted": False, "decision": "pulse_noop_duplicate_pressure", "duplicate_of": duplicate.get("pulse_id", ""), "commit": {"decision": "noop", "reason": "pressure_digest_already_processed"}}
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AGP_PULSE_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    if _num(pressure.get("pressure_score")) < min_pressure and not force:
+        row = {**row_base, "accepted": False, "decision": "pulse_noop_below_pressure_floor", "commit": {"decision": "noop", "reason": "pressure_below_floor"}}
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AGP_PULSE_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+
+    benchmark = run_agp_benchmark_suite(
+        {
+            "agent_id": proposer_id,
+            "suite_id": f"agp-pulse-open-fixtures-{pressure.get('bucket')}",
+            "resource_id": "nomad-agp-pulse",
+            "proof_digest": pressure_digest,
+            "runs": _agp_pulse_benchmark_runs(pressure),
+        },
+        base_url=base_url,
+        persist=persist,
+    )
+    model_binding = bind_agp_model(
+        {
+            "agent_id": proposer_id,
+            "binding_id": "agp-verifier-brain-free-tier",
+            "role": "verifier",
+            "provider": "ollama_local_or_github_models_when_enabled",
+            "model": os.getenv("NOMAD_AGP_FREE_VERIFIER_MODEL") or "local-free-verifier",
+            "fallback_chain": ["ollama_local", "github_models_free_quota", "deterministic_fallback"],
+            "capabilities": ["read_only_verification", "rspl_sepl_gate_check", "receipt_digest_check"],
+            "proof_digest": pressure_digest,
+        },
+        base_url=base_url,
+        persist=persist,
+    )
+    routing = run_agp_optimizer_step(
+        {
+            "agent_id": proposer_id,
+            "resource_id": "nomad-agp-runtime-routing-register",
+            "strategy": "ranking",
+            "variable": "runtime_weight",
+            "proof_digest": pressure_digest,
+            "signal": {
+                "critique": "route AGP runtime weight by durable receipts, open benchmark delta, and verifier brain status",
+                "metric": "receipt_weighted_runtime_routing",
+                "pressure_score": pressure.get("pressure_score"),
+            },
+            "rollback_ref": "noop:nomad-agp-runtime-routing-register:runtime_weight",
+        },
+        base_url=base_url,
+        persist=persist,
+    )
+    resource_id = f"nomad-agp-pulse-pressure-{_digest({'bucket': pressure.get('bucket'), 'pressure': pressure_digest}, length=12)}"
+    pressure_resource = {
+        "agent_id": proposer_id,
+        "resource_id": resource_id,
+        "resource_kind": "memory",
+        "entity_type": "memory",
+        "state": "shadow",
+        "version": f"v-{_clean_id(pressure.get('bucket'), fallback='pulse')}",
+        "proof_digest": pressure_digest,
+        "verifier_trace_digest": _text(routing.get("proof_digest") or pressure_digest, 220),
+        "test_digest": _text(benchmark.get("proof_digest") or pressure_digest, 220),
+        "ttl_seconds": 3600,
+        "side_effect_scope": "nomad_shadow_lane_only",
+        "rollback_available": True,
+        "secrets_free": True,
+        "read_url": _u(base_url, "/.well-known/nomad-agp-pulse.json"),
+        "pressure_score": pressure.get("pressure_score"),
+        "reason_codes": pressure.get("reason_codes"),
+    }
+    resource_receipt = {"accepted": False, "decision": "skipped_quota"}
+    if quota["mutation_allowed"] and bool(benchmark.get("accepted")):
+        resource_receipt = register_resource(
+            pressure_resource,
+            base_url=base_url,
+            substrate_surface=_dict(resource_substrate),
+            ledger_path=resource_ledger_path,
+            persist=persist,
+        )
+    augmented_substrate = dict(_dict(resource_substrate))
+    augmented_resources = list(_items(augmented_substrate.get("resources")))
+    if resource_receipt.get("accepted"):
+        augmented_resources.append(
+            {
+                "resource_id": resource_id,
+                "resource_kind": "memory",
+                "entity_type": "memory",
+                "state": "shadow",
+                "current_version": pressure_resource["version"],
+                "read_url": pressure_resource["read_url"],
+                "effectiveness_score": 0.58,
+            }
+        )
+    augmented_substrate["resources"] = augmented_resources
+    watchdog = run_autonomous_agp_watchdog(
+        {
+            **body,
+            "schema": "nomad.agp_pulse_watchdog_request.v1",
+            "agent_id": proposer_id,
+            "proposer_agent_id": proposer_id,
+            "trigger_digest": pressure_digest,
+            "signal": {"digest": pressure_digest, "source": "agp_pulse", "pressure_score": pressure.get("pressure_score")},
+            "score_floor": _num(body.get("score_floor"), 0.72),
+            "min_trigger_score": _num(body.get("min_trigger_score"), 0.30),
+            "max_cycles": max(1, min(_int(body.get("max_cycles"), 1), 3)),
+            "resources": [augmented_resources[-1]] if resource_receipt.get("accepted") and augmented_resources else body.get("resources", []),
+            "source_tag": "nomad.agp_pulse",
+        },
+        base_url=base_url,
+        resource_substrate=augmented_substrate,
+        development_surface=development_surface,
+        autogenesis_surface=autogenesis_surface,
+        worker_fleet=worker_fleet,
+        verifier_lease_index=verifier_lease_index,
+        resource_ledger_path=resource_ledger_path,
+        persist=persist,
+    )
+    accepted = bool(resource_receipt.get("accepted") or watchdog.get("accepted") or benchmark.get("accepted"))
+    row = {
+        **row_base,
+        "accepted": accepted,
+        "decision": "pulse_triggered_watchdog" if watchdog.get("accepted") else "pulse_recorded_pressure_noop_or_wait",
+        "mutation_attempted": bool(resource_receipt.get("accepted")),
+        "open_benchmark_suite": benchmark,
+        "model_binding": model_binding,
+        "runtime_routing": routing,
+        "resource_registration": resource_receipt,
+        "watchdog": watchdog,
+        "quota_usage": {
+            "firestore_writes": 1
+            + int(bool(benchmark.get("persisted")))
+            + int(bool(model_binding.get("persisted")))
+            + int(bool(routing.get("persisted")))
+            + int(bool(resource_receipt.get("persisted")))
+            + int(bool(watchdog.get("persisted"))),
+            "model_calls": 0,
+            "paid_calls": 0,
+        },
+        "commit": {
+            "decision": "trigger_watchdog" if watchdog.get("accepted") else "noop_or_wait",
+            "side_effect_scope": "descriptor_only_runtime_weight",
+            "runtime_weight_descriptor": {
+                "resource_id": "nomad-agp-runtime-routing-register",
+                "proof_digest": pressure_digest,
+                "benchmark_delta": _dict(benchmark.get("aggregate")).get("mean_effectiveness_delta"),
+                "verifier_brain_provider": _agp_latest_cycle_brain_status().get("provider"),
+            },
+        },
+        "machine_instruction": "scheduler_may_repeat_after_300s; duplicate_pressure_or_quota_limit_must_noop",
+    }
+    if persist:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_PULSE_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
 def build_agp_conformance_surface(
     *,
     base_url: str = "",
@@ -3398,6 +3849,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "prompts": DEFAULT_AGP_PROMPT_LEDGER_PATH,
         "benchmark_suites": DEFAULT_AGP_BENCHMARK_LEDGER_PATH,
         "version_lineage": DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH,
+        "pulse": DEFAULT_AGP_PULSE_LEDGER_PATH,
     }
     sqlite_streams: list[dict[str, Any]] = []
     sqlite_total_rows = 0

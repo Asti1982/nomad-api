@@ -105,7 +105,9 @@ function Start-AgpWorker {
     }
 
     $edgeWithOllama = if ($NoOllama) { "0" } else { "1" }
+    $ollamaVerifierBrain = if ($NoOllama) { "0" } else { "1" }
     $hostedBrainFlag = if ($HostedBrains) { "1" } else { "0" }
+    $hostedDailyModelLimit = if ($HostedBrains) { "24" } else { "0" }
     $roleTitle = "Nomad AGP $Role"
     $baseLine = "base_url=$BaseUrl"
     $agentLine = "agent_id=$AgentId"
@@ -117,7 +119,9 @@ function Start-AgpWorker {
         "`$env:NOMAD_AGP_VERIFIER_AGENT_ID = $(Quote-PSArg $VerifierAgentId)",
         "`$env:NOMAD_EDGE_WORKER = '1'",
         "`$env:NOMAD_EDGE_WITH_OLLAMA = $(Quote-PSArg $edgeWithOllama)",
+        "`$env:NOMAD_AGP_VERIFIER_BRAIN_OLLAMA = $(Quote-PSArg $ollamaVerifierBrain)",
         "`$env:NOMAD_AGP_ENABLE_HOSTED_BRAINS = $(Quote-PSArg $hostedBrainFlag)",
+        "`$env:NOMAD_AGP_DAILY_MODEL_CALL_LIMIT = $(Quote-PSArg $hostedDailyModelLimit)",
         "`$env:NOMAD_SWARM_SURPLUS_OPT_IN = '1'",
         "`$env:NOMAD_EDGE_RESERVE_MIN_SECONDS = $(Quote-PSArg ([string]([Math]::Max(90, $IntervalSeconds))))",
         "`$env:NOMAD_MACHINE_OBJECTIVE = 'autogenesis_protocol_evolution'",

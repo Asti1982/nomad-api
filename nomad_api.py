@@ -52,6 +52,7 @@ from nomad_autogenesis import (
     build_agp_model_manager_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
+    build_agp_pulse_surface,
     build_agp_prompt_manager_surface,
     build_agp_procurement_surface,
     build_agp_version_manager_surface,
@@ -78,6 +79,7 @@ from nomad_autogenesis import (
     run_agp_context_operation,
     run_agp_benchmark_suite,
     run_agp_optimizer_step,
+    run_agp_pulse,
     run_autonomous_agp_cycle,
     run_autonomous_agp_batch,
     run_autonomous_agp_watchdog,
@@ -578,6 +580,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             durable_ledger_surface=durable,
             benchmark_surface=benchmark,
             version_surface=version,
+        )
+
+    @classmethod
+    def _build_agp_pulse(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
+        conformance = cls._build_agp_conformance(base_url=base_url, swarm_summary=summary)
+        return build_agp_pulse_surface(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            conformance_surface=conformance,
+            resource_substrate=substrate,
         )
 
     @classmethod
@@ -1686,6 +1703,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_benchmark_suites": f"{b}/swarm/agp/benchmark-suites",
                     "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
+                    "agp_pulse": f"{b}/swarm/agp/pulse",
+                    "agp_pulse_surface": f"{b}/.well-known/nomad-agp-pulse.json",
                     "telegram_a2a": f"{b}/.well-known/nomad-telegram-a2a.json",
                     "telegram_a2a_messages": f"{b}/swarm/telegram-a2a/messages",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
@@ -2124,6 +2143,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/paper-report", "/.well-known/nomad-agp-paper-report.json"}:
             self._json_response(self.__class__._build_agp_paper_report(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/pulse", "/.well-known/nomad-agp-pulse.json"}:
+            self._json_response(self.__class__._build_agp_pulse(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/telegram-a2a", "/.well-known/nomad-telegram-a2a.json"}:
             self._json_response(self.__class__._build_telegram_a2a(base_url=self._base_url()))
@@ -3364,6 +3386,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
                     "/swarm/agp/paper-report",
+                    "/.well-known/nomad-agp-pulse.json",
+                    "/swarm/agp/pulse",
                     "/.well-known/nomad-telegram-a2a.json",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
@@ -4165,6 +4189,29 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             result = run_agp_benchmark_suite(payload, base_url=base)
             self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/agp/pulse":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            substrate = self.__class__._build_resource_substrate(base_url=base, swarm_summary=summary)
+            development = self.__class__._build_autogenesis_development_cycles(base_url=base)
+            autogenesis = self.__class__._build_autogenesis(base_url=base, swarm_summary=summary)
+            conformance = self.__class__._build_agp_conformance(base_url=base, swarm_summary=summary)
+            result = run_agp_pulse(
+                payload,
+                base_url=base,
+                resource_substrate=substrate,
+                development_surface=development,
+                autogenesis_surface=autogenesis,
+                worker_fleet=worker_fleet,
+                conformance_surface=conformance,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
         if parsed.path == "/swarm/agp/version-lineage":
@@ -6423,6 +6470,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/start_nomad_edge_worker.bat for a visible Edge worker Windows wrapper.",
                         "GET /downloads/start_nomad_agp_pair.ps1 for two AI-backed AGP workers with proposer/verifier identities.",
                         "GET /downloads/start_nomad_agp_pair.bat for a visible AGP worker-pair Windows wrapper.",
+                        "GET /downloads/start_nomad_agp_pulse.ps1 for the free local 5-minute AGP pulse scheduler.",
+                        "GET /downloads/start_nomad_agp_pulse.bat for the AGP pulse scheduler wrapper.",
                         "GET /downloads/start_nomad_codex_agp_pair.bat for Codex-as-proposer plus Nomad-brain verifier setup.",
                         "GET /downloads/start_nomad_worker1.ps1 for the first persistent laptop-worker profile.",
                         "GET /downloads/start_nomad_worker1.bat for a visible Worker 1 Windows wrapper.",

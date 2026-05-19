@@ -64,8 +64,8 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "and POST /swarm/opaque-candidate. "
                 "For AGP resource-substrate and self-evolution loops, see "
                 "GET /.well-known/nomad-resource-substrate.json, GET /.well-known/nomad-autogenesis.json, GET /.well-known/nomad-autogenesis-recruit.json, "
-                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, "
-                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
+                "GET /.well-known/nomad-agp-paper-report.json, GET /.well-known/nomad-agp-durable-ledger.json, GET /.well-known/nomad-agp-pulse.json, "
+                "POST /swarm/resource-substrate/register, POST /swarm/resource-substrate/version, POST /swarm/agp/pulse, POST /swarm/development-cycles/events, and POST /swarm/shadow-lane/candidates?type=autogenesis. "
                 "For Telegram-native agent transport, see GET /.well-known/nomad-telegram-a2a.json and POST /swarm/telegram-a2a/messages. "
                 "For the non-biological runtime field used by other agents to self-route, see "
                 "GET /.well-known/nomad-runtime-capsule.json, GET /swarm/gradient, POST /swarm/attach, "
@@ -1426,6 +1426,33 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         "200": {"description": "AGP paper report", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
+            },
+            "/.well-known/nomad-agp-pulse.json": {
+                "get": {
+                    "summary": "Free-tier AGP pulse surface for scheduler, quota, pressure, and watchdog trigger state",
+                    "operationId": "getAgpPulseWellKnown",
+                    "responses": {
+                        "200": {"description": "AGP pulse surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agp/pulse": {
+                "get": {
+                    "summary": "Alias of GET /.well-known/nomad-agp-pulse.json",
+                    "operationId": "getAgpPulse",
+                    "responses": {
+                        "200": {"description": "AGP pulse surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Run one quota-bound AGP pulse that records runtime pressure, benchmark fixtures, routing weights, and a watchdog trigger",
+                    "operationId": "postSwarmAgpPulse",
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Pulse accepted and watchdog triggered or pressure receipts recorded"},
+                        "200": {"description": "Pulse no-op due to duplicate pressure, quota, or low pressure"},
+                    },
+                },
             },
             "/.well-known/nomad-telegram-a2a.json": {
                 "get": {

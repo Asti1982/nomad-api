@@ -767,6 +767,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/agp/durable-ledger" in doc["paths"]
     assert "/.well-known/nomad-agp-paper-report.json" in doc["paths"]
     assert "/swarm/agp/paper-report" in doc["paths"]
+    assert "/.well-known/nomad-agp-pulse.json" in doc["paths"]
+    assert "/swarm/agp/pulse" in doc["paths"]
     assert "/.well-known/nomad-telegram-a2a.json" in doc["paths"]
     assert "/swarm/telegram-a2a/messages" in doc["paths"]
     assert "/.well-known/nomad-autonomous-agp.json" in doc["paths"]
