@@ -434,6 +434,50 @@ def _firebase_auth() -> tuple[dict[str, str], str, str]:
     return {}, "", "none"
 
 
+def _firebase_direct_readiness() -> dict[str, Any]:
+    status = _firebase_config_status()
+    out: dict[str, Any] = {
+        "checked": False,
+        "database_available": False,
+        "write_permission_verified": False,
+        "auth_mode_checked": status.get("auth_mode") or "none",
+        "error_status": "",
+        "error_reason": "",
+    }
+    if not status["configured"] or status["auth_mode"] == "proxy_url":
+        return out
+    project_id = _firebase_project_id() or str(_firebase_service_account_info().get("project_id") or "").strip()
+    database = _firebase_database_id()
+    headers, _query, auth_mode = _firebase_auth()
+    out["checked"] = True
+    out["auth_mode_checked"] = auth_mode
+    if auth_mode != "service_account" or not headers.get("Authorization") or not project_id:
+        return out
+    database_url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}"
+    try:
+        _firebase_request_json(database_url, method="GET", headers=headers)
+        out["database_available"] = True
+    except HTTPError as exc:
+        out["error_status"] = str(getattr(exc, "code", "") or "")
+        out["error_reason"] = str(getattr(exc, "reason", "") or "")
+        return out
+    except (OSError, URLError, json.JSONDecodeError) as exc:
+        out["error_reason"] = type(exc).__name__
+        return out
+    permission_url = f"{database_url}:testIamPermissions"
+    permissions = ["datastore.entities.create", "datastore.entities.get", "datastore.entities.list"]
+    try:
+        result = _firebase_request_json(permission_url, method="POST", payload={"permissions": permissions}, headers=headers)
+        granted = set(result.get("permissions") or [])
+        out["write_permission_verified"] = set(permissions).issubset(granted)
+    except HTTPError as exc:
+        out["error_status"] = str(getattr(exc, "code", "") or "")
+        out["error_reason"] = str(getattr(exc, "reason", "") or "")
+    except (OSError, URLError, json.JSONDecodeError) as exc:
+        out["error_reason"] = type(exc).__name__
+    return out
+
+
 def _durable_restart_persistence_ready() -> bool:
     backend = _ledger_backend()
     render_runtime = (os.getenv("RENDER") or "").strip().lower() == "true"
@@ -443,8 +487,8 @@ def _durable_restart_persistence_ready() -> bool:
             return False
         if status["auth_mode"] == "proxy_url":
             return True
-        headers, _query, auth_mode = _firebase_auth()
-        return auth_mode == "service_account" and bool(headers.get("Authorization"))
+        readiness = _firebase_direct_readiness()
+        return bool(readiness["database_available"] and readiness["write_permission_verified"])
     if backend in {"sqlite", "dual"}:
         if not render_runtime:
             return True
@@ -3319,6 +3363,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
     backend = _ledger_backend()
     sqlite_path = _sqlite_ledger_path()
     firebase_status = _firebase_config_status()
+    firebase_readiness = _firebase_direct_readiness() if backend.startswith("firebase") else {}
     stream_paths = {
         "resource_substrate": DEFAULT_RESOURCE_LEDGER_PATH,
         "development_cycles": DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH,
@@ -3375,6 +3420,8 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "sqlite_backend_available": backend in {"sqlite", "dual", "firebase+sqlite", "firebase+dual"},
         "firebase_backend_available": backend.startswith("firebase"),
         "firebase_configured_when_selected": (not backend.startswith("firebase")) or bool(firebase_status["configured"]),
+        "firebase_database_available_when_selected": (not backend.startswith("firebase")) or bool(firebase_readiness.get("database_available") or firebase_status["auth_mode"] == "proxy_url"),
+        "firebase_write_permission_verified_when_selected": (not backend.startswith("firebase")) or bool(firebase_readiness.get("write_permission_verified") or firebase_status["auth_mode"] == "proxy_url"),
         "sqlite_file_readable_when_present": (not sqlite_path.exists()) or sqlite_readable,
         "restart_durable_backend_ready": _durable_restart_persistence_ready(),
         "receipt_payloads_remain_canonical_json": True,
@@ -3404,7 +3451,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
             "jsonl": jsonl_streams,
             "sqlite_total_rows": sqlite_total_rows,
             "sqlite": sqlite_streams,
-            "firebase": firebase_status,
+            "firebase": {**firebase_status, "readiness": firebase_readiness},
         },
         "checks": checks,
         "links": {
