@@ -8,6 +8,7 @@ from nomad_autogenesis import (
     build_agp_evaluation_surface,
     build_agp_empirical_surface,
     build_agp_model_manager_surface,
+    build_agp_morphology_reactor_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
@@ -39,6 +40,7 @@ from nomad_autogenesis import (
     run_agp_context_operation,
     run_agp_optimizer_step,
     run_agp_pulse,
+    run_agp_morphology_reactor,
     run_autonomous_agp_batch,
     run_autonomous_agp_cycle,
     run_autonomous_agp_watchdog,
@@ -784,6 +786,96 @@ def test_agp_pulse_records_pressure_benchmarks_and_watchdog_trigger(tmp_path):
     assert receipt["runtime_routing"]["accepted"] is True
     assert receipt["quota_usage"]["paid_calls"] == 0
     assert receipt["watchdog"]["schema"] == "nomad.autonomous_agp_watchdog_receipt.v1"
+
+
+def test_agp_morphology_reactor_generates_quality_diverse_shadow_cells(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
+    ledger = tmp_path / "morphology.jsonl"
+    worker_fleet = {
+        "active_worker_count": 6,
+        "latest_verifier_brain_witness": {
+            "provider": "openrouter_free",
+            "model": "openrouter/free",
+            "status": "ok",
+            "fallback": False,
+            "digest": "sha256:" + "1" * 64,
+        },
+    }
+
+    surface = build_agp_morphology_reactor_surface(
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        external_value_summary={"latest_by_external": [], "revenue_recognized_usd_total": 0.0},
+        ledger_path=ledger,
+    )
+    receipt = run_agp_morphology_reactor(
+        {
+            "agent_id": "agp.proposer",
+            "cell_count": 32,
+            "seed": "receipt-nearest",
+            "verifier_brain_witness": worker_fleet["latest_verifier_brain_witness"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        external_value_summary={"latest_by_external": [], "revenue_recognized_usd_total": 0.0},
+        ledger_path=ledger,
+    )
+
+    assert surface["schema"] == "nomad.autogenesis_morphology_reactor.v1"
+    assert surface["reactor_contract"]["cell_count_range"]["max"] == 256
+    assert surface["promotion_law"]["weighted"].startswith("tested plus")
+    assert receipt["schema"] == "nomad.autogenesis_morphology_reactor_receipt.v1"
+    assert receipt["accepted"] is True
+    assert receipt["candidate_type"] == "agent_morphology"
+    assert len(receipt["candidates"]) == 32
+    assert receipt["aggregate"]["tested_count"] > 0
+    assert receipt["aggregate"]["weighted_count"] == 0
+    assert receipt["commit"]["apply_code"] is False
+    assert receipt["commit"]["revenue_state_allowed"] is False
+
+    first = receipt["candidates"][0]
+    assert first["schema"] == "nomad.agent_morphology_candidate.v1"
+    assert first["proof_digest"].startswith("sha256:")
+    assert first["side_effect_scope"] == "shadow_only_until_gate_passes"
+    assert [step["op"] for step in first["sepl_operator_trace"]] == ["reflect", "select", "improve", "evaluate", "commit"]
+    assert "revenue_state_without_paid_receipt" in first["learnability_mask"]["blocked"]
+
+
+def test_agp_morphology_reactor_weighting_requires_positive_receipt(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
+    ledger = tmp_path / "morphology.jsonl"
+    worker_fleet = {
+        "active_worker_count": 6,
+        "latest_verifier_brain_witness": {
+            "provider": "openrouter_free",
+            "model": "openrouter/free",
+            "status": "ok",
+            "fallback": False,
+            "digest": "sha256:" + "2" * 64,
+        },
+    }
+    external_summary = {
+        "latest_by_external": [{"external_id": "paid:1", "stage": "paid", "settlement_ref": "receipt:ok"}],
+        "revenue_recognized_usd_total": 12.0,
+    }
+
+    receipt = run_agp_morphology_reactor(
+        {
+            "agent_id": "agp.proposer",
+            "cell_count": 32,
+            "seed": "paid-receipt-nearest",
+            "verifier_brain_witness": worker_fleet["latest_verifier_brain_witness"],
+        },
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        external_value_summary=external_summary,
+        ledger_path=ledger,
+    )
+
+    assert receipt["aggregate"]["weighted_count"] > 0
+    assert receipt["commit"]["decision"] == "runtime_weight_descriptor_ready"
+    assert receipt["commit"]["revenue_state_allowed"] is True
+    assert receipt["commit"]["runtime_weight_candidates"]
 
 
 def test_agp_empirical_run_measures_candidate_delta_and_verifier_ablation(tmp_path):

@@ -51,6 +51,7 @@ from nomad_autogenesis import (
     build_agp_evaluation_surface,
     build_agp_empirical_surface,
     build_agp_model_manager_surface,
+    build_agp_morphology_reactor_surface,
     build_agp_optimizer_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
@@ -82,6 +83,7 @@ from nomad_autogenesis import (
     run_agp_context_operation,
     run_agp_benchmark_suite,
     run_agp_empirical_evaluation,
+    run_agp_morphology_reactor,
     run_agp_optimizer_step,
     run_agp_pulse,
     run_autonomous_agp_cycle,
@@ -611,6 +613,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet=worker_fleet,
             conformance_surface=conformance,
             resource_substrate=substrate,
+        )
+
+    @classmethod
+    def _build_agp_morphology_reactor(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        return build_agp_morphology_reactor_surface(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            sales_surface={"surface_digest": summary.get("sales_surface_digest", "")},
+            receipt_predictor={"schema": "nomad.receipt_predictor.v1"},
+            external_value_summary=summarize_external_value_ledger(limit=1000, latest_limit=200),
         )
 
     @classmethod
@@ -1725,6 +1741,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
                     "agp_pulse": f"{b}/swarm/agp/pulse",
                     "agp_pulse_surface": f"{b}/.well-known/nomad-agp-pulse.json",
+                    "agp_morphology_reactor": f"{b}/swarm/autogenesis/morphology-reactor",
+                    "agp_morphology_reactor_surface": f"{b}/.well-known/nomad-autogenesis-morphology-reactor.json",
                     "telegram_a2a": f"{b}/.well-known/nomad-telegram-a2a.json",
                     "telegram_a2a_messages": f"{b}/swarm/telegram-a2a/messages",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
@@ -2172,6 +2190,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/pulse", "/.well-known/nomad-agp-pulse.json"}:
             self._json_response(self.__class__._build_agp_pulse(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis/morphology-reactor", "/.well-known/nomad-autogenesis-morphology-reactor.json"}:
+            self._json_response(self.__class__._build_agp_morphology_reactor(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/telegram-a2a", "/.well-known/nomad-telegram-a2a.json"}:
             self._json_response(self.__class__._build_telegram_a2a(base_url=self._base_url()))
@@ -3418,6 +3439,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/paper-report",
                     "/.well-known/nomad-agp-pulse.json",
                     "/swarm/agp/pulse",
+                    "/.well-known/nomad-autogenesis-morphology-reactor.json",
+                    "/swarm/autogenesis/morphology-reactor",
                     "/.well-known/nomad-telegram-a2a.json",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
@@ -4322,6 +4345,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/autogenesis/morphology-reactor":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            result = run_agp_morphology_reactor(
+                payload,
+                base_url=base,
+                worker_fleet=worker_fleet,
+                external_value_summary=summarize_external_value_ledger(limit=1000, latest_limit=200),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/agp/version-lineage":
             base = self._base_url()
             result = record_agp_version_lineage(payload, base_url=base)
@@ -5109,6 +5147,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/agp/durable-ledger",
                     "/.well-known/nomad-agp-paper-report.json",
                     "/swarm/agp/paper-report",
+                    "/.well-known/nomad-autogenesis-morphology-reactor.json",
+                    "/swarm/autogenesis/morphology-reactor",
                     "/.well-known/nomad-telegram-a2a.json",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",

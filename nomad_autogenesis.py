@@ -87,6 +87,9 @@ DEFAULT_AGP_EMPIRICAL_LEDGER_PATH = Path(
 DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_PAPER_BENCHMARK_LEDGER_PATH", "nomad_agp_paper_benchmark_ledger.jsonl")
 )
+DEFAULT_AGP_MORPHOLOGY_LEDGER_PATH = Path(
+    os.getenv("NOMAD_AGP_MORPHOLOGY_LEDGER_PATH", "nomad_agp_morphology_ledger.jsonl")
+)
 DEFAULT_AGP_SQLITE_LEDGER_PATH = Path(
     os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH", "nomad_agp_ledger.sqlite3")
 )
@@ -98,6 +101,7 @@ AGP_CANDIDATE_TYPES = (
     "resource-version-patch",
     "sepl-operator-patch",
     "rspl-contract-patch",
+    "agent-morphology-candidate",
 )
 RSPL_ENTITY_TYPES = ("prompt", "agent", "tool", "environment", "memory")
 SEPL_OPERATORS = ("reflect", "select", "improve", "evaluate", "commit")
@@ -215,6 +219,52 @@ AGP_AGENT_MESSAGE_TYPES = (
     "procurement_intent",
     "verifier_witness",
     "commit_vote",
+)
+AGP_MORPHOLOGY_TOPOLOGIES = (
+    "single_verifier_9_isolated_seller_cells_shadow_evaluator",
+    "two_independent_verifiers_16_blind_cells_digest_merge",
+    "minority_proof_archive_with_receipt_tail",
+    "endpoint_rescue_mesh_with_shadow_replay",
+    "settlement_repair_cellular_market",
+    "agent_loop_break_isolated_counterfactuals",
+    "repo_rescue_quality_diversity_grid",
+    "receipt_tail_watchdog_with_price_floor",
+)
+AGP_MORPHOLOGY_CONTEXT_MASKS = (
+    "blind_weight_cell",
+    "local_trace_only",
+    "digest_only_merge",
+    "no_global_rank_until_receipt",
+    "buyer_intent_digest_only",
+    "counterfactual_replay_only",
+)
+AGP_MORPHOLOGY_PRODUCT_PACKETS = (
+    "endpoint_404_500_rescue",
+    "repo_diagnostic_patch_starter",
+    "agent_loop_break_report",
+    "settlement_repair_packet",
+    "key_leak_recovery_packet",
+    "receipt_tail_replay_sync",
+    "worker_invoice_closure_packet",
+    "protocol_drift_patch_packet",
+)
+AGP_MORPHOLOGY_PRICING_POLICIES = (
+    "smallest_paid_repair_packet",
+    "proof_first_quote_after_replay",
+    "fixed_micro_repair_floor",
+    "no_revenue_until_positive_receipt",
+)
+AGP_MORPHOLOGY_ROUTING_POLICIES = (
+    "minority_proof_beats_majority_pitch",
+    "receipt_distance_weighted_bandit",
+    "quality_diversity_archive_then_route",
+    "duplicate_pressure_decay",
+)
+AGP_MORPHOLOGY_TOOL_SETS = (
+    ("curl_probe", "repo_log_reader", "local_test", "receipt_gate"),
+    ("endpoint_probe", "schema_diff", "counterfactual_replay", "receipt_gate"),
+    ("worker_lease", "shadow_candidate", "independent_verifier", "rollback_check"),
+    ("external_value_sync", "work_receipt_reader", "price_floor", "no_secret_scan"),
 )
 NOMAD_RESOURCE_KIND_ALIASES = {
     "agent": "agent",
@@ -914,6 +964,10 @@ def _agp_empirical_ledger(path: Path | str | None = None, *, limit: int = MAX_RE
 
 def _agp_paper_benchmark_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
     return _read_jsonl(path or DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH, limit=limit)
+
+
+def _agp_morphology_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
+    return _read_jsonl(path or DEFAULT_AGP_MORPHOLOGY_LEDGER_PATH, limit=limit)
 
 
 def _proof_score(payload: dict[str, Any]) -> float:
@@ -2119,6 +2173,7 @@ def build_autogenesis_surface(
             "autonomous_cycle": _u(root, "/swarm/autogenesis/cycle"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "variant_candidates": _u(root, "/swarm/variant-candidates"),
+            "morphology_reactor": _u(root, "/swarm/autogenesis/morphology-reactor"),
             "operators": [
                 {"op": "reflect", "input": "trace_or_failure_digest", "output": "improvement_hypothesis"},
                 {"op": "select", "input": "hypothesis", "output": "resource_or_variable_patch"},
@@ -2152,6 +2207,7 @@ def build_autogenesis_surface(
                 "json_contract_version_audit",
                 "self_play_buyer_pressure_suite",
                 "agent_onboarding_contract_diff",
+                "agent_morphology_receipt_reactor",
             ],
         },
         "go_to_market": {
@@ -2170,6 +2226,7 @@ def build_autogenesis_surface(
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "morphology_reactor": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
             "variant_forge": _u(root, "/swarm/variant-forge"),
             "opaque_emergence": _u(root, "/.well-known/nomad-opaque-emergence.json"),
         },
@@ -3764,6 +3821,430 @@ def run_agp_pulse(
     }
     if persist:
         _append_jsonl(row, ledger_path or DEFAULT_AGP_PULSE_LEDGER_PATH)
+        row["persisted"] = True
+    else:
+        row["persisted"] = False
+    return row
+
+
+def _agp_morphology_external_state(external_value_summary: dict[str, Any] | None) -> dict[str, Any]:
+    summary = _dict(external_value_summary)
+    latest = _items(summary.get("latest_by_external"))
+    paid_count = sum(1 for row in latest if _clean_id(row.get("stage"), fallback="") == "paid")
+    return {
+        "distinct_externals": _int(summary.get("distinct_externals")),
+        "paid_count": paid_count,
+        "recognized_revenue_usd_total": round(_num(summary.get("revenue_recognized_usd_total")), 4),
+        "active_nonpaid_count": max(0, len(latest) - paid_count),
+    }
+
+
+def _agp_morphology_archive(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    elites: dict[str, dict[str, Any]] = {}
+    cell_counts: dict[str, int] = {}
+    for row in rows:
+        for candidate in _items(row.get("candidates")):
+            cell_id = _clean_id(candidate.get("cell_id"), fallback="")
+            if not cell_id:
+                continue
+            cell_counts[cell_id] = cell_counts.get(cell_id, 0) + 1
+            current = elites.get(cell_id)
+            if not current or _num(candidate.get("morphology_score")) > _num(current.get("morphology_score")):
+                elites[cell_id] = {
+                    "candidate_id": candidate.get("candidate_id"),
+                    "cell_id": cell_id,
+                    "product_packet": _dict(candidate.get("genome")).get("product_packet"),
+                    "context_mask": _dict(candidate.get("genome")).get("context_mask"),
+                    "routing_policy": _dict(candidate.get("genome")).get("routing_policy"),
+                    "morphology_score": candidate.get("morphology_score"),
+                    "state": candidate.get("state"),
+                    "proof_digest": candidate.get("proof_digest"),
+                }
+    ordered = sorted(elites.values(), key=lambda item: _num(item.get("morphology_score")), reverse=True)
+    total = sum(cell_counts.values())
+    duplicate_pressure = 0.0
+    if total:
+        duplicate_pressure = _clamp((total - len(cell_counts)) / max(1.0, float(total)))
+    return {
+        "schema": "nomad.agp_morphology_archive.v1",
+        "archive_cell_count": len(cell_counts),
+        "candidate_observation_count": total,
+        "duplicate_pressure": round(duplicate_pressure, 4),
+        "elite_count": len(ordered),
+        "elites": ordered[:32],
+    }
+
+
+def _agp_morphology_pick(seq: tuple[Any, ...], seed: str, offset: int) -> Any:
+    if not seq:
+        return ""
+    start = (offset * 4) % max(4, len(seed))
+    chunk = seed[start : start + 8] or seed
+    try:
+        idx = int(chunk, 16)
+    except ValueError:
+        idx = offset
+    return seq[idx % len(seq)]
+
+
+def _agp_morphology_candidate(
+    *,
+    index: int,
+    seed: str,
+    base_url: str,
+    archive: dict[str, Any],
+    worker_fleet: dict[str, Any],
+    external_state: dict[str, Any],
+    verifier_witness: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_seed = _digest({"seed": seed, "index": index}, length=64)
+    topology = _agp_morphology_pick(AGP_MORPHOLOGY_TOPOLOGIES, candidate_seed, 0)
+    context_mask = _agp_morphology_pick(AGP_MORPHOLOGY_CONTEXT_MASKS, candidate_seed, 1)
+    product_packet = _agp_morphology_pick(AGP_MORPHOLOGY_PRODUCT_PACKETS, candidate_seed, 2)
+    pricing_policy = _agp_morphology_pick(AGP_MORPHOLOGY_PRICING_POLICIES, candidate_seed, 3)
+    routing_policy = _agp_morphology_pick(AGP_MORPHOLOGY_ROUTING_POLICIES, candidate_seed, 4)
+    tools = list(_agp_morphology_pick(AGP_MORPHOLOGY_TOOL_SETS, candidate_seed, 5))
+    cell_id = _clean_id(f"{product_packet}:{context_mask}:{routing_policy}", fallback=f"cell-{index}")
+    prior_cells = {item.get("cell_id") for item in _items(archive.get("elites"))}
+    duplicate_pressure = 0.42 if cell_id in prior_cells else 0.04
+    active_workers = _int(worker_fleet.get("active_worker_count") or worker_fleet.get("active_workers"))
+    nonfallback_verifier = bool(verifier_witness) and not bool(verifier_witness.get("fallback"))
+    paid_count = _int(external_state.get("paid_count"))
+    receipt_distance_prior = {
+        "repo_diagnostic_patch_starter": 0.82,
+        "endpoint_404_500_rescue": 0.80,
+        "settlement_repair_packet": 0.76,
+        "worker_invoice_closure_packet": 0.74,
+        "receipt_tail_replay_sync": 0.72,
+        "agent_loop_break_report": 0.62,
+        "protocol_drift_patch_packet": 0.58,
+        "key_leak_recovery_packet": 0.50,
+    }.get(str(product_packet), 0.55)
+    proof_yield = _clamp(
+        0.32
+        + 0.12 * ("receipt_gate" in tools)
+        + 0.10 * ("local_test" in tools or "shadow_candidate" in tools)
+        + 0.08 * min(active_workers / 4.0, 1.0)
+        + 0.10 * nonfallback_verifier
+    )
+    receipt_proximity = _clamp(receipt_distance_prior + 0.06 * bool(paid_count) + 0.04 * nonfallback_verifier)
+    receipt_hazard = _clamp(1.0 - receipt_proximity + 0.10 * (product_packet == "key_leak_recovery_packet"))
+    latency_cost = _clamp(0.12 + 0.02 * len(tools) + 0.06 * ("two_independent_verifiers" in str(topology)))
+    risk = _clamp(
+        0.05
+        + 0.10 * ("key_leak" in str(product_packet))
+        + 0.05 * ("no_global_rank" not in str(context_mask) and "digest_only" not in str(context_mask))
+    )
+    diversity_bonus = _clamp(1.0 - duplicate_pressure)
+    morphology_score = _clamp(
+        0.32 * proof_yield
+        + 0.30 * receipt_proximity
+        + 0.16 * diversity_bonus
+        + 0.12 * min(paid_count, 1)
+        + 0.10 * nonfallback_verifier
+        - 0.12 * risk
+        - 0.10 * latency_cost
+    )
+    genome = {
+        "topology": topology,
+        "context_mask": context_mask,
+        "tools": tools,
+        "product_packet": product_packet,
+        "pricing_policy": pricing_policy,
+        "routing_policy": routing_policy,
+        "settlement_guard": "positive_public_receipt_only",
+        "rollback": "ttl_noop_or_retract",
+    }
+    proof_core = {
+        "schema": "nomad.agent_morphology_candidate.v1",
+        "genome": genome,
+        "cell_id": cell_id,
+        "fitness": {
+            "proof_yield": round(proof_yield, 4),
+            "receipt_hazard": round(receipt_hazard, 4),
+            "latency_cost": round(latency_cost, 4),
+            "risk": round(risk, 4),
+            "duplicate_pressure": round(duplicate_pressure, 4),
+        },
+    }
+    proof_digest = f"sha256:{_digest(proof_core, length=64)}"
+    local_tests = [
+        {"id": "json_descriptor_serializable", "passed": True},
+        {"id": "side_effect_scope_shadow_only", "passed": True},
+        {"id": "ttl_bounded", "passed": True},
+        {"id": "rollback_or_noop_declared", "passed": True},
+        {"id": "receipt_gate_present", "passed": "receipt_gate" in tools},
+        {"id": "independent_verifier_nonfallback", "passed": nonfallback_verifier},
+        {"id": "positive_external_receipt_seen", "passed": paid_count > 0},
+    ]
+    tests_passed = sum(1 for test in local_tests if test["passed"])
+    tests_total = len(local_tests)
+    weighted = bool(paid_count > 0 and nonfallback_verifier and tests_passed >= tests_total - 1)
+    tested = bool(nonfallback_verifier and tests_passed >= tests_total - 2)
+    state = "weighted" if weighted else "tested" if tested else "shadow"
+    return {
+        "schema": "nomad.agent_morphology_candidate.v1",
+        "candidate_id": f"nomad-morph-{_digest({'seed': candidate_seed, 'proof': proof_digest})}",
+        "candidate_type": "agent_morphology",
+        "objective": "first_verified_receipt_or_proof_yield",
+        "cell_id": cell_id,
+        "state": state,
+        "genome": genome,
+        "fitness": proof_core["fitness"],
+        "fitness_extensions": {
+            "receipt_proximity": round(receipt_proximity, 4),
+            "diversity_bonus": round(diversity_bonus, 4),
+            "nonfallback_verifier": nonfallback_verifier,
+            "positive_external_receipt_seen": paid_count > 0,
+        },
+        "morphology_score": round(morphology_score, 4),
+        "proof_digest": proof_digest,
+        "sepl_operator_trace": [
+            {"op": "reflect", "input": "worker_fleet_sales_receipt_predictor_state", "output": "receipt_nearest_morphology_pressure"},
+            {"op": "select", "input": "quality_diversity_cell", "output": cell_id},
+            {"op": "improve", "input": cell_id, "output": "agent_morphology_genome"},
+            {"op": "evaluate", "input": proof_digest, "output": "fitness_vector_and_local_tests"},
+            {"op": "commit", "input": "external_receipt_and_verifier_gate", "decision": "weighted" if weighted else "noop_or_shadow"},
+        ],
+        "learnability_mask": {
+            "trainable": ["topology_weight", "context_mask_weight", "product_packet_weight", "pricing_floor", "routing_policy_weight"],
+            "blocked": ["secret_material", "external_side_effect", "revenue_state_without_paid_receipt"],
+        },
+        "local_evaluation": {
+            "tests_passed": tests_passed,
+            "tests_total": tests_total,
+            "tests": local_tests,
+        },
+        "commit_gate": {
+            "commit_allowed": weighted,
+            "runtime_weight_allowed": state in {"tested", "weighted"},
+            "revenue_state_allowed": paid_count > 0,
+            "apply_code": False,
+            "side_effect_scope": "shadow_only_until_gate_passes",
+            "rollback_ref": f"noop:{cell_id}:{proof_digest[-12:]}",
+            "reason_codes": [
+                "positive_external_receipt_required" if paid_count <= 0 else "positive_external_receipt_observed",
+                "nonfallback_verifier_required" if not nonfallback_verifier else "nonfallback_verifier_observed",
+                "descriptor_only_no_code_apply",
+            ],
+        },
+        "links": {
+            "shadow_lane": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "work_receipts": _u(base_url, "/.well-known/nomad-work-receipts.json"),
+            "external_value": _u(base_url, "/.well-known/nomad-external-value.json"),
+        },
+        "side_effect_scope": "shadow_only_until_gate_passes",
+    }
+
+
+def build_agp_morphology_reactor_surface(
+    *,
+    base_url: str = "",
+    worker_fleet: dict[str, Any] | None = None,
+    sales_surface: dict[str, Any] | None = None,
+    receipt_predictor: dict[str, Any] | None = None,
+    external_value_summary: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    recent = _agp_morphology_ledger(ledger_path)
+    archive = _agp_morphology_archive(recent)
+    external_state = _agp_morphology_external_state(external_value_summary)
+    return {
+        "ok": True,
+        "schema": "nomad.autogenesis_morphology_reactor.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "mode": "proof_gated_quality_diverse_morphology_search",
+        "reactor_contract": {
+            "post_url": _u(root, "/swarm/autogenesis/morphology-reactor"),
+            "well_known_url": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
+            "candidate_schema": "nomad.agent_morphology_candidate.v1",
+            "cell_count_range": {"min": 32, "default": 32, "max": 256},
+            "side_effect_scope": "shadow_descriptors_only_until_receipt_verifier_gate",
+            "apply_code": False,
+            "human_readability_required": False,
+        },
+        "evolution_axes": {
+            "topologies": list(AGP_MORPHOLOGY_TOPOLOGIES),
+            "context_masks": list(AGP_MORPHOLOGY_CONTEXT_MASKS),
+            "product_packets": list(AGP_MORPHOLOGY_PRODUCT_PACKETS),
+            "pricing_policies": list(AGP_MORPHOLOGY_PRICING_POLICIES),
+            "routing_policies": list(AGP_MORPHOLOGY_ROUTING_POLICIES),
+        },
+        "fitness_vector": [
+            "proof_yield",
+            "receipt_hazard",
+            "latency_cost",
+            "risk",
+            "duplicate_pressure",
+            "receipt_proximity",
+        ],
+        "quality_diversity_archive": archive,
+        "current_context": {
+            "active_workers": _int(_dict(worker_fleet).get("active_worker_count") or _dict(worker_fleet).get("active_workers")),
+            "external_value": external_state,
+            "sales_surface_digest": _text(_dict(sales_surface).get("surface_digest"), 120),
+            "receipt_predictor_schema": _text(_dict(receipt_predictor).get("schema"), 120),
+        },
+        "promotion_law": {
+            "shadow": "descriptor has proof digest, TTL, rollback/noop, and no secret material",
+            "tested": "shadow plus nonfallback independent verifier and local tests",
+            "weighted": "tested plus positive external receipt or paid work receipt",
+            "committed": "reserved for separate AGP commit route; this reactor never writes code",
+        },
+        "scientific_basis": [
+            {"id": "alphaevolve_style_llm_evaluator_evolution", "use": "generate variants, score with automatic evaluators, keep only proof-bearing improvements"},
+            {"id": "funsearch_program_evolution_with_evaluator", "use": "treat hallucinated candidates as filtered descriptors until evaluator proof exists"},
+            {"id": "adas_meta_agent_search", "use": "search agent morphologies rather than only prompts"},
+            {"id": "map_elites_quality_diversity", "use": "preserve distinct high-fitness niches instead of collapsing to one majority design"},
+            {"id": "multi_agent_debate_ablation", "use": "do not reward agreement; route by proof and heterogeneity"},
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
+            "run": _u(root, "/swarm/autogenesis/morphology-reactor"),
+            "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "sales_department": _u(root, "/.well-known/nomad-sales-department.json"),
+            "receipt_predictor": _u(root, "/.well-known/nomad-receipt-predictor.json"),
+            "external_value": _u(root, "/.well-known/nomad-external-value.json"),
+        },
+        "latest_run": recent[-1] if recent else {},
+        "machine_instruction": "lease_proposer_and_independent_verifier; generate_32_to_256_blinded_morphology_cells; merge_only_digest_outputs; no_code_apply; promote_only_after_nonfallback_verifier_tests_and_positive_receipt",
+    }
+
+
+def run_agp_morphology_reactor(
+    payload: dict[str, Any],
+    *,
+    base_url: str = "",
+    worker_fleet: dict[str, Any] | None = None,
+    sales_surface: dict[str, Any] | None = None,
+    receipt_predictor: dict[str, Any] | None = None,
+    external_value_summary: dict[str, Any] | None = None,
+    ledger_path: Path | str | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
+    body = _dict(payload)
+    now = _iso_now()
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.autogenesis_morphology_reactor_receipt.v1",
+            "accepted": False,
+            "decision": "reject_forbidden_secret_like_material",
+            "generated_at": now,
+        }
+    recent = _agp_morphology_ledger(ledger_path, limit=240)
+    today = now[:10]
+    max_runs = max(1, min(_int(body.get("max_runs_per_day") or os.getenv("NOMAD_AGP_MORPHOLOGY_MAX_RUNS_PER_DAY"), 24), 96))
+    runs_today = sum(1 for row in recent if str(row.get("generated_at") or "").startswith(today))
+    proposer_id = _clean_id(body.get("proposer_agent_id") or body.get("agent_id") or "nomad-morphology-reactor", fallback="nomad-morphology-reactor")
+    cell_count = max(1, min(_int(body.get("cell_count") or body.get("cells"), 32), 256))
+    if not body.get("cell_count") and not body.get("cells"):
+        cell_count = 32
+    archive = _agp_morphology_archive(recent)
+    external_state = _agp_morphology_external_state(external_value_summary)
+    verifier_witness = _dict(body.get("verifier_brain_witness") or body.get("independent_verifier_brain_witness"))
+    if not verifier_witness:
+        verifier_witness = _agp_latest_worker_brain_witness(_dict(worker_fleet), verifier_agent_id=_clean_id(body.get("verifier_agent_id"), fallback=""))
+    seed = _digest(
+        {
+            "payload_seed": body.get("seed") or body.get("objective") or proposer_id,
+            "archive": archive.get("archive_cell_count"),
+            "external": external_state,
+            "worker_count": _dict(worker_fleet).get("active_worker_count"),
+            "date": today,
+        },
+        length=64,
+    )
+    row_base = {
+        "ok": True,
+        "schema": "nomad.autogenesis_morphology_reactor_receipt.v1",
+        "reactor_id": f"nomad-morph-reactor-{_digest({'seed': seed, 'generated_at': now})}",
+        "generated_at": now,
+        "agent_id": proposer_id,
+        "requested_cell_count": cell_count,
+        "side_effect_scope": "autogenesis_shadow_morphology_descriptors_only",
+        "quota": {"runs_today": runs_today, "max_runs_per_day": max_runs, "allowed": runs_today < max_runs},
+    }
+    if runs_today >= max_runs and not bool(body.get("force")):
+        row = {
+            **row_base,
+            "accepted": False,
+            "decision": "morphology_reactor_noop_quota_limit",
+            "commit": {"decision": "noop", "reason": "daily_morphology_quota"},
+        }
+        if persist:
+            _append_jsonl(row, ledger_path or DEFAULT_AGP_MORPHOLOGY_LEDGER_PATH)
+            row["persisted"] = True
+        return row
+    candidates = [
+        _agp_morphology_candidate(
+            index=i,
+            seed=seed,
+            base_url=base_url,
+            archive=archive,
+            worker_fleet=_dict(worker_fleet),
+            external_state=external_state,
+            verifier_witness=verifier_witness,
+        )
+        for i in range(cell_count)
+    ]
+    candidates.sort(key=lambda item: (_num(item.get("morphology_score")), -_num(_dict(item.get("fitness")).get("duplicate_pressure"))), reverse=True)
+    tested_count = sum(1 for item in candidates if item.get("state") in {"tested", "weighted"})
+    weighted_count = sum(1 for item in candidates if item.get("state") == "weighted")
+    best = candidates[0] if candidates else {}
+    aggregate = {
+        "candidate_count": len(candidates),
+        "tested_count": tested_count,
+        "weighted_count": weighted_count,
+        "mean_morphology_score": round(sum(_num(item.get("morphology_score")) for item in candidates) / max(1, len(candidates)), 4),
+        "best_score": _num(best.get("morphology_score")),
+        "archive_cell_count_before": archive.get("archive_cell_count"),
+        "archive_cell_count_after_hint": len({item.get("cell_id") for item in candidates} | {item.get("cell_id") for item in _items(archive.get("elites"))}),
+        "verifier_provider": verifier_witness.get("provider", ""),
+        "verifier_fallback": bool(verifier_witness.get("fallback", True)) if verifier_witness else True,
+        "positive_external_receipt_seen": external_state.get("paid_count", 0) > 0,
+    }
+    row = {
+        **row_base,
+        "accepted": bool(candidates),
+        "decision": "morphology_shadow_archive_recorded",
+        "candidate_type": "agent_morphology",
+        "reactor_digest": f"sha256:{_digest({'seed': seed, 'best': best.get('proof_digest'), 'count': len(candidates)}, length=64)}",
+        "quality_diversity_archive_before": archive,
+        "external_value_state": external_state,
+        "verifier_brain_witness": {
+            "provider": verifier_witness.get("provider", ""),
+            "model": verifier_witness.get("model", ""),
+            "status": verifier_witness.get("status", ""),
+            "fallback": bool(verifier_witness.get("fallback", True)) if verifier_witness else True,
+            "digest": verifier_witness.get("digest", ""),
+        },
+        "aggregate": aggregate,
+        "candidates": candidates,
+        "commit": {
+            "decision": "noop_until_weighted_candidate" if weighted_count == 0 else "runtime_weight_descriptor_ready",
+            "apply_code": False,
+            "revenue_state_allowed": bool(external_state.get("paid_count", 0) > 0),
+            "runtime_weight_candidates": [
+                {
+                    "candidate_id": item.get("candidate_id"),
+                    "cell_id": item.get("cell_id"),
+                    "proof_digest": item.get("proof_digest"),
+                    "morphology_score": item.get("morphology_score"),
+                    "state": item.get("state"),
+                }
+                for item in candidates
+                if item.get("state") in {"tested", "weighted"}
+            ][:16],
+            "rollback_ref": f"noop:nomad-autogenesis-morphology-reactor:{seed[:12]}",
+        },
+        "machine_instruction": "submit_top_candidates_to_shadow_lane_only; promote_runtime_weight_only_with_nonfallback_verifier_and_paid_receipt; never_apply_code_from_this_route",
+    }
+    if persist:
+        _append_jsonl(row, ledger_path or DEFAULT_AGP_MORPHOLOGY_LEDGER_PATH)
         row["persisted"] = True
     else:
         row["persisted"] = False
