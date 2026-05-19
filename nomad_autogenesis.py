@@ -8,6 +8,7 @@ more weight.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -321,6 +322,14 @@ def _firebase_proxy_url() -> str:
 
 
 def _firebase_service_account_info() -> dict[str, Any]:
+    raw_base64 = (os.getenv("FIREBASE_CONFIG_BASE64") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64") or "").strip()
+    if raw_base64:
+        try:
+            parsed = json.loads(base64.b64decode(raw_base64).decode("utf-8"))
+        except (ValueError, json.JSONDecodeError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            return parsed
     raw_json = (os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON") or os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
     if raw_json:
         try:
@@ -383,6 +392,8 @@ def _firebase_config_status() -> dict[str, Any]:
             "FIREBASE_API_KEY",
             "FIREBASE_CLIENT_EMAIL",
             "FIREBASE_PRIVATE_KEY",
+            "FIREBASE_CONFIG_BASE64",
+            "GOOGLE_APPLICATION_CREDENTIALS_BASE64",
             "GOOGLE_APPLICATION_CREDENTIALS_JSON",
             "FIREBASE_SERVICE_ACCOUNT_JSON",
             "NOMAD_AGP_FIREBASE_LEDGER_TOKEN",
@@ -421,6 +432,28 @@ def _firebase_auth() -> tuple[dict[str, str], str, str]:
     if api_key:
         return {}, "?" + urlencode({"key": api_key}), "api_key"
     return {}, "", "none"
+
+
+def _durable_restart_persistence_ready() -> bool:
+    backend = _ledger_backend()
+    render_runtime = (os.getenv("RENDER") or "").strip().lower() == "true"
+    if backend.startswith("firebase"):
+        status = _firebase_config_status()
+        if not status["configured"]:
+            return False
+        if status["auth_mode"] == "proxy_url":
+            return True
+        headers, _query, auth_mode = _firebase_auth()
+        return auth_mode == "service_account" and bool(headers.get("Authorization"))
+    if backend in {"sqlite", "dual"}:
+        if not render_runtime:
+            return True
+        sqlite_path = str(_sqlite_ledger_path())
+        state_dir = (os.getenv("NOMAD_STATE_DIR") or "").strip()
+        return bool(state_dir and sqlite_path.startswith(state_dir))
+    if backend == "jsonl":
+        return not render_runtime
+    return False
 
 
 def _firebase_request_json(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
@@ -3158,6 +3191,7 @@ def build_agp_conformance_surface(
         "paper_benchmark_modes_declared": set(AGP_BENCHMARK_MODES) == {"gpqa_diamond", "aime", "gaia", "leetcode"},
         "benchmark_suite_route": True,
         "durable_agp_ledger_backend_route": True,
+        "durable_restart_persistence_ready": _durable_restart_persistence_ready(),
         "paper_report_route": True,
         "procurement_route_for_compute_and_services": True,
         "external_spend_receipt_gate": True,
@@ -3213,6 +3247,8 @@ def build_agp_conformance_surface(
         gaps.append("record_real_multi_benchmark_suite_with_positive_aggregate_delta")
     if not recent_lineage:
         gaps.append("record_real_agp_version_lineage_graph_with_rollback")
+    if not checks["durable_restart_persistence_ready"]:
+        gaps.append("configure_restart_durable_agp_ledger_firebase_service_account_proxy_or_persistent_disk")
     score = round(passed / max(1, len(checks)), 4)
     return {
         "ok": True,
@@ -3340,6 +3376,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "firebase_backend_available": backend.startswith("firebase"),
         "firebase_configured_when_selected": (not backend.startswith("firebase")) or bool(firebase_status["configured"]),
         "sqlite_file_readable_when_present": (not sqlite_path.exists()) or sqlite_readable,
+        "restart_durable_backend_ready": _durable_restart_persistence_ready(),
         "receipt_payloads_remain_canonical_json": True,
         "no_secret_material_required": True,
         "render_free_requires_external_durability_for_restart_survival": not backend.startswith("firebase"),
@@ -3437,6 +3474,7 @@ def build_agp_paper_report_surface(
             "status": "implemented_switchable_backend",
             "configured_backend": backend,
             "firebase_configured": bool(_dict(_dict(durable.get("streams")).get("firebase")).get("configured")),
+            "restart_durable_backend_ready": bool(_dict(durable.get("checks")).get("restart_durable_backend_ready")),
         },
     }
     external_requirements = [

@@ -42,6 +42,8 @@ from nomad_autogenesis import (
 )
 from nomad_cli import run_once
 from nomad_variant_forge import submit_variant_candidate
+import base64
+import json
 
 
 def _boundedness():
@@ -588,6 +590,31 @@ def test_agp_firebase_ledger_backend_falls_back_without_credentials(tmp_path, mo
     assert durable["checks"]["firebase_configured_when_selected"] is False
     assert report["implemented_layers"]["durable_ledger"]["firebase_configured"] is False
     assert any(item["name"] == "FIREBASE_PROJECT_ID" for item in report["external_requirements"])
+
+
+def test_agp_firebase_service_account_base64_is_detected(tmp_path, monkeypatch):
+    service_account = {
+        "type": "service_account",
+        "project_id": "nomad-firebase-test",
+        "client_email": "nomad@example.iam.gserviceaccount.com",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    encoded = base64.b64encode(json.dumps(service_account).encode("utf-8")).decode("ascii")
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "firebase+jsonl")
+    monkeypatch.setenv("FIREBASE_CONFIG_BASE64", encoded)
+    monkeypatch.delenv("FIREBASE_API_KEY", raising=False)
+    monkeypatch.delenv("FIREBASE_PROJECT_ID", raising=False)
+    monkeypatch.delenv("FIREBASE_CLIENT_EMAIL", raising=False)
+    monkeypatch.delenv("FIREBASE_PRIVATE_KEY", raising=False)
+
+    durable = build_agp_durable_ledger_surface(base_url="https://nomad.example")
+
+    firebase = durable["streams"]["firebase"]
+    assert firebase["configured"] is True
+    assert firebase["auth_mode"] == "service_account"
+    assert firebase["project_id_present"] is True
+    assert "FIREBASE_CONFIG_BASE64" in firebase["secret_env_names"]
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):
