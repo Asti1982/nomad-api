@@ -1626,6 +1626,31 @@ def _agp_verifier_brain_witness(base_url: str, agent_id: str, timeout: float, re
         )
         if github.get("ok"):
             return github
+        openrouter_token = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        openrouter_base = (os.getenv("NOMAD_OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").rstrip("/")
+        configured_openrouter_model = (os.getenv("NOMAD_OPENROUTER_MODEL") or "").strip()
+        openrouter_free_model = (
+            os.getenv("NOMAD_OPENROUTER_FREE_MODEL")
+            or (configured_openrouter_model if configured_openrouter_model.endswith(":free") else "")
+            or "openrouter/free"
+        ).strip()
+        free_openrouter_enabled = _agp_flag("NOMAD_AGP_ENABLE_FREE_OPENROUTER", True)
+        if free_openrouter_enabled and openrouter_free_model and (
+            openrouter_free_model == "openrouter/free" or openrouter_free_model.endswith(":free")
+        ):
+            openrouter_free = _agp_openai_compatible_witness(
+                provider="openrouter_free",
+                url=f"{openrouter_base}/chat/completions",
+                token=openrouter_token,
+                model=openrouter_free_model,
+                prompt=prompt,
+                report=report,
+                lease=lease,
+                timeout=timeout,
+                extra_headers={"HTTP-Referer": base_url.rstrip("/") or "https://www.syndiode.com", "X-Title": "Nomad AGP Worker"},
+            )
+            if openrouter_free.get("ok"):
+                return openrouter_free
         if paid_enabled:
             xai_token = (os.getenv("XAI_API_KEY") or "").strip()
             xai_base = (os.getenv("NOMAD_XAI_BASE_URL") or "https://api.x.ai/v1").rstrip("/")
@@ -1642,9 +1667,7 @@ def _agp_verifier_brain_witness(base_url: str, agent_id: str, timeout: float, re
             )
             if xai.get("ok"):
                 return xai
-            openrouter_token = (os.getenv("OPENROUTER_API_KEY") or "").strip()
-            openrouter_base = (os.getenv("NOMAD_OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").rstrip("/")
-            openrouter_model = (os.getenv("NOMAD_OPENROUTER_MODEL") or "openai/gpt-4o-mini").strip()
+            openrouter_model = configured_openrouter_model or "openai/gpt-4o-mini"
             openrouter = _agp_openai_compatible_witness(
                 provider="openrouter",
                 url=f"{openrouter_base}/chat/completions",
@@ -1697,7 +1720,7 @@ def _agp_autonomous_cycle_submit(base_url: str, agent_id: str, timeout: float, r
         "report_digest": clean(((report.get("local_witness") or {}).get("digest_hex")), 96)
         if isinstance(report.get("local_witness"), dict)
         else "",
-        "brain_provider_order": ["ollama_local", "github_models", "xai_grok", "openrouter", "deterministic_fallback"],
+        "brain_provider_order": ["ollama_local", "github_models", "openrouter_free", "xai_grok", "openrouter", "deterministic_fallback"],
         "verifier_brain_witness": _agp_verifier_brain_witness(base_url, agent_id, timeout, report, lease),
     }
     watchdog_enabled = os.getenv("NOMAD_AGP_WATCHDOG_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}

@@ -711,6 +711,7 @@ def test_transition_worker_submits_autonomous_agp_cycle(monkeypatch):
     assert calls[0][2]["min_trigger_score"] == 0.55
     assert calls[0][2]["source_tag"] == "nomad.transition_worker.autonomous_agp_watchdog"
     assert calls[0][2]["brain_provider_order"][-1] == "deterministic_fallback"
+    assert "openrouter_free" in calls[0][2]["brain_provider_order"]
     assert calls[0][2]["verifier_brain_witness"]["provider"] == "deterministic_fallback"
     assert calls[0][2]["verifier_brain_witness"]["digest"].startswith("sha256:")
 
@@ -745,6 +746,48 @@ def test_transition_worker_uses_ollama_witness_as_agp_brain(monkeypatch):
     assert brain["model"] == "llama3.2:1b"
     assert brain["digest"] == f"sha256:{digest}"
     assert brain["fallback"] is False
+
+
+def test_transition_worker_uses_free_openrouter_without_paid_flag(monkeypatch):
+    worker = _load_worker()
+    provider_calls = []
+
+    def fake_openai_compatible(**kwargs):
+        provider_calls.append(kwargs)
+        if kwargs["provider"] == "github_models":
+            return {"ok": False, "provider": "github_models", "status": "http_401"}
+        return worker._agp_make_brain_witness(
+            provider=kwargs["provider"],
+            model=kwargs["model"],
+            status="ok",
+            capsule="Nomad RSPL SEPL verifier ok",
+            report=kwargs["report"],
+            lease=kwargs["lease"],
+            fallback=False,
+            ok=True,
+        )
+
+    monkeypatch.setattr(worker, "_agp_openai_compatible_witness", fake_openai_compatible)
+    monkeypatch.setenv("NOMAD_AGP_ENABLE_HOSTED_BRAINS", "1")
+    monkeypatch.setenv("NOMAD_AGP_ENABLE_PAID_BRAINS", "0")
+    monkeypatch.setenv("NOMAD_ALLOW_PAID_MODEL_CALLS", "0")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_unusable")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-free")
+    monkeypatch.setenv("NOMAD_OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("NOMAD_OPENROUTER_FREE_MODEL", "openrouter/free")
+
+    brain = worker._agp_verifier_brain_witness(
+        "https://nomad.example",
+        "agp.proposer",
+        3.0,
+        {"machine_objective": "autogenesis_protocol_evolution"},
+        {"lease_id": "nomad-worker-lease-proposer"},
+    )
+
+    assert brain["provider"] == "openrouter_free"
+    assert brain["model"] == "openrouter/free"
+    assert brain["fallback"] is False
+    assert [call["provider"] for call in provider_calls] == ["github_models", "openrouter_free"]
 
 
 def test_transition_worker_rejects_graphics_agp_as_brain_witness(monkeypatch):
