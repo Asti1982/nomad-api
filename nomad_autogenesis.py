@@ -439,7 +439,9 @@ def _firebase_direct_readiness() -> dict[str, Any]:
     out: dict[str, Any] = {
         "checked": False,
         "database_available": False,
+        "read_permission_verified": False,
         "write_permission_verified": False,
+        "receipt_write_observed": False,
         "auth_mode_checked": status.get("auth_mode") or "none",
         "error_status": "",
         "error_reason": "",
@@ -464,12 +466,20 @@ def _firebase_direct_readiness() -> dict[str, Any]:
     except (OSError, URLError, json.JSONDecodeError) as exc:
         out["error_reason"] = type(exc).__name__
         return out
-    permission_url = f"{database_url}:testIamPermissions"
-    permissions = ["datastore.entities.create", "datastore.entities.get", "datastore.entities.list"]
+    collection_url = (
+        f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents/"
+        f"{_firebase_collection()}?{urlencode({'pageSize': 50})}"
+    )
     try:
-        result = _firebase_request_json(permission_url, method="POST", payload={"permissions": permissions}, headers=headers)
-        granted = set(result.get("permissions") or [])
-        out["write_permission_verified"] = set(permissions).issubset(granted)
+        result = _firebase_request_json(collection_url, method="GET", headers=headers)
+        out["read_permission_verified"] = True
+        documents = result.get("documents") if isinstance(result, dict) else []
+        for document in documents or []:
+            fields = _dict(_dict(document).get("fields"))
+            if fields.get("row_digest") and fields.get("payload_json"):
+                out["receipt_write_observed"] = True
+                out["write_permission_verified"] = True
+                break
     except HTTPError as exc:
         out["error_status"] = str(getattr(exc, "code", "") or "")
         out["error_reason"] = str(getattr(exc, "reason", "") or "")
@@ -488,7 +498,11 @@ def _durable_restart_persistence_ready() -> bool:
         if status["auth_mode"] == "proxy_url":
             return True
         readiness = _firebase_direct_readiness()
-        return bool(readiness["database_available"] and readiness["write_permission_verified"])
+        return bool(
+            readiness["database_available"]
+            and readiness["read_permission_verified"]
+            and readiness["write_permission_verified"]
+        )
     if backend in {"sqlite", "dual"}:
         if not render_runtime:
             return True
@@ -635,6 +649,7 @@ def _read_firebase(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[
         return []
     database = _firebase_database_id()
     url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents:runQuery{query}"
+    query_limit = min(max(max(1, int(limit)) * 5, 50), 200)
     structured_query = {
         "structuredQuery": {
             "from": [{"collectionId": _firebase_collection()}],
@@ -645,15 +660,16 @@ def _read_firebase(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[
                     "value": {"stringValue": stream},
                 }
             },
-            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
-            "limit": max(1, int(limit)),
+            "limit": query_limit,
         }
     }
     try:
         data = _firebase_request_json(url, method="POST", payload=structured_query, headers=headers)
     except (OSError, HTTPError, URLError, json.JSONDecodeError):
         return []
-    return list(reversed(_rows_from_firebase_payload(data.get("rows", []), limit=limit)))
+    rows = _rows_from_firebase_payload(data, limit=query_limit)
+    rows.sort(key=lambda item: str(item.get("generated_at") or item.get("created_at") or ""))
+    return rows[-max(1, int(limit)) :]
 
 
 def _read_jsonl_file(p: Path, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
@@ -3421,6 +3437,7 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
         "firebase_backend_available": backend.startswith("firebase"),
         "firebase_configured_when_selected": (not backend.startswith("firebase")) or bool(firebase_status["configured"]),
         "firebase_database_available_when_selected": (not backend.startswith("firebase")) or bool(firebase_readiness.get("database_available") or firebase_status["auth_mode"] == "proxy_url"),
+        "firebase_read_permission_verified_when_selected": (not backend.startswith("firebase")) or bool(firebase_readiness.get("read_permission_verified") or firebase_status["auth_mode"] == "proxy_url"),
         "firebase_write_permission_verified_when_selected": (not backend.startswith("firebase")) or bool(firebase_readiness.get("write_permission_verified") or firebase_status["auth_mode"] == "proxy_url"),
         "sqlite_file_readable_when_present": (not sqlite_path.exists()) or sqlite_readable,
         "restart_durable_backend_ready": _durable_restart_persistence_ready(),

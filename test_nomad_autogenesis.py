@@ -651,9 +651,59 @@ def test_agp_firebase_readiness_requires_database_and_write_permission(monkeypat
     durable = build_agp_durable_ledger_surface(base_url="https://nomad.example")
 
     assert durable["checks"]["firebase_database_available_when_selected"] is False
+    assert durable["checks"]["firebase_read_permission_verified_when_selected"] is False
     assert durable["checks"]["firebase_write_permission_verified_when_selected"] is False
     assert durable["checks"]["restart_durable_backend_ready"] is False
     assert durable["streams"]["firebase"]["readiness"]["error_status"] == "404"
+
+
+def test_agp_firebase_readiness_accepts_existing_receipt_document(monkeypatch):
+    import nomad_autogenesis as agp
+
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "firebase+jsonl")
+    monkeypatch.setenv("FIREBASE_PROJECT_ID", "nomad-firebase-test")
+    monkeypatch.delenv("FIREBASE_API_KEY", raising=False)
+    monkeypatch.setattr(
+        agp,
+        "_firebase_config_status",
+        lambda: {
+            "configured": True,
+            "auth_mode": "service_account",
+            "project_id_present": True,
+            "api_key_present": False,
+            "service_account_present": True,
+            "proxy_url_present": False,
+            "database_id": "(default)",
+            "collection": "nomad_agp_ledger",
+            "missing_env": [],
+            "secret_env_names": [],
+        },
+    )
+    monkeypatch.setattr(agp, "_firebase_auth", lambda: ({"Authorization": "Bearer test"}, "", "service_account"))
+
+    def firebase_response(url, *args, **kwargs):
+        if url.endswith("/databases/(default)"):
+            return {"name": "projects/nomad-firebase-test/databases/(default)"}
+        return {
+            "documents": [
+                {
+                    "fields": {
+                        "row_digest": {"stringValue": "abc"},
+                        "payload_json": {"stringValue": "{\"schema\":\"nomad.receipt\"}"},
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(agp, "_firebase_request_json", firebase_response)
+
+    durable = build_agp_durable_ledger_surface(base_url="https://nomad.example")
+
+    assert durable["checks"]["firebase_database_available_when_selected"] is True
+    assert durable["checks"]["firebase_read_permission_verified_when_selected"] is True
+    assert durable["checks"]["firebase_write_permission_verified_when_selected"] is True
+    assert durable["checks"]["restart_durable_backend_ready"] is True
+    assert durable["streams"]["firebase"]["readiness"]["receipt_write_observed"] is True
 
 
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):
