@@ -1187,6 +1187,34 @@ def test_agp_paper_benchmark_adapter_gates_and_evaluates_authorized_data(tmp_pat
     assert evaluated["side_effect_scope"] == "paper_benchmark_receipts_only"
 
 
+def test_agp_paper_benchmark_adapter_loads_prediction_files(tmp_path):
+    ledger = tmp_path / "paper_bench.jsonl"
+    bench_ledger = tmp_path / "benchmarks.jsonl"
+    gpqa = tmp_path / "gpqa.csv"
+    predictions = tmp_path / "gpqa_predictions.json"
+    gpqa.write_text("id,question,answer\nq1,science?,A\nq2,science2?,B\n", encoding="utf-8")
+    predictions.write_text(json.dumps({"predictions": {"q1": "A", "q2": "B"}}), encoding="utf-8")
+
+    evaluated = run_agp_paper_benchmark_evaluation(
+        {
+            "agent_id": "agp.benchmark",
+            "datasets": {
+                "gpqa_diamond": {"path": str(gpqa), "predictions_path": str(predictions)},
+            },
+        },
+        base_url="https://nomad.example",
+        ledger_path=ledger,
+        benchmark_ledger_path=bench_ledger,
+        persist=False,
+    )
+    gpqa_result = next(item for item in evaluated["mode_results"] if item["mode"] == "gpqa_diamond")
+
+    assert gpqa_result["status"] == "evaluated"
+    assert gpqa_result["prediction_count"] == 2
+    assert gpqa_result["correct"] == 2
+    assert gpqa_result["prediction_load"]["source"] == "inline_and_or_file" or gpqa_result["prediction_load"]["source"] == "prediction_file"
+
+
 def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_path):
     ledger = tmp_path / "rspl.jsonl"
     surface = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=ledger)

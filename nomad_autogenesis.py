@@ -6821,9 +6821,24 @@ def _paper_benchmark_sources_from_payload(payload: dict[str, Any]) -> dict[str, 
             "path": _text(raw.get("path") or body.get(f"{mode}_path") or os.getenv(path_env), 400),
             "url": _text(raw.get("url") or body.get(f"{mode}_url") or os.getenv(url_env), 700),
             "allow_remote_fetch": bool(raw.get("allow_remote_fetch") or body.get("allow_remote_fetch")),
+            "predictions_path": _text(raw.get("predictions_path") or body.get(f"{mode}_predictions_path"), 400),
+            "predictions_url": _text(raw.get("predictions_url") or body.get(f"{mode}_predictions_url"), 700),
+            "allow_remote_predictions": bool(raw.get("allow_remote_predictions") or body.get("allow_remote_predictions")),
             "prediction_key": _text(raw.get("prediction_key") or "predictions", 80),
         }
     return out
+
+
+def _auth_headers_for_url(url: str) -> dict[str, str]:
+    headers = {"User-Agent": "Nomad-AGP-PaperBenchmark/1.0"}
+    token = _text(
+        os.getenv("NOMAD_AGP_HF_TOKEN") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN"),
+        2000,
+    )
+    host = url.lower()
+    if token and ("huggingface.co/" in host or "hf.co/" in host):
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _read_text_source(*, path: str = "", url: str = "", allow_remote_fetch: bool = False, max_bytes: int = 4_000_000) -> tuple[str, dict[str, Any]]:
@@ -6845,7 +6860,7 @@ def _read_text_source(*, path: str = "", url: str = "", allow_remote_fetch: bool
         return raw.decode("utf-8", errors="replace"), {"ok": True, "source": "local_path", "bytes": len(raw)}
     if url and allow_remote_fetch:
         try:
-            request = Request(url, headers={"User-Agent": "Nomad-AGP-PaperBenchmark/1.0"})
+            request = Request(url, headers=_auth_headers_for_url(url))
             with urlopen(request, timeout=20) as response:
                 raw = response.read(max_bytes + 1)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -6859,6 +6874,39 @@ def _read_text_source(*, path: str = "", url: str = "", allow_remote_fetch: bool
                 return "", {"ok": False, "reason": "gzip_decode_failed", "error": _text(exc, 120)}
         return raw.decode("utf-8", errors="replace"), {"ok": True, "source": "remote_url", "bytes": len(raw)}
     return "", {"ok": False, "reason": "dataset_source_not_supplied_or_remote_fetch_disabled"}
+
+
+def _prediction_mapping_from_text(text: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not text.strip():
+        return {}, {"ok": False, "reason": "empty_prediction_text"}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            parsed = [json.loads(line) for line in text.splitlines() if line.strip()]
+        except json.JSONDecodeError as exc:
+            return {}, {"ok": False, "reason": "prediction_parse_failed", "error": _text(exc, 160)}
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("predictions"), dict):
+            return parsed["predictions"], {"ok": True, "format": "json.predictions_object", "prediction_count": len(parsed["predictions"])}
+        return parsed, {"ok": True, "format": "json.object", "prediction_count": len(parsed)}
+    if isinstance(parsed, list):
+        out: dict[str, Any] = {}
+        for index, item in enumerate(parsed):
+            if not isinstance(item, dict):
+                continue
+            rid = _text(
+                item.get("id")
+                or item.get("task_id")
+                or item.get("question_id")
+                or item.get("record_id")
+                or item.get("problem_id")
+                or str(index + 1),
+                180,
+            )
+            out[rid] = item.get("answer", item.get("prediction", item.get("passed", item.get("ok"))))
+        return out, {"ok": True, "format": "json.list_or_jsonl", "prediction_count": len(out)}
+    return {}, {"ok": False, "reason": "unsupported_prediction_container"}
 
 
 def _parse_records(text: str, source: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -6912,11 +6960,28 @@ def _paper_normalize_answer(value: Any) -> str:
     return text
 
 
-def _paper_predictions(payload: dict[str, Any], mode: str) -> dict[str, Any]:
+def _paper_predictions(payload: dict[str, Any], mode: str, source: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    src = _dict(source)
+    prediction_file = {}
+    path = _text(src.get("predictions_path"), 400)
+    url = _text(src.get("predictions_url"), 700)
+    if path or url:
+        text, load = _read_text_source(
+            path=path,
+            url=url,
+            allow_remote_fetch=bool(src.get("allow_remote_predictions")),
+            max_bytes=4_000_000,
+        )
+        if load.get("ok"):
+            prediction_file, parsed = _prediction_mapping_from_text(text)
+            load = {**load, **parsed}
+        if not load.get("ok"):
+            return {}, {"ok": False, "source": "prediction_file", **load}
     preds = payload.get("predictions") if isinstance(payload.get("predictions"), dict) else {}
     mode_preds = preds.get(mode)
     if isinstance(mode_preds, dict):
-        return mode_preds
+        merged = {**prediction_file, **mode_preds}
+        return merged, {"ok": True, "source": "inline_and_or_file", "prediction_count": len(merged)}
     if isinstance(mode_preds, list):
         out: dict[str, Any] = {}
         for item in mode_preds:
@@ -6924,12 +6989,13 @@ def _paper_predictions(payload: dict[str, Any], mode: str) -> dict[str, Any]:
                 rid = _text(item.get("id") or item.get("task_id") or item.get("question_id"), 180)
                 if rid:
                     out[rid] = item.get("answer", item.get("prediction", item.get("passed")))
-        return out
-    return {}
+        merged = {**prediction_file, **out}
+        return merged, {"ok": True, "source": "inline_list_and_or_file", "prediction_count": len(merged)}
+    return prediction_file, {"ok": True, "source": "prediction_file" if prediction_file else "none", "prediction_count": len(prediction_file)}
 
 
 def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    predictions = _paper_predictions(payload, mode)
+    predictions, prediction_load = _paper_predictions(payload, mode, source)
     supplied_url = _text(source.get("url"), 700)
     url = supplied_url or (
         _text(source.get("canonical_url"), 700)
@@ -6943,6 +7009,7 @@ def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, A
             "reason": "gaia_is_gated_and_must_be_supplied_as_authorized_local_copy",
             "observed_examples": 0,
             "prediction_count": len(predictions),
+            "prediction_load": prediction_load,
         }
     if mode == "leetcode" and not (source.get("path") or source.get("url")):
         return {
@@ -6951,6 +7018,7 @@ def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, A
             "reason": "leetcode_requires_user_export_or_open_humaneval_proxy_results",
             "observed_examples": 0,
             "prediction_count": len(predictions),
+            "prediction_load": prediction_load,
         }
     text, load = _read_text_source(
         path=_text(source.get("path"), 400),
@@ -6965,6 +7033,7 @@ def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, A
             "load": load,
             "observed_examples": 0,
             "prediction_count": len(predictions),
+            "prediction_load": prediction_load,
         }
     records, parsed = _parse_records(text, source)
     if not parsed.get("ok"):
@@ -6976,6 +7045,7 @@ def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, A
             "parse": parsed,
             "observed_examples": 0,
             "prediction_count": len(predictions),
+            "prediction_load": prediction_load,
         }
     correct = 0
     evaluated = 0
@@ -7006,6 +7076,7 @@ def _evaluate_paper_mode(mode: str, source: dict[str, Any], payload: dict[str, A
         "expected_min_examples": expected_min,
         "dataset_full_enough": len(records) >= expected_min,
         "prediction_count": len(predictions),
+        "prediction_load": prediction_load,
         "evaluated_predictions": evaluated,
         "correct": correct,
         "accuracy": accuracy,
