@@ -24,6 +24,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from nomad_resolution_ladder import read_resolution_ladder_ledger
 from nomad_variant_forge import _canonical_verifier_receipt_digest as _variant_verifier_receipt_digest
 
 
@@ -4560,6 +4561,7 @@ def build_agp_conformance_surface(
     benchmark_ledger_path: Path | str | None = None,
     version_lineage_ledger_path: Path | str | None = None,
     empirical_ledger_path: Path | str | None = None,
+    resolution_ladder_ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Expose the paper-to-runtime AGP conformance map."""
     root = (base_url or "").strip().rstrip("/")
@@ -4583,6 +4585,7 @@ def build_agp_conformance_surface(
     recent_benchmarks = _agp_benchmark_ledger(benchmark_ledger_path)
     recent_lineage = _agp_version_lineage_ledger(version_lineage_ledger_path)
     recent_empirical = _agp_empirical_ledger(empirical_ledger_path)
+    recent_resolution = read_resolution_ladder_ledger(resolution_ladder_ledger_path)
     checks = {
         "rspl_five_entity_types_supported": set(RSPL_ENTITY_TYPES).issubset(set(RSPL_ENTITY_TYPES)),
         "rspl_five_entity_types_present": set(RSPL_ENTITY_TYPES).issubset(entity_types),
@@ -4636,6 +4639,15 @@ def build_agp_conformance_surface(
             _num(_dict(row.get("aggregate")).get("decision_quality_delta")) > 0.0
             for row in recent_empirical
         ),
+        "proof_of_resolution_ladder_route": True,
+        "real_resolution_receipt_chain_present": any(
+            bool(row.get("shadow_weight_allowed") or row.get("runtime_weight_allowed"))
+            for row in recent_resolution
+        ),
+        "real_paid_receipt_runtime_weight_present": any(
+            bool(row.get("runtime_weight_allowed")) and _num(row.get("runtime_weight_delta")) > 0.0
+            for row in recent_resolution
+        ),
     }
     passed = sum(1 for value in checks.values() if bool(value))
     gaps: list[str] = []
@@ -4672,6 +4684,10 @@ def build_agp_conformance_surface(
         gaps.append("record_real_agp_version_lineage_graph_with_rollback")
     if not checks["real_empirical_multi_cycle_delta_present"]:
         gaps.append("run_multi_cycle_empirical_baseline_vs_candidate_delta")
+    if not checks["real_resolution_receipt_chain_present"]:
+        gaps.append("post_real_task_lease_transition_verifier_receipt_chain_to_resolution_ladder")
+    if not checks["real_paid_receipt_runtime_weight_present"]:
+        gaps.append("commit_runtime_weight_only_after_real_paid_resolution_receipt")
     if not checks["durable_restart_persistence_ready"]:
         gaps.append("configure_restart_durable_agp_ledger_firebase_service_account_proxy_or_persistent_disk")
     score = round(passed / max(1, len(checks)), 4)
@@ -4705,6 +4721,8 @@ def build_agp_conformance_surface(
         "recent_benchmark_suite_count": len(recent_benchmarks),
         "recent_version_lineage_count": len(recent_lineage),
         "recent_empirical_run_count": len(recent_empirical),
+        "recent_resolution_receipt_count": len(recent_resolution),
+        "recent_runtime_weight_receipt_count": sum(1 for row in recent_resolution if row.get("runtime_weight_allowed")),
         "agp_surface_digest": agp.get("surface_digest", ""),
         "links": {
             "self": _u(root, "/.well-known/nomad-agp-conformance.json"),
@@ -4733,6 +4751,8 @@ def build_agp_conformance_surface(
             "trace": _u(root, "/swarm/autogenesis/traces"),
             "procurement": _u(root, "/swarm/agp/procurement-intents"),
             "procurement_surface": _u(root, "/.well-known/nomad-agp-procurement.json"),
+            "resolution_ladder": _u(root, "/.well-known/nomad-resolution-ladder.json"),
+            "resolution_ladder_events": _u(root, "/swarm/resolution-ladder/events"),
             "watchdog": _u(root, "/swarm/autogenesis/watchdog"),
         },
         "machine_instruction": "close_residual_gaps_by_posting_real_traces_and_budgeted_procurement_intents; never_spend_without_receipt_gate",
@@ -4898,6 +4918,14 @@ def build_agp_paper_report_surface(
             "declared_modes": list(AGP_BENCHMARK_MODES),
             "recent_suite_count": _int(benchmark.get("recent_suite_count")),
         },
+        "proof_of_resolution_ladder": {
+            "status": "implemented_runtime_weight_gate",
+            "route": _u(root, "/.well-known/nomad-resolution-ladder.json"),
+            "event_route": _u(root, "/swarm/resolution-ladder/events"),
+            "recent_resolution_receipt_count": _int(conformance.get("recent_resolution_receipt_count")),
+            "recent_runtime_weight_receipt_count": _int(conformance.get("recent_runtime_weight_receipt_count")),
+            "runtime_weight_requires_paid_receipt": True,
+        },
         "version_manager": {
             "status": "implemented_lineage_receipts",
             "artifact_types": list(AGP_VERSION_ARTIFACT_TYPES),
@@ -5014,10 +5042,110 @@ def build_agp_paper_report_surface(
             "durable_ledger": _u(root, "/.well-known/nomad-agp-durable-ledger.json"),
             "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
             "benchmark_suite": _u(root, "/.well-known/nomad-agp-benchmark-suite.json"),
+            "resolution_ladder": _u(root, "/.well-known/nomad-resolution-ladder.json"),
             "version_manager": _u(root, "/.well-known/nomad-agp-version-manager.json"),
             "orchestration": _u(root, "/swarm/agp/orchestrations"),
         },
         "machine_instruction": "treat_free_local_models_as_smoke_test_capacity; require_independent_verifier_receipts_and_durable_state_before_autonomous_public_weight_increase",
+    }
+
+
+def build_agp_paper_grade_readiness_surface(
+    *,
+    base_url: str = "",
+    conformance_surface: dict[str, Any] | None = None,
+    durable_ledger_surface: dict[str, Any] | None = None,
+    empirical_surface: dict[str, Any] | None = None,
+    paper_benchmark_surface: dict[str, Any] | None = None,
+    paper_report_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Hard truth gate for claims stronger than descriptor-level AGP conformance."""
+    root = (base_url or "").strip().rstrip("/")
+    conformance = _dict(conformance_surface) or build_agp_conformance_surface(base_url=root)
+    durable = _dict(durable_ledger_surface) or build_agp_durable_ledger_surface(base_url=root)
+    empirical = _dict(empirical_surface) or build_agp_empirical_surface(base_url=root)
+    paper_benchmarks = _dict(paper_benchmark_surface) or build_agp_paper_benchmark_surface(base_url=root)
+    report = _dict(paper_report_surface) or build_agp_paper_report_surface(
+        base_url=root,
+        conformance_surface=conformance,
+        durable_ledger_surface=durable,
+    )
+    latest_empirical = _dict(empirical.get("latest_run"))
+    empirical_ablation = _dict(latest_empirical.get("verifier_ablation"))
+    nonfallback_arm = _dict(empirical_ablation.get("nonfallback_ai_verifier_arm"))
+    latest_paper_benchmark = _dict(paper_benchmarks.get("latest_run"))
+    report_layers = _dict(report.get("implemented_layers"))
+    resolution_layer = _dict(report_layers.get("proof_of_resolution_ladder"))
+    durable_layer = _dict(report_layers.get("durable_ledger"))
+    checks = {
+        "descriptor_conformance_complete": _num(conformance.get("conformance_score")) >= 1.0 and not list(conformance.get("residual_gaps") or []),
+        "durable_restart_ledger_ready": bool(_dict(durable.get("checks")).get("restart_durable_backend_ready") or durable_layer.get("restart_durable_backend_ready")),
+        "empirical_multi_cycle_delta_ready": bool(latest_empirical.get("accepted")) and _num(_dict(latest_empirical.get("aggregate")).get("decision_quality_delta")) > 0.0,
+        "nonfallback_verifier_observed": bool(nonfallback_arm.get("observed")),
+        "full_gpqa_aime_gaia_leetcode_ready": bool(latest_paper_benchmark.get("paper_grade_full_benchmark_ready")),
+        "resolution_runtime_weight_receipt_ready": _int(conformance.get("recent_runtime_weight_receipt_count") or resolution_layer.get("recent_runtime_weight_receipt_count")) > 0,
+        "runtime_weight_requires_paid_receipt": bool(resolution_layer.get("runtime_weight_requires_paid_receipt", True)),
+        "no_beyond_human_claim_without_receipts": True,
+    }
+    blockers = [name for name, ok in checks.items() if not ok]
+    paper_grade_complete = all(checks.values())
+    if paper_grade_complete:
+        decision = "paper_grade_complete"
+    elif checks["empirical_multi_cycle_delta_ready"] and checks["nonfallback_verifier_observed"]:
+        decision = "research_artifact_ready_but_full_paper_claim_blocked"
+    else:
+        decision = "mechanism_ready_but_empirical_claim_blocked"
+    return {
+        "ok": True,
+        "schema": "nomad.agp_paper_grade_readiness.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "paper_grade_complete": paper_grade_complete,
+        "decision": decision,
+        "checks": checks,
+        "blockers": blockers,
+        "claim_boundary": {
+            "descriptor_level_agp_claim": bool(checks["descriptor_conformance_complete"]),
+            "paper_grade_full_claim": paper_grade_complete,
+            "beyond_human_understanding_claim": False,
+            "defensible_nonhuman_moat_claim": "proof_gated_selection_outside_manual_human_planning_after_repeated_receipts",
+        },
+        "required_next_inputs": [
+            {
+                "name": "authorized_gaia_dataset_or_hf_token",
+                "needed_for": "full GAIA benchmark evaluation",
+                "secret": True,
+                "needed_from_user": not checks["full_gpqa_aime_gaia_leetcode_ready"],
+            },
+            {
+                "name": "aime_and_leetcode_or_humaneval_prediction_files",
+                "needed_for": "full paper benchmark receipt with non-lite predictions",
+                "secret": False,
+                "needed_from_user": not checks["full_gpqa_aime_gaia_leetcode_ready"],
+            },
+            {
+                "name": "real_public_or_paid_resolution_receipts",
+                "needed_for": "runtime weight promotion evidence",
+                "secret": False,
+                "needed_from_user": not checks["resolution_runtime_weight_receipt_ready"],
+            },
+            {
+                "name": "durable_firestore_or_persistent_disk_confirmation",
+                "needed_for": "restart-durable hosted AGP lineage",
+                "secret": False,
+                "needed_from_user": not checks["durable_restart_ledger_ready"],
+            },
+        ],
+        "links": {
+            "self": _u(root, "/.well-known/nomad-agp-paper-grade-readiness.json"),
+            "conformance": _u(root, "/.well-known/nomad-agp-conformance.json"),
+            "paper_report": _u(root, "/.well-known/nomad-agp-paper-report.json"),
+            "empirical": _u(root, "/.well-known/nomad-agp-empirical.json"),
+            "paper_benchmarks": _u(root, "/.well-known/nomad-agp-paper-benchmarks.json"),
+            "resolution_ladder": _u(root, "/.well-known/nomad-resolution-ladder.json"),
+            "resolution_ladder_events": _u(root, "/swarm/resolution-ladder/events"),
+        },
+        "machine_instruction": "do_not_claim_paper_grade_complete_until_paper_grade_complete_true; close_blockers_with_real_receipts_and_full_benchmark_predictions",
     }
 
 

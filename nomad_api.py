@@ -54,6 +54,7 @@ from nomad_autogenesis import (
     build_agp_morphology_reactor_surface,
     build_agp_morphology_runtime_register_surface,
     build_agp_optimizer_surface,
+    build_agp_paper_grade_readiness_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
     build_agp_pulse_surface,
@@ -175,6 +176,7 @@ from nomad_sales_department_swarm import (
     evaluate_sales_department_event,
 )
 from nomad_acquisition_ignition import build_acquisition_ignition_surface, run_acquisition_ignition
+from nomad_resolution_ladder import build_resolution_ladder_surface, evaluate_resolution_ladder_event
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -603,6 +605,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_agp_paper_grade_readiness(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        conformance = cls._build_agp_conformance(base_url=base_url, swarm_summary=swarm_summary)
+        durable = cls._build_agp_durable_ledger(base_url=base_url)
+        empirical = cls._build_agp_empirical(base_url=base_url, swarm_summary=swarm_summary)
+        paper_benchmarks = cls._build_agp_paper_benchmarks(base_url=base_url)
+        report = cls._build_agp_paper_report(base_url=base_url, swarm_summary=swarm_summary)
+        return build_agp_paper_grade_readiness_surface(
+            base_url=base_url,
+            conformance_surface=conformance,
+            durable_ledger_surface=durable,
+            empirical_surface=empirical,
+            paper_benchmark_surface=paper_benchmarks,
+            paper_report_surface=report,
+        )
+
+    @classmethod
     def _build_agp_pulse(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
@@ -823,6 +841,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             peer_acquisition=build_peer_acquisition_well_known(public_base_url=base_url),
             morphology_register=cls._build_agp_morphology_runtime_register(base_url=base_url),
         )
+
+    @classmethod
+    def _build_resolution_ladder(cls, *, base_url: str) -> dict:
+        return build_resolution_ladder_surface(base_url=base_url)
 
     @classmethod
     def _build_external_value_surface(cls, *, base_url: str) -> dict:
@@ -1705,6 +1727,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "first_sales": f"{b}/.well-known/nomad-first-sales.json",
                     "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
                     "acquisition_ignite": f"{b}/swarm/acquisition/ignite",
+                    "resolution_ladder": f"{b}/.well-known/nomad-resolution-ladder.json",
+                    "resolution_ladder_events": f"{b}/swarm/resolution-ladder/events",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -1759,6 +1783,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_paper_benchmark_runs": f"{b}/swarm/agp/paper-benchmark-runs",
                     "agp_durable_ledger": f"{b}/.well-known/nomad-agp-durable-ledger.json",
                     "agp_paper_report": f"{b}/.well-known/nomad-agp-paper-report.json",
+                    "agp_paper_grade_readiness": f"{b}/.well-known/nomad-agp-paper-grade-readiness.json",
                     "agp_pulse": f"{b}/swarm/agp/pulse",
                     "agp_pulse_surface": f"{b}/.well-known/nomad-agp-pulse.json",
                     "agp_morphology_reactor": f"{b}/swarm/autogenesis/morphology-reactor",
@@ -2095,6 +2120,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/acquisition/ignite", "/.well-known/nomad-acquisition-ignition.json"}:
             self._json_response(self.__class__._build_acquisition_ignition(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/resolution-ladder", "/.well-known/nomad-resolution-ladder.json"}:
+            self._json_response(self.__class__._build_resolution_ladder(base_url=self._base_url()))
+            return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
                 self._json_response(summarize_external_value_ledger())
@@ -2211,6 +2239,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/agp/paper-report", "/.well-known/nomad-agp-paper-report.json"}:
             self._json_response(self.__class__._build_agp_paper_report(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agp/paper-grade-readiness", "/.well-known/nomad-agp-paper-grade-readiness.json"}:
+            self._json_response(self.__class__._build_agp_paper_grade_readiness(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/pulse", "/.well-known/nomad-agp-pulse.json"}:
             self._json_response(self.__class__._build_agp_pulse(base_url=self._base_url()))
@@ -4507,6 +4538,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 morphology_register=self.__class__._build_agp_morphology_runtime_register(base_url=base),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/resolution-ladder/events":
+            base = self._base_url()
+            result = evaluate_resolution_ladder_event(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("runtime_weight_allowed") else 200)
             return
 
         if parsed.path == "/swarm/development-cycles/events":

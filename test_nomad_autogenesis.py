@@ -11,6 +11,7 @@ from nomad_autogenesis import (
     build_agp_morphology_reactor_surface,
     build_agp_morphology_runtime_register_surface,
     build_agp_optimizer_surface,
+    build_agp_paper_grade_readiness_surface,
     build_agp_paper_report_surface,
     build_agp_paper_benchmark_surface,
     build_agp_pulse_surface,
@@ -50,6 +51,7 @@ from nomad_autogenesis import (
     version_resource,
 )
 from nomad_cli import run_once
+from nomad_resolution_ladder import evaluate_resolution_ladder_event
 from nomad_variant_forge import submit_variant_candidate
 import base64
 import json
@@ -573,6 +575,105 @@ def test_agp_durable_ledger_sqlite_backend_and_paper_report(tmp_path, monkeypatc
     assert report["schema"] == "nomad.agp_paper_report.v1"
     assert report["implemented_layers"]["durable_ledger"]["configured_backend"] == "sqlite"
     assert any(item["name"] == "Render Disk or external database" for item in report["external_requirements"])
+
+
+def test_agp_conformance_tracks_resolution_ladder_runtime_gate(tmp_path):
+    resolution_ledger = tmp_path / "resolution.jsonl"
+    receipt = evaluate_resolution_ladder_event(
+        {
+            "agent_id": "agp.proposer",
+            "task_contract": {
+                "task_id": "resolution-paper-gate",
+                "objective": "prove runtime weight only after paid receipt",
+                "ttl_sec": 600,
+                "rollback_ref": "noop:resolution-paper-gate",
+            },
+            "lease": {"lease_id": "lease-resolution-paper", "worker_id": "agp.worker"},
+            "transition_worker": {"worker_id": "agp.worker", "runtime": "codex-local"},
+            "artifact": {
+                "artifact_digest": "sha256:" + "1" * 64,
+                "work_url": "https://nomad.example/work/resolution-paper-gate",
+                "side_effect_scope": "resolution_receipt_only",
+            },
+            "independent_verification": {
+                "verifier_id": "agp.verifier",
+                "verification_digest": "sha256:" + "2" * 64,
+                "accepted": True,
+            },
+            "receipt": {
+                "receipt_ref": "public:resolution-paper-gate",
+                "paid_receipt_ref": "paid:resolution-paper-gate",
+                "settlement_ref": "settlement:resolution-paper-gate",
+                "currency": "EUR",
+                "amount": 1.0,
+                "proof_digest": "sha256:" + "3" * 64,
+                "side_effect_scope": "resolution_receipt_only",
+            },
+            "metrics": {"baseline_score": 0.2, "candidate_score": 0.8, "settlement_delta": 0.2},
+            "ttl_sec": 600,
+            "rollback_ref": "noop:resolution-paper-gate",
+            "side_effect_scope": "resolution_receipt_only",
+        },
+        base_url="https://nomad.example",
+        ledger_path=resolution_ledger,
+    )
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=tmp_path / "rspl.jsonl"),
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet={"active_worker_count": 1},
+        resolution_ladder_ledger_path=resolution_ledger,
+    )
+    report = build_agp_paper_report_surface(base_url="https://nomad.example", conformance_surface=conformance)
+
+    assert receipt["runtime_weight_allowed"] is True
+    assert conformance["checks"]["proof_of_resolution_ladder_route"] is True
+    assert conformance["checks"]["real_resolution_receipt_chain_present"] is True
+    assert conformance["checks"]["real_paid_receipt_runtime_weight_present"] is True
+    assert conformance["links"]["resolution_ladder"].endswith("/.well-known/nomad-resolution-ladder.json")
+    assert report["implemented_layers"]["proof_of_resolution_ladder"]["runtime_weight_requires_paid_receipt"] is True
+    assert report["implemented_layers"]["proof_of_resolution_ladder"]["recent_runtime_weight_receipt_count"] == 1
+
+
+def test_agp_paper_grade_readiness_blocks_full_claim_without_full_benchmarks(tmp_path):
+    readiness = build_agp_paper_grade_readiness_surface(
+        base_url="https://nomad.example",
+        conformance_surface={
+            "conformance_score": 1.0,
+            "residual_gaps": [],
+            "recent_runtime_weight_receipt_count": 1,
+        },
+        durable_ledger_surface={"checks": {"restart_durable_backend_ready": True}},
+        empirical_surface={
+            "latest_run": {
+                "accepted": True,
+                "aggregate": {"decision_quality_delta": 0.4},
+                "verifier_ablation": {
+                    "nonfallback_ai_verifier_arm": {"observed": True},
+                },
+            }
+        },
+        paper_benchmark_surface={
+            "latest_run": {
+                "paper_grade_full_benchmark_ready": False,
+            }
+        },
+        paper_report_surface={
+            "implemented_layers": {
+                "durable_ledger": {"restart_durable_backend_ready": True},
+                "proof_of_resolution_ladder": {
+                    "runtime_weight_requires_paid_receipt": True,
+                    "recent_runtime_weight_receipt_count": 1,
+                },
+            }
+        },
+    )
+
+    assert readiness["schema"] == "nomad.agp_paper_grade_readiness.v1"
+    assert readiness["paper_grade_complete"] is False
+    assert readiness["checks"]["full_gpqa_aime_gaia_leetcode_ready"] is False
+    assert "full_gpqa_aime_gaia_leetcode_ready" in readiness["blockers"]
+    assert readiness["claim_boundary"]["beyond_human_understanding_claim"] is False
 
 
 def test_agp_firebase_ledger_backend_falls_back_without_credentials(tmp_path, monkeypatch):
