@@ -1182,6 +1182,21 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
     lw = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
     protocol = report.get("protocol_bytecode_signal") if isinstance(report.get("protocol_bytecode_signal"), dict) else {}
     replay = report.get("counterfactual_replay_signal") if isinstance(report.get("counterfactual_replay_signal"), dict) else {}
+    agp = report.get("agp_autonomous_cycle") if isinstance(report.get("agp_autonomous_cycle"), dict) else {}
+    agp_witness = {}
+    candidate = agp.get("candidate_payload") if isinstance(agp.get("candidate_payload"), dict) else {}
+    if isinstance(candidate.get("verifier_brain_witness"), dict):
+        agp_witness = candidate.get("verifier_brain_witness") or {}
+    batch = agp.get("batch") if isinstance(agp.get("batch"), dict) else {}
+    cycles = batch.get("cycles") if isinstance(batch.get("cycles"), list) else []
+    if not agp_witness:
+        for item in cycles:
+            if not isinstance(item, dict):
+                continue
+            candidate = item.get("candidate_payload") if isinstance(item.get("candidate_payload"), dict) else {}
+            if isinstance(candidate.get("verifier_brain_witness"), dict):
+                agp_witness = candidate.get("verifier_brain_witness") or {}
+                break
     return {
         "ok": bool(report.get("ok")),
         "machine_objective": clean(report.get("machine_objective"), 80),
@@ -1217,6 +1232,16 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
             "replay_digest": clean(replay.get("replay_digest"), 96),
             "selected_objective": clean(replay.get("selected_objective"), 80),
             "selected_score": float(replay.get("selected_score") or 0.0),
+        },
+        "agp_verifier_brain_witness": {
+            "schema": "nomad.agp_verifier_brain_witness_ref.v1",
+            "accepted": bool(agp_witness.get("accepted") or agp_witness.get("ok")),
+            "provider": clean(agp_witness.get("provider"), 80),
+            "model": clean(agp_witness.get("model"), 128),
+            "status": clean(agp_witness.get("status"), 80),
+            "digest": clean(agp_witness.get("digest"), 160),
+            "fallback": bool(agp_witness.get("fallback")),
+            "side_effect_scope": "read_only_verifier_witness_ref",
         },
     }
 
@@ -2253,14 +2278,6 @@ def main() -> None:
             if meta_decision:
                 report["meta_decision"] = meta_decision
             report["meta_score"] = _score_run(report)
-            if fleet_active:
-                report["fleet_complete"] = _worker_fleet_complete(
-                    a.base_url,
-                    a.agent_id,
-                    timeout=min(10.0, timeout),
-                    lease=fleet_lease,
-                    report=report,
-                )
             report["proof_link"] = _proof_link(
                 a.base_url,
                 a.agent_id,
@@ -2281,6 +2298,14 @@ def main() -> None:
                 report=report,
                 lease=fleet_lease,
             )
+            if fleet_active:
+                report["fleet_complete"] = _worker_fleet_complete(
+                    a.base_url,
+                    a.agent_id,
+                    timeout=min(10.0, timeout),
+                    lease=fleet_lease,
+                    report=report,
+                )
             report["worker_market_offer"] = _worker_market_offer(
                 a.base_url,
                 a.agent_id,

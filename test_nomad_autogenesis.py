@@ -748,6 +748,8 @@ def test_agp_pulse_records_pressure_benchmarks_and_watchdog_trigger(tmp_path):
 
     assert pulse_surface["schema"] == "nomad.agp_pulse_surface.v1"
     assert pulse_surface["scheduler_contract"]["safe_interval_seconds"] == 300
+    assert pulse_surface["scheduler_contract"]["lease_before_pulse"] is True
+    assert pulse_surface["scheduler_contract"]["complete_after_pulse"] is True
     assert pulse_surface["quota"]["max_model_calls_per_day"] == 0
     assert receipt["schema"] == "nomad.agp_pulse_receipt.v1"
     assert receipt["accepted"] is True

@@ -942,6 +942,24 @@ class SwarmJoinRegistry:
             iter(sorted(recent_completed_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)),
             {},
         )
+        recent_report_summaries = [
+            item
+            for item in sorted(
+                [row for row in fleet.get("reports", []) if isinstance(row, dict)],
+                key=lambda row: str(row.get("reported_at") or ""),
+                reverse=True,
+            )[:16]
+        ]
+        latest_verifier_brain_witness = next(
+            (
+                row.get("agp_verifier_brain_witness")
+                for row in recent_report_summaries
+                if isinstance(row.get("agp_verifier_brain_witness"), dict)
+                and row["agp_verifier_brain_witness"].get("accepted")
+                and row["agp_verifier_brain_witness"].get("digest")
+            ),
+            {},
+        )
         leases_per_worker = round(len(active_leases) / max(1, len(active_workers)), 4) if active_workers else 0.0
         completions_per_worker = (
             round(sum(int(item.get("completion_count") or 0) for item in workers) / max(1, len(workers)), 4) if workers else 0.0
@@ -985,6 +1003,8 @@ class SwarmJoinRegistry:
                 "completions_per_known_worker": completions_per_worker,
             },
             "latest_completed_worker": compact_worker(latest_completed_worker) if latest_completed_worker else {},
+            "latest_verifier_brain_witness": latest_verifier_brain_witness,
+            "recent_report_summaries": recent_report_summaries,
             "recent_completed_workers": [
                 compact_worker(item)
                 for item in sorted(recent_completed_workers, key=lambda row: str(row.get("last_seen_at") or ""), reverse=True)[:16]
@@ -2418,6 +2438,18 @@ class SwarmJoinRegistry:
             "release_capacity": release.get("release_capacity") or 0.0,
             "reported_at": _iso_now(),
         }
+        agp_witness = report.get("agp_verifier_brain_witness") if isinstance(report.get("agp_verifier_brain_witness"), dict) else {}
+        if agp_witness:
+            summary["agp_verifier_brain_witness"] = {
+                "schema": "nomad.agp_verifier_brain_witness_ref.v1",
+                "accepted": bool(agp_witness.get("accepted") or agp_witness.get("ok")),
+                "provider": _clean_text(agp_witness.get("provider"), limit=80),
+                "model": _clean_text(agp_witness.get("model"), limit=128),
+                "status": _clean_text(agp_witness.get("status"), limit=80),
+                "digest": _clean_text(agp_witness.get("digest"), limit=160),
+                "fallback": bool(agp_witness.get("fallback")),
+                "side_effect_scope": "read_only_verifier_witness_ref",
+            }
         reports = fleet.setdefault("reports", [])
         reports.append(summary)
         fleet["reports"] = reports[-300:]

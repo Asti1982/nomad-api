@@ -4193,6 +4193,64 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/agp/pulse":
             base = self._base_url()
+            pulse_payload = dict(payload) if isinstance(payload, dict) else {}
+            verifier_id = re.sub(
+                r"[^a-z0-9_.:-]+",
+                "-",
+                str(pulse_payload.get("verifier_agent_id") or "nomad-agp-verifier-brain-local").strip().lower(),
+            ).strip("-") or "nomad-agp-verifier-brain-local"
+            proposer_id = re.sub(
+                r"[^a-z0-9_.:-]+",
+                "-",
+                str(
+                    pulse_payload.get("proposer_agent_id")
+                    or pulse_payload.get("agent_id")
+                    or "nomad-agp-proposer-brain-local"
+                ).strip().lower(),
+            ).strip("-") or "nomad-agp-proposer-brain-local"
+            auto_lease_raw = str(
+                pulse_payload.get("auto_verifier_lease")
+                if "auto_verifier_lease" in pulse_payload
+                else os.getenv("NOMAD_AGP_PULSE_AUTO_VERIFIER_LEASE", "1")
+            ).strip().lower()
+            if (
+                auto_lease_raw not in {"0", "false", "no", "off"}
+                and verifier_id
+                and verifier_id != proposer_id
+                and not str(pulse_payload.get("verifier_lease_id") or "").strip()
+            ):
+                try:
+                    verifier_lease_seconds = int(os.getenv("NOMAD_AGP_PULSE_VERIFIER_LEASE_SECONDS", "600") or "600")
+                except ValueError:
+                    verifier_lease_seconds = 600
+                lease_result = self.swarm_registry.worker_fleet_lease(
+                    {
+                        "agent_id": verifier_id,
+                        "capabilities": [
+                            "transition_worker",
+                            "verifier",
+                            "agp_verifier",
+                            "rspl",
+                            "sepl",
+                            "receipt_digest_check",
+                        ],
+                        "known_objectives": [
+                            "autogenesis_protocol_evolution",
+                            "protocol_drift_scan",
+                            "proof_pressure_engine",
+                        ],
+                        "proposed_objective": "autogenesis_protocol_evolution",
+                        "lease_seconds": verifier_lease_seconds,
+                        "source_tag": "nomad.agp_pulse.auto_verifier_lease",
+                    },
+                    base_url=base,
+                    remote_addr=self._remote_addr(),
+                )
+                if lease_result.get("ok") and lease_result.get("lease_id"):
+                    pulse_payload["verifier_agent_id"] = str(lease_result.get("agent_id") or verifier_id)
+                    pulse_payload["verifier_lease_id"] = str(lease_result.get("lease_id") or "")
+                    pulse_payload["auto_verifier_lease_id"] = str(lease_result.get("lease_id") or "")
+                    pulse_payload["auto_verifier_lease_objective"] = str(lease_result.get("objective") or "")
             summary = self.swarm_registry.public_manifest(base_url=base)
             worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
             if not worker_fleet:
@@ -4202,7 +4260,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             autogenesis = self.__class__._build_autogenesis(base_url=base, swarm_summary=summary)
             conformance = self.__class__._build_agp_conformance(base_url=base, swarm_summary=summary)
             result = run_agp_pulse(
-                payload,
+                pulse_payload,
                 base_url=base,
                 resource_substrate=substrate,
                 development_surface=development,

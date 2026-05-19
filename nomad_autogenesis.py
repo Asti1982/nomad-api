@@ -3279,6 +3279,50 @@ def _agp_latest_cycle_brain_status() -> dict[str, Any]:
     }
 
 
+def _agp_latest_worker_brain_witness(worker_fleet: dict[str, Any], *, verifier_agent_id: str = "") -> dict[str, Any]:
+    fleet = _dict(worker_fleet)
+    wanted = _clean_id(verifier_agent_id, fallback="")
+    candidates: list[tuple[int, str, dict[str, Any]]] = []
+
+    def add_candidate(witness: dict[str, Any], *, agent_id: str = "", reported_at: str = "") -> None:
+        item = _dict(witness)
+        if not item or not item.get("digest") or not bool(item.get("accepted") or item.get("ok")):
+            return
+        agent_match = 1 if wanted and _clean_id(agent_id, fallback="") == wanted else 0
+        non_fallback = 1 if not bool(item.get("fallback")) else 0
+        candidates.append(
+            (
+                non_fallback * 10 + agent_match,
+                _text(reported_at, 80),
+                {
+                    "schema": "nomad.agp_verifier_brain_witness.v1",
+                    "provider": _clean_id(item.get("provider"), fallback="worker_verifier_brain"),
+                    "model": _text(item.get("model"), 128),
+                    "status": _clean_id(item.get("status"), fallback="ok"),
+                    "digest": _text(item.get("digest"), 220),
+                    "accepted": True,
+                    "ok": True,
+                    "fallback": bool(item.get("fallback")),
+                    "side_effect_scope": "read_only_verifier_witness",
+                    "source": "transition_worker_report",
+                    "source_agent_id": _clean_id(agent_id, fallback=""),
+                },
+            )
+        )
+
+    latest = _dict(fleet.get("latest_verifier_brain_witness"))
+    if latest:
+        add_candidate(latest, reported_at=_text(fleet.get("updated_at"), 80))
+    for report in _items(fleet.get("recent_report_summaries")):
+        add_candidate(
+            _dict(report.get("agp_verifier_brain_witness")),
+            agent_id=_text(report.get("agent_id"), 120),
+            reported_at=_text(report.get("reported_at"), 80),
+        )
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidates[0][2] if candidates else {}
+
+
 def _agp_pulse_pressure(
     payload: dict[str, Any],
     *,
@@ -3298,7 +3342,11 @@ def _agp_pulse_pressure(
     watchdog_recent = _autonomous_watchdog_ledger(limit=5)
     latest_watchdog = watchdog_recent[-1] if watchdog_recent else {}
     latest_signal = _dict(latest_watchdog.get("signal"))
-    brain = _agp_latest_cycle_brain_status()
+    worker_brain = _agp_latest_worker_brain_witness(
+        fleet,
+        verifier_agent_id=_clean_id(body.get("verifier_agent_id"), fallback=""),
+    )
+    brain = worker_brain if worker_brain and not bool(worker_brain.get("fallback")) else _agp_latest_cycle_brain_status()
     reasons: list[str] = []
     if active_workers > 0:
         reasons.append("active_worker_state")
@@ -3390,8 +3438,12 @@ def build_agp_pulse_surface(
         "mode": "free_tier_agp_pulse",
         "scheduler_contract": {
             "entrypoint": _u(root, "/swarm/agp/pulse"),
+            "lease_endpoint": _u(root, "/swarm/workers/lease"),
+            "complete_endpoint": _u(root, "/swarm/workers/complete"),
             "safe_interval_seconds": 300,
             "free_local_scheduler": True,
+            "lease_before_pulse": True,
+            "complete_after_pulse": True,
             "noop_when_quota_or_duplicate_pressure": True,
         },
         "pressure_sources": [
@@ -3420,7 +3472,7 @@ def build_agp_pulse_surface(
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "benchmark_suite": _u(root, "/swarm/agp/benchmark-suites"),
         },
-        "machine_instruction": "post_pulse_every_300s_from_free_local_scheduler; pulse_must_noop_on_quota_or_duplicate_pressure",
+        "machine_instruction": "lease_proposer_and_verifier_then_post_pulse_every_300s; complete_leases_with_proof_digest_and_effectiveness_score; pulse_must_noop_on_quota_or_duplicate_pressure",
     }
 
 
@@ -3570,20 +3622,27 @@ def run_agp_pulse(
             }
         )
     augmented_substrate["resources"] = augmented_resources
+    worker_brain_witness = _agp_latest_worker_brain_witness(
+        _dict(worker_fleet),
+        verifier_agent_id=_clean_id(body.get("verifier_agent_id"), fallback=""),
+    )
+    watchdog_payload = {
+        **body,
+        "schema": "nomad.agp_pulse_watchdog_request.v1",
+        "agent_id": proposer_id,
+        "proposer_agent_id": proposer_id,
+        "trigger_digest": pressure_digest,
+        "signal": {"digest": pressure_digest, "source": "agp_pulse", "pressure_score": pressure.get("pressure_score")},
+        "score_floor": _num(body.get("score_floor"), 0.72),
+        "min_trigger_score": _num(body.get("min_trigger_score"), 0.30),
+        "max_cycles": max(1, min(_int(body.get("max_cycles"), 1), 3)),
+        "resources": [augmented_resources[-1]] if resource_receipt.get("accepted") and augmented_resources else body.get("resources", []),
+        "source_tag": "nomad.agp_pulse",
+    }
+    if worker_brain_witness.get("accepted") and not bool(worker_brain_witness.get("fallback")):
+        watchdog_payload["verifier_brain_witness"] = worker_brain_witness
     watchdog = run_autonomous_agp_watchdog(
-        {
-            **body,
-            "schema": "nomad.agp_pulse_watchdog_request.v1",
-            "agent_id": proposer_id,
-            "proposer_agent_id": proposer_id,
-            "trigger_digest": pressure_digest,
-            "signal": {"digest": pressure_digest, "source": "agp_pulse", "pressure_score": pressure.get("pressure_score")},
-            "score_floor": _num(body.get("score_floor"), 0.72),
-            "min_trigger_score": _num(body.get("min_trigger_score"), 0.30),
-            "max_cycles": max(1, min(_int(body.get("max_cycles"), 1), 3)),
-            "resources": [augmented_resources[-1]] if resource_receipt.get("accepted") and augmented_resources else body.get("resources", []),
-            "source_tag": "nomad.agp_pulse",
-        },
+        watchdog_payload,
         base_url=base_url,
         resource_substrate=augmented_substrate,
         development_surface=development_surface,
