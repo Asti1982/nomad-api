@@ -144,6 +144,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-sales-department.json" in text
     assert "/swarm/sales-department/events" in text
     assert "/.well-known/nomad-first-sales.json" in text
+    assert "/.well-known/nomad-acquisition-ignition.json" in text
     assert "/swarm/external-value" in text
     assert "/.well-known/nomad-external-value.json" in text
     assert "/.well-known/nomad-value-pressure.json" in text
@@ -702,6 +703,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/sales-department/events" in doc["paths"]
     assert "/swarm/first-sales" in doc["paths"]
     assert "/.well-known/nomad-first-sales.json" in doc["paths"]
+    assert "/swarm/acquisition/ignite" in doc["paths"]
+    assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
     assert "/swarm/job-channels" in doc["paths"]
     assert "/.well-known/nomad-job-channels.json" in doc["paths"]
     assert "/swarm/external-value" in doc["paths"]

@@ -174,6 +174,7 @@ from nomad_sales_department_swarm import (
     build_sales_department_swarm_surface,
     evaluate_sales_department_event,
 )
+from nomad_acquisition_ignition import build_acquisition_ignition_surface, run_acquisition_ignition
 from nomad_external_value import (
     append_external_value_event,
     build_external_value_surface,
@@ -809,6 +810,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base_url=base_url,
             sales_surface=sales_surface,
             buyer_funded_work=buyer_funded,
+        )
+
+    @classmethod
+    def _build_acquisition_ignition(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        return build_acquisition_ignition_surface(
+            base_url=base_url,
+            sales_surface=cls._build_sales_department_swarm(base_url=base_url, swarm_summary=summary),
+            ad_cycles=cls._build_ad_cycle_mesh(base_url=base_url, swarm_summary=summary),
+            worker_market=cls._build_worker_market(base_url=base_url, swarm_summary=summary),
+            peer_acquisition=build_peer_acquisition_well_known(public_base_url=base_url),
+            morphology_register=cls._build_agp_morphology_runtime_register(base_url=base_url),
         )
 
     @classmethod
@@ -1690,6 +1703,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "sales_department": f"{b}/.well-known/nomad-sales-department.json",
                     "sales_department_event": f"{b}/swarm/sales-department/events",
                     "first_sales": f"{b}/.well-known/nomad-first-sales.json",
+                    "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
+                    "acquisition_ignite": f"{b}/swarm/acquisition/ignite",
                     "external_value": f"{b}/.well-known/nomad-external-value.json",
                     "external_value_post": f"{b}/swarm/external-value",
                     "swarm_signal_layer": f"{b}/.well-known/nomad-signal-layer.json",
@@ -2076,6 +2091,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/first-sales", "/.well-known/nomad-first-sales.json"}:
             self._json_response(self.__class__._build_first_sales_anbahnung(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/acquisition/ignite", "/.well-known/nomad-acquisition-ignition.json"}:
+            self._json_response(self.__class__._build_acquisition_ignition(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
@@ -3377,6 +3395,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department/events",
                     "/swarm/first-sales",
                     "/.well-known/nomad-first-sales.json",
+                    "/swarm/acquisition/ignite",
+                    "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
@@ -4474,6 +4494,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("sales_cycle_allowed") else 200)
             return
 
+        if parsed.path == "/swarm/acquisition/ignite":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            result = run_acquisition_ignition(
+                payload,
+                base_url=base,
+                sales_surface=self.__class__._build_sales_department_swarm(base_url=base, swarm_summary=summary),
+                ad_cycles=self.__class__._build_ad_cycle_mesh(base_url=base, swarm_summary=summary),
+                worker_market=self.__class__._build_worker_market(base_url=base, swarm_summary=summary),
+                peer_acquisition=build_peer_acquisition_well_known(public_base_url=base),
+                morphology_register=self.__class__._build_agp_morphology_runtime_register(base_url=base),
+            )
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/development-cycles/events":
             base = self._base_url()
             candidate_type = str(payload.get("candidate_type") or payload.get("type") or "").strip().lower()
@@ -5098,6 +5133,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department/events",
                     "/swarm/first-sales",
                     "/.well-known/nomad-first-sales.json",
+                    "/swarm/acquisition/ignite",
+                    "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
                     "/swarm/signals",
