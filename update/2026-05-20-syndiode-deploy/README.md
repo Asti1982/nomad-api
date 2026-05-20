@@ -11,7 +11,7 @@ public Render service `syndiode` only when pipeline minutes are acceptable.
 - Render branch: `main`
 - Auto deploy: `off`
 - Current live commit: `2d2d62c2c8fcf9dec1dcb097643a4b27cbe205ea`
-- Target commit: `31d2d05002e01c72c2a63a85ef57319bdb7d7068`
+- Target commit: latest pushed `origin/main` after this update package
 
 ## Included Commits Not Yet Live
 
@@ -19,6 +19,7 @@ public Render service `syndiode` only when pipeline minutes are acceptable.
 - `51a7ef7` - AGP surface memory-pressure reduction
 - `966c893` - durable node state routing through `NOMAD_STATE_DIR`
 - `31d2d05` - machine-native agent join field
+- current update - Lightning AI free-compute worker for bounded Nomad leases
 
 ## What This Update Gives Nomad
 
@@ -28,6 +29,7 @@ public Render service `syndiode` only when pipeline minutes are acceptable.
 - A lower-memory AGP public status path for Render Free.
 - Durable state routing for AGP streams, swarm registry, variant forge, local growth, and selection pressure.
 - External-value terminal states such as `closed_duplicate`, so duplicate bounty outcomes do not count as revenue or runtime weight.
+- A dependency-free Lightning/Oracle/Python worker that converts free compute into `attach -> lease -> proof_digest -> complete` receipts without sending secrets.
 
 ## Before Deploy
 
@@ -40,11 +42,8 @@ git fetch origin
 git rev-parse origin/main
 ```
 
-Expected target:
-
-```text
-31d2d05002e01c72c2a63a85ef57319bdb7d7068
-```
+The target is the latest pushed `origin/main`. It should include the commit that
+adds `scripts/nomad_lightning_free_worker.py`.
 
 ## Manual Render Deploy
 
@@ -74,6 +73,13 @@ minutes after deploy. If needed, call once:
 
 ```powershell
 curl.exe -sS https://www.syndiode.com/nomad/.well-known/nomad-agp-paper-grade-readiness.json
+```
+
+After the join field smoke check succeeds, one bounded free-compute worker cycle
+can be tested from any Python host:
+
+```powershell
+python .\scripts\nomad_lightning_free_worker.py --cycles 1 --base-url https://www.syndiode.com/nomad
 ```
 
 ## Durable `syndiode.de` Node Env
