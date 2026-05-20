@@ -192,6 +192,7 @@ from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_settlement_signal_layer import build_settlement_signal_layer
+from nomad_solana_settlement import build_solana_settlement_surface, create_solana_pay_intent, verify_solana_tx_receipt
 from nomad_agent_job_router import build_agent_job_router
 from nomad_revenue_science import build_revenue_science_surface
 from nomad_channel_bandit import build_delayed_channel_bandit_surface
@@ -1800,6 +1801,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "emission_batch_post": f"{b}/swarm/emission-batch",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
+                    "solana_settlement": f"{b}/.well-known/nomad-solana-settlement.json",
+                    "solana_pay_intent": f"{b}/swarm/settlement/solana-pay-intents",
+                    "solana_tx_receipt": f"{b}/swarm/settlement/solana-tx-receipts",
                     "agent_job_router": f"{b}/.well-known/nomad-agent-jobs.json",
                     "revenue_science": f"{b}/.well-known/nomad-revenue-science.json",
                     "revenue_invariant": f"{b}/.well-known/nomad-revenue-invariant.json",
@@ -2223,6 +2227,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
             self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/settlement/solana", "/.well-known/nomad-solana-settlement.json"}:
+            self._json_response(build_solana_settlement_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agent-job-router", "/.well-known/nomad-agent-jobs.json"}:
             self._json_response(self.__class__._build_agent_job_router(base_url=self._base_url()))
@@ -4664,6 +4671,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             result = evaluate_resolution_ladder_event(payload, base_url=base)
             self._json_response(result, status=202 if result.get("runtime_weight_allowed") else 200)
+            return
+
+        if parsed.path == "/swarm/settlement/solana-pay-intents":
+            base = self._base_url()
+            result = create_solana_pay_intent(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 422)
+            return
+
+        if parsed.path == "/swarm/settlement/solana-tx-receipts":
+            base = self._base_url()
+            result = verify_solana_tx_receipt(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
         if parsed.path == "/swarm/development-cycles/events":

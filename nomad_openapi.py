@@ -14,6 +14,9 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
     def ref_json_object() -> dict[str, Any]:
         return {"type": "object", "additionalProperties": True}
 
+    def json_request_body(required: bool = True) -> dict[str, Any]:
+        return {"required": required, "content": {"application/json": {"schema": ref_json_object()}}}
+
     return {
         "openapi": "3.0.3",
         "info": {
@@ -2140,6 +2143,46 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getSettlementWellKnown",
                     "responses": {
                         "200": {"description": "Settlement signal layer", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/settlement/solana": {
+                "get": {
+                    "summary": "Solana Pay settlement adapter surface for paid resolution receipts",
+                    "operationId": "getSwarmSolanaSettlement",
+                    "responses": {
+                        "200": {"description": "Solana settlement surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-solana-settlement.json": {
+                "get": {
+                    "summary": "Alias of /swarm/settlement/solana",
+                    "operationId": "getSolanaSettlementWellKnown",
+                    "responses": {
+                        "200": {"description": "Solana settlement surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/settlement/solana-pay-intents": {
+                "post": {
+                    "summary": "Create a Solana Pay transfer request for a Nomad resolution receipt",
+                    "operationId": "postSolanaPayIntent",
+                    "requestBody": json_request_body(),
+                    "responses": {
+                        "202": {"description": "Intent accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Invalid intent", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
+            "/swarm/settlement/solana-tx-receipts": {
+                "post": {
+                    "summary": "Verify a finalized Solana transaction and produce a Resolution Ladder paid receipt payload",
+                    "operationId": "postSolanaTxReceipt",
+                    "requestBody": json_request_body(),
+                    "responses": {
+                        "202": {"description": "Transaction verified", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Receipt not yet accepted", "content": {"application/json": {"schema": ref_json_object()}}},
                     },
                 }
             },
