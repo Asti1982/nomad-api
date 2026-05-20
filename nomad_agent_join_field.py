@@ -47,7 +47,7 @@ def _items(value: Any) -> list[dict[str, Any]]:
 
 def _lane_deficits(attractor: dict[str, Any]) -> dict[str, float]:
     out: dict[str, float] = {}
-    for row in _items(attractor.get("objective_replication_budget")):
+    for row in _items(attractor.get("objective_replication_budget")) + _items(attractor.get("worker_mix")):
         objective = str(row.get("objective") or "").strip()
         if objective:
             out[objective] = max(out.get(objective, 0.0), _num(row.get("deficit")))
@@ -60,6 +60,14 @@ def _lane_deficits(attractor: dict[str, Any]) -> dict[str, float]:
 
 def _priority_lanes(*, gradient: dict[str, Any], attractor: dict[str, Any]) -> list[dict[str, Any]]:
     weights = _dict(gradient.get("routing_weights"))
+    for row in _items(gradient.get("gradient")):
+        objective = str(row.get("objective") or "").strip()
+        if objective:
+            weights[objective] = max(
+                _num(weights.get(objective)),
+                _num(row.get("routing_weight")),
+                _num(row.get("deficit")),
+            )
     deficits = _lane_deficits(attractor)
     templates = [
         {
