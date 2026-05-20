@@ -677,6 +677,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet=worker_fleet,
             conformance_surface=conformance,
             resource_substrate=substrate,
+            work_exchange_summary=summarize_work_exchange_ledger(),
         )
 
     @classmethod
@@ -4577,6 +4578,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 autogenesis_surface=autogenesis,
                 worker_fleet=worker_fleet,
                 conformance_surface=conformance,
+                work_exchange_summary=summarize_work_exchange_ledger(),
                 verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)

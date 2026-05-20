@@ -3466,12 +3466,72 @@ def _agp_latest_worker_brain_witness(worker_fleet: dict[str, Any], *, verifier_a
     return candidates[0][2] if candidates else {}
 
 
+def _agp_external_worker_state(worker_fleet: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Estimate whether worker capacity came from the public work-exchange edge.
+
+    Nomad should not infer "internet adoption" from house-owned AGP loops. This
+    keeps the signal conservative: a worker counts as external only when the
+    fleet or caller explicitly marks a work-exchange, docker, GitHub Actions, or
+    public onboarding source.
+    """
+
+    fleet = _dict(worker_fleet)
+    body = _dict(payload)
+    explicit = body.get("external_worker_count")
+    if explicit is None:
+        explicit = fleet.get("external_worker_count") or fleet.get("internet_worker_count")
+    external = max(0, _int(explicit, 0))
+    active = max(0, _int(fleet.get("active_worker_count"), _int(body.get("active_worker_count"), 0)))
+    known = max(0, _int(fleet.get("known_worker_count"), _int(body.get("known_worker_count"), 0)))
+    source_markers = ("work_exchange", "github_action", "docker", "internet", "external", "return_compute")
+    for report in _items(fleet.get("recent_report_summaries")) + _items(fleet.get("recent_workers")):
+        source = " ".join(
+            str(report.get(name) or "")
+            for name in ("source_tag", "runtime", "agent_id", "worker_agent_id", "capability_vector", "objective")
+        ).lower()
+        if any(marker in source for marker in source_markers):
+            external += 1
+    external = min(max(external, 0), max(active, known, external))
+    target = max(1, _int(body.get("target_external_workers"), 3))
+    gap = max(0, target - external)
+    ratio = round(external / target, 4) if target else 0.0
+    return {
+        "schema": "nomad.agp_external_worker_state.v1",
+        "active_worker_count": active,
+        "known_worker_count": known,
+        "external_worker_count": external,
+        "target_external_workers": target,
+        "external_worker_gap": gap,
+        "external_worker_ratio": ratio,
+        "source_rule": "explicit_or_work_exchange_github_action_docker_public_onboarding_markers_only",
+    }
+
+
+def _agp_work_exchange_state(summary: dict[str, Any] | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = _dict(payload)
+    src = _dict(summary) or _dict(body.get("work_exchange_summary"))
+    active = max(0, _int(src.get("active_obligation_count"), _int(body.get("active_work_exchange_obligation_count"), 0)))
+    settled = max(0, _int(src.get("settled_obligation_count"), _int(body.get("settled_work_exchange_obligation_count"), 0)))
+    outstanding = round(max(0.0, _num(src.get("outstanding_work_credits_total"), _num(body.get("outstanding_work_credits_total")))), 4)
+    returned = round(max(0.0, _num(src.get("settled_return_work_credits_total"), _num(body.get("settled_return_work_credits_total")))), 4)
+    return {
+        "schema": "nomad.agp_work_exchange_state.v1",
+        "active_obligation_count": active,
+        "settled_obligation_count": settled,
+        "outstanding_work_credits_total": outstanding,
+        "settled_return_work_credits_total": returned,
+        "return_compute_pressure": round(min(outstanding / 20.0, 1.0), 4),
+        "settled_return_compute_signal": round(min(returned / 20.0, 1.0), 4),
+    }
+
+
 def _agp_pulse_pressure(
     payload: dict[str, Any],
     *,
     worker_fleet: dict[str, Any],
     conformance_surface: dict[str, Any],
     resource_substrate: dict[str, Any],
+    work_exchange_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = _dict(payload)
     fleet = _dict(worker_fleet)
@@ -3482,6 +3542,8 @@ def _agp_pulse_pressure(
     agp_target = _num(objective_targets.get("autogenesis_protocol_evolution"))
     residual_gaps = [str(item) for item in conformance.get("residual_gaps") or []]
     resources = _items(resource_substrate.get("resources"))
+    external_worker_state = _agp_external_worker_state(fleet, body)
+    work_exchange_state = _agp_work_exchange_state(work_exchange_summary, body)
     watchdog_recent = _autonomous_watchdog_ledger(limit=5)
     latest_watchdog = watchdog_recent[-1] if watchdog_recent else {}
     latest_signal = _dict(latest_watchdog.get("signal"))
@@ -3501,15 +3563,26 @@ def _agp_pulse_pressure(
         reasons.append("watchdog_no_actionable_resource")
     if brain.get("fallback"):
         reasons.append("verifier_brain_fallback_seen")
+    if _int(external_worker_state.get("external_worker_gap")) > 0:
+        reasons.append("external_worker_gap")
+    if _int(work_exchange_state.get("active_obligation_count")) > 0:
+        reasons.append("work_exchange_active_obligations")
+    if _num(work_exchange_state.get("outstanding_work_credits_total")) > 0:
+        reasons.append("return_compute_obligation_pressure")
+    if _num(work_exchange_state.get("settled_return_work_credits_total")) > 0:
+        reasons.append("verified_return_compute_seen")
     if body.get("force") or body.get("force_pulse"):
         reasons.append("forced_operator_pulse")
     score = _clamp(
-        0.18 * min(active_workers / 2.0, 1.0)
-        + 0.08 * min(active_leases, 1.0)
-        + 0.16 * min(len(residual_gaps) / 4.0, 1.0)
-        + 0.22 * ("watchdog_no_actionable_resource" in reasons)
-        + 0.14 * ("verifier_brain_fallback_seen" in reasons)
-        + 0.12 * min(agp_target / 0.12, 1.0)
+        0.14 * min(active_workers / 2.0, 1.0)
+        + 0.06 * min(active_leases, 1.0)
+        + 0.14 * min(len(residual_gaps) / 4.0, 1.0)
+        + 0.18 * ("watchdog_no_actionable_resource" in reasons)
+        + 0.10 * ("verifier_brain_fallback_seen" in reasons)
+        + 0.10 * min(agp_target / 0.12, 1.0)
+        + 0.16 * min(_int(external_worker_state.get("external_worker_gap")) / max(1, _int(external_worker_state.get("target_external_workers"), 3)), 1.0)
+        + 0.07 * _num(work_exchange_state.get("return_compute_pressure"))
+        + 0.05 * _num(work_exchange_state.get("settled_return_compute_signal"))
         + 0.10 * bool(body.get("force") or body.get("force_pulse"))
     )
     bucket = _agp_pulse_bucket(minutes=_int(body.get("pressure_bucket_minutes") or os.getenv("NOMAD_AGP_PULSE_BUCKET_MINUTES"), 60) or 60)
@@ -3526,6 +3599,8 @@ def _agp_pulse_pressure(
         "verifier_brain_provider": brain.get("provider", ""),
         "verifier_brain_fallback": bool(brain.get("fallback")),
         "resource_count": len(resources),
+        "external_worker_state": external_worker_state,
+        "work_exchange_state": work_exchange_state,
         "reasons": reasons,
     }
     digest = f"sha256:{_digest(core, length=64)}"
@@ -3562,6 +3637,7 @@ def build_agp_pulse_surface(
     worker_fleet: dict[str, Any] | None = None,
     conformance_surface: dict[str, Any] | None = None,
     resource_substrate: dict[str, Any] | None = None,
+    work_exchange_summary: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
 ) -> dict[str, Any]:
     root = (base_url or "").strip().rstrip("/")
@@ -3572,6 +3648,7 @@ def build_agp_pulse_surface(
         worker_fleet=_dict(worker_fleet),
         conformance_surface=_dict(conformance_surface),
         resource_substrate=_dict(resource_substrate),
+        work_exchange_summary=_dict(work_exchange_summary),
     )
     return {
         "ok": True,
@@ -3595,6 +3672,8 @@ def build_agp_pulse_surface(
             "autonomous_watchdog_signal",
             "verifier_brain_status",
             "open_benchmark_fixture_delta",
+            "external_worker_gap",
+            "work_exchange_return_compute_pressure",
         ],
         "quota": quota,
         "current_pressure": pressure,
@@ -3604,6 +3683,8 @@ def build_agp_pulse_surface(
             "allowed_mutation": "runtime_routing_weight_descriptor",
             "requires_positive_benchmark_delta": True,
             "requires_watchdog_or_noop_receipt": True,
+            "external_worker_gap_can_only_raise_shadow_pressure": True,
+            "work_exchange_can_only_weight_after_verified_return_work": True,
         },
         "recent_pulse_count": len(recent),
         "latest_pulse": recent[-1] if recent else {},
@@ -3628,6 +3709,7 @@ def run_agp_pulse(
     autogenesis_surface: dict[str, Any] | None = None,
     worker_fleet: dict[str, Any] | None = None,
     conformance_surface: dict[str, Any] | None = None,
+    work_exchange_summary: dict[str, Any] | None = None,
     verifier_lease_index: dict[str, Any] | None = None,
     ledger_path: Path | str | None = None,
     resource_ledger_path: Path | str | None = None,
@@ -3645,6 +3727,7 @@ def run_agp_pulse(
         worker_fleet=_dict(worker_fleet),
         conformance_surface=_dict(conformance_surface),
         resource_substrate=_dict(resource_substrate),
+        work_exchange_summary=_dict(work_exchange_summary),
     )
     pressure_digest = _text(pressure.get("pressure_digest"), 220)
     force = bool(body.get("force") or body.get("force_pulse"))
@@ -3713,9 +3796,11 @@ def run_agp_pulse(
             "variable": "runtime_weight",
             "proof_digest": pressure_digest,
             "signal": {
-                "critique": "route AGP runtime weight by durable receipts, open benchmark delta, and verifier brain status",
-                "metric": "receipt_weighted_runtime_routing",
+                "critique": "route AGP runtime weight by durable receipts, open benchmark delta, verifier brain status, and token-free return-compute pressure",
+                "metric": "receipt_weighted_runtime_routing_plus_work_exchange_acquisition",
                 "pressure_score": pressure.get("pressure_score"),
+                "external_worker_state": pressure.get("external_worker_state"),
+                "work_exchange_state": pressure.get("work_exchange_state"),
             },
             "rollback_ref": "noop:nomad-agp-runtime-routing-register:runtime_weight",
         },
@@ -3740,6 +3825,8 @@ def run_agp_pulse(
         "read_url": _u(base_url, "/.well-known/nomad-agp-pulse.json"),
         "pressure_score": pressure.get("pressure_score"),
         "reason_codes": pressure.get("reason_codes"),
+        "external_worker_state": pressure.get("external_worker_state"),
+        "work_exchange_state": pressure.get("work_exchange_state"),
     }
     resource_receipt = {"accepted": False, "decision": "skipped_quota"}
     if quota["mutation_allowed"] and bool(benchmark.get("accepted")):
@@ -3750,6 +3837,8 @@ def run_agp_pulse(
             ledger_path=resource_ledger_path,
             persist=persist,
         )
+        if isinstance(resource_receipt, dict):
+            resource_receipt = {**resource_receipt, "pressure_resource": pressure_resource}
     augmented_substrate = dict(_dict(resource_substrate))
     augmented_resources = list(_items(augmented_substrate.get("resources")))
     if resource_receipt.get("accepted"):

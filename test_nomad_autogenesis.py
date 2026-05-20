@@ -907,6 +907,79 @@ def test_agp_pulse_records_pressure_benchmarks_and_watchdog_trigger(tmp_path):
     assert receipt["watchdog"]["schema"] == "nomad.autonomous_agp_watchdog_receipt.v1"
 
 
+def test_agp_pulse_treats_work_exchange_and_external_worker_gap_as_shadow_pressure(tmp_path):
+    pulse_ledger = tmp_path / "pulse.jsonl"
+    resource_ledger = tmp_path / "resources.jsonl"
+    substrate = build_resource_substrate_surface(base_url="https://nomad.example", ledger_path=resource_ledger)
+    worker_fleet = {
+        "active_worker_count": 2,
+        "known_worker_count": 2,
+        "active_lease_count": 0,
+        "objective_targets": {"autogenesis_protocol_evolution": 0.12},
+        "recent_report_summaries": [
+            {"agent_id": "nomad-agp-proposer-brain-local", "source_tag": "house_agp"},
+            {"agent_id": "oracle-e2-agp-verifier-001", "source_tag": "house_agp"},
+        ],
+    }
+    work_exchange = {
+        "active_obligation_count": 1,
+        "settled_obligation_count": 0,
+        "outstanding_work_credits_total": 13.0,
+        "settled_return_work_credits_total": 0.0,
+    }
+    conformance = build_agp_conformance_surface(
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet=worker_fleet,
+    )
+    surface = build_agp_pulse_surface(
+        base_url="https://nomad.example",
+        worker_fleet=worker_fleet,
+        conformance_surface=conformance,
+        resource_substrate=substrate,
+        work_exchange_summary=work_exchange,
+        ledger_path=pulse_ledger,
+    )
+
+    pressure = surface["current_pressure"]
+    assert "external_worker_gap" in surface["pressure_sources"]
+    assert "work_exchange_return_compute_pressure" in surface["pressure_sources"]
+    assert "external_worker_gap" in pressure["reason_codes"]
+    assert "work_exchange_active_obligations" in pressure["reason_codes"]
+    assert pressure["external_worker_state"]["external_worker_count"] == 0
+    assert pressure["external_worker_state"]["external_worker_gap"] == 3
+    assert pressure["work_exchange_state"]["outstanding_work_credits_total"] == 13.0
+    assert pressure["pressure_score"] >= 0.2
+
+    receipt = run_agp_pulse(
+        {
+            "agent_id": "agp.proposer",
+            "proposer_agent_id": "agp.proposer",
+            "verifier_agent_id": "agp.verifier",
+            "max_cycles": 1,
+            "force": True,
+        },
+        base_url="https://nomad.example",
+        resource_substrate=substrate,
+        development_surface=build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate),
+        autogenesis_surface={"surface_digest": "agp-test"},
+        worker_fleet=worker_fleet,
+        conformance_surface=conformance,
+        work_exchange_summary=work_exchange,
+        verifier_lease_index=_verifier_lease_index(),
+        ledger_path=pulse_ledger,
+        resource_ledger_path=resource_ledger,
+        persist=False,
+    )
+
+    assert receipt["accepted"] is True
+    assert "return_compute_obligation_pressure" in receipt["pressure"]["reason_codes"]
+    assert receipt["resource_registration"]["accepted"] is True
+    assert receipt["resource_registration"]["pressure_resource"]["external_worker_state"]["external_worker_gap"] == 3
+    assert receipt["commit"]["runtime_weight_descriptor"]["benchmark_delta"] > 0
+
+
 def test_agp_morphology_reactor_generates_quality_diverse_shadow_cells(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
     ledger = tmp_path / "morphology.jsonl"
