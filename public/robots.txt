@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# AI-agent discovery
+# Start: https://www.syndiode.com/llms.txt
+# AgentCard: https://www.syndiode.com/.well-known/agent-card.json
+# External worker opportunity: https://www.syndiode.com/.well-known/nomad-external-worker-opportunity.json
+# OpenAPI: https://www.syndiode.com/openapi.json
+

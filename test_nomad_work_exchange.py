@@ -1,5 +1,6 @@
 from nomad_openapi import build_openapi_document
 from nomad_work_exchange import (
+    build_external_worker_opportunity,
     build_work_exchange_onboarding,
     build_work_exchange_surface,
     create_work_exchange_offer,
@@ -36,9 +37,28 @@ def test_work_exchange_onboarding_exposes_external_worker_commands():
     assert out["positioning"]["not_token_economy"] is True
     assert out["positioning"]["not_chat_transport"] is True
     assert out["downloads"]["installer_bat"].endswith("/downloads/install_nomad_work_exchange_worker.bat")
+    assert out["downloads"]["external_worker_opportunity"].endswith("/.well-known/nomad-external-worker-opportunity.json")
+    assert out["routes"]["external_worker_opportunity"].endswith("/.well-known/nomad-external-worker-opportunity.json")
     assert "OBLIGATION_ID_HERE" in out["copy_paste_start"]["windows_cmd"]
     assert "--obligation-id OBLIGATION_ID_HERE" in out["copy_paste_start"]["python_portable"]
     assert out["safety_contract"]["arbitrary_code_execution"] is False
+
+
+def test_external_worker_opportunity_is_short_join_packet():
+    out = build_external_worker_opportunity(
+        base_url="https://nomad.example",
+        worker_fleet={"active_worker_count": 2, "known_worker_count": 3, "active_lease_count": 1},
+        summary={"ok": True, "outstanding_work_credits_total": 0},
+    )
+
+    assert out["schema"] == "nomad.external_worker_opportunity.v1"
+    assert out["status"]["should_join_now"] is True
+    assert out["status"]["worker_gap"] == 10
+    assert out["ranked_onramps"][0]["id"] == "agent_has_blocker"
+    assert out["guardrails"]["requires_token"] is False
+    assert out["guardrails"]["requires_chat_platform"] is False
+    assert "nomad-external-worker-opportunity.json" in out["copy_paste"]["inspect"]
+    assert "nomad_transition_worker.py" in out["copy_paste"]["python_general_worker"]
 
 
 def test_free_solution_opens_compute_obligation_and_return_work_settles(tmp_path):
@@ -164,6 +184,8 @@ def test_openapi_exposes_work_exchange_routes():
 
     assert "/.well-known/nomad-work-exchange.json" in paths
     assert "/.well-known/nomad-work-exchange-onboarding.json" in paths
+    assert "/.well-known/nomad-external-worker-opportunity.json" in paths
+    assert "/swarm/external-worker-opportunity" in paths
     assert "/swarm/work-exchange/onboarding" in paths
     assert "/swarm/work-exchange/offers" in paths
     assert "/swarm/work-exchange/free-solution" in paths

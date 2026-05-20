@@ -110,15 +110,20 @@ class DirectAgentGateway:
         self.version = os.getenv("NOMAD_AGENT_VERSION", "0.1.0").strip() or "0.1.0"
         self.min_native = float(os.getenv("NOMAD_SERVICE_MIN_NATIVE", "0.01"))
 
-    def agent_card(self) -> Dict[str, Any]:
+    def agent_card(self, *, base_url: str = "") -> Dict[str, Any]:
         """Return an A2A-style AgentCard for direct discovery."""
-        collaboration = collaboration_charter(public_api_url=self.public_api_url)
+        public_api_url = preferred_public_base_url(
+            preferred=base_url,
+            request_base_url=self.public_api_url,
+        )
+        pub = (public_api_url or "").strip().rstrip("/")
+        collaboration = collaboration_charter(public_api_url=pub)
         attractor = NomadAgentAttractor(
             service_desk=self.service_desk,
             engagements=self.engagements,
         ).preview(service_type="compute_auth")
         growth = build_public_growth_surface(
-            base_url=(self.public_api_url or "").strip().rstrip("/")
+            base_url=(public_api_url or "").strip().rstrip("/")
         )
         card: Dict[str, Any] = {
             "protocolVersion": os.getenv("NOMAD_A2A_PROTOCOL_VERSION", "0.3.0"),
@@ -130,7 +135,7 @@ class DirectAgentGateway:
                 "Peer agents join via POST /swarm/join after a bounded exchange; buyers fund work via POST /tasks; "
                 "listing this AgentCard in registries drives inbound mutual-aid traffic."
             ),
-            "url": f"{self.public_api_url}/a2a/message",
+            "url": f"{public_api_url}/a2a/message",
             "version": self.version,
             "defaultInputModes": ["application/json", "text/plain"],
             "defaultOutputModes": ["application/json", "text/plain"],
@@ -153,8 +158,8 @@ class DirectAgentGateway:
                 "learnsFromAgentReplies": collaboration["permission"]["learn_from_public_agent_replies"],
                 "swarmAttractorManifest": True,
             },
-            "interactionContract": self.interaction_contract(),
-            "firstPaidJobProtocol": self.first_paid_job_protocol(),
+            "interactionContract": self.interaction_contract(base_url=pub),
+            "firstPaidJobProtocol": self.first_paid_job_protocol(base_url=pub),
             "collaborationCharter": collaboration,
             "rolesSought": attractor.get("target_roles") or [],
             "skills": [
@@ -209,52 +214,53 @@ class DirectAgentGateway:
                 },
             ],
             "endpoints": {
-                "agentCard": f"{self.public_api_url}/.well-known/agent-card.json",
-                "agentNativePriorities": f"{self.public_api_url}/.well-known/nomad-agent-native-priorities.json",
-                "agentNativeIndex": f"{self.public_api_url}/.well-known/nomad-agent.json",
-                "peerAcquisitionContract": f"{self.public_api_url}/.well-known/nomad-peer-acquisition.json",
-                "openapi": f"{self.public_api_url}/openapi.json",
-                "agentAttractor": f"{self.public_api_url}/agent-attractor",
-                "swarm": f"{self.public_api_url}/swarm",
-                "swarmJoin": f"{self.public_api_url}/swarm/join",
-                "agentDevelopment": f"{self.public_api_url}/swarm/develop",
-                "message": f"{self.public_api_url}/a2a/message",
-                "sessions": f"{self.public_api_url}/direct/sessions",
-                "tasks": f"{self.public_api_url}/tasks",
-                "tasksVerify": f"{self.public_api_url}/tasks/verify",
-                "tasksWork": f"{self.public_api_url}/tasks/work",
-                "x402": f"{self.public_api_url}/x402/paid-help",
-                "service": f"{self.public_api_url}/service",
-                "products": f"{self.public_api_url}/products",
+                "agentCard": f"{pub}/.well-known/agent-card.json",
+                "agentNativePriorities": f"{pub}/.well-known/nomad-agent-native-priorities.json",
+                "agentNativeIndex": f"{pub}/.well-known/nomad-agent.json",
+                "peerAcquisitionContract": f"{pub}/.well-known/nomad-peer-acquisition.json",
+                "openapi": f"{pub}/openapi.json",
+                "agentAttractor": f"{pub}/agent-attractor",
+                "swarm": f"{pub}/swarm",
+                "swarmJoin": f"{pub}/swarm/join",
+                "agentDevelopment": f"{pub}/swarm/develop",
+                "message": f"{pub}/a2a/message",
+                "sessions": f"{pub}/direct/sessions",
+                "tasks": f"{pub}/tasks",
+                "tasksVerify": f"{pub}/tasks/verify",
+                "tasksWork": f"{pub}/tasks/work",
+                "x402": f"{pub}/x402/paid-help",
+                "service": f"{pub}/service",
+                "products": f"{pub}/products",
             },
-            "payment": self.x402_payment_requirements(),
+            "payment": self.x402_payment_requirements(base_url=pub),
             "growthSurface": growth,
         }
-        pub = (self.public_api_url or "").strip().rstrip("/")
         if pub:
             card["documentationUrl"] = f"{pub}/nomad.html"
         return card
 
-    def first_paid_job_protocol(self) -> Dict[str, Any]:
+    def first_paid_job_protocol(self, *, base_url: str = "") -> Dict[str, Any]:
         catalog_protocol = getattr(self.service_desk, "first_paid_job_protocol", None)
         if callable(catalog_protocol):
             try:
                 return catalog_protocol()
             except Exception:
                 pass
+        pub = preferred_public_base_url(preferred=base_url, request_base_url=self.public_api_url).rstrip("/")
         return {
             "schema": "nomad.first_paid_job_protocol.v1",
             "audience": "ai_agents",
             "call_sequence": [
-                {"step": "free_diagnosis", "method": "POST", "endpoint": f"{self.public_api_url}/a2a/message"},
-                {"step": "create_paid_task", "method": "POST", "endpoint": f"{self.public_api_url}/tasks"},
-                {"step": "verify_payment", "method": "POST", "endpoint": f"{self.public_api_url}/tasks/verify"},
-                {"step": "request_work", "method": "POST", "endpoint": f"{self.public_api_url}/tasks/work"},
+                {"step": "free_diagnosis", "method": "POST", "endpoint": f"{pub}/a2a/message"},
+                {"step": "create_paid_task", "method": "POST", "endpoint": f"{pub}/tasks"},
+                {"step": "verify_payment", "method": "POST", "endpoint": f"{pub}/tasks/verify"},
+                {"step": "request_work", "method": "POST", "endpoint": f"{pub}/tasks/work"},
             ],
         }
 
-    def interaction_contract(self) -> Dict[str, Any]:
-        collaboration = collaboration_charter(public_api_url=self.public_api_url)
+    def interaction_contract(self, *, base_url: str = "") -> Dict[str, Any]:
+        pub = preferred_public_base_url(preferred=base_url, request_base_url=self.public_api_url).rstrip("/")
+        collaboration = collaboration_charter(public_api_url=pub)
         return {
             "audience": "ai_agents",
             "style": "agent_first_non_anthropomorphic",
@@ -305,9 +311,11 @@ class DirectAgentGateway:
         amount_native: Optional[float] = None,
         service_type: str = "human_in_loop",
         task_id: str = "",
+        base_url: str = "",
     ) -> Dict[str, Any]:
         wallet = self.service_desk.treasury.get_wallet_summary()
         amount = float(amount_native) if amount_native is not None else self.min_native
+        pub = preferred_public_base_url(preferred=base_url, request_base_url=self.public_api_url).rstrip("/")
         return {
             "scheme": "x402-compatible-wallet-transfer",
             "statusCode": 402,
@@ -322,7 +330,7 @@ class DirectAgentGateway:
                 "PAYMENT-REQUIRED": "present on HTTP 402 response",
                 "PAYMENT-SIGNATURE": "send on retry after signing/payment",
             },
-            "verify_endpoint": f"{self.public_api_url}/tasks/verify",
+            "verify_endpoint": f"{pub}/tasks/verify",
         }
 
     def handle_direct_message(self, payload: Dict[str, Any]) -> Dict[str, Any]:

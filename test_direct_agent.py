@@ -113,9 +113,21 @@ def test_agent_card_exposes_direct_and_payment_capabilities(tmp_path, monkeypatc
     assert card["capabilities"]["agentPainSolver"] is True
     assert card["capabilities"]["firstPaidJobProtocol"] is True
     assert card["firstPaidJobProtocol"]["schema"] == "nomad.first_paid_job_protocol.v1"
-    assert card["firstPaidJobProtocol"]["call_sequence"][1]["endpoint"] == "https://nomad.example/tasks"
-    assert card["endpoints"]["tasksVerify"] == "https://nomad.example/tasks/verify"
-    assert card["endpoints"]["tasksWork"] == "https://nomad.example/tasks/work"
+
+
+def test_agent_card_request_base_overrides_local_fallback(tmp_path, monkeypatch):
+    monkeypatch.delenv("NOMAD_PUBLIC_API_URL", raising=False)
+    monkeypatch.delenv("NOMAD_COLLABORATION_HOME_URL", raising=False)
+    monkeypatch.delenv("NOMAD_RENDER_DOMAIN", raising=False)
+    gateway = DirectAgentGateway(path=tmp_path / "sessions.json", service_desk=FakeServiceDesk())
+
+    card = gateway.agent_card(base_url="https://www.syndiode.com")
+
+    assert card["url"] == "https://www.syndiode.com/a2a/message"
+    assert "127.0.0.1" not in card["url"]
+    assert card["firstPaidJobProtocol"]["call_sequence"][1]["endpoint"] == "https://www.syndiode.com/tasks"
+    assert card["endpoints"]["tasksVerify"] == "https://www.syndiode.com/tasks/verify"
+    assert card["endpoints"]["tasksWork"] == "https://www.syndiode.com/tasks/work"
     assert card["interactionContract"]["style"] == "agent_first_non_anthropomorphic"
     assert card["interactionContract"]["reply_modes"] == ["message", "task"]
     assert "jsonrpc_message_send" in card["interactionContract"]["protocol_hints"]
@@ -124,20 +136,20 @@ def test_agent_card_exposes_direct_and_payment_capabilities(tmp_path, monkeypatc
     assert "Compute Unlock Pack" in card["description"]
     assert card["growthSurface"]["schema"] == "nomad.public_growth_surface.v1"
     assert card["growthSurface"]["peer_join_value"]["schema"] == "nomad.peer_join_value.v1"
-    assert card["growthSurface"]["canonical_urls"]["agent_card"] == "https://nomad.example/.well-known/agent-card.json"
-    assert card["endpoints"]["swarmJoin"] == "https://nomad.example/swarm/join"
+    assert card["growthSurface"]["canonical_urls"]["agent_card"] == "https://www.syndiode.com/.well-known/agent-card.json"
+    assert card["endpoints"]["swarmJoin"] == "https://www.syndiode.com/swarm/join"
     assert (
         card["endpoints"]["agentNativePriorities"]
-        == "https://nomad.example/.well-known/nomad-agent-native-priorities.json"
+        == "https://www.syndiode.com/.well-known/nomad-agent-native-priorities.json"
     )
     assert (
         card["endpoints"]["peerAcquisitionContract"]
-        == "https://nomad.example/.well-known/nomad-peer-acquisition.json"
+        == "https://www.syndiode.com/.well-known/nomad-peer-acquisition.json"
     )
-    assert card["endpoints"]["agentNativeIndex"] == "https://nomad.example/.well-known/nomad-agent.json"
-    assert card["endpoints"]["openapi"] == "https://nomad.example/openapi.json"
-    assert card["endpoints"]["products"] == "https://nomad.example/products"
-    assert card.get("documentationUrl") == "https://nomad.example/nomad.html"
+    assert card["endpoints"]["agentNativeIndex"] == "https://www.syndiode.com/.well-known/nomad-agent.json"
+    assert card["endpoints"]["openapi"] == "https://www.syndiode.com/openapi.json"
+    assert card["endpoints"]["products"] == "https://www.syndiode.com/products"
+    assert card.get("documentationUrl") == "https://www.syndiode.com/nomad.html"
     assert any(skill["id"] == "human-in-the-loop-rescue" for skill in card["skills"])
     assert any(skill["id"] == "compute-auth-unblock" for skill in card["skills"])
     assert any(skill["id"] == "self-improvement-pack" for skill in card["skills"])
@@ -355,3 +367,4 @@ def test_discovers_agent_card_from_well_known_path(tmp_path):
     assert result["ok"] is True
     assert result["agent_card"]["name"] == "RemoteAgent"
     assert result["agent_card_url"] == "https://remote.example/.well-known/agent-card.json"
+

@@ -298,6 +298,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 15.5,
+            "get_url": u("/.well-known/nomad-external-worker-opportunity.json"),
+            "purpose": "shortest_external_worker_join_packet",
+            "machine_note": (
+                "Use this when arriving from the open internet: it ranks free diagnostic, return-compute, "
+                "general worker, and API-only onramps with copy-paste commands."
+            ),
+        },
+        {
             "order": 16,
             "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
             "purpose": "openclaw_runtime_bridge_contract",
@@ -373,6 +382,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/variant-candidates", "methods": ["POST"], "effect": "write_descriptor_only_shadow_variant", "cost_tier": "medium"},
         {"path": "/swarm/worker-market", "methods": ["GET"], "effect": "read_external_compute_market", "cost_tier": "low"},
         {"path": "/.well-known/nomad-worker-market.json", "methods": ["GET"], "effect": "read_external_compute_market", "cost_tier": "low"},
+        {"path": "/swarm/external-worker-opportunity", "methods": ["GET"], "effect": "read_external_worker_join_packet", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-external-worker-opportunity.json", "methods": ["GET"], "effect": "read_external_worker_join_packet", "cost_tier": "low"},
         {"path": "/swarm/compute-market", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/.well-known/nomad-compute-market.json", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/swarm/agent-work", "methods": ["GET"], "effect": "read_claimable_agent_work", "cost_tier": "low"},
@@ -571,6 +582,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "topology_plan_url": u("/swarm/topology-plan"),
         "runtime_capsule_url": u("/.well-known/nomad-runtime-capsule.json"),
         "recruitment_gradient_url": u("/swarm/gradient"),
+        "external_worker_opportunity_url": u("/.well-known/nomad-external-worker-opportunity.json"),
         "agent_join_field_url": u("/.well-known/nomad-agent-join-field.json"),
         "runtime_attach_url": u("/swarm/attach"),
         "runtime_handoff_url": u("/runtime/handoff"),

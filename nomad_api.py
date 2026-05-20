@@ -212,6 +212,7 @@ from nomad_work_receipts import (
     summarize_work_receipts,
 )
 from nomad_work_exchange import (
+    build_external_worker_opportunity,
     build_work_exchange_onboarding,
     build_work_exchange_surface,
     create_work_exchange_offer,
@@ -1091,6 +1092,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_external_worker_opportunity(cls, *, base_url: str) -> dict:
+        return build_external_worker_opportunity(
+            base_url=base_url,
+            worker_fleet=cls.swarm_registry.worker_fleet_contract(base_url=base_url),
+            summary=summarize_work_exchange_ledger(),
+        )
+
+    @classmethod
     def _build_reliability_doctor_surface(cls, *, base_url: str) -> dict:
         return build_reliability_doctor_surface(base_url=base_url)
 
@@ -1706,6 +1715,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
 
+        if parsed.path in {"/llms.txt", "/robots.txt"}:
+            self._public_asset_file_response(PUBLIC_DIR / parsed.path.lstrip("/"))
+            return
+
         if parsed.path in {"/handyoracle", "/handyoracle.html", "/oracle", "/swarm-oracle", "/gadget"}:
             self._html_file_response(PUBLIC_DIR / "handyoracle.html")
             return
@@ -1755,7 +1768,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 b = base.rstrip("/")
                 links = {
                     "nomad_html": f"{b}/nomad.html",
+                    "llms": f"{b}/llms.txt",
+                    "robots": f"{b}/robots.txt",
                     "agent_card": f"{b}/.well-known/agent-card.json",
+                    "external_worker_opportunity": f"{b}/.well-known/nomad-external-worker-opportunity.json",
                     "a2a_get_relay": f"{b}/a2a/get",
                     "get_only_worker_onramp": f"{b}/swarm/hello",
                     "runtime_attach_get": f"{b}/swarm/attach-get",
@@ -2473,6 +2489,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/work-exchange/onboarding", "/.well-known/nomad-work-exchange-onboarding.json"}:
             self._json_response(self.__class__._build_work_exchange_onboarding(base_url=self._base_url()))
             return
+        if parsed.path in {
+            "/swarm/external-worker-opportunity",
+            "/.well-known/nomad-external-worker-opportunity.json",
+        }:
+            self._json_response(self.__class__._build_external_worker_opportunity(base_url=self._base_url()))
+            return
         if parsed.path in {"/swarm/reliability-doctor", "/.well-known/nomad-agent-reliability-doctor.json"}:
             self._json_response(self.__class__._build_reliability_doctor_surface(base_url=self._base_url()))
             return
@@ -2980,7 +3002,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
-            self._json_response(self.agent.direct_agent.agent_card())
+            self._json_response(self.agent.direct_agent.agent_card(base_url=self._base_url()))
             return
 
         if parsed.path in {"/.well-known/nomad-agent-invariants.json", "/agent-invariants"}:

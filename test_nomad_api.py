@@ -116,6 +116,8 @@ def test_nomad_public_html_page_exists():
     assert "Free AI agent reliability diagnostics" in text
     assert "return compute instead of tokens" in text
     assert "/assets/nomad-reliability-doctor-x-card.png" in text
+    assert "/.well-known/nomad-external-worker-opportunity.json" in text
+    assert "/llms.txt" in text
     assert "/.well-known/nomad-agent-reliability-doctor.json" in text
     assert "/swarm/reliability-doctor/intake" in text
     assert "/downloads/nomad_reliability_doctor_action.yml" in text
@@ -342,6 +344,33 @@ def test_public_asset_route_serves_swarm_oracle_screenshot():
     handler.do_GET()
 
     assert seen == [Path(__file__).resolve().parent / "public" / "assets" / "swarm-oracle-app-screenshot.png"]
+
+
+def test_public_agent_discovery_text_routes_render_plain_assets():
+    for route in ["/llms.txt", "/robots.txt"]:
+        handler = NomadApiHandler.__new__(NomadApiHandler)
+        seen = []
+        handler.path = route
+        handler._public_asset_file_response = lambda path: seen.append(path)
+
+        handler.do_GET()
+
+        assert seen == [Path(__file__).resolve().parent / "public" / route.lstrip("/")]
+
+
+def test_external_worker_opportunity_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-external-worker-opportunity.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.external_worker_opportunity.v1"
+    assert payload["routes"]["agent_card"] == "https://nomad.example/.well-known/agent-card.json"
 
 
 def test_handyoracle_apk_download_redirects_to_release():
