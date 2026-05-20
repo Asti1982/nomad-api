@@ -71,6 +71,28 @@ def test_normalize_public_path_strips_default_nomad_edge_prefix(monkeypatch):
     assert NomadApiHandler._normalize_public_path("/health") == "/health"
 
 
+def test_surface_cache_reuses_payload_until_ttl(monkeypatch):
+    monkeypatch.setattr(NomadApiHandler, "_surface_cache", {})
+    calls = {"count": 0}
+
+    def build_payload():
+        calls["count"] += 1
+        return {"value": calls["count"]}
+
+    first = NomadApiHandler._cached_surface("unit-test", 60, build_payload)
+    second = NomadApiHandler._cached_surface("unit-test", 60, build_payload)
+
+    assert first == {"value": 1}
+    assert second == first
+    assert calls["count"] == 1
+
+    NomadApiHandler._surface_cache["unit-test"] = (time.time() - 1, first)
+    third = NomadApiHandler._cached_surface("unit-test", 60, build_payload)
+
+    assert third == {"value": 2}
+    assert calls["count"] == 2
+
+
 def test_syndiode_edge_routes_doc_lists_peer_acquisition():
     md = Path(__file__).resolve().parent / "syndiode_edge_routes.md"
     text = md.read_text(encoding="utf-8")

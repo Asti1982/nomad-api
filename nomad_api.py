@@ -243,6 +243,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     _runtime_ready = False
     _a2a_get_lock = threading.Lock()
     _a2a_get_sessions: dict[str, dict] = {}
+    _surface_cache_lock = threading.RLock()
+    _surface_cache: dict[str, tuple[float, dict]] = {}
     agent = None
     monitor = None
     roaas = None
@@ -252,6 +254,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     transition_exchange = NomadTransitionExchange()
     reciprocity_dividend = NomadReciprocityDividend(exchange=transition_exchange)
     stigmergy_field: NomadStigmergyField | None = None
+
+    @classmethod
+    def _cached_surface(cls, cache_key: str, ttl_seconds: float, builder) -> dict:
+        now = time.time()
+        with cls._surface_cache_lock:
+            cached = cls._surface_cache.get(cache_key)
+            if cached and cached[0] > now:
+                return cached[1]
+        payload = builder()
+        if not isinstance(payload, dict):
+            return payload
+        expires_at = now + max(0.0, float(ttl_seconds))
+        with cls._surface_cache_lock:
+            if len(cls._surface_cache) > 32:
+                cls._surface_cache = {
+                    key: value for key, value in cls._surface_cache.items() if value[0] > now
+                }
+            cls._surface_cache[cache_key] = (expires_at, payload)
+        return payload
 
     @classmethod
     def _stigmergy(cls) -> NomadStigmergyField:
@@ -614,7 +635,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         durable = cls._build_agp_durable_ledger(base_url=base_url)
         empirical = cls._build_agp_empirical(base_url=base_url, swarm_summary=swarm_summary)
         paper_benchmarks = cls._build_agp_paper_benchmarks(base_url=base_url)
-        report = cls._build_agp_paper_report(base_url=base_url, swarm_summary=swarm_summary)
+        benchmark = cls._build_agp_benchmark_suite(base_url=base_url)
+        version = cls._build_agp_version_manager(base_url=base_url)
+        report = build_agp_paper_report_surface(
+            base_url=base_url,
+            conformance_surface=conformance,
+            durable_ledger_surface=durable,
+            benchmark_surface=benchmark,
+            version_surface=version,
+        )
         return build_agp_paper_grade_readiness_surface(
             base_url=base_url,
             conformance_surface=conformance,
@@ -2211,7 +2240,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.__class__._build_autogenesis(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/conformance", "/.well-known/nomad-agp-conformance.json"}:
-            self._json_response(self.__class__._build_agp_conformance(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_conformance:{base_url}",
+                    60,
+                    lambda: self.__class__._build_agp_conformance(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/agent-bus", "/.well-known/nomad-agp-agent-bus.json"}:
             self._json_response(self.__class__._build_agp_agent_bus(base_url=self._base_url()))
@@ -2238,22 +2274,64 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.__class__._build_agp_evaluation(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/benchmark-suite", "/.well-known/nomad-agp-benchmark-suite.json"}:
-            self._json_response(self.__class__._build_agp_benchmark_suite(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_benchmark_suite:{base_url}",
+                    60,
+                    lambda: self.__class__._build_agp_benchmark_suite(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/empirical", "/.well-known/nomad-agp-empirical.json"}:
-            self._json_response(self.__class__._build_agp_empirical(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_empirical:{base_url}",
+                    60,
+                    lambda: self.__class__._build_agp_empirical(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/paper-benchmarks", "/.well-known/nomad-agp-paper-benchmarks.json"}:
-            self._json_response(self.__class__._build_agp_paper_benchmarks(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_paper_benchmarks:{base_url}",
+                    60,
+                    lambda: self.__class__._build_agp_paper_benchmarks(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/durable-ledger", "/.well-known/nomad-agp-durable-ledger.json"}:
-            self._json_response(self.__class__._build_agp_durable_ledger(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_durable_ledger:{base_url}",
+                    60,
+                    lambda: self.__class__._build_agp_durable_ledger(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/paper-report", "/.well-known/nomad-agp-paper-report.json"}:
-            self._json_response(self.__class__._build_agp_paper_report(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_paper_report:{base_url}",
+                    90,
+                    lambda: self.__class__._build_agp_paper_report(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/paper-grade-readiness", "/.well-known/nomad-agp-paper-grade-readiness.json"}:
-            self._json_response(self.__class__._build_agp_paper_grade_readiness(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"agp_paper_grade_readiness:{base_url}",
+                    90,
+                    lambda: self.__class__._build_agp_paper_grade_readiness(base_url=base_url),
+                )
+            )
             return
         if parsed.path in {"/swarm/agp/pulse", "/.well-known/nomad-agp-pulse.json"}:
             self._json_response(self.__class__._build_agp_pulse(base_url=self._base_url()))
