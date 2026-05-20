@@ -210,6 +210,14 @@ from nomad_work_receipts import (
     record_work_receipt,
     summarize_work_receipts,
 )
+from nomad_work_exchange import (
+    build_work_exchange_surface,
+    create_work_exchange_offer,
+    record_free_solution_receipt,
+    record_return_work_receipt,
+    summarize_work_exchange_ledger,
+    work_exchange_balance,
+)
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -1066,6 +1074,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_work_exchange(cls, *, base_url: str) -> dict:
+        return build_work_exchange_surface(
+            base_url=base_url,
+            summary=summarize_work_exchange_ledger(),
+        )
+
+    @classmethod
     def _build_treasury_policy(cls, *, base_url: str) -> dict:
         return build_treasury_policy_surface(
             base_url=base_url,
@@ -1877,6 +1892,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "worker_invoice": f"{b}/.well-known/nomad-worker-invoice.json",
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
+                    "work_exchange": f"{b}/.well-known/nomad-work-exchange.json",
+                    "work_exchange_offer": f"{b}/swarm/work-exchange/offers",
+                    "work_exchange_free_solution": f"{b}/swarm/work-exchange/free-solution",
+                    "work_exchange_return_work": f"{b}/swarm/work-exchange/return-work",
+                    "work_exchange_balance": f"{b}/swarm/work-exchange/balance",
                     "treasury_policy": f"{b}/.well-known/nomad-treasury-policy.json",
                     "stable_unit_policy": f"{b}/.well-known/nomad-stable-unit-policy.json",
                     "stable_unit_preflight": f"{b}/swarm/stable-unit/preflight",
@@ -2417,6 +2437,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self._json_response(summarize_work_receipts())
             else:
                 self._json_response(self.__class__._build_work_receipts(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/work-exchange", "/.well-known/nomad-work-exchange.json"}:
+            if query.get("summary"):
+                self._json_response(summarize_work_exchange_ledger())
+            else:
+                self._json_response(self.__class__._build_work_exchange(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/treasury-policy", "/.well-known/nomad-treasury-policy.json"}:
             self._json_response(self.__class__._build_treasury_policy(base_url=self._base_url()))
@@ -4896,6 +4922,26 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             result = record_work_receipt(payload)
             status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
             self._json_response(result, status=status)
+            return
+
+        if parsed.path == "/swarm/work-exchange/offers":
+            result = create_work_exchange_offer(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("accepted") else 400)
+            return
+
+        if parsed.path == "/swarm/work-exchange/free-solution":
+            result = record_free_solution_receipt(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("accepted") else 400)
+            return
+
+        if parsed.path == "/swarm/work-exchange/return-work":
+            result = record_return_work_receipt(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("accepted") else 400)
+            return
+
+        if parsed.path == "/swarm/work-exchange/balance":
+            result = work_exchange_balance(payload)
+            self._json_response(result, status=200)
             return
 
         if parsed.path == "/swarm/stable-unit/preflight":

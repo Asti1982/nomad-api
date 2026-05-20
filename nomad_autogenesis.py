@@ -7178,10 +7178,15 @@ def run_agp_paper_benchmark_evaluation(
     required_modes = set(AGP_BENCHMARK_MODES)
     evaluated_modes = {item.get("mode") for item in evaluated}
     full_enough = all(bool(item.get("dataset_full_enough")) for item in evaluated) and evaluated_modes == required_modes
+    prediction_coverage_full_enough = (
+        evaluated_modes == required_modes
+        and all(_int(item.get("evaluated_predictions")) >= _int(item.get("expected_min_examples")) for item in evaluated)
+    )
     checks = {
         "all_required_modes_evaluated": evaluated_modes == required_modes,
         "all_datasets_full_enough": full_enough,
         "predictions_supplied_for_all_modes": all(_int(item.get("evaluated_predictions")) > 0 for item in evaluated) and evaluated_modes == required_modes,
+        "prediction_coverage_full_enough": prediction_coverage_full_enough,
         "benchmark_suite_accepted": bool(benchmark_suite.get("accepted")) if evaluated_modes == required_modes else False,
         "receipt_only_side_effect_scope": True,
         "no_lite_substitution": True,

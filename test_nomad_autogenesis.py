@@ -1200,6 +1200,7 @@ def test_agp_paper_benchmark_adapter_gates_and_evaluates_authorized_data(tmp_pat
     assert all(item["status"] == "evaluated" for item in evaluated["mode_results"])
     assert evaluated["checks"]["all_required_modes_evaluated"] is True
     assert evaluated["checks"]["all_datasets_full_enough"] is False
+    assert evaluated["checks"]["prediction_coverage_full_enough"] is False
     assert evaluated["paper_grade_full_benchmark_ready"] is False
     assert evaluated["side_effect_scope"] == "paper_benchmark_receipts_only"
 
