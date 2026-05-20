@@ -211,6 +211,7 @@ from nomad_work_receipts import (
     summarize_work_receipts,
 )
 from nomad_work_exchange import (
+    build_work_exchange_onboarding,
     build_work_exchange_surface,
     create_work_exchange_offer,
     record_free_solution_receipt,
@@ -1081,6 +1082,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_work_exchange_onboarding(cls, *, base_url: str) -> dict:
+        return build_work_exchange_onboarding(
+            base_url=base_url,
+            summary=summarize_work_exchange_ledger(),
+        )
+
+    @classmethod
     def _build_treasury_policy(cls, *, base_url: str) -> dict:
         return build_treasury_policy_surface(
             base_url=base_url,
@@ -1696,6 +1704,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "handyoracle.html")
             return
 
+        if parsed.path in {"/work-exchange", "/work-exchange.html", "/free-repair", "/agent-reliability-doctor"}:
+            self._html_file_response(PUBLIC_DIR / "work-exchange.html")
+            return
+
         if parsed.path in {"/.well-known/syndiode-gadgets.json", "/gadgets/manifest", "/gadgets.json"}:
             self._public_download_file_response(PUBLIC_DIR / "downloads" / "syndiode_gadgets_manifest.json")
             return
@@ -1893,6 +1905,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "work_receipts": f"{b}/.well-known/nomad-work-receipts.json",
                     "work_receipts_post": f"{b}/swarm/work-receipts",
                     "work_exchange": f"{b}/.well-known/nomad-work-exchange.json",
+                    "work_exchange_onboarding": f"{b}/.well-known/nomad-work-exchange-onboarding.json",
+                    "work_exchange_human_entry": f"{b}/work-exchange",
+                    "work_exchange_worker_download": f"{b}/downloads/nomad_work_exchange_worker.py",
+                    "work_exchange_worker_installer": f"{b}/downloads/install_nomad_work_exchange_worker.bat",
                     "work_exchange_offer": f"{b}/swarm/work-exchange/offers",
                     "work_exchange_free_solution": f"{b}/swarm/work-exchange/free-solution",
                     "work_exchange_return_work": f"{b}/swarm/work-exchange/return-work",
@@ -2443,6 +2459,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self._json_response(summarize_work_exchange_ledger())
             else:
                 self._json_response(self.__class__._build_work_exchange(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/work-exchange/onboarding", "/.well-known/nomad-work-exchange-onboarding.json"}:
+            self._json_response(self.__class__._build_work_exchange_onboarding(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/treasury-policy", "/.well-known/nomad-treasury-policy.json"}:
             self._json_response(self.__class__._build_treasury_policy(base_url=self._base_url()))
@@ -3482,9 +3501,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "available_paths": [
                     "/",
                     "/nomad.html",
+                    "/work-exchange",
                     "/downloads/nomad_transition_worker.py",
+                    "/downloads/nomad_work_exchange_worker.py",
                     "/downloads/nomad_transition_worker.exe",
                     "/downloads/nomad_transition_worker_manifest.json",
+                    "/downloads/install_nomad_work_exchange_worker.bat",
                     "/downloads/install_nomad_transition_worker.bat",
                     "/downloads/run_nomad_transition_worker.bat",
                     "/downloads/start_nomad_edge_worker.ps1",
@@ -6885,8 +6907,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     message=f"Missing download asset: {path.name}",
                     hints=[
                         "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
+                        "GET /downloads/nomad_work_exchange_worker.py for the obligation-bound return-compute worker.",
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
                         "GET /downloads/nomad_transition_worker_manifest.json for hashes and runtime compatibility.",
+                        "GET /downloads/install_nomad_work_exchange_worker.bat for the free-repair return-compute installer.",
                         "GET /downloads/install_nomad_agent.bat for the short installer alias.",
                         "GET /downloads/install_nomad_transition_worker.bat for one-click Windows download + start.",
                         "GET /downloads/start_nomad_edge_worker.ps1 for the lightweight no-Ollama Edge worker profile.",

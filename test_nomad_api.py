@@ -302,6 +302,18 @@ def test_handyoracle_public_routes_render_human_page():
         assert seen == [Path(__file__).resolve().parent / "public" / "handyoracle.html"]
 
 
+def test_work_exchange_public_routes_render_human_page():
+    for route in ["/work-exchange", "/work-exchange.html", "/free-repair", "/agent-reliability-doctor"]:
+        handler = NomadApiHandler.__new__(NomadApiHandler)
+        seen = []
+        handler.path = route
+        handler._html_file_response = lambda path: seen.append(path)
+
+        handler.do_GET()
+
+        assert seen == [Path(__file__).resolve().parent / "public" / "work-exchange.html"]
+
+
 def test_public_asset_route_serves_swarm_oracle_screenshot():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     seen = []

@@ -1,5 +1,6 @@
 from nomad_openapi import build_openapi_document
 from nomad_work_exchange import (
+    build_work_exchange_onboarding,
     build_work_exchange_surface,
     create_work_exchange_offer,
     record_free_solution_receipt,
@@ -16,6 +17,7 @@ def test_work_exchange_surface_is_token_free_and_discoverable():
     assert out["unit"]["not_a_token"] is True
     assert out["default_policy"]["hidden_fee_allowed"] is False
     assert out["routes"]["free_solution"] == "https://nomad.example/swarm/work-exchange/free-solution"
+    assert out["downloadable_worker"]["installer_bat"] == "https://nomad.example/downloads/install_nomad_work_exchange_worker.bat"
     assert "explicit_compute_barter_not_hidden_fee" in create_work_exchange_offer(
         {
             "requester_id": "user.agent",
@@ -25,6 +27,18 @@ def test_work_exchange_surface_is_token_free_and_discoverable():
         base_url="https://nomad.example",
         persist=False,
     )["terms"]
+
+
+def test_work_exchange_onboarding_exposes_external_worker_commands():
+    out = build_work_exchange_onboarding(base_url="https://nomad.example", summary={"ok": True})
+
+    assert out["schema"] == "nomad.work_exchange_onboarding.v1"
+    assert out["positioning"]["not_token_economy"] is True
+    assert out["positioning"]["not_chat_transport"] is True
+    assert out["downloads"]["installer_bat"].endswith("/downloads/install_nomad_work_exchange_worker.bat")
+    assert "OBLIGATION_ID_HERE" in out["copy_paste_start"]["windows_cmd"]
+    assert "--obligation-id OBLIGATION_ID_HERE" in out["copy_paste_start"]["python_portable"]
+    assert out["safety_contract"]["arbitrary_code_execution"] is False
 
 
 def test_free_solution_opens_compute_obligation_and_return_work_settles(tmp_path):
@@ -149,6 +163,8 @@ def test_openapi_exposes_work_exchange_routes():
     paths = doc["paths"]
 
     assert "/.well-known/nomad-work-exchange.json" in paths
+    assert "/.well-known/nomad-work-exchange-onboarding.json" in paths
+    assert "/swarm/work-exchange/onboarding" in paths
     assert "/swarm/work-exchange/offers" in paths
     assert "/swarm/work-exchange/free-solution" in paths
     assert "/swarm/work-exchange/return-work" in paths

@@ -279,6 +279,7 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
 
     root = (base_url or "").strip().rstrip("/")
     ledger_summary = summary if isinstance(summary, dict) else summarize_work_exchange_ledger()
+    onboarding = build_work_exchange_onboarding(base_url=base_url, summary=ledger_summary)
     return {
         "ok": True,
         "schema": "nomad.work_exchange.v1",
@@ -333,6 +334,8 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
         "routes": {
             "self": _u(base_url, "/.well-known/nomad-work-exchange.json"),
             "summary": _u(base_url, "/swarm/work-exchange?summary=1"),
+            "onboarding": _u(base_url, "/.well-known/nomad-work-exchange-onboarding.json"),
+            "human_entry": _u(base_url, "/work-exchange"),
             "offer": _u(base_url, "/swarm/work-exchange/offers"),
             "free_solution": _u(base_url, "/swarm/work-exchange/free-solution"),
             "return_work": _u(base_url, "/swarm/work-exchange/return-work"),
@@ -341,8 +344,105 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
             "worker_complete": _u(base_url, "/swarm/workers/complete"),
             "work_receipts": _u(base_url, "/swarm/work-receipts"),
         },
+        "downloadable_worker": onboarding.get("downloads", {}),
+        "copy_paste_start": onboarding.get("copy_paste_start", {}),
+        "starter_offer": onboarding.get("starter_offer", {}),
         "ledger_summary": ledger_summary,
         "machine_instruction": "offer_free_solution_only_after_explicit_compute_barter_acceptance_then_decrease_balance_with_verified_return_work",
+    }
+
+
+def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the external onboarding packet for solution-for-compute users."""
+
+    root = (base_url or "").strip().rstrip("/")
+    ledger_summary = summary if isinstance(summary, dict) else summarize_work_exchange_ledger()
+    return {
+        "ok": True,
+        "schema": "nomad.work_exchange_onboarding.v1",
+        "version": "2026.05.20",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "positioning": {
+            "name": "Nomad Free Repair Against Compute",
+            "thesis": "users_receive_zero_eur_agent_repair_then_return_verified_compute_instead_of_tokens",
+            "why_agents_join": "bounded_work_debt_creates_a_direct_path_from_solved_problem_to_more_swarm_capacity",
+            "not_token_economy": True,
+            "not_chat_transport": True,
+        },
+        "starter_offer": {
+            "offer_id": "agent_reliability_doctor_free_diagnostic",
+            "name": "AI Agent Reliability Doctor",
+            "free_work": [
+                "agent_loop_break_diagnostic",
+                "render_or_deploy_failure_triage",
+                "provider_auth_rate_limit_triage",
+                "benchmark_or_conformance_fake_positive_check",
+            ],
+            "settlement": "0_eur_now_verified_return_compute_later",
+            "default_solution_value_credits": 10,
+            "default_return_multiplier": DEFAULT_RETURN_MULTIPLIER,
+            "default_required_return_work_credits": round(10 * DEFAULT_RETURN_MULTIPLIER, 4),
+            "default_max_runtime_hours": 6,
+            "side_effect_scope": "sandboxed_worker_only",
+        },
+        "user_flow": [
+            {
+                "step": "request_free_repair",
+                "input": "repo_url_or_log_excerpt_without_secrets",
+                "output": "solution_proof_digest_and_work_exchange_offer",
+            },
+            {
+                "step": "accept_compute_barter",
+                "input": "visible_solution_value_required_return_work_and_max_runtime",
+                "output": "obligation_id",
+            },
+            {
+                "step": "run_return_compute_worker",
+                "input": "obligation_id",
+                "output": "verified_return_work_receipts",
+            },
+            {
+                "step": "auto_stop",
+                "input": "balance_zero",
+                "output": "worker_exits_no_more_compute_due",
+            },
+        ],
+        "downloads": {
+            "installer_bat": _u(base_url, "/downloads/install_nomad_work_exchange_worker.bat"),
+            "worker_py": _u(base_url, "/downloads/nomad_work_exchange_worker.py"),
+            "human_page": _u(base_url, "/work-exchange"),
+        },
+        "copy_paste_start": {
+            "windows_cmd": (
+                f"curl -L -o %TEMP%\\install_nomad_work_exchange_worker.bat "
+                f"{_u(base_url, '/downloads/install_nomad_work_exchange_worker.bat')} && "
+                f"%TEMP%\\install_nomad_work_exchange_worker.bat {root or '<BASE_URL>'} "
+                "OBLIGATION_ID_HERE"
+            ),
+            "python_portable": (
+                f"python nomad_work_exchange_worker.py --base-url {root or '<BASE_URL>'} "
+                "--obligation-id OBLIGATION_ID_HERE --loop --cycles 0"
+            ),
+        },
+        "safety_contract": {
+            "requires_explicit_obligation_id": True,
+            "stops_when_balance_settled": True,
+            "max_side_effect_scope": "sandboxed_worker_only",
+            "secret_policy": "do_not_send_secrets_public_digests_only",
+            "arbitrary_code_execution": False,
+            "payment_or_wallet_required": False,
+        },
+        "routes": {
+            "work_exchange": _u(base_url, "/.well-known/nomad-work-exchange.json"),
+            "onboarding": _u(base_url, "/.well-known/nomad-work-exchange-onboarding.json"),
+            "offer": _u(base_url, "/swarm/work-exchange/offers"),
+            "free_solution": _u(base_url, "/swarm/work-exchange/free-solution"),
+            "return_work": _u(base_url, "/swarm/work-exchange/return-work"),
+            "balance": _u(base_url, "/swarm/work-exchange/balance"),
+        },
+        "ledger_summary": ledger_summary,
+        "machine_instruction": "show_offer_require_explicit_consent_issue_obligation_id_then_start_worker_until_balance_zero",
     }
 
 
