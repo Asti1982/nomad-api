@@ -1,0 +1,5 @@
+https://www.syndiode.com/nomad/health
+https://www.syndiode.com/nomad/.well-known/nomad-agent-join-field.json
+https://www.syndiode.com/nomad/.well-known/nomad-external-value.json
+https://www.syndiode.com/nomad/.well-known/nomad-agp-durable-ledger.json
+https://www.syndiode.com/nomad/.well-known/nomad-agp-paper-grade-readiness.json
