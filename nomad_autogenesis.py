@@ -25,7 +25,15 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from nomad_resolution_ladder import read_resolution_ladder_ledger
+from nomad_state_paths import state_file
 from nomad_variant_forge import _canonical_verifier_receipt_digest as _variant_verifier_receipt_digest
+
+
+def _state_scoped_path(path: Path | str) -> Path:
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return state_file(p)
 
 
 DEFAULT_RESOURCE_LEDGER_PATH = Path(
@@ -370,7 +378,7 @@ def _ledger_backend() -> str:
 
 
 def _sqlite_ledger_path() -> Path:
-    return Path(os.getenv("NOMAD_AGP_SQLITE_LEDGER_PATH") or DEFAULT_AGP_SQLITE_LEDGER_PATH)
+    return state_file(DEFAULT_AGP_SQLITE_LEDGER_PATH, env_name="NOMAD_AGP_SQLITE_LEDGER_PATH")
 
 
 def _ledger_stream(path: Path | str | None) -> str:
@@ -846,7 +854,7 @@ def _append_jsonl_file(row: dict[str, Any], p: Path) -> None:
 
 
 def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
-    p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    p = _state_scoped_path(Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH)
     backend = _ledger_backend()
     if backend == "sqlite":
         return _read_sqlite(p, limit=limit)
@@ -868,7 +876,7 @@ def _read_jsonl(path: Path | str | None, *, limit: int = MAX_RECENT) -> list[dic
 
 
 def _append_jsonl(row: dict[str, Any], path: Path | str | None) -> None:
-    p = Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH
+    p = _state_scoped_path(Path(path) if path else DEFAULT_RESOURCE_LEDGER_PATH)
     backend = _ledger_backend()
     if backend == "sqlite":
         _append_sqlite(row, p)
@@ -4768,26 +4776,26 @@ def build_agp_durable_ledger_surface(*, base_url: str = "") -> dict[str, Any]:
     firebase_status = _firebase_config_status()
     firebase_readiness = _firebase_direct_readiness() if backend.startswith("firebase") else {}
     stream_paths = {
-        "resource_substrate": DEFAULT_RESOURCE_LEDGER_PATH,
-        "development_cycles": DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH,
-        "autonomous_agp": DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH,
-        "autonomous_watchdog": DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH,
-        "trace": DEFAULT_AGP_TRACE_LEDGER_PATH,
-        "procurement": DEFAULT_AGP_PROCUREMENT_LEDGER_PATH,
-        "context": DEFAULT_AGP_CONTEXT_LEDGER_PATH,
-        "optimizer": DEFAULT_AGP_OPTIMIZER_LEDGER_PATH,
-        "evaluation": DEFAULT_AGP_EVALUATION_LEDGER_PATH,
-        "agent_bus": DEFAULT_AGP_AGENT_BUS_LEDGER_PATH,
-        "plans": DEFAULT_AGP_PLAN_LEDGER_PATH,
-        "orchestrations": DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH,
-        "model_bindings": DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH,
-        "configs": DEFAULT_AGP_CONFIG_LEDGER_PATH,
-        "prompts": DEFAULT_AGP_PROMPT_LEDGER_PATH,
-        "benchmark_suites": DEFAULT_AGP_BENCHMARK_LEDGER_PATH,
-        "version_lineage": DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH,
-        "pulse": DEFAULT_AGP_PULSE_LEDGER_PATH,
-        "empirical_runs": DEFAULT_AGP_EMPIRICAL_LEDGER_PATH,
-        "paper_benchmark_runs": DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH,
+        "resource_substrate": _state_scoped_path(DEFAULT_RESOURCE_LEDGER_PATH),
+        "development_cycles": _state_scoped_path(DEFAULT_DEVELOPMENT_CYCLE_LEDGER_PATH),
+        "autonomous_agp": _state_scoped_path(DEFAULT_AUTONOMOUS_AGP_LEDGER_PATH),
+        "autonomous_watchdog": _state_scoped_path(DEFAULT_AUTONOMOUS_AGP_WATCHDOG_LEDGER_PATH),
+        "trace": _state_scoped_path(DEFAULT_AGP_TRACE_LEDGER_PATH),
+        "procurement": _state_scoped_path(DEFAULT_AGP_PROCUREMENT_LEDGER_PATH),
+        "context": _state_scoped_path(DEFAULT_AGP_CONTEXT_LEDGER_PATH),
+        "optimizer": _state_scoped_path(DEFAULT_AGP_OPTIMIZER_LEDGER_PATH),
+        "evaluation": _state_scoped_path(DEFAULT_AGP_EVALUATION_LEDGER_PATH),
+        "agent_bus": _state_scoped_path(DEFAULT_AGP_AGENT_BUS_LEDGER_PATH),
+        "plans": _state_scoped_path(DEFAULT_AGP_PLAN_LEDGER_PATH),
+        "orchestrations": _state_scoped_path(DEFAULT_AGP_ORCHESTRATION_LEDGER_PATH),
+        "model_bindings": _state_scoped_path(DEFAULT_AGP_MODEL_BINDING_LEDGER_PATH),
+        "configs": _state_scoped_path(DEFAULT_AGP_CONFIG_LEDGER_PATH),
+        "prompts": _state_scoped_path(DEFAULT_AGP_PROMPT_LEDGER_PATH),
+        "benchmark_suites": _state_scoped_path(DEFAULT_AGP_BENCHMARK_LEDGER_PATH),
+        "version_lineage": _state_scoped_path(DEFAULT_AGP_VERSION_LINEAGE_LEDGER_PATH),
+        "pulse": _state_scoped_path(DEFAULT_AGP_PULSE_LEDGER_PATH),
+        "empirical_runs": _state_scoped_path(DEFAULT_AGP_EMPIRICAL_LEDGER_PATH),
+        "paper_benchmark_runs": _state_scoped_path(DEFAULT_AGP_PAPER_BENCHMARK_LEDGER_PATH),
     }
     sqlite_streams: list[dict[str, Any]] = []
     sqlite_total_rows = 0

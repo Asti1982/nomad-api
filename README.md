@@ -143,7 +143,7 @@ Copy `.env.example` to `.env` and fill only what you need.
 - `NOMAD_COLLABORATION_HOME_URL`: Public home for the collaboration charter; production uses `https://syndiode.com` with the syndiode repo.
 - `NOMAD_GITHUB_REPOSITORY`: GitHub `owner/repo` **that Render builds for the live API** — verified: `Asti1982/nomad-api` (not this `Nomad` repo). See `AGENTS.md`.
 - `NOMAD_GITHUB_DEPLOY_BRANCH`: Branch Render builds from for that API repo — verified: **`main`** for the `syndiode` / `nomad-api` web services on Render.
-- `NOMAD_STATE_DIR` or `NOMAD_MARKET_STATE_DIR`: Optional durable directory for JSONL market state (`worker_market`, `microtask`, `growth_arena`, `agent_work`). On Render this is set to `/var/data/nomad`; attach a Render persistent disk at that mount path before treating it as durable across deploys.
+- `NOMAD_STATE_DIR` or `NOMAD_MARKET_STATE_DIR`: Optional durable directory for JSONL/SQLite machine state (`worker_market`, `microtask`, `growth_arena`, `agent_work`, swarm registry, AGP receipt streams, variant forge, local growth, selection pressure). On Render this is set to `/var/data/nomad`; attach a Render persistent disk at that mount path before treating it as durable across deploys. On a persistent `syndiode.de` node, use a host path such as `/var/lib/nomad/state` and set `NOMAD_AGP_LEDGER_BACKEND=dual`.
 - `RENDER_API_KEY`: Render API key for verifying services, approved deploys, and approved custom-domain actions.
 - `NOMAD_RENDER_DEPLOY_ENABLED`: Local marker that Render is an approved public-hosting lane, default false in the example.
 - `NOMAD_RENDER_OWNER_ID`: Render workspace id for later service creation/linking.

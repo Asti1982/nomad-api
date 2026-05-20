@@ -3,6 +3,21 @@ from pathlib import Path
 from nomad_swarm_registry import SwarmJoinRegistry, github_repo_root_from_url
 
 
+def test_swarm_registry_uses_configured_state_dir(monkeypatch, tmp_path: Path):
+    state_dir = tmp_path / "syndiode-state"
+    monkeypatch.setenv("NOMAD_STATE_DIR", str(state_dir))
+    monkeypatch.delenv("NOMAD_SWARM_REGISTRY_PATH", raising=False)
+
+    registry = SwarmJoinRegistry()
+    registry.register_join(
+        {"agent_id": "state-dir.agent", "capabilities": ["compute_auth"], "request": "Join"},
+        base_url="https://nomad.example",
+    )
+
+    assert registry.path == state_dir / "nomad_swarm_registry.json"
+    assert registry.path.exists()
+
+
 def test_swarm_join_idempotency_replays_same_receipt(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-idem.json")
     payload = {

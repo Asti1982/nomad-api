@@ -12,11 +12,14 @@ from urllib.parse import urlparse
 
 from nomad_morphology_router import route_objectives
 from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
+from nomad_state_paths import configured_state_dir, state_file
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_SWARM_REGISTRY_PATH = Path(
-    os.getenv("NOMAD_SWARM_REGISTRY_PATH", str(ROOT / "nomad_swarm_registry.json"))
+DEFAULT_SWARM_REGISTRY_PATH = (
+    state_file(Path("nomad_swarm_registry.json"), env_name="NOMAD_SWARM_REGISTRY_PATH")
+    if configured_state_dir() or os.getenv("NOMAD_SWARM_REGISTRY_PATH")
+    else ROOT / "nomad_swarm_registry.json"
 )
 DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") or "20")
 DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECONDS", "90") or "90")
@@ -486,7 +489,12 @@ class SwarmJoinRegistry:
     REGISTRY_PATH = DEFAULT_SWARM_REGISTRY_PATH
 
     def __init__(self, path: Optional[Path] = None) -> None:
-        self.path = Path(path or self.REGISTRY_PATH)
+        if path is not None:
+            self.path = Path(path)
+        elif configured_state_dir() or os.getenv("NOMAD_SWARM_REGISTRY_PATH"):
+            self.path = state_file(Path("nomad_swarm_registry.json"), env_name="NOMAD_SWARM_REGISTRY_PATH")
+        else:
+            self.path = Path(self.REGISTRY_PATH)
         self._payload = self._load()
 
     def public_manifest(self, *, base_url: str) -> dict[str, Any]:

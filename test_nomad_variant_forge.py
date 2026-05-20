@@ -1,4 +1,4 @@
-from nomad_variant_forge import _canonical_verifier_receipt_digest, build_variant_forge_surface, submit_variant_candidate
+from nomad_variant_forge import _canonical_verifier_receipt_digest, _read_ledger, build_variant_forge_surface, submit_variant_candidate
 
 
 def _sepl_trace():
@@ -19,6 +19,35 @@ def _with_verifier_receipt(payload):
     out = dict(payload)
     out["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(out, out.get("verifier_evaluation") or {})
     return out
+
+
+def test_variant_forge_uses_configured_state_dir(monkeypatch, tmp_path):
+    state_dir = tmp_path / "syndiode-state"
+    monkeypatch.setenv("NOMAD_STATE_DIR", str(state_dir))
+
+    payload = _with_verifier_receipt({
+        "agent_id": "agent.variant.proposer",
+        "verifier_agent_id": "agent.variant.verifier",
+        "verifier_lease_id": "nomad-worker-lease-verifier",
+        "candidate_type": "transition_worker_objective_variant",
+        "objective": "settlement_capacity_builder",
+        "proof_digest": "sha256:abc",
+        "verifier_trace_digest": "sha256:def456def456",
+        "test_digest": "sha256:ghi",
+        "settlement_ref": "settlement:1",
+        "verifier_evaluation": {
+            "tests_passed": 4,
+            "tests_total": 4,
+            "proof_yield_delta": 4.0,
+            "settlement_delta": 0.2,
+        },
+    })
+
+    out = submit_variant_candidate(payload, verifier_lease_index=_lease_index())
+
+    assert out["accepted"] is True
+    assert (state_dir / "nomad_variant_forge_ledger.jsonl").exists()
+    assert _read_ledger(limit=3)[-1]["candidate_id"] == out["candidate_id"]
 
 
 def test_variant_forge_surface_combines_replay_and_growth(tmp_path):

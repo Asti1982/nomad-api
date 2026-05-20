@@ -13,7 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_state_paths import state_file
 
+LEDGER_ENV = "NOMAD_VARIANT_FORGE_LEDGER_PATH"
 DEFAULT_LEDGER_PATH = Path("nomad_variant_forge_ledger.jsonl")
 MAX_RECENT = 40
 FORBIDDEN_KEY_TERMS = ("private_key", "seed_phrase", "password", "credential", "api_key", "access_token")
@@ -111,7 +113,9 @@ def _contains_forbidden(payload: Any) -> bool:
 
 
 def _read_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> list[dict[str, Any]]:
-    p = Path(path) if path else DEFAULT_LEDGER_PATH
+    p = Path(path) if path else state_file(DEFAULT_LEDGER_PATH, env_name=LEDGER_ENV)
+    if not p.is_absolute():
+        p = state_file(p)
     if not p.exists():
         return []
     rows: list[dict[str, Any]] = []
@@ -130,7 +134,9 @@ def _read_ledger(path: Path | str | None = None, *, limit: int = MAX_RECENT) -> 
 
 
 def _append_ledger(row: dict[str, Any], path: Path | str | None = None) -> None:
-    p = Path(path) if path else DEFAULT_LEDGER_PATH
+    p = Path(path) if path else state_file(DEFAULT_LEDGER_PATH, env_name=LEDGER_ENV)
+    if not p.is_absolute():
+        p = state_file(p)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")

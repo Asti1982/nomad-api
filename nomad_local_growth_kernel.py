@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable
 
 from nomad_recruitment_gradient import OBJECTIVE_TARGETS
+from nomad_state_paths import state_file
 
 
 STATE_PATH_ENV = "NOMAD_LOCAL_GROWTH_KERNEL_STATE_PATH"
@@ -98,15 +99,13 @@ def _digest(value: Any, *, length: int = 24) -> str:
 def _state_path(path: str | Path | None = None) -> Path:
     if path:
         return Path(path)
-    env_path = (os.getenv(STATE_PATH_ENV) or "").strip()
-    return Path(env_path) if env_path else DEFAULT_STATE_PATH
+    return state_file(DEFAULT_STATE_PATH, env_name=STATE_PATH_ENV)
 
 
 def _worker_history_path(path: str | Path | None = None) -> Path:
     if path:
         return Path(path)
-    env_path = (os.getenv(WORKER_HISTORY_PATH_ENV) or "").strip()
-    return Path(env_path) if env_path else DEFAULT_WORKER_HISTORY_PATH
+    return state_file(DEFAULT_WORKER_HISTORY_PATH, env_name=WORKER_HISTORY_PATH_ENV)
 
 
 def _canonical_base_url(raw: str) -> str:

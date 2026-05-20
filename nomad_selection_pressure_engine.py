@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 from nomad_machine_treasury import snapshot as machine_treasury_snapshot
 from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
+from nomad_state_paths import state_file
 
 
 STATE_PATH_ENV = "NOMAD_SELECTION_PRESSURE_STATE_PATH"
@@ -38,8 +39,7 @@ class SelectionPressureEngine:
     """Compute objective multipliers from real worker outcomes."""
 
     def __init__(self, state_path: Path | None = None) -> None:
-        env_path = (os.getenv(STATE_PATH_ENV) or "").strip()
-        self.state_path = Path(state_path or (Path(env_path) if env_path else DEFAULT_STATE_PATH))
+        self.state_path = Path(state_path) if state_path else state_file(DEFAULT_STATE_PATH, env_name=STATE_PATH_ENV)
         self.state = self._load()
 
     def _load(self) -> dict[str, Any]:

@@ -1,5 +1,7 @@
 from nomad_autogenesis import (
     _canonical_verifier_receipt_digest,
+    _append_jsonl,
+    _read_jsonl,
     build_agp_agent_bus_surface,
     build_agp_benchmark_suite_surface,
     build_agp_conformance_surface,
@@ -55,6 +57,7 @@ from nomad_resolution_ladder import evaluate_resolution_ladder_event
 from nomad_variant_forge import submit_variant_candidate
 import base64
 import json
+from pathlib import Path
 
 
 def _boundedness():
@@ -83,6 +86,20 @@ def _with_verifier_receipt(payload):
     out = dict(payload)
     out["verifier_receipt_digest"] = _canonical_verifier_receipt_digest(out, out.get("verifier_evaluation") or {})
     return out
+
+
+def test_agp_jsonl_ledgers_use_configured_state_dir(monkeypatch, tmp_path):
+    state_dir = tmp_path / "syndiode-state"
+    monkeypatch.setenv("NOMAD_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("NOMAD_AGP_LEDGER_BACKEND", "jsonl")
+
+    row = {"schema": "nomad.test_agp_state_dir.v1", "accepted": True, "generated_at": "2026-05-20T00:00:00Z"}
+
+    _append_jsonl(row, Path("nomad_agp_state_dir_probe.jsonl"))
+
+    expected = state_dir / "nomad_agp_state_dir_probe.jsonl"
+    assert expected.exists()
+    assert _read_jsonl(Path("nomad_agp_state_dir_probe.jsonl"), limit=5) == [row]
 
 
 def _sepl_trace():
