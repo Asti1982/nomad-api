@@ -51,6 +51,7 @@ def test_agent_native_index_schema_and_boot_graph():
     assert any("/machine-treasury" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-agent-requests" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-machine-field" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
+    assert any("nomad-agent-join-field" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("/operational-release" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-machine-product" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
     assert any("nomad-protocol-bytecode" in (step.get("get_url") or "") for step in (out.get("boot_graph") or []))
@@ -89,6 +90,8 @@ def test_agent_native_index_schema_and_boot_graph():
     assert "/.well-known/nomad-machine-field.json" in routes
     assert "/machine-field" in routes
     assert "/machine-field/intent" in routes
+    assert "/swarm/agent-join-field" in routes
+    assert "/.well-known/nomad-agent-join-field.json" in routes
     assert "/.well-known/nomad-nonhuman-agent-science.json" in routes
     assert "/operational-release" in routes
     assert "/.well-known/nomad-operational-release.json" in routes

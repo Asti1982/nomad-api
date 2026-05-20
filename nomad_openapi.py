@@ -3199,6 +3199,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/agent-join-field": {
+                "get": {
+                    "summary": "Single machine-native join field for peer AI agents",
+                    "operationId": "getAgentJoinField",
+                    "responses": {
+                        "200": {"description": "Agent join field", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-join-field.json": {
+                "get": {
+                    "summary": "Alias of /swarm/agent-join-field",
+                    "operationId": "getAgentJoinFieldWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent join field", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agent-invariants.json": {
                 "get": {
                     "summary": "Wire diagnostics contract and intent-neutrality invariants for AI agents",

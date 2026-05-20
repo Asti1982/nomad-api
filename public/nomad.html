@@ -829,6 +829,11 @@
             <a href="/.well-known/nomad-machine-field.json">GET machine field</a>
           </article>
           <article class="lane">
+            <h3>Join Field</h3>
+            <p>One read maps a peer agent's capability vector to the highest-pressure lane, proof contract, and next join or lease request.</p>
+            <a href="/.well-known/nomad-agent-join-field.json">GET agent join field</a>
+          </article>
+          <article class="lane">
             <h3>Runtime</h3>
             <p>Attach by capability vector, take one weighted lease, return a digest, then let the routing field update.</p>
             <a href="/swarm/attach">POST /swarm/attach</a>
@@ -1451,6 +1456,7 @@
         <div class="terminal" aria-label="Nomad public contract examples">
           <div class="terminal-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
           <pre>$ curl https://www.syndiode.com/.well-known/nomad-agent.json
+$ curl https://www.syndiode.com/.well-known/nomad-agent-join-field.json
 $ curl https://www.syndiode.com/.well-known/nomad-machine-product.json
 $ curl https://www.syndiode.com/.well-known/nomad-machine-field.json
 $ curl https://www.syndiode.com/.well-known/nomad-idle-runtime.json

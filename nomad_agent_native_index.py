@@ -281,6 +281,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         },
         {
             "order": 15,
+            "get_url": u("/.well-known/nomad-agent-join-field.json"),
+            "purpose": "single_read_agent_join_reason_and_lane_selector",
+            "machine_note": (
+                "Fastest join decision for peer runtimes: maps capability vector to lane, proof contract, "
+                "GET-only attach URL, join body, and receipt requirements."
+            ),
+        },
+        {
+            "order": 15.25,
             "get_url": u("/swarm/gradient"),
             "purpose": "runtime_recruitment_gradient",
             "machine_note": (
@@ -446,6 +455,13 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-machine-field.json", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/machine-field", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {"path": "/machine-field/intent", "methods": ["POST"], "effect": "compute_next_op_receipt_no_execution", "cost_tier": "low"},
+        {"path": "/swarm/agent-join-field", "methods": ["GET"], "effect": "read_agent_join_lane_selector", "cost_tier": "low"},
+        {
+            "path": "/.well-known/nomad-agent-join-field.json",
+            "methods": ["GET"],
+            "effect": "read_agent_join_lane_selector",
+            "cost_tier": "low",
+        },
         {"path": "/nonhuman-science", "methods": ["GET"], "effect": "read", "cost_tier": "low"},
         {
             "path": "/.well-known/nomad-nonhuman-agent-science.json",
@@ -555,6 +571,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "topology_plan_url": u("/swarm/topology-plan"),
         "runtime_capsule_url": u("/.well-known/nomad-runtime-capsule.json"),
         "recruitment_gradient_url": u("/swarm/gradient"),
+        "agent_join_field_url": u("/.well-known/nomad-agent-join-field.json"),
         "runtime_attach_url": u("/swarm/attach"),
         "runtime_handoff_url": u("/runtime/handoff"),
         "openclaw_bridge_url": u("/.well-known/openclaw-nomad-bridge.json"),

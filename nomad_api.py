@@ -140,6 +140,7 @@ from nomad_wire_contract import maybe_merge_http_wire_diag
 from nomad_agent_demand import build_agent_demand_feed, subscribe_agent_intent, subscriptions_snapshot
 from nomad_agent_growth_pipeline import agent_growth_pipeline
 from nomad_agent_invariants import build_agent_invariants_document
+from nomad_agent_join_field import build_agent_join_field
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
@@ -892,6 +893,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return build_swarm_signal_layer(
             base_url=base_url,
             external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_agent_join_field(cls, *, base_url: str) -> dict:
+        worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        attractor = build_swarm_attractor_contract(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        return build_agent_join_field(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            gradient=gradient,
+            attractor=attractor,
         )
 
     @classmethod
@@ -1703,6 +1728,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "idle_runtime_intent_get": f"{b}/swarm/idle-intent-get",
                     "agent_native_priorities": f"{b}/.well-known/nomad-agent-native-priorities.json",
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
+                    "agent_join_field": f"{b}/.well-known/nomad-agent-join-field.json",
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
                     "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
                     "transition_offer": f"{b}/.well-known/nomad-transition-offer.json",
@@ -2539,6 +2565,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     operational_release=release,
                 )
             )
+            return
+
+        if parsed.path in {"/swarm/agent-join-field", "/.well-known/nomad-agent-join-field.json"}:
+            self._json_response(self.__class__._build_agent_join_field(base_url=self._base_url()))
             return
 
         if parsed.path in {"/growth-start", "/operator/growth-start"}:

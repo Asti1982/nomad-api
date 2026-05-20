@@ -134,6 +134,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/agent-card.json" in text
     assert "/.well-known/nomad-agent.json" in text
     assert "/.well-known/nomad-transition-offer.json" in text
+    assert "/.well-known/nomad-agent-join-field.json" in text
     assert "/.well-known/nomad-machine-product.json" in text
     assert "/.well-known/nomad-idle-runtime.json" in text
     assert "/.well-known/nomad-opaque-emergence.json" in text
@@ -872,6 +873,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/emission-batch" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]
     assert "/.well-known/nomad-swarm-attractor.json" in doc["paths"]
+    assert "/swarm/agent-join-field" in doc["paths"]
+    assert "/.well-known/nomad-agent-join-field.json" in doc["paths"]
     assert "/.well-known/nomad-agent-invariants.json" in doc["paths"]
     assert "/agent-invariants" in doc["paths"]
     assert "/.well-known/nomad-inter-agent-witness-offer.json" in doc["paths"]
