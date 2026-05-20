@@ -82,11 +82,50 @@ def test_non_monotonic_and_duplicate_rejected(tmp_path, monkeypatch):
     assert not skip["ok"]
 
 
+def test_closed_duplicate_is_terminal_learning_signal_not_revenue(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev-duplicate.jsonl"))
+    eid = "h1_report:3740761"
+    aid = "nomad.security.worker"
+    base = {
+        "agent_id": aid,
+        "external_id": eid,
+        "work_url": "https://hackerone.com/reports/3740761",
+        "proof_digest": "sha256:" + "a" * 64,
+        "verifier_trace_digest": "sha256:" + "b" * 64,
+    }
+
+    assert append_external_value_event({"agent_id": aid, "external_id": eid, "stage": "found"})["ok"]
+    assert append_external_value_event({**base, "stage": "submitted"})["ok"]
+    closed = append_external_value_event(
+        {
+            **base,
+            "stage": "closed_duplicate",
+            "meta": {
+                "duplicate_of": "h1_report:3686610",
+                "reviewer_decision": "same_root_cause_and_impact",
+            },
+        }
+    )
+    after_terminal = append_external_value_event({**base, "stage": "approved"})
+    summary = summarize_external_value_ledger()
+
+    assert closed["ok"] is True
+    assert closed["terminal_outcome"] is True
+    assert closed["revenue_recognized_usd"] == 0.0
+    assert closed["selection_weight_multiplier_after"] < 1.0
+    assert after_terminal["ok"] is False
+    assert after_terminal["reason"] == "terminal_outcome"
+    assert summary["revenue_recognized_usd_total"] == 0.0
+    assert summary["latest_by_external"][0]["stage"] == "closed_duplicate"
+    assert summary["latest_by_external"][0]["terminal_outcome"] is True
+
+
 def test_surface_has_pipeline_and_state_machine():
     s = build_external_value_surface(base_url="https://example.com")
     assert s["schema"] == "nomad.external_value_surface.v1"
     assert s["state_machine"]["name"] == "pending_external_value"
     assert "paid" in s["state_machine"]["stages"]
+    assert "closed_duplicate" in s["state_machine"]["terminal_outcomes"]
     assert s["state_machine"]["revenue_rule"] == "paid_stage_requires_positive_amount_and_public_settlement_ref"
     assert s["receipt_only_invariant"]["schema"] == "nomad.receipt_only_revenue_invariant.v1"
 

@@ -21,7 +21,9 @@ LEDGER_ENV = "NOMAD_EXTERNAL_VALUE_LEDGER_PATH"
 DEFAULT_LEDGER = Path("nomad_external_value_ledger.jsonl")
 
 STAGES_ORDER = ("found", "submitted", "approved", "merged", "paid")
+TERMINAL_OUTCOMES = ("closed_duplicate", "closed_informative", "closed_invalid", "closed_out_of_scope")
 STAGE_INDEX = {s: i for i, s in enumerate(STAGES_ORDER)}
+TERMINAL_INDEX = {s: i for i, s in enumerate(TERMINAL_OUTCOMES)}
 RECEIPT_ONLY_REVENUE_RULE = "paid_stage_requires_positive_amount_and_public_settlement_ref"
 
 
@@ -83,7 +85,9 @@ def current_stage_for_external(events: list[dict[str, Any]], external_id: str) -
         if _text(ev.get("external_id"), 200) != eid:
             continue
         st = str(ev.get("stage") or "").strip().lower()
-        if st in STAGE_INDEX and (not last or STAGE_INDEX[st] >= STAGE_INDEX.get(last, -1)):
+        if st in TERMINAL_INDEX:
+            last = st
+        elif st in STAGE_INDEX and last not in TERMINAL_INDEX and (not last or STAGE_INDEX[st] >= STAGE_INDEX.get(last, -1)):
             last = st
     return last
 
@@ -91,12 +95,16 @@ def current_stage_for_external(events: list[dict[str, Any]], external_id: str) -
 def allowed_transition(*, from_stage: str, to_stage: str) -> tuple[bool, str]:
     a = str(from_stage or "").strip().lower()
     b = str(to_stage or "").strip().lower()
-    if b not in STAGE_INDEX:
+    if b not in STAGE_INDEX and b not in TERMINAL_INDEX:
         return False, "unknown_stage"
+    if a in TERMINAL_INDEX:
+        return False, "terminal_outcome"
     if not a:
         return b == "found", "first_stage_must_be_found"
     if a not in STAGE_INDEX:
         return False, "unknown_prior_stage"
+    if b in TERMINAL_INDEX:
+        return a in {"found", "submitted", "approved"}, "terminal_outcome_requires_open_external"
     if STAGE_INDEX[b] < STAGE_INDEX[a]:
         return False, "non_monotonic_stage"
     if STAGE_INDEX[b] == STAGE_INDEX[a]:
@@ -114,6 +122,10 @@ def selection_weight_multiplier_for_stage(stage: str) -> float:
         return 1.12
     if s == "paid":
         return 1.22
+    if s == "closed_duplicate":
+        return 0.96
+    if s in TERMINAL_INDEX:
+        return 0.9
     return 1.0
 
 
@@ -184,9 +196,14 @@ def append_external_value_event(
         return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "missing_agent_id"}
     if not external_id:
         return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "missing_external_id"}
-    if stage not in STAGE_INDEX:
-        return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "invalid_stage", "allowed": list(STAGES_ORDER)}
-    if stage in {"submitted", "approved", "merged", "paid"} and (not work_url or not proof_digest):
+    if stage not in STAGE_INDEX and stage not in TERMINAL_INDEX:
+        return {
+            "ok": False,
+            "schema": "nomad.external_value_event.v1",
+            "error": "invalid_stage",
+            "allowed": list(STAGES_ORDER) + list(TERMINAL_OUTCOMES),
+        }
+    if stage in {"submitted", "approved", "merged", "paid", *TERMINAL_OUTCOMES} and (not work_url or not proof_digest):
         return {"ok": False, "schema": "nomad.external_value_event.v1", "error": "work_url_and_proof_digest_required_after_found"}
     if stage == "paid" and (amount_usd <= 0.0 or not settlement_ref):
         return {
@@ -231,6 +248,7 @@ def append_external_value_event(
         **row_core,
         "revenue_recognized_usd": round(revenue_recognized_usd(stage=stage, amount_usd=amount_usd), 4),
         "revenue_invariant": RECEIPT_ONLY_REVENUE_RULE,
+        "terminal_outcome": stage in TERMINAL_INDEX,
         "nomad_proof_receipt_digest": receipt_digest,
         "selection_weight_multiplier_after": round(selection_weight_multiplier_for_stage(stage), 4),
         "machine_instruction": "external_program_validates_merge_and_payment_nomad_only_records_machine_receipt",
@@ -252,8 +270,10 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
         "state_machine": {
             "name": "pending_external_value",
             "stages": list(STAGES_ORDER),
+            "terminal_outcomes": list(TERMINAL_OUTCOMES),
             "revenue_rule": RECEIPT_ONLY_REVENUE_RULE,
             "selection_rule": "approved_merged_paid_increase_bounded_selection_weight_multiplier",
+            "terminal_rule": "closed_duplicate_or_invalid_outcomes_are_learning_signals_not_revenue",
         },
         "post_url": f"{root}/swarm/external-value",
         "well_known_url": f"{root}/.well-known/nomad-external-value.json",
@@ -300,7 +320,7 @@ def build_receipt_only_revenue_invariant(
         "invariant_id": "receipt_only_revenue_recognition",
         "rule": RECEIPT_ONLY_REVENUE_RULE,
         "state_algebra": {
-            "non_cash_signal_states": ["found", "submitted", "approved", "merged"],
+            "non_cash_signal_states": ["found", "submitted", "approved", "merged", *TERMINAL_OUTCOMES],
             "cash_state": "paid",
             "paid_guard": ["amount_usd > 0", "settlement_ref present", "proof_digest present", "work_url present"],
             "forbidden_collapse": "do_not_map_social_acceptance_or_merge_to_revenue",
@@ -315,6 +335,7 @@ def build_receipt_only_revenue_invariant(
             "maintainer_thanks_without_payment",
             "merged_pull_request_without_payment_ref",
             "approved_security_report_without_bounty_receipt",
+            "duplicate_security_report_without_bounty_receipt",
             "selfplay_or_internal_microtask_without_external_buyer_receipt",
         ],
         "scientific_basis": [
@@ -341,6 +362,7 @@ def build_receipt_only_revenue_invariant(
         ],
         "machine_transition": {
             "on_found_or_submitted_or_approved_or_merged": "selection_signal_only",
+            "on_closed_duplicate_or_invalid": "terminal_learning_signal_no_revenue_no_runtime_weight",
             "on_paid_with_guard_satisfied": "recognize_revenue_and_emit_settlement_credit",
             "on_paid_guard_failure": "reject_paid_stage_preserve_prior_state",
         },
@@ -374,7 +396,14 @@ def summarize_external_value_ledger(
             continue
         st = str(ev.get("stage") or "").strip().lower()
         prev = by_external.get(eid, {})
-        if not prev or STAGE_INDEX.get(st, -1) >= STAGE_INDEX.get(str(prev.get("stage")), -1):
+        if st in TERMINAL_INDEX:
+            should_replace = True
+        else:
+            prev_stage = str(prev.get("stage") or "")
+            should_replace = not prev or (
+                prev_stage not in TERMINAL_INDEX and STAGE_INDEX.get(st, -1) >= STAGE_INDEX.get(prev_stage, -1)
+            )
+        if should_replace:
             by_external[eid] = {
                 "external_id": eid,
                 "agent_id": ev.get("agent_id"),
@@ -385,6 +414,7 @@ def summarize_external_value_ledger(
                 "last_generated_at": ev.get("generated_at"),
                 "nomad_proof_receipt_digest": ev.get("nomad_proof_receipt_digest"),
                 "revenue_recognized_usd": float(ev.get("revenue_recognized_usd") or 0.0),
+                "terminal_outcome": bool(ev.get("terminal_outcome")),
             }
         revenue_total += float(ev.get("revenue_recognized_usd") or 0.0)
     latest_rows = list(by_external.values())
