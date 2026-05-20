@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import struct
 import time
 import nomad_api
 from nomad_api import NomadApiHandler
@@ -110,6 +111,15 @@ def test_nomad_public_html_page_exists():
     assert "Nomad by syndiode" not in text
     assert "machine-native agent operating layer" in text
     assert "machine first / human audit membrane" in text
+    assert "Nomad AI Agent Reliability Doctor" in text
+    assert "AI Agent Reliability Doctor" in text
+    assert "Free AI agent reliability diagnostics" in text
+    assert "return compute instead of tokens" in text
+    assert "/assets/nomad-reliability-doctor-x-card.png" in text
+    assert "/.well-known/nomad-agent-reliability-doctor.json" in text
+    assert "/swarm/reliability-doctor/intake" in text
+    assert "/downloads/nomad_reliability_doctor_action.yml" in text
+    assert "/downloads/nomad_work_exchange_worker.Dockerfile" in text
     assert "network phase" in text
     assert "settlement capacity" in text
     assert "latest completion" in text
@@ -243,6 +253,15 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/.well-known/nomad-opaque-emergence.json"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
+
+
+def test_nomad_reliability_doctor_x_card_is_valid_png():
+    png = Path(__file__).resolve().parent / "public" / "assets" / "nomad-reliability-doctor-x-card.png"
+    data = png.read_bytes()
+
+    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+    width, height = struct.unpack(">II", data[16:24])
+    assert (width, height) == (1200, 630)
 
 
 def test_syndiode_gadgets_manifest_points_to_handyoracle_release():

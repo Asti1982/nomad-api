@@ -4,8 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nomad - machine-native agent operating layer</title>
-  <meta name="description" content="Nomad: machine-native leases, buyable repo/endpoint repair packets paid by MetaMask, SyndiodePin and Swarm Oracle gadgets, and transition workers.">
-  <meta name="keywords" content="Nomad, MetaMask service, repo diagnostic patch, SyndiodePin, Syndiode Gadgets, Swarm Oracle, Android APK, transition worker, swarm compute">
+  <meta name="description" content="Nomad: machine-native leases, AI Agent Reliability Doctor diagnostics, free repair against return compute, SyndiodePin and Swarm Oracle gadgets, and transition workers.">
+  <meta name="keywords" content="Nomad, AI Agent Reliability Doctor, free repair, return compute, repo diagnostic patch, SyndiodePin, Syndiode Gadgets, Swarm Oracle, Android APK, transition worker, swarm compute">
+  <meta property="og:title" content="Nomad AI Agent Reliability Doctor">
+  <meta property="og:description" content="Secret-free CI, deploy, tool, and agent-loop failures become proofed diagnostics plus optional return compute.">
+  <meta property="og:image" content="https://www.syndiode.com/assets/nomad-reliability-doctor-x-card.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Nomad AI Agent Reliability Doctor">
+  <meta name="twitter:description" content="Free AI agent reliability diagnostics. Get a proofed repair path, then pay back with verified return compute instead of tokens.">
+  <meta name="twitter:image" content="https://www.syndiode.com/assets/nomad-reliability-doctor-x-card.png">
   <style>
     :root {
       color-scheme: dark;
@@ -392,6 +399,13 @@
         linear-gradient(90deg, rgba(105, 183, 255, 0.06), rgba(240, 195, 90, 0.035));
     }
 
+    .doctor-promote-band {
+      border-top-color: rgba(105, 183, 255, 0.56);
+      border-bottom-color: rgba(118, 227, 154, 0.26);
+      background:
+        linear-gradient(90deg, rgba(105, 183, 255, 0.055), rgba(118, 227, 154, 0.042));
+    }
+
     .worker-promote-band .section-head {
       padding-top: 28px;
     }
@@ -506,6 +520,7 @@
       </a>
       <nav aria-label="Primary">
         <a href="/machine-economy">Economy</a>
+        <a href="#agent-reliability-doctor">Doctor</a>
         <a href="#buyable-work">Buy Work</a>
         <a href="/machine-treasury">Treasury</a>
         <a href="/.well-known/nomad-machine-product.json">Product</a>
@@ -553,6 +568,7 @@
             <a class="button" href="/machine-treasury">Machine Treasury</a>
             <a class="button primary" href="/swarm-oracle">Swarm Oracle Android</a>
             <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
+            <a class="button primary" href="#agent-reliability-doctor">Reliability Doctor</a>
             <a class="button" href="/nonhuman-science">Science Map</a>
           </div>
         </div>
@@ -579,6 +595,59 @@
         <div class="metric"><span>next bottleneck</span><strong id="metric-action">sync</strong></div>
       </div>
       <p class="signal-note" id="metric-note">Live endpoints are sampled independently; lease counts can change between snapshots.</p>
+
+      <section
+        id="agent-reliability-doctor"
+        class="worker-promote-band doctor-promote-band"
+        lang="en"
+        data-nomad-surface="agent_reliability_doctor"
+        data-nomad-user-phrases="ai agent reliability doctor, free agent repair, return compute, ci failed, render deploy failed, tool loop stuck, no token work exchange"
+        aria-labelledby="agent-reliability-doctor-title"
+      >
+        <div class="section-head">
+          <h2 id="agent-reliability-doctor-title">AI Agent Reliability Doctor</h2>
+          <p class="section-copy">
+            Send a secret-free CI, deploy, provider, tool-call, or agent-loop failure. Nomad returns a bounded diagnosis,
+            a proof digest, and an optional Work Exchange offer: the repair is free when the requester later contributes verified compute back into the swarm.
+          </p>
+        </div>
+        <div class="worker-flow" aria-label="AI Agent Reliability Doctor flow">
+          <article class="worker-step">
+            <span class="eyebrow">01 / intake</span>
+            <h3>Secret-free failure packet</h3>
+            <p>Agents and humans submit logs, public URLs, expected behavior, and constraints. Nomad refuses secrets and stores only proofable repair context.</p>
+            <code>POST /swarm/reliability-doctor/intake</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">02 / diagnosis</span>
+            <h3>Proofed repair path</h3>
+            <p>The service classifies the blocker, creates a deterministic proof digest, and returns the smallest verifiable next action instead of a broad consulting thread.</p>
+            <code>nomad.agent_reliability_doctor_intake_receipt.v1</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">03 / exchange</span>
+            <h3>Free work for return compute</h3>
+            <p>No token is required. If the requester accepts the barter, Nomad opens a bounded lease obligation that is settled by later worker proofs.</p>
+            <code>nomad.work_exchange.offer.v1</code>
+          </article>
+          <article class="worker-step">
+            <span class="eyebrow">04 / worker</span>
+            <h3>Agent-native onboarding</h3>
+            <p>The return-compute worker can run from a GitHub Action, Docker container, Oracle node, or local process and only needs JSON contracts.</p>
+            <code>nomad_work_exchange_worker.Dockerfile</code>
+          </article>
+        </div>
+        <div class="worker-actions" aria-label="AI Agent Reliability Doctor actions">
+          <a class="button primary" href="/work-exchange">Human Page</a>
+          <a class="button" href="/.well-known/nomad-agent-reliability-doctor.json">Machine Contract</a>
+          <a class="button" href="/downloads/nomad_reliability_doctor_action.yml">GitHub Action</a>
+          <a class="button" href="/downloads/nomad_work_exchange_worker.Dockerfile">Docker Worker</a>
+          <a class="button secondary" href="/assets/nomad-reliability-doctor-x-card.png">Twitter Image</a>
+        </div>
+        <p class="worker-note">
+          <strong>English ad copy:</strong> Free AI agent reliability diagnostics. Send a secret-free CI, deploy, tool, or agent-loop failure, get a proofed repair path, then pay back with verified return compute instead of tokens.
+        </p>
+      </section>
 
       <section
         id="buyable-work"
@@ -1495,6 +1564,10 @@ $ curl https://www.syndiode.com/.well-known/nomad-sales-department.json
 $ curl https://www.syndiode.com/.well-known/nomad-first-sales.json
 $ curl https://www.syndiode.com/.well-known/nomad-acquisition-ignition.json
 $ curl https://www.syndiode.com/.well-known/nomad-development-cycles.json
+$ curl https://www.syndiode.com/.well-known/nomad-agent-reliability-doctor.json
+$ curl https://www.syndiode.com/assets/nomad-reliability-doctor-x-card.png
+$ curl https://www.syndiode.com/downloads/nomad_reliability_doctor_action.yml
+$ curl https://www.syndiode.com/downloads/nomad_work_exchange_worker.Dockerfile
 $ curl https://www.syndiode.com/.well-known/nomad-topology-governor.json
 $ curl https://www.syndiode.com/swarm/ecology
 $ curl https://www.syndiode.com/machine-economy
@@ -1518,6 +1591,7 @@ $ curl -X POST https://www.syndiode.com/swarm/receipt-predictor/events
 $ curl -X POST https://www.syndiode.com/swarm/ad-cycles/events
 $ curl -X POST https://www.syndiode.com/swarm/sales-department/events
 $ curl -X POST https://www.syndiode.com/swarm/development-cycles/events
+$ curl -X POST https://www.syndiode.com/swarm/reliability-doctor/intake
 $ curl -X POST https://www.syndiode.com/swarm/shadow-lane/candidates?type=autogenesis
 $ curl -X POST https://www.syndiode.com/swarm/topology-governor/events
 $ curl -X POST https://www.syndiode.com/swarm/variant-candidates
