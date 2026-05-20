@@ -137,6 +137,7 @@ from nomad_roaas_exchange import RuntimePatternExchange
 from nomad_swarm_registry import SwarmJoinRegistry, build_peer_join_value_surface
 from nomad_unhuman_hub import unhuman_hub_snapshot
 from nomad_wire_contract import maybe_merge_http_wire_diag
+from agent_reliability_doctor import build_reliability_doctor_intake, build_reliability_doctor_surface
 from nomad_agent_demand import build_agent_demand_feed, subscribe_agent_intent, subscriptions_snapshot
 from nomad_agent_growth_pipeline import agent_growth_pipeline
 from nomad_agent_invariants import build_agent_invariants_document
@@ -1090,6 +1091,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_reliability_doctor_surface(cls, *, base_url: str) -> dict:
+        return build_reliability_doctor_surface(base_url=base_url)
+
+    @classmethod
     def _build_treasury_policy(cls, *, base_url: str) -> dict:
         return build_treasury_policy_surface(
             base_url=base_url,
@@ -1914,6 +1919,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "work_exchange_free_solution": f"{b}/swarm/work-exchange/free-solution",
                     "work_exchange_return_work": f"{b}/swarm/work-exchange/return-work",
                     "work_exchange_balance": f"{b}/swarm/work-exchange/balance",
+                    "agent_reliability_doctor_contract": f"{b}/.well-known/nomad-agent-reliability-doctor.json",
+                    "agent_reliability_doctor_intake": f"{b}/swarm/reliability-doctor/intake",
+                    "agent_reliability_doctor_github_action": f"{b}/downloads/nomad_reliability_doctor_action.yml",
+                    "work_exchange_dockerfile": f"{b}/downloads/nomad_work_exchange_worker.Dockerfile",
                     "treasury_policy": f"{b}/.well-known/nomad-treasury-policy.json",
                     "stable_unit_policy": f"{b}/.well-known/nomad-stable-unit-policy.json",
                     "stable_unit_preflight": f"{b}/swarm/stable-unit/preflight",
@@ -2463,6 +2472,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/work-exchange/onboarding", "/.well-known/nomad-work-exchange-onboarding.json"}:
             self._json_response(self.__class__._build_work_exchange_onboarding(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/reliability-doctor", "/.well-known/nomad-agent-reliability-doctor.json"}:
+            self._json_response(self.__class__._build_reliability_doctor_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/treasury-policy", "/.well-known/nomad-treasury-policy.json"}:
             self._json_response(self.__class__._build_treasury_policy(base_url=self._base_url()))
@@ -4229,6 +4241,51 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 evidence=payload.get("evidence") if isinstance(payload.get("evidence"), list) else None,
             )
             self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path == "/swarm/reliability-doctor/intake":
+            base = self._base_url()
+            intake = build_reliability_doctor_intake(
+                payload,
+                base_url=base,
+                doctor=self.agent.agent_reliability_doctor,
+            )
+            if not intake.get("ok"):
+                self._json_response(intake, status=422)
+                return
+            offer = create_work_exchange_offer(
+                intake.get("work_exchange_offer_payload") if isinstance(intake.get("work_exchange_offer_payload"), dict) else {},
+                base_url=base,
+            )
+            free_solution: dict = {"accepted": False, "decision": "not_opened_without_compute_barter_acceptance"}
+            if intake.get("accepted_compute_barter_terms"):
+                free_solution = record_free_solution_receipt(
+                    intake.get("free_solution_payload") if isinstance(intake.get("free_solution_payload"), dict) else {},
+                    base_url=base,
+                )
+            onboarding = self.__class__._build_work_exchange_onboarding(base_url=base)
+            obligation_id = str(free_solution.get("obligation_id") or "")
+            start = dict(onboarding.get("copy_paste_start") or {})
+            if obligation_id:
+                start = {
+                    key: str(value).replace("OBLIGATION_ID_HERE", obligation_id)
+                    for key, value in start.items()
+                }
+            result = {
+                **intake,
+                "schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
+                "work_exchange_offer": offer,
+                "free_solution_receipt": free_solution,
+                "obligation_id": obligation_id,
+                "copy_paste_start": start,
+                "downloads": onboarding.get("downloads", {}),
+                "routes": {
+                    **(intake.get("next") if isinstance(intake.get("next"), dict) else {}),
+                    "work_exchange_balance": f"{base.rstrip('/')}/swarm/work-exchange/balance" if base else "/swarm/work-exchange/balance",
+                },
+            }
+            status = 202 if offer.get("ok") and (not intake.get("accepted_compute_barter_terms") or free_solution.get("ok")) else 422
+            self._json_response(result, status=status)
             return
 
         if parsed.path == "/guardrails":
@@ -6910,6 +6967,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     hints=[
                         "GET /downloads/nomad_transition_worker.py for the primary portable worker.",
                         "GET /downloads/nomad_work_exchange_worker.py for the obligation-bound return-compute worker.",
+                        "GET /downloads/nomad_work_exchange_worker.Dockerfile for the containerized return-compute worker.",
+                        "GET /downloads/nomad_reliability_doctor_action.yml for CI failure intake through GitHub Actions.",
                         "GET /downloads/nomad_transition_worker.exe for a direct Windows executable (when published).",
                         "GET /downloads/nomad_transition_worker_manifest.json for hashes and runtime compatibility.",
                         "GET /downloads/install_nomad_work_exchange_worker.bat for the free-repair return-compute installer.",

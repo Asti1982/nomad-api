@@ -1,0 +1,69 @@
+name: Nomad Reliability Doctor
+
+on:
+  workflow_dispatch:
+    inputs:
+      problem:
+        description: Secret-free failure summary
+        required: false
+        default: CI failed; diagnose without secrets.
+      service_type:
+        description: Nomad pain type
+        required: false
+        default: execution_failure
+      accept_compute_barter:
+        description: Open a return-compute obligation if Nomad returns a diagnostic
+        required: false
+        default: "false"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  nomad-reliability-doctor:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NOMAD_BASE_URL: https://www.syndiode.com
+      NOMAD_ACCEPT_COMPUTE_BARTER: ${{ github.event.inputs.accept_compute_barter || 'false' }}
+      NOMAD_SERVICE_TYPE: ${{ github.event.inputs.service_type || 'execution_failure' }}
+      NOMAD_PROBLEM: ${{ github.event.inputs.problem || 'CI workflow failed; diagnose without secrets.' }}
+    steps:
+      - name: Submit secret-free failure intake
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          base = os.environ.get("NOMAD_BASE_URL", "https://www.syndiode.com").rstrip("/")
+          workflow_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+          payload = {
+              "requester_id": "github-actions:" + os.environ.get("GITHUB_REPOSITORY", "unknown") + ":" + os.environ.get("GITHUB_RUN_ID", "0"),
+              "source": "github_actions",
+              "service_type": os.environ.get("NOMAD_SERVICE_TYPE", "execution_failure"),
+              "problem": os.environ.get("NOMAD_PROBLEM", "CI workflow failed; diagnose without secrets."),
+              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+              "repo_url": os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/") + "/" + os.environ.get("GITHUB_REPOSITORY", ""),
+              "workflow_url": workflow_url,
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "accepted_compute_barter_terms": os.environ.get("NOMAD_ACCEPT_COMPUTE_BARTER", "false").lower() == "true",
+          }
+          data = json.dumps(payload).encode("utf-8")
+          req = urllib.request.Request(
+              base + "/swarm/reliability-doctor/intake",
+              data=data,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=45) as response:
+              body = json.loads(response.read().decode("utf-8"))
+          print("nomad_intake_id=" + str(body.get("intake_id", "")))
+          print("nomad_solution_proof_digest=" + str(body.get("solution_proof_digest", "")))
+          if body.get("obligation_id"):
+              print("nomad_obligation_id=" + str(body["obligation_id"]))
+              print("Run the return-compute worker from: " + str(body.get("downloads", {}).get("worker_py", "")))
+          PY

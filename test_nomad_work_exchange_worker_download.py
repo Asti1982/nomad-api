@@ -38,3 +38,16 @@ def test_work_exchange_human_page_contains_start_command():
     assert "Free repair against verified return compute" in text
     assert "/downloads/install_nomad_work_exchange_worker.bat" in text
     assert "OBLIGATION_ID_HERE" in text
+    assert "/.well-known/nomad-agent-reliability-doctor.json" in text
+    assert "/downloads/nomad_reliability_doctor_action.yml" in text
+    assert "/downloads/nomad_work_exchange_worker.Dockerfile" in text
+
+
+def test_work_exchange_dockerfile_and_github_action_are_published_onramps():
+    dockerfile = (ROOT / "public" / "downloads" / "nomad_work_exchange_worker.Dockerfile").read_text(encoding="utf-8")
+    action = (ROOT / "public" / "downloads" / "nomad_reliability_doctor_action.yml").read_text(encoding="utf-8")
+
+    assert "NOMAD_WORK_EXCHANGE_OBLIGATION_ID" in dockerfile
+    assert "nomad_work_exchange_worker.py" in dockerfile
+    assert "/swarm/reliability-doctor/intake" in action
+    assert "accepted_compute_barter_terms" in action

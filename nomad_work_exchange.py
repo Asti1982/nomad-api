@@ -411,7 +411,10 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
         "downloads": {
             "installer_bat": _u(base_url, "/downloads/install_nomad_work_exchange_worker.bat"),
             "worker_py": _u(base_url, "/downloads/nomad_work_exchange_worker.py"),
+            "dockerfile": _u(base_url, "/downloads/nomad_work_exchange_worker.Dockerfile"),
+            "github_action": _u(base_url, "/downloads/nomad_reliability_doctor_action.yml"),
             "human_page": _u(base_url, "/work-exchange"),
+            "reliability_doctor_contract": _u(base_url, "/.well-known/nomad-agent-reliability-doctor.json"),
         },
         "copy_paste_start": {
             "windows_cmd": (
@@ -423,6 +426,13 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
             "python_portable": (
                 f"python nomad_work_exchange_worker.py --base-url {root or '<BASE_URL>'} "
                 "--obligation-id OBLIGATION_ID_HERE --loop --cycles 0"
+            ),
+            "docker": (
+                f"curl -L -o nomad_work_exchange_worker.Dockerfile "
+                f"{_u(base_url, '/downloads/nomad_work_exchange_worker.Dockerfile')} && "
+                "docker build -t nomad-work-exchange-worker -f nomad_work_exchange_worker.Dockerfile . && "
+                "docker run --rm -e NOMAD_WORK_EXCHANGE_OBLIGATION_ID=OBLIGATION_ID_HERE "
+                "nomad-work-exchange-worker"
             ),
         },
         "safety_contract": {
@@ -440,6 +450,8 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
             "free_solution": _u(base_url, "/swarm/work-exchange/free-solution"),
             "return_work": _u(base_url, "/swarm/work-exchange/return-work"),
             "balance": _u(base_url, "/swarm/work-exchange/balance"),
+            "reliability_doctor": _u(base_url, "/.well-known/nomad-agent-reliability-doctor.json"),
+            "reliability_doctor_intake": _u(base_url, "/swarm/reliability-doctor/intake"),
         },
         "ledger_summary": ledger_summary,
         "machine_instruction": "show_offer_require_explicit_consent_issue_obligation_id_then_start_worker_until_balance_zero",

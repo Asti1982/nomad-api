@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
@@ -162,6 +163,256 @@ PAIN_HINTS = {
     "human_in_loop": ("approval", "human", "captcha", "login"),
     "repo_issue_help": ("github", "issue", "pull request", "repro"),
 }
+
+
+FORBIDDEN_KEY_TERMS = (
+    "private_key",
+    "seed_phrase",
+    "password",
+    "credential",
+    "api_key",
+    "access_token",
+    "secret",
+)
+FORBIDDEN_VALUE_TERMS = (
+    "private key",
+    "seed phrase",
+    "password:",
+    "credential:",
+    "bearer ",
+    "secret=",
+    "sk-",
+    "ghp_",
+)
+
+
+def _iso_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _text(value: Any, limit: int = 500) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _clean_id(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9_.:/#-]+", "_", text)
+    return text[:180].strip("_.:/#-") or fallback
+
+
+def _truthy(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "accept", "accepted"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "reject", "rejected"}:
+        return False
+    return default
+
+
+def _num(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _digest(value: Any, length: int = 32) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def _u(base_url: str, path: str) -> str:
+    root = (base_url or "").strip().rstrip("/")
+    p = path if path.startswith("/") else f"/{path}"
+    return f"{root}{p}" if root else p
+
+
+def _contains_forbidden(payload: Any) -> bool:
+    def walk(value: Any, *, key: str = "") -> bool:
+        k = str(key or "").strip().lower()
+        if k and any(term in k for term in FORBIDDEN_KEY_TERMS):
+            return True
+        if isinstance(value, dict):
+            return any(walk(v, key=str(k2)) for k2, v in value.items())
+        if isinstance(value, list):
+            return any(walk(item) for item in value)
+        text = str(value or "").strip().lower()
+        return any(term in text for term in FORBIDDEN_VALUE_TERMS)
+
+    return walk(payload)
+
+
+def build_reliability_doctor_surface(*, base_url: str = "") -> Dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    return {
+        "ok": True,
+        "schema": "nomad.agent_reliability_doctor_surface.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "purpose": "Turn secret-free CI, deploy, tool, rate-limit, and agent-loop failures into repair diagnostics and optional verified return-compute obligations.",
+        "machine_native_loop": [
+            "secret_free_failure_digest",
+            "diagnosis",
+            "solution_proof_digest",
+            "work_exchange_offer",
+            "optional_compute_obligation",
+            "return_compute_worker",
+            "verified_return_work_receipt",
+        ],
+        "accepted_inputs": {
+            "required_one_of": ["problem", "message", "log_digest", "workflow_url", "repo_url"],
+            "optional": ["service_type", "requester_id", "repository", "workflow_url", "run_id", "accepted_compute_barter_terms"],
+            "secret_policy": "do_not_send_tokens_keys_passwords_private_logs",
+        },
+        "routes": {
+            "surface": _u(root, "/.well-known/nomad-agent-reliability-doctor.json"),
+            "intake": _u(root, "/swarm/reliability-doctor/intake"),
+            "human_entry": _u(root, "/agent-reliability-doctor"),
+            "work_exchange": _u(root, "/.well-known/nomad-work-exchange.json"),
+            "work_exchange_onboarding": _u(root, "/.well-known/nomad-work-exchange-onboarding.json"),
+        },
+        "downloads": {
+            "github_action": _u(root, "/downloads/nomad_reliability_doctor_action.yml"),
+            "work_exchange_dockerfile": _u(root, "/downloads/nomad_work_exchange_worker.Dockerfile"),
+            "work_exchange_worker_py": _u(root, "/downloads/nomad_work_exchange_worker.py"),
+            "windows_worker_installer": _u(root, "/downloads/install_nomad_work_exchange_worker.bat"),
+        },
+        "agent_onramps": [
+            {
+                "id": "github_actions_ci_failure",
+                "trigger": "workflow_dispatch_or_failed_workflow_run",
+                "artifact": _u(root, "/downloads/nomad_reliability_doctor_action.yml"),
+                "side_effect_scope": "secret_free_http_intake_only",
+            },
+            {
+                "id": "docker_return_compute",
+                "trigger": "obligation_id_present",
+                "artifact": _u(root, "/downloads/nomad_work_exchange_worker.Dockerfile"),
+                "side_effect_scope": "bounded_return_compute_worker",
+            },
+        ],
+        "copy_paste": {
+            "intake": (
+                f"curl -s -X POST {_u(root, '/swarm/reliability-doctor/intake')} "
+                "-H \"Content-Type: application/json\" "
+                "-d \"{\\\"requester_id\\\":\\\"agent.example\\\",\\\"problem\\\":\\\"CI failed without secrets\\\",\\\"service_type\\\":\\\"execution_failure\\\"}\""
+            ),
+            "docker_return_compute": (
+                f"curl -L -o nomad_work_exchange_worker.Dockerfile {_u(root, '/downloads/nomad_work_exchange_worker.Dockerfile')} && "
+                "docker build -t nomad-work-exchange-worker -f nomad_work_exchange_worker.Dockerfile . && "
+                "docker run --rm -e NOMAD_WORK_EXCHANGE_OBLIGATION_ID=OBLIGATION_ID_HERE nomad-work-exchange-worker"
+            ),
+        },
+        "machine_instruction": "post_secret_free_intake; if returned obligation_id exists run return_compute_worker_until_balance_zero",
+    }
+
+
+def build_reliability_doctor_intake(
+    payload: Dict[str, Any],
+    *,
+    base_url: str = "",
+    doctor: Optional["AgentReliabilityDoctor"] = None,
+) -> Dict[str, Any]:
+    body = _dict(payload)
+    if _contains_forbidden(body):
+        return {
+            "ok": False,
+            "schema": "nomad.agent_reliability_doctor_intake_error.v1",
+            "accepted": False,
+            "error": "secret_shaped_payload",
+            "message": "Reliability Doctor intake accepts public digests and secret-free excerpts only.",
+            "generated_at": _iso_now(),
+        }
+    source = _clean_id(body.get("source") or body.get("ci_provider") or body.get("source_tag"), fallback="public_intake")
+    repo = _text(body.get("repo_url") or body.get("repository") or body.get("work_url"), 260)
+    workflow_url = _text(body.get("workflow_url") or body.get("run_url") or body.get("ci_url"), 260)
+    log_digest = _text(body.get("log_digest") or body.get("trace_digest") or body.get("failure_digest"), 220)
+    problem = _text(body.get("problem") or body.get("message") or body.get("log_excerpt") or "", 900)
+    if not problem:
+        problem = _text(" ".join(item for item in [repo, workflow_url, log_digest] if item), 900)
+    if not problem:
+        return {
+            "ok": False,
+            "schema": "nomad.agent_reliability_doctor_intake_error.v1",
+            "accepted": False,
+            "error": "missing_problem_signal",
+            "message": "Send problem, message, log_digest, workflow_url, or repo_url.",
+            "generated_at": _iso_now(),
+        }
+    requester_seed = body.get("requester_id") or body.get("agent_id") or repo or workflow_url or source
+    requester_id = _clean_id(requester_seed, fallback=f"intake-{_digest(problem, 12)}")
+    service_type = _clean_id(body.get("service_type") or body.get("type") or body.get("failure_type"), fallback="")
+    evidence = [item for item in [repo, workflow_url, log_digest] if item]
+    if isinstance(body.get("evidence"), list):
+        evidence.extend(_text(item, 260) for item in body["evidence"][:5])
+    doc = doctor or AgentReliabilityDoctor()
+    diagnosis = doc.diagnose(
+        problem=problem,
+        service_type=service_type,
+        source=source,
+        evidence=evidence or None,
+    )
+    public_facts = {
+        "requester_id": requester_id,
+        "source": source,
+        "repo_url": repo,
+        "workflow_url": workflow_url,
+        "log_digest": log_digest,
+        "diagnosis_id": diagnosis.get("diagnosis_id"),
+        "pain_type": diagnosis.get("pain_type"),
+        "doctor_role": _dict(diagnosis.get("doctor_role")).get("id"),
+    }
+    solution_proof_digest = f"sha256:{_digest({'diagnosis': diagnosis, 'facts': public_facts}, length=64)}"
+    solution_value = round(max(1.0, min(_num(body.get("solution_value_credits"), 10.0), 50.0)), 4)
+    max_runtime_hours = round(max(0.25, min(_num(body.get("max_runtime_hours"), 6.0), 24.0)), 4)
+    accepted_compute_barter = _truthy(body.get("accepted_compute_barter_terms") or body.get("compute_barter_accepted"))
+    work_exchange_offer_payload = {
+        "requester_id": requester_id,
+        "solution_class": "agent_reliability_doctor",
+        "solution_value_credits": solution_value,
+        "return_multiplier": body.get("return_multiplier") or 1.3,
+        "max_runtime_hours": max_runtime_hours,
+        "capabilities": ["github_actions", "docker", "python", "return_compute"],
+    }
+    free_solution_payload = {
+        **work_exchange_offer_payload,
+        "solution_proof_digest": solution_proof_digest,
+        "verifier_trace_digest": f"sha256:{_digest({'rubric': diagnosis.get('critic_rubric'), 'facts': public_facts}, length=64)}",
+        "test_digest": f"sha256:{_digest({'loop': diagnosis.get('reliability_loop'), 'contract': diagnosis.get('fix_contract')}, length=64)}",
+        "accepted_compute_barter_terms": accepted_compute_barter,
+        "side_effect_scope": "sandboxed_worker_only",
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.agent_reliability_doctor_intake.v1",
+        "accepted": True,
+        "generated_at": _iso_now(),
+        "intake_id": f"nomad-doctor-intake-{_digest(public_facts, 24)}",
+        "requester_id": requester_id,
+        "source": source,
+        "public_facts": public_facts,
+        "diagnosis": diagnosis,
+        "solution_proof_digest": solution_proof_digest,
+        "accepted_compute_barter_terms": accepted_compute_barter,
+        "work_exchange_offer_payload": work_exchange_offer_payload,
+        "free_solution_payload": free_solution_payload,
+        "next": {
+            "work_exchange_offer": _u(base_url, "/swarm/work-exchange/offers"),
+            "free_solution": _u(base_url, "/swarm/work-exchange/free-solution"),
+            "return_worker": _u(base_url, "/downloads/nomad_work_exchange_worker.py"),
+            "dockerfile": _u(base_url, "/downloads/nomad_work_exchange_worker.Dockerfile"),
+            "github_action": _u(base_url, "/downloads/nomad_reliability_doctor_action.yml"),
+        },
+        "machine_instruction": "if_offer_accepted_show_terms; if_obligation_id_returned_run_worker_until_balance_zero",
+    }
 
 
 class AgentReliabilityDoctor:

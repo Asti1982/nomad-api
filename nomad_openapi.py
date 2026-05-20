@@ -1937,6 +1937,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/reliability-doctor": {
+                "get": {
+                    "summary": "Machine-readable reliability doctor intake and external agent onboarding surface",
+                    "operationId": "getReliabilityDoctorSurface",
+                    "responses": {
+                        "200": {"description": "Reliability Doctor surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-reliability-doctor.json": {
+                "get": {
+                    "summary": "Alias of /swarm/reliability-doctor",
+                    "operationId": "getReliabilityDoctorWellKnown",
+                    "responses": {
+                        "200": {"description": "Reliability Doctor surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/reliability-doctor/intake": {
+                "post": {
+                    "summary": "Submit a secret-free CI, deploy, tool, or agent-loop failure and receive diagnosis plus optional work-exchange obligation",
+                    "operationId": "postReliabilityDoctorIntake",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Intake accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Missing signal or secret-shaped payload", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/work-exchange/offers": {
                 "post": {
                     "summary": "Preview a 0 EUR solution for explicit verified return-compute obligation",
