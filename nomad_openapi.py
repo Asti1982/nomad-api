@@ -1991,6 +1991,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/retention": {
+                "get": {
+                    "summary": "Evaluate worker and agent retention, classify drop-off causes, and return next actions",
+                    "operationId": "getSwarmRetentionEvaluation",
+                    "responses": {
+                        "200": {"description": "Retention evaluation", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-retention.json": {
+                "get": {
+                    "summary": "Alias of /swarm/retention",
+                    "operationId": "getRetentionEvaluationWellKnown",
+                    "responses": {
+                        "200": {"description": "Retention evaluation", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/agent-acquisition/events": {
                 "post": {
                     "summary": "Record a secret-free acquisition event; high-reward events require proof digest or lease receipt",

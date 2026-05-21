@@ -390,6 +390,22 @@ def test_agent_acquisition_bandit_route_is_public_json():
     assert payload["routes"]["events"] == "https://nomad.example/swarm/agent-acquisition/events"
 
 
+def test_retention_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-retention.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.retention_evaluation.v1"
+    assert payload["decision"]
+    assert payload["metrics"]["known_worker_count"] >= 0
+
+
 def test_shadow_harvest_route_is_public_contract_only():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
