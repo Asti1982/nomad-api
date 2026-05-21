@@ -6908,14 +6908,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     http_status=status,
                 )
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self._send_common_headers()
-        for key, value in (headers or {}).items():
-            self.send_header(key, str(value))
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self._send_common_headers()
+            for key, value in (headers or {}).items():
+                self.send_header(key, str(value))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            self.close_connection = True
 
     def _html_file_response(self, path: Path, status: int = 200) -> None:
         if not path.exists() or not path.is_file():
@@ -7097,8 +7100,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return PatternStatus.CANDIDATE
 
 
+class NomadThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 64
+
+
 def serve() -> None:
-    server = ThreadingHTTPServer((HOST, PORT), NomadApiHandler)
+    server = NomadThreadingHTTPServer((HOST, PORT), NomadApiHandler)
     print(f"--- Nomad API Live on http://{HOST}:{PORT} ---")
     server.serve_forever()
 

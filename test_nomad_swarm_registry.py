@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from nomad_swarm_registry import SwarmJoinRegistry, github_repo_root_from_url
@@ -422,6 +423,61 @@ def test_worker_completion_records_effectiveness_score(tmp_path: Path):
     assert complete["recorded_score"] == 0.854
     index = registry.worker_verifier_lease_index()
     assert index[lease["lease_id"]]["status"] == "completed"
+
+
+def test_worker_fleet_retains_five_minute_workers_as_active(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "oracle-e2-agp-proposer-001",
+            "capabilities": ["transition_worker", "agp"],
+            "lease_seconds": 120,
+        },
+        base_url="https://syndiode.com",
+    )
+    fleet = registry._fleet()
+    worker = fleet["workers"]["oracle-e2-agp-proposer-001"]
+    worker["last_seen_at"] = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    registry._save()
+
+    contract = registry.worker_fleet_contract(base_url="https://syndiode.com")
+
+    assert contract["active_worker_count"] == 1
+    assert contract["retention_policy"]["active_window_seconds"] >= 900
+    assert contract["retention_policy"]["recommended_heartbeat_seconds"] == 300
+    assert contract["recent_workers"][0]["agent_id"] == "oracle-e2-agp-proposer-001"
+
+
+def test_worker_fleet_stales_old_workers_without_counting_them_active(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "cloud-ai-worker-001",
+            "capabilities": ["transition_worker"],
+            "lease_seconds": 120,
+        },
+        base_url="https://syndiode.com",
+    )
+    fleet = registry._fleet()
+    worker = fleet["workers"]["cloud-ai-worker-001"]
+    worker["last_seen_at"] = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    registry._save()
+
+    contract = registry.worker_fleet_contract(base_url="https://syndiode.com")
+
+    assert contract["active_worker_count"] == 0
+    assert contract["known_worker_count"] == 1
+    assert registry._fleet()["workers"]["cloud-ai-worker-001"]["status"] == "stale"
+
+
+def test_swarm_summary_exposes_agent_heartbeat_policy(tmp_path: Path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-registry.json")
+    summary = registry.summary()
+
+    policy = summary["agent_retention_policy"]
+    assert policy["node_ttl_minutes"] == 20
+    assert policy["recommended_heartbeat_seconds"] == 400
+    assert "/swarm/attach-get" in policy["heartbeat_routes"][0]
 
 
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):

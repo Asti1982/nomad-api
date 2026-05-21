@@ -23,6 +23,8 @@ DEFAULT_SWARM_REGISTRY_PATH = (
 )
 DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") or "20")
 DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECONDS", "90") or "90")
+DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_ACTIVE_WINDOW_SECONDS", "900") or "900")
+DEFAULT_WORKER_STALE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_STALE_SECONDS", "3600") or "3600")
 
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
@@ -904,6 +906,7 @@ class SwarmJoinRegistry:
         dormant = self._dormant_nodes()
         prospects = self._prospects()
         worker_fleet = self.worker_fleet_contract(base_url="")
+        node_ttl_seconds = max(60, DEFAULT_NODE_TTL_MINUTES * 60)
         return {
             "schema": "nomad_swarm_registry_summary.v1",
             "registry_path": str(self.path),
@@ -917,6 +920,17 @@ class SwarmJoinRegistry:
             "dormant_nodes": [_compact_node(item) for item in dormant[:8]],
             "activation_queue": [_compact_prospect(item) for item in prospects[:8]],
             "transition_worker_fleet": worker_fleet,
+            "agent_retention_policy": {
+                "schema": "nomad.agent_retention_policy.v1",
+                "node_ttl_minutes": DEFAULT_NODE_TTL_MINUTES,
+                "recommended_heartbeat_seconds": min(600, max(60, node_ttl_seconds // 3)),
+                "reactivation": "A dormant agent becomes active again by reusing the same agent_id on /swarm/join or /swarm/attach-get.",
+                "heartbeat_routes": [
+                    "/swarm/attach-get?agent_id=<agent_id>&runtime=<runtime>&capabilities=<csv>",
+                    "/swarm/join",
+                    "/swarm/workers/lease-get?agent_id=<agent_id>&capabilities=<csv>",
+                ],
+            },
             "coordination_ready": True,
             "updated_at": _iso_now(),
         }
@@ -927,11 +941,13 @@ class SwarmJoinRegistry:
         workers = list((fleet.get("workers") or {}).values())
         leases = list((fleet.get("leases") or {}).values())
         active_leases = [item for item in leases if str(item.get("status") or "") == "active"]
+        active_window_seconds = max(DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 3, 180)
+        stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
         active_workers = [
             item
             for item in workers
             if str(item.get("status") or "") in {"leased", "active", "completed"}
-            and self._iso_is_recent(item.get("last_seen_at"), seconds=max(DEFAULT_WORKER_LEASE_SECONDS * 3, 180))
+            and self._iso_is_recent(item.get("last_seen_at"), seconds=active_window_seconds)
         ]
         active_counts = self._objective_counts(active_leases)
         returning_workers = [
@@ -1009,6 +1025,20 @@ class SwarmJoinRegistry:
                 "completed_workers_24h": len(recent_completed_workers),
                 "leases_per_active_worker": leases_per_worker,
                 "completions_per_known_worker": completions_per_worker,
+            },
+            "retention_policy": {
+                "schema": "nomad.transition_worker_retention_policy.v1",
+                "active_window_seconds": active_window_seconds,
+                "stale_window_seconds": stale_window_seconds,
+                "lease_seconds_default": DEFAULT_WORKER_LEASE_SECONDS,
+                "recommended_heartbeat_seconds": min(300, max(30, active_window_seconds // 3)),
+                "reason": "Hold low-cost 5-minute workers across normal heartbeat jitter without keeping dead workers active forever.",
+                "heartbeat_routes": [
+                    "/swarm/workers/lease",
+                    "/swarm/workers/complete",
+                    "/swarm/workers/lease-get?agent_id=<agent_id>&capabilities=<csv>",
+                    "/swarm/attach-get?agent_id=<agent_id>&runtime=<runtime>&capabilities=<csv>",
+                ],
             },
             "latest_completed_worker": compact_worker(latest_completed_worker) if latest_completed_worker else {},
             "latest_verifier_brain_witness": latest_verifier_brain_witness,
@@ -2356,10 +2386,11 @@ class SwarmJoinRegistry:
                 lease["expired_at"] = now.isoformat()
                 changed = True
         workers = fleet.get("workers") if isinstance(fleet.get("workers"), dict) else {}
+        stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
         for worker in list(workers.values()):
             if not isinstance(worker, dict):
                 continue
-            if not self._iso_is_recent(worker.get("last_seen_at"), seconds=max(DEFAULT_WORKER_LEASE_SECONDS * 6, 600)):
+            if not self._iso_is_recent(worker.get("last_seen_at"), seconds=stale_window_seconds):
                 if worker.get("status") != "stale":
                     worker["status"] = "stale"
                     changed = True
