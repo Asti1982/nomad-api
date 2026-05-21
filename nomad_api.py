@@ -148,7 +148,7 @@ from nomad_agent_native_index import agent_native_index
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
-from nomad_retention_evaluator import evaluate_retention
+from nomad_retention_evaluator import build_retention_watchdog_surface, evaluate_retention, run_retention_watchdog
 from nomad_machine_treasury import pledge as machine_treasury_pledge, snapshot as machine_treasury_snapshot
 from nomad_proof_reuse_ledger import link as proof_reuse_link, snapshot as proof_reuse_snapshot
 from nomad_swarm_economics import build_swarm_economics_snapshot
@@ -1130,6 +1130,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         summary = cls.swarm_registry.summary()
         worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
         return evaluate_retention(
+            swarm_summary=summary,
+            worker_fleet=worker_fleet,
+            base_url=base_url,
+        )
+
+    @classmethod
+    def _build_retention_watchdog_surface(cls, *, base_url: str) -> dict:
+        summary = cls.swarm_registry.summary()
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        return build_retention_watchdog_surface(
             swarm_summary=summary,
             worker_fleet=worker_fleet,
             base_url=base_url,
@@ -2541,6 +2551,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/retention", "/.well-known/nomad-retention.json"}:
             self._json_response(self.__class__._build_retention_evaluation(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/retention/watchdog", "/.well-known/nomad-retention-watchdog.json"}:
+            self._json_response(self.__class__._build_retention_watchdog_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/reliability-doctor", "/.well-known/nomad-agent-reliability-doctor.json"}:
             self._json_response(self.__class__._build_reliability_doctor_surface(base_url=self._base_url()))
@@ -4525,6 +4538,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/retention/watchdog":
+            result = run_retention_watchdog(
+                swarm_registry=self.swarm_registry,
+                base_url=self._base_url(),
+                body=payload,
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=202 if result.get("executed") else 200)
             return
 
         if parsed.path == "/swarm/resource-substrate/retrieve":

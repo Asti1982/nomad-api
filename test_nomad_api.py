@@ -406,6 +406,21 @@ def test_retention_route_is_public_json():
     assert payload["metrics"]["known_worker_count"] >= 0
 
 
+def test_retention_watchdog_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-retention-watchdog.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.retention_watchdog_surface.v1"
+    assert payload["schedule"]["endpoint"] == "https://nomad.example/swarm/retention/watchdog"
+
+
 def test_shadow_harvest_route_is_public_contract_only():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -977,6 +992,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/workers/lease-get" in doc["paths"]
     assert "/swarm/workers/complete-get" in doc["paths"]
     assert "/swarm/experience-get" in doc["paths"]
+    assert "/swarm/retention" in doc["paths"]
+    assert "/swarm/retention/watchdog" in doc["paths"]
+    assert "/.well-known/nomad-retention-watchdog.json" in doc["paths"]
     assert "/swarm/attach" in doc["paths"]
     assert "/swarm/emission-batch" in doc["paths"]
     assert "/swarm/attractor" in doc["paths"]

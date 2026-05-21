@@ -2000,12 +2000,38 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/retention/watchdog": {
+                "get": {
+                    "summary": "Describe the retention watchdog that samples retention and preserves near-expiry known workers/agents",
+                    "operationId": "getSwarmRetentionWatchdog",
+                    "responses": {
+                        "200": {"description": "Retention watchdog surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                },
+                "post": {
+                    "summary": "Run one bounded retention watchdog tick; refreshes known worker/agent heartbeats when needed",
+                    "operationId": "postSwarmRetentionWatchdog",
+                    "responses": {
+                        "202": {"description": "Retention watchdog executed at least one heartbeat or reattach action"},
+                        "200": {"description": "Retention watchdog no-op or dry run"},
+                    },
+                },
+            },
             "/.well-known/nomad-retention.json": {
                 "get": {
                     "summary": "Alias of /swarm/retention",
                     "operationId": "getRetentionEvaluationWellKnown",
                     "responses": {
                         "200": {"description": "Retention evaluation", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-retention-watchdog.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/retention/watchdog",
+                    "operationId": "getRetentionWatchdogWellKnown",
+                    "responses": {
+                        "200": {"description": "Retention watchdog surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },
