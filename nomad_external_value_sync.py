@@ -14,7 +14,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from nomad_external_value import STAGE_INDEX, _ledger_path, _read_events, summarize_external_value_ledger
+from nomad_external_value import (
+    STAGE_INDEX,
+    TERMINAL_INDEX,
+    _ledger_path,
+    _read_events,
+    allowed_transition,
+    summarize_external_value_ledger,
+)
 from nomad_state_paths import state_root
 
 
@@ -149,7 +156,7 @@ def _public_stage_map(public_summary: dict[str, Any]) -> dict[str, str]:
             continue
         eid = str(row.get("external_id") or "")
         stage = str(row.get("stage") or "").strip().lower()
-        if eid and stage in STAGE_INDEX:
+        if eid and (stage in STAGE_INDEX or stage in TERMINAL_INDEX):
             out[eid] = stage
     return out
 
@@ -168,22 +175,24 @@ def plan_external_value_public_sync(
     for event in local_events:
         eid = str(event.get("external_id") or "")
         stage = str(event.get("stage") or "").strip().lower()
-        if not eid or stage not in STAGE_INDEX:
+        if not eid or (stage not in STAGE_INDEX and stage not in TERMINAL_INDEX):
             blocked.append({"external_id": eid, "stage": stage, "reason": "invalid_event"})
             continue
         current = shadow.get(eid, "")
-        current_idx = STAGE_INDEX.get(current, -1)
-        requested_idx = STAGE_INDEX[stage]
-        if requested_idx <= current_idx:
+        if current == stage:
             skipped.append({"external_id": eid, "stage": stage, "reason": "already_public_or_shadowed"})
             continue
-        if requested_idx != current_idx + 1:
+        ok, reason = allowed_transition(from_stage=current, to_stage=stage)
+        if not ok:
+            if reason in {"non_monotonic_stage", "terminal_outcome"}:
+                skipped.append({"external_id": eid, "stage": stage, "reason": "already_public_or_shadowed"})
+                continue
             blocked.append(
                 {
                     "external_id": eid,
                     "stage": stage,
                     "public_or_shadow_stage": current or "(none)",
-                    "reason": "missing_prior_stage",
+                    "reason": reason,
                 }
             )
             continue

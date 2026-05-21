@@ -38,6 +38,39 @@ def test_plan_replays_only_missing_tail_when_public_has_prior_stage():
     assert plan["skipped_count"] == 1
 
 
+def test_plan_replays_terminal_duplicate_learning_signal():
+    plan = plan_external_value_public_sync(
+        [
+            _event("h1_report:zabbix#3740761", "found"),
+            _event("h1_report:zabbix#3740761", "submitted"),
+            _event("h1_report:zabbix#3740761", "closed_duplicate"),
+        ],
+        {"ok": True, "latest_by_external": []},
+    )
+
+    assert plan["replay_candidate_count"] == 3
+    assert [row["stage"] for row in plan["candidates"]] == ["found", "submitted", "closed_duplicate"]
+    assert plan["blocked_count"] == 0
+
+
+def test_plan_replays_terminal_tail_when_public_has_submitted_stage():
+    plan = plan_external_value_public_sync(
+        [
+            _event("h1_report:zabbix#3740761", "found"),
+            _event("h1_report:zabbix#3740761", "submitted"),
+            _event("h1_report:zabbix#3740761", "closed_duplicate"),
+        ],
+        {
+            "ok": True,
+            "latest_by_external": [{"external_id": "h1_report:zabbix#3740761", "stage": "submitted"}],
+        },
+    )
+
+    assert plan["replay_candidate_count"] == 1
+    assert plan["candidates"][0]["stage"] == "closed_duplicate"
+    assert plan["skipped_count"] == 2
+
+
 def test_sync_posts_missing_public_events_from_local_ledger(tmp_path, monkeypatch):
     ledger = tmp_path / "external.jsonl"
     monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(ledger))
