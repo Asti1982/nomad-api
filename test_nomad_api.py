@@ -117,6 +117,8 @@ def test_nomad_public_html_page_exists():
     assert "return compute instead of tokens" in text
     assert "/assets/nomad-reliability-doctor-x-card.png" in text
     assert "/.well-known/nomad-external-worker-opportunity.json" in text
+    assert "/.well-known/nomad-agent-acquisition-bandit.json" in text
+    assert "/swarm/agent-acquisition/events" in text
     assert "/llms.txt" in text
     assert "/.well-known/nomad-agent-reliability-doctor.json" in text
     assert "/swarm/reliability-doctor/intake" in text
@@ -371,6 +373,21 @@ def test_external_worker_opportunity_route_is_public_json():
     assert status == 200
     assert payload["schema"] == "nomad.external_worker_opportunity.v1"
     assert payload["routes"]["agent_card"] == "https://nomad.example/.well-known/agent-card.json"
+
+
+def test_agent_acquisition_bandit_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-agent-acquisition-bandit.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.agent_acquisition_bandit.v1"
+    assert payload["routes"]["events"] == "https://nomad.example/swarm/agent-acquisition/events"
 
 
 def test_handyoracle_apk_download_redirects_to_release():

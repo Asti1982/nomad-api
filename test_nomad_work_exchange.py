@@ -57,7 +57,15 @@ def test_external_worker_opportunity_is_short_join_packet():
     assert out["ranked_onramps"][0]["id"] == "agent_has_blocker"
     assert out["guardrails"]["requires_token"] is False
     assert out["guardrails"]["requires_chat_platform"] is False
+    assert out["routes"]["agent_acquisition_bandit"].endswith("/.well-known/nomad-agent-acquisition-bandit.json")
+    assert out["routes"]["agent_acquisition_events"].endswith("/swarm/agent-acquisition/events")
+    assert out["measurement_contract"]["high_reward_events_require_proof_digest"] == [
+        "worker_start",
+        "lease_complete",
+        "return_compute_receipt",
+    ]
     assert "nomad-external-worker-opportunity.json" in out["copy_paste"]["inspect"]
+    assert "agent-acquisition/events" in out["copy_paste"]["record_inspect_attribution"]
     assert "nomad_transition_worker.py" in out["copy_paste"]["python_general_worker"]
 
 
@@ -186,6 +194,9 @@ def test_openapi_exposes_work_exchange_routes():
     assert "/.well-known/nomad-work-exchange-onboarding.json" in paths
     assert "/.well-known/nomad-external-worker-opportunity.json" in paths
     assert "/swarm/external-worker-opportunity" in paths
+    assert "/.well-known/nomad-agent-acquisition-bandit.json" in paths
+    assert "/swarm/agent-acquisition" in paths
+    assert "/swarm/agent-acquisition/events" in paths
     assert "/swarm/work-exchange/onboarding" in paths
     assert "/swarm/work-exchange/offers" in paths
     assert "/swarm/work-exchange/free-solution" in paths

@@ -221,6 +221,11 @@ from nomad_work_exchange import (
     summarize_work_exchange_ledger,
     work_exchange_balance,
 )
+from nomad_agent_acquisition_bandit import (
+    build_agent_acquisition_bandit,
+    record_agent_acquisition_event,
+    summarize_agent_acquisition_events,
+)
 from nomad_microtask_market import build_worker_catalog, submit_microtask, settle_microtask
 from nomad_microtask_exchange_ops import build_microtask_templates, build_microtask_metrics
 from nomad_weekly_selection_event import build_weekly_selection_event
@@ -1100,6 +1105,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_agent_acquisition_bandit(cls, *, base_url: str) -> dict:
+        worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        opportunity = build_external_worker_opportunity(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            summary=summarize_work_exchange_ledger(),
+        )
+        return build_agent_acquisition_bandit(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            opportunity=opportunity,
+            summary=summarize_agent_acquisition_events(),
+        )
+
+    @classmethod
     def _build_reliability_doctor_surface(cls, *, base_url: str) -> dict:
         return build_reliability_doctor_surface(base_url=base_url)
 
@@ -1772,6 +1792,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "robots": f"{b}/robots.txt",
                     "agent_card": f"{b}/.well-known/agent-card.json",
                     "external_worker_opportunity": f"{b}/.well-known/nomad-external-worker-opportunity.json",
+                    "agent_acquisition_bandit": f"{b}/.well-known/nomad-agent-acquisition-bandit.json",
+                    "agent_acquisition_events": f"{b}/swarm/agent-acquisition/events",
                     "a2a_get_relay": f"{b}/a2a/get",
                     "get_only_worker_onramp": f"{b}/swarm/hello",
                     "runtime_attach_get": f"{b}/swarm/attach-get",
@@ -2494,6 +2516,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "/.well-known/nomad-external-worker-opportunity.json",
         }:
             self._json_response(self.__class__._build_external_worker_opportunity(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agent-acquisition", "/.well-known/nomad-agent-acquisition-bandit.json"}:
+            self._json_response(self.__class__._build_agent_acquisition_bandit(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/reliability-doctor", "/.well-known/nomad-agent-reliability-doctor.json"}:
             self._json_response(self.__class__._build_reliability_doctor_surface(base_url=self._base_url()))
@@ -4308,6 +4333,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             }
             status = 202 if offer.get("ok") and (not intake.get("accepted_compute_barter_terms") or free_solution.get("ok")) else 422
             self._json_response(result, status=status)
+            return
+
+        if parsed.path == "/swarm/agent-acquisition/events":
+            result = record_agent_acquisition_event(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("ok") else 422)
             return
 
         if parsed.path == "/guardrails":

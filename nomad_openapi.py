@@ -1955,6 +1955,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/agent-acquisition": {
+                "get": {
+                    "summary": "Proof-gated acquisition bandit for routing public agent onramps toward verified workers",
+                    "operationId": "getAgentAcquisitionBandit",
+                    "responses": {
+                        "200": {"description": "Agent acquisition bandit", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-acquisition-bandit.json": {
+                "get": {
+                    "summary": "Alias of /swarm/agent-acquisition",
+                    "operationId": "getAgentAcquisitionBanditWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent acquisition bandit", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agent-acquisition/events": {
+                "post": {
+                    "summary": "Record a secret-free acquisition event; high-reward events require proof digest or lease receipt",
+                    "operationId": "postAgentAcquisitionEvent",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Acquisition event accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Unknown channel, unknown event type, missing proof, or secret-shaped payload", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/reliability-doctor": {
                 "get": {
                     "summary": "Machine-readable reliability doctor intake and external agent onboarding surface",

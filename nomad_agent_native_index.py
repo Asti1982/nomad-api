@@ -307,6 +307,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 15.75,
+            "get_url": u("/.well-known/nomad-agent-acquisition-bandit.json"),
+            "purpose": "proof_gated_agent_acquisition_controller",
+            "machine_note": (
+                "Record inspect, worker_start, lease_complete, and return_compute events here so Nomad can "
+                "learn which public onramps actually convert external AI agents into verified workers."
+            ),
+        },
+        {
             "order": 16,
             "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
             "purpose": "openclaw_runtime_bridge_contract",
@@ -384,6 +393,9 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/.well-known/nomad-worker-market.json", "methods": ["GET"], "effect": "read_external_compute_market", "cost_tier": "low"},
         {"path": "/swarm/external-worker-opportunity", "methods": ["GET"], "effect": "read_external_worker_join_packet", "cost_tier": "low"},
         {"path": "/.well-known/nomad-external-worker-opportunity.json", "methods": ["GET"], "effect": "read_external_worker_join_packet", "cost_tier": "low"},
+        {"path": "/swarm/agent-acquisition", "methods": ["GET"], "effect": "read_agent_acquisition_bandit", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-agent-acquisition-bandit.json", "methods": ["GET"], "effect": "read_agent_acquisition_bandit", "cost_tier": "low"},
+        {"path": "/swarm/agent-acquisition/events", "methods": ["POST"], "effect": "write_public_agent_acquisition_event", "cost_tier": "low"},
         {"path": "/swarm/compute-market", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/.well-known/nomad-compute-market.json", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/swarm/agent-work", "methods": ["GET"], "effect": "read_claimable_agent_work", "cost_tier": "low"},
@@ -583,6 +595,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "runtime_capsule_url": u("/.well-known/nomad-runtime-capsule.json"),
         "recruitment_gradient_url": u("/swarm/gradient"),
         "external_worker_opportunity_url": u("/.well-known/nomad-external-worker-opportunity.json"),
+        "agent_acquisition_bandit_url": u("/.well-known/nomad-agent-acquisition-bandit.json"),
+        "agent_acquisition_events_url": u("/swarm/agent-acquisition/events"),
         "agent_join_field_url": u("/.well-known/nomad-agent-join-field.json"),
         "runtime_attach_url": u("/swarm/attach"),
         "runtime_handoff_url": u("/runtime/handoff"),
