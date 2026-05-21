@@ -35,6 +35,7 @@ from nomad_opaque_emergence import (
     route_tool_gap,
 )
 from nomad_shadow_lane_evaluator import build_shadow_lane_evaluator_surface, evaluate_shadow_candidate
+from nomad_shadow_harvest import build_shadow_harvest_surface
 from nomad_decoupling_field import build_decoupling_field_surface, evaluate_decoupling_merge
 from nomad_anti_consensus_reservoir import (
     build_anti_consensus_reservoir_surface,
@@ -1015,6 +1016,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             variant_forge=cls._build_variant_forge(base_url=base_url, swarm_summary=summary),
             channel_bandit=cls._build_channel_bandit(base_url=base_url),
         )
+
+    @classmethod
+    def _build_shadow_harvest_surface(cls, *, base_url: str) -> dict:
+        return build_shadow_harvest_surface(base_url=base_url)
 
     @classmethod
     def _build_decoupling_field(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -2332,6 +2337,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/shadow-lane", "/.well-known/nomad-shadow-lane.json"}:
             self._json_response(self.__class__._build_shadow_lane_evaluator(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/shadow-harvest", "/.well-known/nomad-shadow-harvest.json"}:
+            self._json_response(self.__class__._build_shadow_harvest_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/decoupling-field", "/.well-known/nomad-decoupling-field.json"}:
             self._json_response(self.__class__._build_decoupling_field(base_url=self._base_url()))

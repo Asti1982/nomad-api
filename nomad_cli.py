@@ -1725,6 +1725,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("resource-substrate is handled directly in run_once")
     if command == "autogenesis":
         raise ValueError("autogenesis is handled directly in run_once")
+    if command == "shadow-harvest":
+        raise ValueError("shadow-harvest is handled directly in run_once")
     if command == "deficit-integration":
         raise ValueError("deficit-integration is handled directly in run_once")
     if command == "effective-channels":
@@ -2033,6 +2035,15 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 )
             else:
                 result = agp
+        elif args.command == "shadow-harvest":
+            from nomad_shadow_harvest import harvest_shadow_candidates
+
+            result = harvest_shadow_candidates(
+                workspace=(getattr(args, "workspace", None) or "."),
+                base_url=(getattr(args, "base_url", None) or "").strip(),
+                output_path=(getattr(args, "output", None) or "").strip() or None,
+                max_patch_bytes=int(getattr(args, "max_patch_bytes", 200000) or 200000),
+            )
         elif args.command == "recruitment-gradient":
             from nomad_machine_economy import machine_economy_snapshot
             from nomad_operational_release import operational_release_snapshot
@@ -3883,6 +3894,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Return the machine-economy recruit surface for AGP packets and agent CTAs.",
     )
+    shadow_harvest = subparsers.add_parser(
+        "shadow-harvest",
+        help="Compile a local dirty git worktree into proof-gated AGP shadow candidates.",
+    )
+    shadow_harvest.add_argument("--workspace", default=".", help="Git worktree to harvest read-only.")
+    shadow_harvest.add_argument("--base-url", default="", help="Public Nomad base URL for route links.")
+    shadow_harvest.add_argument("--output", default="", help="Optional JSON report path to write.")
+    shadow_harvest.add_argument("--max-patch-bytes", type=int, default=200000, help="Maximum per-file patch preview bytes.")
     recruitment_gradient = subparsers.add_parser(
         "recruitment-gradient",
         help="Vector/weight runtime recruitment field and attach contract for external agents.",

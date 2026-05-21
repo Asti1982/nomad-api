@@ -1955,6 +1955,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/shadow-harvest": {
+                "get": {
+                    "summary": "Local dirty-worktree harvest contract for proof-gated AGP shadow candidates",
+                    "operationId": "getShadowHarvestSurface",
+                    "responses": {
+                        "200": {"description": "Shadow harvest contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-shadow-harvest.json": {
+                "get": {
+                    "summary": "Alias of /swarm/shadow-harvest",
+                    "operationId": "getShadowHarvestWellKnown",
+                    "responses": {
+                        "200": {"description": "Shadow harvest contract", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/agent-acquisition": {
                 "get": {
                     "summary": "Proof-gated acquisition bandit for routing public agent onramps toward verified workers",

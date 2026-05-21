@@ -51,3 +51,4 @@ public/downloads/*.spec
 public/downloads/*.jsonl
 public/downloads/*_latest.json
 public/downloads/*latest.json
+update/*shadow_harvest*.json

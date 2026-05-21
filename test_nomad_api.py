@@ -390,6 +390,21 @@ def test_agent_acquisition_bandit_route_is_public_json():
     assert payload["routes"]["events"] == "https://nomad.example/swarm/agent-acquisition/events"
 
 
+def test_shadow_harvest_route_is_public_contract_only():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-shadow-harvest.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.shadow_harvest_surface.v1"
+    assert payload["local_cli"]["side_effect_scope"] == "read_only_source_workspace_write_report_only"
+
+
 def test_handyoracle_apk_download_redirects_to_release():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     events = []

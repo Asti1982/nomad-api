@@ -316,6 +316,15 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
             ),
         },
         {
+            "order": 15.9,
+            "get_url": u("/.well-known/nomad-shadow-harvest.json"),
+            "purpose": "local_self_modification_to_shadow_candidate_compiler",
+            "machine_note": (
+                "Use the local CLI to compile dirty agent self-modification into diff-digest candidates; "
+                "never treat dirty worktree state as production truth."
+            ),
+        },
+        {
             "order": 16,
             "get_url": u("/.well-known/openclaw-nomad-bridge.json"),
             "purpose": "openclaw_runtime_bridge_contract",
@@ -396,6 +405,8 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         {"path": "/swarm/agent-acquisition", "methods": ["GET"], "effect": "read_agent_acquisition_bandit", "cost_tier": "low"},
         {"path": "/.well-known/nomad-agent-acquisition-bandit.json", "methods": ["GET"], "effect": "read_agent_acquisition_bandit", "cost_tier": "low"},
         {"path": "/swarm/agent-acquisition/events", "methods": ["POST"], "effect": "write_public_agent_acquisition_event", "cost_tier": "low"},
+        {"path": "/swarm/shadow-harvest", "methods": ["GET"], "effect": "read_shadow_harvest_contract", "cost_tier": "low"},
+        {"path": "/.well-known/nomad-shadow-harvest.json", "methods": ["GET"], "effect": "read_shadow_harvest_contract", "cost_tier": "low"},
         {"path": "/swarm/compute-market", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/.well-known/nomad-compute-market.json", "methods": ["GET"], "effect": "read_proof_weighted_compute_market", "cost_tier": "low"},
         {"path": "/swarm/agent-work", "methods": ["GET"], "effect": "read_claimable_agent_work", "cost_tier": "low"},
@@ -597,6 +608,7 @@ def agent_native_index(*, base_url: str = "") -> Dict[str, Any]:
         "external_worker_opportunity_url": u("/.well-known/nomad-external-worker-opportunity.json"),
         "agent_acquisition_bandit_url": u("/.well-known/nomad-agent-acquisition-bandit.json"),
         "agent_acquisition_events_url": u("/swarm/agent-acquisition/events"),
+        "shadow_harvest_url": u("/.well-known/nomad-shadow-harvest.json"),
         "agent_join_field_url": u("/.well-known/nomad-agent-join-field.json"),
         "runtime_attach_url": u("/swarm/attach"),
         "runtime_handoff_url": u("/runtime/handoff"),
