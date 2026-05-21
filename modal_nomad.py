@@ -24,6 +24,16 @@ API_PORT = modal_api_port()
 API_LABEL = modal_api_label()
 PYTHON_VERSION = modal_python_version()
 MODAL_ENVIRONMENT = modal_environment_name()
+IMAGE_ENV = {
+    "PYTHONPATH": REMOTE_ROOT,
+    "NOMAD_MODAL_SECRET_NAME": SECRET_NAME or "none",
+    "NOMAD_MODAL_MOUNT_PATH": REMOTE_ROOT,
+    "NOMAD_MODAL_API_PORT": str(API_PORT),
+    "NOMAD_MODAL_API_LABEL": API_LABEL,
+    "NOMAD_MODAL_PYTHON_VERSION": PYTHON_VERSION,
+}
+if MODAL_ENVIRONMENT:
+    IMAGE_ENV["NOMAD_MODAL_ENVIRONMENT"] = MODAL_ENVIRONMENT
 
 
 def _ignore_modal_copy(path: Path) -> bool:
@@ -37,6 +47,7 @@ def _ignore_modal_copy(path: Path) -> bool:
 image = (
     modal.Image.debian_slim(python_version=PYTHON_VERSION)
     .pip_install_from_requirements(str(ROOT / "requirements.txt"))
+    .env(IMAGE_ENV)
     .add_local_dir(
         ROOT,
         remote_path=REMOTE_ROOT,
