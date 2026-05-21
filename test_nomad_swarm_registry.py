@@ -1,7 +1,10 @@
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import nomad_swarm_registry
+from nomad_firestore_state import _json_from_base64_env
 from nomad_swarm_registry import SwarmJoinRegistry, github_repo_root_from_url
 
 
@@ -528,6 +531,12 @@ def test_swarm_registry_can_restore_and_save_remote_firestore_state(monkeypatch,
 
     assert FakeFirestoreJsonState.saved_payloads
     assert "second.agent" in FakeFirestoreJsonState.saved_payloads[-1]["nodes"]
+
+
+def test_firestore_state_decodes_base64_service_account_shape():
+    encoded = base64.b64encode(json.dumps({"project_id": "p", "client_email": "c"}).encode("utf-8")).decode("ascii")
+
+    assert _json_from_base64_env(encoded) == {"project_id": "p", "client_email": "c"}
 
 
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):

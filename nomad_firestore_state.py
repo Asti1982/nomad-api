@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from base64 import b64decode
 from typing import Any, Optional
 
 import requests
@@ -20,6 +21,18 @@ def _clean_env(value: str) -> str:
 
 def _private_key_from_env(value: str) -> str:
     return _clean_env(value).replace("\\n", "\n")
+
+
+def _json_from_base64_env(value: str) -> dict[str, Any]:
+    raw = _clean_env(value)
+    if not raw:
+        return {}
+    try:
+        decoded = b64decode(raw).decode("utf-8")
+        parsed = json.loads(decoded)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class FirestoreJsonState:
@@ -68,12 +81,18 @@ class FirestoreJsonState:
             os.getenv(f"NOMAD_{scope.upper()}_FIREBASE_SERVICE_ACCOUNT_JSON")
             or os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
         )
+        service_json_base64 = _clean_env(
+            os.getenv(f"NOMAD_{scope.upper()}_FIREBASE_CONFIG_BASE64")
+            or os.getenv("FIREBASE_CONFIG_BASE64")
+        )
         service_info: dict[str, Any] = {}
         if service_json:
             try:
                 service_info = json.loads(service_json)
             except json.JSONDecodeError:
                 service_info = {}
+        if not service_info:
+            service_info = _json_from_base64_env(service_json_base64)
         project_id = _clean_env(
             os.getenv(f"NOMAD_{scope.upper()}_FIREBASE_PROJECT_ID")
             or os.getenv("FIREBASE_PROJECT_ID")
