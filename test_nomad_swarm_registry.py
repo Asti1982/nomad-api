@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import nomad_swarm_registry
 from nomad_swarm_registry import SwarmJoinRegistry, github_repo_root_from_url
 
 
@@ -478,6 +479,55 @@ def test_swarm_summary_exposes_agent_heartbeat_policy(tmp_path: Path):
     assert policy["node_ttl_minutes"] == 20
     assert policy["recommended_heartbeat_seconds"] == 400
     assert "/swarm/attach-get" in policy["heartbeat_routes"][0]
+
+
+def test_swarm_registry_can_restore_and_save_remote_firestore_state(monkeypatch, tmp_path: Path):
+    class FakeFirestoreJsonState:
+        backend_name = "firestore"
+        saved_payloads = []
+
+        @classmethod
+        def from_env(cls, *, scope: str):
+            assert scope == "swarm_registry"
+            return cls()
+
+        def load(self):
+            return {
+                "nodes": {
+                    "persisted.agent": {
+                        "agent_id": "persisted.agent",
+                        "capabilities": ["transition_worker"],
+                        "last_seen_at": datetime.now(UTC).isoformat(),
+                    }
+                },
+                "dormant_nodes": {},
+                "prospects": {},
+                "join_events": [],
+                "updated_at": "remote",
+            }
+
+        def save(self, payload):
+            self.__class__.saved_payloads.append(payload)
+            return True
+
+    monkeypatch.setattr(nomad_swarm_registry, "FirestoreJsonState", FakeFirestoreJsonState)
+    monkeypatch.setenv("NOMAD_SWARM_REGISTRY_BACKEND", "firebase")
+    monkeypatch.setenv("NOMAD_SWARM_REGISTRY_PATH", str(tmp_path / "swarm-registry.json"))
+
+    registry = SwarmJoinRegistry()
+    summary = registry.summary()
+
+    assert summary["connected_agents"] == 1
+    assert summary["registry_storage"]["restart_durable"] is True
+    assert summary["registry_storage"]["remote_backend"] == "firestore"
+
+    registry.register_join(
+        {"agent_id": "second.agent", "capabilities": ["verifier"], "request": "Join"},
+        base_url="https://syndiode.com",
+    )
+
+    assert FakeFirestoreJsonState.saved_payloads
+    assert "second.agent" in FakeFirestoreJsonState.saved_payloads[-1]["nodes"]
 
 
 def test_join_contract_lists_idle_opt_in_optional_field(tmp_path: Path):

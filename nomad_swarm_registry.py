@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from nomad_firestore_state import FirestoreJsonState
 from nomad_morphology_router import route_objectives
 from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
 from nomad_state_paths import configured_state_dir, state_file
@@ -497,6 +498,7 @@ class SwarmJoinRegistry:
             self.path = state_file(Path("nomad_swarm_registry.json"), env_name="NOMAD_SWARM_REGISTRY_PATH")
         else:
             self.path = Path(self.REGISTRY_PATH)
+        self._remote_state = FirestoreJsonState.from_env(scope="swarm_registry")
         self._payload = self._load()
 
     def public_manifest(self, *, base_url: str) -> dict[str, Any]:
@@ -910,6 +912,13 @@ class SwarmJoinRegistry:
         return {
             "schema": "nomad_swarm_registry_summary.v1",
             "registry_path": str(self.path),
+            "registry_storage": {
+                "schema": "nomad.swarm_registry_storage.v1",
+                "local_path": str(self.path),
+                "remote_backend": getattr(self._remote_state, "backend_name", "local_only") if self._remote_state else "local_only",
+                "restart_durable": bool(self._remote_state),
+                "remote_scope": "swarm_registry" if self._remote_state else "",
+            },
             "connected_agents": len(nodes),
             "known_agents": len(nodes) + len(prospects),
             "prospect_agents": len(prospects),
@@ -2586,15 +2595,14 @@ class SwarmJoinRegistry:
         )
         return prospects
 
-    def _load(self) -> dict[str, Any]:
-        if not self.path.exists():
-            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception:
-            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
+    @staticmethod
+    def _empty_payload() -> dict[str, Any]:
+        return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
+
+    @classmethod
+    def _normalize_registry_payload(cls, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            return {"nodes": {}, "dormant_nodes": {}, "prospects": {}, "join_events": [], "updated_at": ""}
+            return cls._empty_payload()
         if not isinstance(payload.get("nodes"), dict):
             payload["nodes"] = {}
         if not isinstance(payload.get("dormant_nodes"), dict):
@@ -2605,8 +2613,30 @@ class SwarmJoinRegistry:
             payload["join_events"] = []
         return payload
 
+    def _load(self) -> dict[str, Any]:
+        if self._remote_state is not None:
+            try:
+                remote_payload = self._remote_state.load()
+            except Exception:
+                remote_payload = None
+            if isinstance(remote_payload, dict):
+                return self._normalize_registry_payload(remote_payload)
+        if not self.path.exists():
+            return self._empty_payload()
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return self._empty_payload()
+        return self._normalize_registry_payload(payload)
+
     def _save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self._payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self._remote_state is not None:
+            try:
+                self._remote_state.save(self._payload)
+            except Exception:
+                pass
 
     def _prune_stale_nodes(self) -> None:
         ttl_minutes = max(1, DEFAULT_NODE_TTL_MINUTES)
