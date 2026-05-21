@@ -43,6 +43,7 @@ nomad_mission_control_state.json
 nomad_*_state.json
 nomad_*_state.jsonl
 nomad_*_ledger.jsonl
+nomad_external_value_public_snapshots/
 .nomad_*
 recruitment_wave_history.jsonl
 public/downloads/build/

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any, Callable
 
 from nomad_external_value import STAGE_INDEX, _ledger_path, _read_events
+from nomad_hackerone_scout import fetch_hackerone_report_status
 
 
 StatusFetcher = Callable[[dict[str, Any]], dict[str, Any]]
@@ -95,6 +96,48 @@ def parse_github_external_ref(external_id: str, work_url: str = "") -> dict[str,
         }
 
     return {"ok": False, "kind": "unknown", "external_id": eid, "work_url": url}
+
+
+def parse_hackerone_external_ref(external_id: str, work_url: str = "") -> dict[str, Any]:
+    eid = _text(external_id, 260)
+    url = _text(work_url, 500)
+    match = re.match(r"^(?:h1|hackerone):[^:]+:([0-9]+)$", eid)
+    if match:
+        return {
+            "ok": True,
+            "kind": "hackerone_report",
+            "source": "hackerone",
+            "report_id": match.group(1),
+            "external_id": eid,
+            "work_url": url or f"https://hackerone.com/reports/{match.group(1)}",
+        }
+    url_match = re.search(r"hackerone\.com/reports/([0-9]+)", url)
+    if url_match:
+        return {
+            "ok": True,
+            "kind": "hackerone_report",
+            "source": "hackerone",
+            "report_id": url_match.group(1),
+            "external_id": eid,
+            "work_url": url,
+        }
+    return {"ok": False, "kind": "unknown", "external_id": eid, "work_url": url}
+
+
+def parse_external_value_ref(external_id: str, work_url: str = "") -> dict[str, Any]:
+    h1 = parse_hackerone_external_ref(external_id, work_url)
+    if h1.get("ok"):
+        return h1
+    gh = parse_github_external_ref(external_id, work_url)
+    if gh.get("ok"):
+        gh["source"] = "github"
+    return gh
+
+
+def fetch_hackerone_status(ref: dict[str, Any]) -> dict[str, Any]:
+    if not ref.get("ok") or ref.get("kind") != "hackerone_report" or not ref.get("report_id"):
+        return {"ok": False, "source": "hackerone", "error": "unparseable_hackerone_ref"}
+    return fetch_hackerone_report_status(str(ref.get("report_id") or ""))
 
 
 def fetch_github_status(ref: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +380,18 @@ def propose_external_value_transition(event: dict[str, Any], status: dict[str, A
     if not status.get("ok"):
         return {"proposed_stage": "", "reason": str(status.get("error") or "status_unavailable"), "confidence": 0.0}
 
+    if status.get("source") == "hackerone":
+        if _truthy(status.get("hackerone_rejected")):
+            return {"proposed_stage": "", "reason": "hackerone_rejected_or_non_payable", "confidence": 0.82}
+        if current == "submitted":
+            if _truthy(status.get("hackerone_validated")):
+                return {"proposed_stage": "approved", "reason": "hackerone_triaged_or_validated", "confidence": 0.84}
+            return {"proposed_stage": "", "reason": "awaiting_hackerone_triage", "confidence": 0.28}
+        if current == "approved":
+            if _truthy(status.get("hackerone_resolved")) or status.get("bounty_awarded_at"):
+                return {"proposed_stage": "merged", "reason": "hackerone_resolved_or_bounty_awarded_monotonic_step", "confidence": 0.80}
+            return {"proposed_stage": "", "reason": "hackerone_approved_not_resolved_or_awarded", "confidence": 0.42}
+
     merged = _truthy(status.get("merged"))
     owner_acceptance = _truthy(status.get("owner_acceptance_signal") or status.get("maintainer_accepted"))
     payment_receipt = _truthy(status.get("payment_receipt"))
@@ -446,6 +501,17 @@ def build_external_value_followup(
         }
 
     if current == "submitted":
+        if status.get("source") == "hackerone":
+            return {
+                "action": "await_hackerone_triage",
+                "priority": 0.66,
+                "target_stage": "approved",
+                "external_id": eid,
+                "work_url": work_url,
+                "reason": reason or "awaiting_hackerone_triage",
+                "required_evidence": ["hackerone_state_triaged_or_resolved", "triaged_at_or_program_activity"],
+                "machine_instruction": "watch_hackerone_read_only_do_not_resubmit_duplicate_report",
+            }
         if review_state in {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}:
             priority = 0.61
             action = "await_program_owner_acceptance"
@@ -529,18 +595,25 @@ def reconcile_external_value_ledger(
     ledger_path: str | None = None,
     fetch_status: StatusFetcher | None = None,
     live_github: bool = False,
+    live_hackerone: bool = False,
     limit: int = 40,
 ) -> dict[str, Any]:
     path = _ledger_path(ledger_path)
     latest = list(_latest_by_external(_read_events(path)).values())[-max(1, min(int(limit or 40), 200)) :]
-    fetcher = fetch_status or (fetch_github_status if live_github else None)
     observations: list[dict[str, Any]] = []
     proposals: list[dict[str, Any]] = []
     followups: list[dict[str, Any]] = []
 
     for event in latest:
-        ref = parse_github_external_ref(str(event.get("external_id") or ""), str(event.get("work_url") or ""))
-        status = fetcher(ref) if fetcher else {"ok": False, "source": "local", "error": "live_status_not_requested"}
+        ref = parse_external_value_ref(str(event.get("external_id") or ""), str(event.get("work_url") or ""))
+        if fetch_status:
+            status = fetch_status(ref)
+        elif ref.get("source") == "github" and live_github:
+            status = fetch_github_status(ref)
+        elif ref.get("source") == "hackerone" and live_hackerone:
+            status = fetch_hackerone_status(ref)
+        else:
+            status = {"ok": False, "source": ref.get("source") or "local", "error": "live_status_not_requested"}
         proposal = propose_external_value_transition(event, status)
         followup = build_external_value_followup(event, status, proposal)
         row = {
@@ -579,6 +652,7 @@ def reconcile_external_value_ledger(
         "generated_at": _iso_now(),
         "ledger_path": str(path),
         "live_github": bool(live_github),
+        "live_hackerone": bool(live_hackerone),
         "observed_count": len(observations),
         "proposal_count": len(proposals),
         "followup_count": len(followups),

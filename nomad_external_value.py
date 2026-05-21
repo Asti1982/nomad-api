@@ -279,9 +279,11 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
         "well_known_url": f"{root}/.well-known/nomad-external-value.json",
         "pipeline": [
             "bounty_surface",
+            "hackerone_scope_scout",
             "finding",
             "patch",
             "pr",
+            "security_report",
             "bounty_claim",
             "external_approval",
             "nomad_proof_receipt",
@@ -289,6 +291,7 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
         "role_split": {
             "human_operator": "external_work_prs_reviews_claims_merge_payment_followup",
             "cursor_agent": "scout_diff_miner_reproducer_nomad_integrator_watchdog_no_public_claims_without_go",
+            "local_security_scout": "read_only_hackerone_scope_review_no_submit_without_verified_reproducer_and_operator_go",
         },
         "next": [
             {"rel": "post_transition", "method": "POST", "href": f"{root}/swarm/external-value"},
@@ -300,6 +303,13 @@ def build_external_value_surface(*, base_url: str) -> dict[str, Any]:
             "signature_alg": "Ed25519",
             "private_key_policy": "local_only_never_render_never_public_json",
             "verification_rule": "verify_signature_over_canonical_json_payload_before_upgrading_external_value_stage",
+        },
+        "local_scout_contracts": {
+            "hackerone_scope_scout_cli": "python nomad_cli.py hackerone-scout --handle <program> --json",
+            "hackerone_reconcile_cli": "python nomad_cli.py external-value reconcile --live-hackerone --json",
+            "credential_policy": "HACKERONE_API_IDENTIFIER and HACKERONE_API_TOKEN stay local; public surfaces emit only presence, lengths, and proof digests",
+            "submit_gate": "no_hackerone_submit_without_structured_scope_local_reproducer_verified_digest_and_operator_confirmation",
+            "paid_gate": "duplicate_or_triaged_reports_are_not_revenue_until_positive_bounty_receipt_exists",
         },
         "receipt_only_invariant": build_receipt_only_revenue_invariant(base_url=root, summary=summarize_external_value_ledger()),
     }

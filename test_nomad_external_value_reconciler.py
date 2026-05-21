@@ -2,7 +2,9 @@ from nomad_external_value import append_external_value_event
 from nomad_external_value_reconciler import (
     _comment_acceptance_signals,
     build_external_value_followup,
+    parse_external_value_ref,
     parse_github_external_ref,
+    parse_hackerone_external_ref,
     propose_external_value_transition,
     reconcile_external_value_ledger,
 )
@@ -49,6 +51,19 @@ def test_parse_github_issue_comment_external_ref_from_url():
     assert ref["repo"] == "Scottcjn/rustchain-bounties"
     assert ref["number"] == 2819
     assert ref["comment_id"] == 4422232793
+
+
+def test_parse_hackerone_external_ref_from_id_and_url():
+    ref = parse_hackerone_external_ref("h1:zabbix:3740761", "")
+    assert ref["ok"]
+    assert ref["kind"] == "hackerone_report"
+    assert ref["source"] == "hackerone"
+    assert ref["report_id"] == "3740761"
+
+    from_url = parse_external_value_ref("", "https://hackerone.com/reports/3740761")
+    assert from_url["ok"]
+    assert from_url["source"] == "hackerone"
+    assert from_url["report_id"] == "3740761"
 
 
 def test_comment_acceptance_distinguishes_soft_ack_from_owner_acceptance():
@@ -230,6 +245,60 @@ def test_propose_review_waits_for_owner_acceptance():
     assert go["proposed_stage"] == "approved"
 
 
+def test_hackerone_triage_proposes_approved_but_not_paid():
+    event = {"stage": "submitted"}
+
+    proposal = propose_external_value_transition(
+        event,
+        {
+            "ok": True,
+            "source": "hackerone",
+            "state": "triaged",
+            "hackerone_validated": True,
+            "payment_receipt": False,
+            "amount_usd": 0,
+        },
+    )
+
+    assert proposal["proposed_stage"] == "approved"
+    assert proposal["reason"] == "hackerone_triaged_or_validated"
+
+    paid_wait = propose_external_value_transition(
+        {"stage": "merged"},
+        {
+            "ok": True,
+            "source": "hackerone",
+            "state": "resolved",
+            "payment_receipt": False,
+            "amount_usd": 0,
+        },
+    )
+    assert paid_wait["proposed_stage"] == ""
+    assert paid_wait["reason"] == "merged_but_no_payment_receipt"
+
+
+def test_reconcile_hackerone_report_with_mock_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev_h1.jsonl"))
+    eid = "h1:zabbix:3740761"
+    assert _record(eid, "found")["ok"]
+    assert _record(eid, "submitted")["ok"]
+
+    out = reconcile_external_value_ledger(
+        fetch_status=lambda ref: {
+            "ok": True,
+            "source": "hackerone",
+            "report_id": ref["report_id"],
+            "state": "triaged",
+            "hackerone_validated": True,
+        }
+    )
+
+    assert out["proposal_count"] == 1
+    assert out["proposals"][0]["ref"]["source"] == "hackerone"
+    assert out["proposals"][0]["proposal"]["proposed_stage"] == "approved"
+    assert out["top_followup"]["action"] == "record_monotonic_stage_candidate"
+
+
 def test_cli_external_value_reconcile_json(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev4.jsonl"))
     assert _record("gh_review:Scottcjn/Rustchain#4576:4265850272", "found")["ok"]
@@ -240,3 +309,4 @@ def test_cli_external_value_reconcile_json(tmp_path, monkeypatch):
     assert out["schema"] == "nomad.external_value_reconcile.v1"
     assert out["observed_count"] == 1
     assert out["live_github"] is False
+    assert out["live_hackerone"] is False

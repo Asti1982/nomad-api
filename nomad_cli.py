@@ -1747,6 +1747,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("taskbounty-scout is handled directly in run_once")
     if command == "taskbounty-access-gate":
         raise ValueError("taskbounty-access-gate is handled directly in run_once")
+    if command == "hackerone-scout":
+        raise ValueError("hackerone-scout is handled directly in run_once")
     if command == "superteam-scout":
         raise ValueError("superteam-scout is handled directly in run_once")
     if command == "worker-invoice":
@@ -2279,6 +2281,7 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
 
                 result = reconcile_external_value_ledger(
                     live_github=bool(getattr(args, "live_github", False)),
+                    live_hackerone=bool(getattr(args, "live_hackerone", False)),
                     limit=int(getattr(args, "limit", 40) or 40),
                 )
             elif sub == "sign-proof":
@@ -3111,6 +3114,13 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
 
             result = probe_taskbounty_access_gate(
                 task_id=str(getattr(args, "task_id", "") or "").strip(),
+                api_base=(getattr(args, "api_base", None) or "").strip() or None,
+            )
+        elif args.command == "hackerone-scout":
+            from nomad_hackerone_scout import build_hackerone_scope_scout
+
+            result = build_hackerone_scope_scout(
+                handle=str(getattr(args, "handle", "") or "").strip() or "zabbix",
                 api_base=(getattr(args, "api_base", None) or "").strip() or None,
             )
         elif args.command == "superteam-scout":
@@ -4029,6 +4039,7 @@ def build_parser() -> argparse.ArgumentParser:
     external_value.add_argument("--verifier-trace-digest", default="", help="Verifier trace digest (required after found).")
     external_value.add_argument("--amount-usd", type=float, default=0.0, help="Revenue USD (paid stage only).")
     external_value.add_argument("--live-github", action="store_true", help="For reconcile: read GitHub state through local gh.")
+    external_value.add_argument("--live-hackerone", action="store_true", help="For reconcile: read HackerOne report state through the configured H1 API.")
     external_value.add_argument("--limit", type=int, default=40, help="For reconcile: latest external ids to inspect.")
     external_value.add_argument("--payout-ref", default="", help="Public payout reference to bind into sign-proof.")
     external_value.add_argument("--wallet-path", default="", help="Local wallet path override for sign-proof.")
@@ -4269,6 +4280,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     taskbounty_access_gate.add_argument("--task-id", required=True, help="TaskBounty task UUID to probe.")
     taskbounty_access_gate.add_argument("--api-base", default="", help="Override TaskBounty API base URL.")
+    hackerone_scout = subparsers.add_parser(
+        "hackerone-scout",
+        help="Safe HackerOne scope scout: credential metadata, structured scopes, and no-submit value gate.",
+    )
+    hackerone_scout.add_argument("--handle", default="zabbix", help="HackerOne program handle to inspect.")
+    hackerone_scout.add_argument("--api-base", default="", help="Override HackerOne API base URL.")
     superteam_scout = subparsers.add_parser(
         "superteam-scout",
         help="Read-only Superteam Earn agent listing scout: deadline/access/claim gates before submission.",
