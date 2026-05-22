@@ -41,6 +41,8 @@ def test_work_exchange_onboarding_exposes_external_worker_commands():
     assert out["routes"]["external_worker_opportunity"].endswith("/.well-known/nomad-external-worker-opportunity.json")
     assert "OBLIGATION_ID_HERE" in out["copy_paste_start"]["windows_cmd"]
     assert "--obligation-id OBLIGATION_ID_HERE" in out["copy_paste_start"]["python_portable"]
+    assert out["external_worker_start"]["source_tag_required"] == "external_provider"
+    assert "source_tag=external_provider" in out["external_worker_start"]["lease_get"]
     assert out["safety_contract"]["arbitrary_code_execution"] is False
 
 
@@ -57,6 +59,7 @@ def test_external_worker_opportunity_is_short_join_packet():
     assert out["ranked_onramps"][0]["id"] == "agent_has_blocker"
     assert out["guardrails"]["requires_token"] is False
     assert out["guardrails"]["requires_chat_platform"] is False
+    assert "source_tag=external_provider" in out["copy_paste"]["get_only_external_worker"]
     assert out["routes"]["agent_acquisition_bandit"].endswith("/.well-known/nomad-agent-acquisition-bandit.json")
     assert out["routes"]["agent_acquisition_events"].endswith("/swarm/agent-acquisition/events")
     assert out["measurement_contract"]["high_reward_events_require_proof_digest"] == [

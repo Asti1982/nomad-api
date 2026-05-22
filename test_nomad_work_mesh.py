@@ -10,7 +10,24 @@ def test_state_status_uses_configured_state_dir(monkeypatch, tmp_path):
     assert out["schema"] == "nomad.state_status.v1"
     assert out["state_dir_configured"] is True
     assert out["writable"] is True
+    assert out["process_memory"]["schema"] == "nomad.process_memory_status.v1"
     assert out["recommended_env"]["NOMAD_STATE_DIR"] == "/var/data/nomad"
+    names = {item["name"] for item in out["state_files"]}
+    assert "nomad_swarm_registry.json" in names
+    assert "nomad_work_exchange_ledger.jsonl" in names
+
+
+def test_state_status_flags_tmp_render_retention_blocker(monkeypatch, tmp_path):
+    tmp_state = tmp_path / "tmp" / "nomad-state"
+    monkeypatch.setenv("NOMAD_STATE_DIR", str(tmp_state))
+    monkeypatch.setenv("RENDER", "true")
+    monkeypatch.delenv("NOMAD_STATE_BACKEND", raising=False)
+    monkeypatch.delenv("NOMAD_SWARM_REGISTRY_BACKEND", raising=False)
+
+    out = build_state_status(base_url="https://nomad.example")
+
+    assert out["render_runtime"] is True
+    assert "render_state_ephemeral_attach_disk_or_enable_firestore" in out["retention_blockers"]
 
 
 def _mesh():

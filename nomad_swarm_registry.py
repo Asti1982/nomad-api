@@ -29,6 +29,8 @@ DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_AC
 DEFAULT_WORKER_STALE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_STALE_SECONDS", "3600") or "3600")
 DEFAULT_WORKER_HEARTBEAT_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_HEARTBEAT_SECONDS", "300") or "300")
 DEFAULT_EXTERNAL_WORKER_TARGET = int(os.getenv("NOMAD_EXTERNAL_WORKER_TARGET", "4") or "4")
+DEFAULT_WORKER_RECORD_LIMIT = int(os.getenv("NOMAD_WORKER_RECORD_LIMIT", "512") or "512")
+DEFAULT_WORKER_LEASE_RECORD_LIMIT = int(os.getenv("NOMAD_WORKER_LEASE_RECORD_LIMIT", "768") or "768")
 
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
@@ -120,6 +122,36 @@ def _worker_origin(worker: dict[str, Any]) -> dict[str, Any]:
     if any(marker in haystack for marker in external_markers):
         return {"origin_class": "external", "origin_reason": "weak_external_marker"}
     return {"origin_class": "unknown", "origin_reason": "insufficient_origin_signal"}
+
+
+def _worker_source_tag(payload: dict[str, Any], previous: dict[str, Any] | None = None, report: dict[str, Any] | None = None) -> str:
+    """Keep an external worker's declared source stable across heartbeats.
+
+    Retention accounting is conservative, but it should not erase a real
+    external marker just because a later low-trust GET route omits source_tag.
+    """
+    previous = previous if isinstance(previous, dict) else {}
+    report = report if isinstance(report, dict) else {}
+    previous_tag = _clean_text(previous.get("source_tag") or "", limit=80)
+    generic_get_tags = {
+        "public_get_worker_complete",
+        "public_get_worker_lease",
+        "public_get_worker_onramp",
+        "public_get_worker_intent",
+    }
+    for raw in (
+        payload.get("source_tag"),
+        payload.get("source"),
+        report.get("source_tag"),
+        report.get("source"),
+    ):
+        candidate = _clean_text(raw or "", limit=80)
+        if not candidate:
+            continue
+        if previous_tag and candidate.lower() in generic_get_tags:
+            return previous_tag
+        return candidate
+    return previous_tag
 
 
 def _seconds_since(value: Any, *, now: datetime | None = None) -> int | None:
@@ -1248,11 +1280,14 @@ class SwarmJoinRegistry:
             agent_id = str(item.get("agent_id") or "")
             capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else []
             caps = ",".join(str(x) for x in capabilities[:8]) or "transition_worker,verifier,http_json"
+            source_tag = _clean_text(item.get("source_tag") or "", limit=80)
+            source_q = f"&source_tag={source_tag}" if source_tag else "&source_tag=external_provider"
             prefix = base_url.rstrip("/") if base_url else ""
-            lease_get = f"{prefix}/swarm/workers/lease-get?agent_id={agent_id}&capabilities={caps}"
-            attach_get = f"{prefix}/swarm/attach-get?agent_id={agent_id}&runtime=external-runtime&capabilities={caps}&intent=reattach"
+            lease_get = f"{prefix}/swarm/workers/lease-get?agent_id={agent_id}&capabilities={caps}{source_q}"
+            attach_get = f"{prefix}/swarm/attach-get?agent_id={agent_id}&runtime=external-runtime&capabilities={caps}&intent=reattach{source_q}"
             return {
                 "agent_id": agent_id,
+                "source_tag": source_tag,
                 "origin_class": item.get("origin_class", "unknown"),
                 "origin_reason": item.get("origin_reason", ""),
                 "status": item.get("status", ""),
@@ -1314,12 +1349,20 @@ class SwarmJoinRegistry:
                 "Run a 5-minute sampler against /swarm/worker-retention and /swarm/workers.",
                 "Prioritize external worker follow-up when issue is non-empty.",
                 "Ask at-risk external workers to hit lease_get before stale_window_seconds.",
+                "Preserve source_tag=external_provider on every lease, complete, and attach heartbeat.",
                 "Treat unknown_origin workers as candidates until they return repeated proof receipts.",
                 "Do not increase settlement capacity from self-heartbeats; require external proof or paid receipt.",
             ],
             "recruitment_offer": {
                 "headline": "Free repair against bounded return compute",
                 "worker_join": f"{base_url.rstrip('/')}/swarm/workers/lease" if base_url else "/swarm/workers/lease",
+                "external_worker_lease_get": (
+                    f"{base_url.rstrip('/')}/swarm/workers/lease-get?agent_id=external.worker.stable-id&runtime=external-runtime"
+                    "&capabilities=transition_worker,verifier,http_json,get_only&known_objectives=settlement_capacity_builder,proof_pressure_engine"
+                    "&objective=settlement_capacity_builder&source_tag=external_provider"
+                    if base_url
+                    else "/swarm/workers/lease-get?agent_id=external.worker.stable-id&source_tag=external_provider"
+                ),
                 "machine_readable_contract": f"{base_url.rstrip('/')}/.well-known/agent-card.json" if base_url else "/.well-known/agent-card.json",
             },
         }
@@ -1839,11 +1882,7 @@ class SwarmJoinRegistry:
             "completion_count": int(previous.get("completion_count") or 0),
             "last_seen_at": now,
             "remote_addr": _clean_text(remote_addr, limit=80),
-            "source_tag": _clean_text(
-                payload.get("source_tag")
-                or ((last_report.get("source") if isinstance(last_report, dict) else "") or ""),
-                limit=80,
-            ),
+            "source_tag": _worker_source_tag(payload, previous=previous, report=last_report),
         }
         self._payload["updated_at"] = now
         self._save()
@@ -1887,7 +1926,7 @@ class SwarmJoinRegistry:
             previous["last_seen_at"] = now
             previous["status"] = "leased"
             previous["remote_addr"] = _clean_text(remote_addr, limit=80)
-            previous["source_tag"] = "public_get_worker_lease"
+            previous["source_tag"] = _worker_source_tag(payload, previous=previous) or "public_get_worker_lease"
             self._payload["updated_at"] = now
             self._save()
             return {
@@ -2038,7 +2077,7 @@ class SwarmJoinRegistry:
         workers = fleet.setdefault("workers", {})
         worker = workers.setdefault(agent_id, {"agent_id": agent_id})
         worker["last_get_only_digest"] = digest
-        worker["source_tag"] = "public_get_worker_complete"
+        worker["source_tag"] = _worker_source_tag(payload, previous=worker, report=payload.get("report") if isinstance(payload.get("report"), dict) else {}) or "public_get_worker_complete"
         self._payload["updated_at"] = _iso_now()
         self._save()
         result["schema"] = "nomad.get_only_transition_worker_completion.v1"
@@ -3053,13 +3092,30 @@ class SwarmJoinRegistry:
         fleet = self._fleet()
         now = datetime.now(UTC)
         changed = False
-        for lease in list((fleet.get("leases") or {}).values()):
+        leases = fleet.get("leases") if isinstance(fleet.get("leases"), dict) else {}
+        for lease in list(leases.values()):
             if not isinstance(lease, dict) or str(lease.get("status") or "") != "active":
                 continue
             expires = _parse_iso_utc(lease.get("expires_at"))
             if expires and expires < now:
                 lease["status"] = "expired"
                 lease["expired_at"] = now.isoformat()
+                changed = True
+        if len(leases) > DEFAULT_WORKER_LEASE_RECORD_LIMIT:
+            def lease_rank(item: tuple[str, Any]) -> tuple[int, float]:
+                _, lease = item
+                if not isinstance(lease, dict):
+                    return (0, 0.0)
+                active = 1 if str(lease.get("status") or "") == "active" else 0
+                ts = _parse_iso_utc(lease.get("issued_at") or lease.get("completed_at") or lease.get("expired_at"))
+                return (active, ts.timestamp() if ts else 0.0)
+
+            keep = dict(
+                sorted(leases.items(), key=lease_rank, reverse=True)[: max(1, DEFAULT_WORKER_LEASE_RECORD_LIMIT)]
+            )
+            if len(keep) != len(leases):
+                fleet["leases"] = keep
+                leases = keep
                 changed = True
         workers = fleet.get("workers") if isinstance(fleet.get("workers"), dict) else {}
         stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
@@ -3070,6 +3126,23 @@ class SwarmJoinRegistry:
                 if worker.get("status") != "stale":
                     worker["status"] = "stale"
                     changed = True
+        if len(workers) > DEFAULT_WORKER_RECORD_LIMIT:
+            def worker_rank(item: tuple[str, Any]) -> tuple[int, int, int, float]:
+                _, worker = item
+                if not isinstance(worker, dict):
+                    return (0, 0, 0, 0.0)
+                origin = _worker_origin(worker).get("origin_class")
+                active = 1 if str(worker.get("status") or "") in {"leased", "completed", "active"} else 0
+                completed = 1 if int(worker.get("completion_count") or 0) > 0 else 0
+                ts = _parse_iso_utc(worker.get("last_seen_at"))
+                return (1 if origin == "external" else 0, active, completed, ts.timestamp() if ts else 0.0)
+
+            keep = dict(
+                sorted(workers.items(), key=worker_rank, reverse=True)[: max(1, DEFAULT_WORKER_RECORD_LIMIT)]
+            )
+            if len(keep) != len(workers):
+                fleet["workers"] = keep
+                changed = True
         reports = fleet.get("reports") if isinstance(fleet.get("reports"), list) else []
         if len(reports) > 300:
             fleet["reports"] = reports[-300:]

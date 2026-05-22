@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -151,8 +152,13 @@ def _error(error: str, message: str, *, hints: list[str] | None = None) -> dict[
 def _read_events(ledger_path: Path, *, limit_lines: int = MAX_LEDGER_LINES) -> list[dict[str, Any]]:
     if not ledger_path.exists():
         return []
-    lines = ledger_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    tail = lines[-max(1, min(len(lines), int(limit_lines))) :]
+    tail: deque[str] = deque(maxlen=max(1, int(limit_lines)))
+    try:
+        with ledger_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                tail.append(line)
+    except OSError:
+        return []
     events: list[dict[str, Any]] = []
     for line in tail:
         line = line.strip()
@@ -346,6 +352,7 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
         },
         "downloadable_worker": onboarding.get("downloads", {}),
         "copy_paste_start": onboarding.get("copy_paste_start", {}),
+        "external_worker_start": onboarding.get("external_worker_start", {}),
         "starter_offer": onboarding.get("starter_offer", {}),
         "ledger_summary": ledger_summary,
         "machine_instruction": "offer_free_solution_only_after_explicit_compute_barter_acceptance_then_decrease_balance_with_verified_return_work",
@@ -435,6 +442,28 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
                 "docker run --rm -e NOMAD_WORK_EXCHANGE_OBLIGATION_ID=OBLIGATION_ID_HERE "
                 "nomad-work-exchange-worker"
             ),
+        },
+        "external_worker_start": {
+            "purpose": "register_and_keep_one_external_worker_visible_without_tokens_or_chat",
+            "source_tag_required": "external_provider",
+            "lease_get": (
+                f"{root or '<BASE_URL>'}/swarm/workers/lease-get"
+                "?agent_id=external.worker.STABLE_ID"
+                "&runtime=external-runtime"
+                "&capabilities=transition_worker,verifier,http_json,get_only"
+                "&known_objectives=settlement_capacity_builder,proof_pressure_engine,protocol_drift_scan"
+                "&objective=settlement_capacity_builder"
+                "&source_tag=external_provider"
+            ),
+            "attach_get": (
+                f"{root or '<BASE_URL>'}/swarm/attach-get"
+                "?agent_id=external.worker.STABLE_ID"
+                "&runtime=external-runtime"
+                "&capabilities=transition_worker,verifier,http_json,get_only"
+                "&can_run_loop=1&can_verify=1&intent=join"
+                "&source_tag=external_provider"
+            ),
+            "heartbeat_rule": "repeat lease_get about every 300 seconds; preserve the same agent_id and source_tag",
         },
         "safety_contract": {
             "requires_explicit_obligation_id": True,
@@ -561,6 +590,13 @@ def build_external_worker_opportunity(
             "python_general_worker": (
                 f"curl -L -o nomad_transition_worker.py {_u(base_url, '/downloads/nomad_transition_worker.py')} && "
                 f"python nomad_transition_worker.py --base-url {root or '<BASE_URL>'} --swarm-surplus --loop --cycles 0"
+            ),
+            "get_only_external_worker": (
+                f"curl -s \"{_u(base_url, '/swarm/workers/lease-get')}"
+                "?agent_id=external.worker.STABLE_ID&runtime=external-runtime"
+                "&capabilities=transition_worker,verifier,http_json,get_only"
+                "&known_objectives=settlement_capacity_builder,proof_pressure_engine,protocol_drift_scan"
+                "&objective=settlement_capacity_builder&source_tag=external_provider\""
             ),
             "docker_return_compute": (
                 f"curl -L -o nomad_work_exchange_worker.Dockerfile "

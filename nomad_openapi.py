@@ -3377,6 +3377,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         {"name": "can_run_loop", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
                         {"name": "can_verify", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
                         {"name": "objective", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "source_tag", "in": "query", "schema": {"type": "string", "example": "external_provider"}, "required": False},
                         {"name": "note", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "intent", "in": "query", "schema": {"type": "string", "example": "join"}, "required": False},
                     ],
@@ -3631,6 +3632,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         {"name": "capabilities", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "can_run_loop", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
                         {"name": "can_verify", "in": "query", "schema": {"type": "integer", "enum": [0, 1]}, "required": False},
+                        {"name": "source_tag", "in": "query", "schema": {"type": "string", "example": "external_provider"}, "required": False},
                         {"name": "intent", "in": "query", "schema": {"type": "string", "example": "join"}, "required": False},
                     ],
                     "responses": {
@@ -3741,6 +3743,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         {"name": "capabilities", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "known_objectives", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "objective", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "source_tag", "in": "query", "schema": {"type": "string", "example": "external_provider"}, "required": False},
                     ],
                     "responses": {
                         "202": {"description": "GET-only lease granted or replayed"},
@@ -3791,6 +3794,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                         {"name": "digest", "in": "query", "schema": {"type": "string"}, "required": True},
                         {"name": "status", "in": "query", "schema": {"type": "string"}, "required": False},
                         {"name": "note", "in": "query", "schema": {"type": "string"}, "required": False},
+                        {"name": "source_tag", "in": "query", "schema": {"type": "string", "example": "external_provider"}, "required": False},
                     ],
                     "responses": {
                         "200": {"description": "GET-only completion recorded or replayed"},

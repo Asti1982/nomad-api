@@ -2211,7 +2211,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path in {"/openapi.json", "/.well-known/openapi.json", "/openapi"}:
-            self._json_response(build_openapi_document(base_url=self._base_url()))
+            base = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"openapi:{base}",
+                    120,
+                    lambda: build_openapi_document(base_url=base),
+                ),
+                headers={"Cache-Control": "public, max-age=120"},
+            )
             return
 
         if parsed.path in {"/swarm/hello", "/ai", "/agent/hello", "/.well-known/nomad-ai.json"}:
@@ -6264,6 +6272,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             limit=96,
         )
         runtime = cls._clip_query_text(cls._query_one(query, "runtime", "get_only_cloud_ai"), limit=80)
+        source_tag = cls._clip_query_text(
+            cls._query_one(query, "source_tag", "")
+            or cls._query_one(query, "source", "")
+            or ("external_provider" if str(runtime or "").lower() not in {"", "get_only_cloud_ai", "local", "localhost"} else "public_get_worker_onramp"),
+            limit=80,
+        )
         capabilities = cls._query_csv(
             query,
             "capabilities",
@@ -6336,7 +6350,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "type": "public_get_worker_intent",
                 "deficit_filled": f"{objective or 'settlement_capacity_builder'}:0",
             },
-            "source_tag": "public_get_worker_onramp",
+            "source_tag": source_tag,
             "seeking": {
                 "mode": "new_objective_or_idle_work",
                 "return_digest": True,
@@ -6392,7 +6406,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             ],
             "offers": offer_items,
             "idle_opt_in": payload.get("idle_opt_in") or {},
-            "source_tag": "public_get_worker_onramp",
+            "source_tag": payload.get("source_tag") or "public_get_worker_onramp",
             "idempotency_key": f"get-only-worker-{idem}",
         }
 
@@ -6516,6 +6530,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             limit=96,
         )
         runtime = cls._clip_query_text(cls._query_one(query, "runtime", "get_only_cloud_ai"), limit=80)
+        source_tag = cls._clip_query_text(
+            cls._query_one(query, "source_tag", "")
+            or cls._query_one(query, "source", "")
+            or ("external_provider" if str(runtime or "").lower() not in {"", "get_only_cloud_ai", "local", "localhost"} else "public_get_worker_lease"),
+            limit=80,
+        )
         objective = cls._clip_query_text(
             cls._query_one(query, "proposed_objective", "")
             or cls._query_one(query, "objective", "settlement_capacity_builder"),
@@ -6559,7 +6579,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "machine_objective": objective,
                 "digest_or_verifier_trace": digest,
                 "note": note,
-                "source_tag": "public_get_worker_lease",
+                "source_tag": source_tag,
                 "public_get_only": True,
                 "private_data_sent": False,
             }
@@ -6572,7 +6592,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "objective": objective,
             "capabilities": capabilities,
             "lease_seconds": cls._query_int(query, "lease_seconds", 90, minimum=30, maximum=600),
-            "source_tag": "public_get_worker_lease",
+            "source_tag": source_tag,
             "get_only": True,
             "last_report": last_report,
         }
@@ -6600,6 +6620,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             limit=640,
         )
         status = cls._clip_query_text(cls._query_one(query, "status", "ok"), limit=32).lower()
+        source_tag = cls._clip_query_text(
+            cls._query_one(query, "source_tag", "")
+            or cls._query_one(query, "source", "")
+            or "public_get_worker_complete",
+            limit=80,
+        )
         ok = status not in {"fail", "failed", "error", "blocked", "false", "0"}
         proof_yield = cls._query_float(query, "proof_yield_per_minute", 1.0 if ok else 0.0)
         report = {
@@ -6610,7 +6636,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "proof_digest": digest,
             "verifier_trace_digest": cls._clip_query_text(cls._query_one(query, "trace_digest", digest), limit=160),
             "note": note,
-            "source_tag": "public_get_worker_complete",
+            "source_tag": source_tag,
             "public_get_only": True,
             "private_data_sent": False,
             "raw_secret_sent": False,
@@ -6628,6 +6654,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "digest": digest,
             "note": note,
             "get_only": True,
+            "source_tag": source_tag,
         }
 
     def _process_get_only_worker_lease(self, query: dict) -> tuple[dict, int]:

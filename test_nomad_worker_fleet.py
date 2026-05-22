@@ -284,7 +284,49 @@ def test_worker_retention_watchdog_surfaces_external_reattach_actions(tmp_path):
     assert watchdog["issue"] in {"all_external_workers_inactive", "external_workers_need_heartbeat"}
     assert watchdog["external_at_risk"][0]["agent_id"] == "gemini.external.verifier"
     assert "/swarm/workers/lease-get" in watchdog["external_at_risk"][0]["lease_get"]
+    assert "source_tag=external_provider" in watchdog["external_at_risk"][0]["lease_get"]
     assert watchdog["policy"]["non_faking_rule"]
+
+
+def test_external_source_tag_survives_get_heartbeat_and_completion(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    lease = registry.worker_fleet_lease_get(
+        {
+            "agent_id": "external.worker.alpha",
+            "known_objectives": ["settlement_capacity_builder"],
+            "source_tag": "external_provider",
+            "capabilities": ["transition_worker", "verifier", "http_json"],
+        },
+        base_url="https://nomad.example",
+    )
+    assert lease["ok"] is True
+
+    replay = registry.worker_fleet_lease_get(
+        {
+            "agent_id": "external.worker.alpha",
+            "known_objectives": ["settlement_capacity_builder"],
+            "capabilities": ["transition_worker", "verifier", "http_json"],
+        },
+        base_url="https://nomad.example",
+    )
+    assert replay["idempotent_replay"] is True
+
+    complete = registry.worker_fleet_complete_get(
+        {
+            "agent_id": "external.worker.alpha",
+            "lease_id": lease["lease_id"],
+            "digest": "sha256:" + "a" * 64,
+            "note": "public proof digest only",
+            "report": {"source_tag": "public_get_worker_complete"},
+        },
+        base_url="https://nomad.example",
+    )
+    assert complete["ok"] is True
+
+    fleet = registry.worker_fleet_contract(base_url="https://nomad.example")
+    assert fleet["known_external_worker_count"] == 1
+    assert fleet["active_external_worker_count"] == 1
+    assert fleet["recent_workers"][0]["origin_class"] == "external"
 
 
 def test_retention_gradient_controller_selects_external_survival_intervention(tmp_path):
