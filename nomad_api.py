@@ -234,6 +234,7 @@ from nomad_weekly_selection_event import build_weekly_selection_event
 from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
 from nomad_telegram_a2a import build_telegram_bot_to_bot_surface, route_telegram_bot_to_bot_message
+from nomad_sustainability_kernel import build_sustainability_kernel
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -736,6 +737,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_telegram_a2a(cls, *, base_url: str) -> dict:
         return build_telegram_bot_to_bot_surface(base_url=base_url)
+
+    @classmethod
+    def _build_sustainability_kernel(cls, *, base_url: str) -> dict:
+        return build_sustainability_kernel(
+            base_url=base_url,
+            work_exchange=cls._build_work_exchange(base_url=base_url),
+            referral_swarm=cls._build_referral_swarm(base_url=base_url),
+            machine_treasury=machine_treasury_snapshot(),
+            telegram_a2a=cls._build_telegram_a2a(base_url=base_url),
+            acquisition_bandit=cls._build_agent_acquisition_bandit(base_url=base_url),
+            retention_watchdog=cls._build_retention_watchdog_surface(base_url=base_url),
+        )
 
     @classmethod
     def _build_worker_market(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -1982,6 +1995,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "external_worker_opportunity": f"{b}/.well-known/nomad-external-worker-opportunity.json",
                     "agent_acquisition_bandit": f"{b}/.well-known/nomad-agent-acquisition-bandit.json",
                     "agent_acquisition_events": f"{b}/swarm/agent-acquisition/events",
+                    "sustainability_kernel": f"{b}/.well-known/nomad-sustainability-kernel.json",
+                    "sustainability_worker": f"{b}/downloads/nomad_sustainability_worker.py",
                     "a2a_get_relay": f"{b}/a2a/get",
                     "get_only_worker_onramp": f"{b}/swarm/hello",
                     "runtime_attach_get": f"{b}/swarm/attach-get",
@@ -2479,6 +2494,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/acquisition/ignite", "/.well-known/nomad-acquisition-ignition.json"}:
             self._json_response(self.__class__._build_acquisition_ignition(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/sustainability-kernel", "/.well-known/nomad-sustainability-kernel.json"}:
+            self._json_response(self.__class__._build_sustainability_kernel(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/resolution-ladder", "/.well-known/nomad-resolution-ladder.json"}:
             self._json_response(self.__class__._build_resolution_ladder(base_url=self._base_url()))

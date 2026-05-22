@@ -390,6 +390,22 @@ def test_agent_acquisition_bandit_route_is_public_json():
     assert payload["routes"]["events"] == "https://nomad.example/swarm/agent-acquisition/events"
 
 
+def test_sustainability_kernel_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-sustainability-kernel.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.sustainability_kernel.v1"
+    assert payload["downloads"]["sustainability_worker_py"] == "https://nomad.example/downloads/nomad_sustainability_worker.py"
+    assert "fake_pledges_or_dummy_tx_hashes" in payload["hard_no"]
+
+
 def test_retention_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -851,6 +867,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-first-sales.json" in doc["paths"]
     assert "/swarm/acquisition/ignite" in doc["paths"]
     assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
+    assert "/swarm/sustainability-kernel" in doc["paths"]
+    assert "/.well-known/nomad-sustainability-kernel.json" in doc["paths"]
     assert "/swarm/job-channels" in doc["paths"]
     assert "/.well-known/nomad-job-channels.json" in doc["paths"]
     assert "/swarm/external-value" in doc["paths"]

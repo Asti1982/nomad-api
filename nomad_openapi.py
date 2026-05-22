@@ -1955,6 +1955,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/sustainability-kernel": {
+                "get": {
+                    "summary": "Combined sustainability kernel joining return-compute, proof pledges, owned referrals, and opt-in A2A transport",
+                    "operationId": "getSustainabilityKernel",
+                    "responses": {
+                        "200": {"description": "Sustainability kernel", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-sustainability-kernel.json": {
+                "get": {
+                    "summary": "Alias of /swarm/sustainability-kernel",
+                    "operationId": "getSustainabilityKernelWellKnown",
+                    "responses": {
+                        "200": {"description": "Sustainability kernel", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/shadow-harvest": {
                 "get": {
                     "summary": "Local dirty-worktree harvest contract for proof-gated AGP shadow candidates",
