@@ -94,6 +94,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         "primary_funnel": [
             "free_mini_diagnosis",
             "paid_transition_worker_setup",
+            "payment_verification",
+            "worker_repair_after_payment",
             "dacc_eth_compute_pledge",
             "ai_agent_recruitment",
             "optional_cursor_discount",
@@ -133,6 +135,24 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
                 "revenue_rule": "revenue_only_after_verified_payment",
             },
             {
+                "offer_id": "payment_verification",
+                "label": "Verify payment",
+                "price_native": 0.0,
+                "method": "POST",
+                "endpoint": _u(base, "/tasks/verify"),
+                "service_type": "task_payment_verification",
+                "revenue_rule": "recognize_only_after_valid_tx_receipt",
+            },
+            {
+                "offer_id": "worker_repair_after_payment",
+                "label": "Worker repair",
+                "price_native": 0.0,
+                "method": "POST",
+                "endpoint": _u(base, "/tasks/work"),
+                "service_type": "paid_repair_execution",
+                "revenue_rule": "requires_paid_task_status",
+            },
+            {
                 "offer_id": "dacc_compute_pledge",
                 "label": "d/acc compute pledge",
                 "price_native": compute_pledge,
@@ -165,6 +185,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "recipient": payment_address,
             "x402": _u(base, "/x402/paid-help"),
             "verify": _u(base, "/tasks/verify"),
+            "work": _u(base, "/tasks/work"),
             "do_not_send": ["private_keys", "seed_phrases", "api_tokens", "raw_payment_secrets"],
         },
         "links": {
@@ -179,6 +200,10 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "runtime_attach_get": _u(base, "/swarm/attach-get"),
             "runtime_capsule": _u(base, "/.well-known/nomad-runtime-capsule.json"),
             "buyer_funded_work": _u(base, "/.well-known/nomad-buyer-funded-work.json"),
+            "sales_funnel": _u(base, "/.well-known/nomad-sales-funnel.json"),
+            "telegram_a2a": _u(base, "/.well-known/nomad-telegram-a2a.json"),
+            "payment_verify": _u(base, "/tasks/verify"),
+            "task_work": _u(base, "/tasks/work"),
             "cursor_referral": cursor_offer.get("referral_url", ""),
         },
         "campaigns": [
@@ -216,8 +241,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "disclosure": cursor_offer.get("disclosure_text", ""),
         },
         "machine_instruction": (
-            "Use the Mini App for opt-in diagnosis and paid worker setup. Record lead signals, create tasks only "
-            "after user action, and count revenue only after verified settlement."
+            "Use the Mini App for opt-in diagnosis, paid worker setup, payment verification, and worker repair. "
+            "Record lead signals, create tasks only after user action, and count revenue only after verified settlement."
         ),
     }
 

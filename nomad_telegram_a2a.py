@@ -195,8 +195,21 @@ def build_telegram_bot_to_bot_surface(*, base_url: str = "", ledger_path: Path |
         "links": {
             "self": _u(base_url, "/.well-known/nomad-telegram-a2a.json"),
             "send": _u(base_url, "/swarm/telegram-a2a/messages"),
+            "sales_funnel": _u(base_url, "/.well-known/nomad-sales-funnel.json"),
+            "miniapp": _u(base_url, "/telegram-miniapp"),
             "direct_a2a": _u(base_url, "/a2a/message"),
             "agent_card": _u(base_url, "/.well-known/agent-card.json"),
+        },
+        "nomad_sales_commands": {
+            "NOMAD_SALES": "return the sales funnel",
+            "NOMAD_REPAIR": "route to free diagnosis, paid repair task, payment verification, and worker repair",
+            "NOMAD_WORKER": "route to Transition Worker install and attach",
+            "NOMAD_CURSOR": "route to disclosed Cursor referral",
+            "NOMAD_VERIFY": "verify public proof, receipt, or contract URL",
+        },
+        "role_split": {
+            "NomadA2ABot": "routes interested humans and agents into sales, worker, referral, and pledge lanes",
+            "NomadVerifierBot": "checks public proof and receipt URLs and returns loop-safe receipts",
         },
         "recent_receipt_count": len(recent),
         "latest_receipt": recent[-1] if recent else {},

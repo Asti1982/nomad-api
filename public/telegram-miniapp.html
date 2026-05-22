@@ -465,6 +465,8 @@
     <nav class="mode-tabs" aria-label="Mini App mode">
       <button type="button" data-mode="diagnosis" aria-selected="true">Diagnose</button>
       <button type="button" data-mode="task" aria-selected="false">Worker</button>
+      <button type="button" data-mode="verify" aria-selected="false">Verify</button>
+      <button type="button" data-mode="repair" aria-selected="false">Repair</button>
       <button type="button" data-mode="pledge" aria-selected="false">d/acc</button>
       <button type="button" data-mode="agents" aria-selected="false">Agent</button>
       <button type="button" data-mode="cursor" aria-selected="false">Cursor</button>
@@ -505,6 +507,16 @@
             </select>
           </div>
         </div>
+        <div class="twocol">
+          <div class="field">
+            <label for="task-id">Task ID</label>
+            <input id="task-id" name="task-id" maxlength="140" placeholder="task id from paid repair task">
+          </div>
+          <div class="field">
+            <label for="tx-hash">Payment tx hash</label>
+            <input id="tx-hash" name="tx-hash" maxlength="120" placeholder="0x... after sending ETH">
+          </div>
+        </div>
         <div class="actions">
           <button class="btn" id="primary-action" type="submit">Run diagnosis</button>
           <button class="btn secondary" id="record-lead" type="button">Record lead</button>
@@ -528,6 +540,7 @@
           <a id="fleet-link" href="/swarm/workers">Worker fleet <span>GET</span></a>
           <a id="support-link" href="/.well-known/nomad-eth-support.json">ETH support <span>GET</span></a>
           <a id="attach-link" href="/swarm/attach-get">Agent attach <span>GET</span></a>
+          <a id="sales-link" href="/.well-known/nomad-sales-funnel.json">Sales funnel <span>GET</span></a>
           <a id="proposal-link" href="/downloads/nomad_ethereum_ai_agent_support_proposal.md">Proposal <span>MD</span></a>
           <a id="cursor-link" href="/.well-known/nomad-referral-offers.json">Cursor discount <span>open</span></a>
         </div>
@@ -595,6 +608,8 @@
       horizon_cycles: Number(el("cycles").value || 1),
       telegram_user: state.telegramUser,
       telegram_init_data: tg ? tg.initData || "" : "",
+      task_id: el("task-id").value.trim(),
+      tx_hash: el("tx-hash").value.trim(),
       source: "telegram_miniapp",
       campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode,
     });
@@ -676,6 +691,54 @@
           selected_offer: "transition_worker_setup",
           task_id: result && result.task ? result.task.task_id : "",
         });
+        if (result && result.task && result.task.task_id) {
+          el("task-id").value = result.task.task_id;
+        }
+        writeResult(result);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const verifyPayment = async () => {
+      const payload = formPayload();
+      if (!payload.task_id || !payload.tx_hash) {
+        writeResult("Add the task id and payment tx hash first.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = await postJson("/tasks/verify", {
+          task_id: payload.task_id,
+          tx_hash: payload.tx_hash,
+          requester_wallet: payload.requester_wallet,
+        });
+        await recordLead("payment_verification_submitted", {
+          selected_offer: "payment_verification",
+          task_id: payload.task_id,
+        });
+        writeResult(result);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const runWorkerRepair = async () => {
+      const payload = formPayload();
+      if (!payload.task_id) {
+        writeResult("Add the paid task id first.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = await postJson("/tasks/work", {
+          task_id: payload.task_id,
+          approval: "draft_only",
+        });
+        await recordLead("worker_repair_requested", {
+          selected_offer: "worker_repair_after_payment",
+          task_id: payload.task_id,
+        });
         writeResult(result);
       } finally {
         setBusy(false);
@@ -736,6 +799,8 @@
     const handleMainAction = async () => {
       if (state.mode === "diagnosis") return runDiagnosis();
       if (state.mode === "task") return createTask();
+      if (state.mode === "verify") return verifyPayment();
+      if (state.mode === "repair") return runWorkerRepair();
       if (state.mode === "pledge") return pledgeCompute();
       if (state.mode === "agents") return openAgentPacket();
       return openCursor();
@@ -751,6 +816,14 @@
       if (mode === "diagnosis") primary.textContent = "Run diagnosis";
       if (mode === "task") {
         primary.textContent = "Create paid task";
+        primary.classList.add("gold");
+      }
+      if (mode === "verify") {
+        primary.textContent = "Verify payment";
+        primary.classList.add("blue");
+      }
+      if (mode === "repair") {
+        primary.textContent = "Run repair";
         primary.classList.add("gold");
       }
       if (mode === "pledge") {
@@ -802,6 +875,7 @@
         el("fleet-link").href = manifest.links.worker_fleet || "/swarm/workers";
         el("support-link").href = manifest.links.eth_support || "/.well-known/nomad-eth-support.json";
         el("attach-link").href = manifest.links.runtime_attach_get || "/swarm/attach-get";
+        el("sales-link").href = manifest.links.sales_funnel || "/.well-known/nomad-sales-funnel.json";
         el("proposal-link").href = manifest.links.eth_support_proposal || "/downloads/nomad_ethereum_ai_agent_support_proposal.md";
         el("cursor-link").href = manifest.links.cursor_referral || "/.well-known/nomad-referral-offers.json";
       }

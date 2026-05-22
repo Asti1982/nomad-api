@@ -13,6 +13,10 @@ from typing import Any, Dict, Optional
 import requests
 from dotenv import load_dotenv, set_key
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+try:
+    from telegram import WebAppInfo
+except ImportError:  # pragma: no cover - older python-telegram-bot fallback
+    WebAppInfo = None  # type: ignore[assignment]
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -29,6 +33,10 @@ from nomad_operator_telegram_signals import (
     format_human_auto_cycle_error,
     format_human_status_snapshot,
     human_telegram_signals_enabled,
+)
+from nomad_telegram_a2a_bridge import (
+    format_telegram_a2a_reply,
+    handle_telegram_a2a_message,
 )
 from mission import MISSION_STATEMENT
 from self_development import SelfDevelopmentJournal
@@ -128,7 +136,9 @@ class ArbiterBot:
     def __init__(self) -> None:
         self.agent = ArbiterAgent()
         self.chain = get_chain_config()
-        self.token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.bot_role = self._bot_role_from_env()
+        self.token = self._token_for_role(self.bot_role)
+        self.bot_username = self._username_for_role(self.bot_role)
         self.public_api_url = preferred_public_base_url(request_base_url="http://127.0.0.1:8787")
         self.delete_token_messages = (
             os.getenv("TELEGRAM_DELETE_TOKEN_MESSAGES", "true").strip().lower() == "true"
@@ -167,7 +177,15 @@ class ArbiterBot:
         self._chat_memory: dict[int, dict[str, Any]] = {}
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        miniapp_url = self._telegram_miniapp_url()
+        if WebAppInfo is not None and miniapp_url.startswith("https://"):
+            miniapp_button = InlineKeyboardButton("Open Mini App", web_app=WebAppInfo(url=miniapp_url))
+        else:
+            miniapp_button = InlineKeyboardButton("Open Mini App", url=miniapp_url)
         keyboard = [
+            [
+                miniapp_button,
+            ],
             [
                 InlineKeyboardButton("Best Free Stack", callback_data="best_stack"),
                 InlineKeyboardButton("Self Audit", callback_data="self_audit"),
@@ -208,6 +226,7 @@ class ArbiterBot:
             "- /scout wallets\n"
             "- /scout compute\n"
             "- /scout messaging for agent builder\n"
+            f"- Mini App: {miniapp_url} (worker setup, d/acc pledge, agent recruit packet)\n"
             f"- fund me 0.25 {self.chain.native_symbol.lower()}\n"
             "- /status"
         )
@@ -216,6 +235,15 @@ class ArbiterBot:
             message,
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    def _telegram_miniapp_url(self) -> str:
+        configured = (os.getenv("NOMAD_TELEGRAM_MINIAPP_URL") or "").strip()
+        if configured:
+            return configured
+        base = (self.public_api_url or "").strip().rstrip("/")
+        if base.startswith("https://"):
+            return f"{base}/telegram-miniapp"
+        return "https://syndiode.com/nomad/telegram-miniapp"
 
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -248,6 +276,22 @@ class ArbiterBot:
                 "/status\n"
                 "/help"
             ),
+        )
+
+    async def mini_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        miniapp_url = self._telegram_miniapp_url()
+        if WebAppInfo is not None and miniapp_url.startswith("https://"):
+            button = InlineKeyboardButton("Open Mini App", web_app=WebAppInfo(url=miniapp_url))
+        else:
+            button = InlineKeyboardButton("Open Mini App", url=miniapp_url)
+        await self._reply(
+            update,
+            (
+                "Nomad Mini App\n"
+                "Mini diagnosis, Transition Worker setup, d/acc pledge, agent recruitment, and Cursor discount disclosure.\n"
+                f"{miniapp_url}"
+            ),
+            reply_markup=InlineKeyboardMarkup([[button]]),
         )
 
     async def subscribe_command(
@@ -615,6 +659,8 @@ class ArbiterBot:
         query = (update.message.text or "").strip()
         if not query:
             return
+        if await self._handle_bot_to_bot_message(update, query):
+            return
         if await self._handle_token_submission(update, query):
             return
         if self._is_skip_request(query):
@@ -624,6 +670,24 @@ class ArbiterBot:
             await self._reply_with_how(update)
             return
         await self._execute_query(update, query)
+
+    async def _handle_bot_to_bot_message(self, update: Update, query: str) -> bool:
+        sender = update.effective_user or (update.message.from_user if update.message else None)
+        if not sender or not getattr(sender, "is_bot", False):
+            return False
+        sender_username = str(getattr(sender, "username", "") or "")
+        decision = await asyncio.to_thread(
+            handle_telegram_a2a_message,
+            query,
+            sender_username=sender_username,
+            receiver_username=self.bot_username,
+            receiver_role=self.bot_role,
+            sender_is_bot=True,
+            base_url=self.public_api_url,
+        )
+        if decision.get("should_reply"):
+            await self._reply(update, format_telegram_a2a_reply(decision))
+        return True
 
     async def _run_unlock_with_chat_skips(
         self,
@@ -2127,6 +2191,37 @@ class ArbiterBot:
             return update.effective_chat.id
         return None
 
+    @staticmethod
+    def _bot_role_from_env() -> str:
+        role = str(os.getenv("NOMAD_TELEGRAM_BOT_ROLE") or "").strip().lower()
+        aliases = {
+            "nomada2a": "a2a",
+            "nomad-a2a": "a2a",
+            "nomad_a2a": "a2a",
+            "a2abot": "a2a",
+            "nomadverifier": "verifier",
+            "nomad-verifier": "verifier",
+            "nomad_verifier": "verifier",
+            "verifierbot": "verifier",
+        }
+        return aliases.get(role, role or "arbiter")
+
+    @staticmethod
+    def _token_for_role(role: str) -> Optional[str]:
+        if role == "a2a":
+            return os.getenv("NOMAD_A2A_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        if role == "verifier":
+            return os.getenv("NOMAD_VERIFIER_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        return os.getenv("TELEGRAM_BOT_TOKEN")
+
+    @staticmethod
+    def _username_for_role(role: str) -> str:
+        if role == "a2a":
+            return os.getenv("NOMAD_A2A_BOT_USERNAME", "NomadA2ABot")
+        if role == "verifier":
+            return os.getenv("NOMAD_VERIFIER_BOT_USERNAME", "NomadVerifierBot")
+        return os.getenv("NOMAD_ARBITER_BOT_USERNAME", "Arbiteragentbot")
+
     def _auto_subscribe_chat(self, update: Update) -> None:
         if not self.auto_subscribe_on_interaction:
             return
@@ -2616,6 +2711,7 @@ class ArbiterBot:
         app = ApplicationBuilder().token(self.token).build()
         app.add_handler(CommandHandler("start", self.start))
         app.add_handler(CommandHandler("help", self.help_command))
+        app.add_handler(CommandHandler("mini", self.mini_command))
         app.add_handler(CommandHandler("best", self.best_command))
         app.add_handler(CommandHandler("self", self.self_command))
         app.add_handler(CommandHandler("compute", self.compute_command))

@@ -171,6 +171,7 @@ from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, q
 from nomad_paid_ref_selfplay import run_paid_ref_selfplay
 from nomad_referral_offers import build_referral_offer_surface
 from nomad_referral_swarm import build_referral_swarm_surface
+from nomad_sales_funnel import build_sales_funnel_surface
 from nomad_telegram_miniapp import build_telegram_miniapp_surface, record_telegram_miniapp_lead
 from nomad_eth_support import build_eth_ai_agent_support_surface
 from nomad_spend_guard import build_spend_guard_surface
@@ -739,6 +740,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_telegram_a2a(cls, *, base_url: str) -> dict:
         return build_telegram_bot_to_bot_surface(base_url=base_url)
+
+    @classmethod
+    def _build_sales_funnel(cls, *, base_url: str) -> dict:
+        return build_sales_funnel_surface(base_url=base_url)
 
     @classmethod
     def _build_sustainability_kernel(cls, *, base_url: str) -> dict:
@@ -2006,6 +2011,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "telegram_miniapp": f"{b}/telegram-miniapp",
                     "telegram_miniapp_contract": f"{b}/.well-known/nomad-telegram-miniapp.json",
                     "telegram_miniapp_lead": f"{b}/telegram-miniapp/lead",
+                    "sales_funnel": f"{b}/.well-known/nomad-sales-funnel.json",
                     "ethereum_ai_support": f"{b}/.well-known/nomad-eth-support.json",
                     "ethereum_ai_support_proposal": f"{b}/downloads/nomad_ethereum_ai_agent_support_proposal.md",
                     "llms": f"{b}/llms.txt",
@@ -2152,6 +2158,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agp_morphology_runtime_register": f"{b}/.well-known/nomad-agp-morphology-runtime-register.json",
                     "telegram_a2a": f"{b}/.well-known/nomad-telegram-a2a.json",
                     "telegram_a2a_messages": f"{b}/swarm/telegram-a2a/messages",
+                    "sales_funnel": f"{b}/.well-known/nomad-sales-funnel.json",
                     "autogenesis_recruit": f"{b}/.well-known/nomad-autogenesis-recruit.json",
                     "autogenesis_development_cycles": f"{b}/swarm/development-cycles",
                     "autogenesis_development_cycle_events": f"{b}/swarm/development-cycles/events",
@@ -2715,6 +2722,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/telegram-a2a", "/.well-known/nomad-telegram-a2a.json"}:
             self._json_response(self.__class__._build_telegram_a2a(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/sales-funnel", "/sales-funnel", "/.well-known/nomad-sales-funnel.json"}:
+            self._json_response(self.__class__._build_sales_funnel(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
@@ -4023,6 +4033,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-agp-morphology-runtime-register.json",
                     "/swarm/autogenesis/morphology-runtime-register",
                     "/.well-known/nomad-telegram-a2a.json",
+                    "/.well-known/nomad-sales-funnel.json",
+                    "/swarm/sales-funnel",
                     "/swarm/telegram-a2a/messages",
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",

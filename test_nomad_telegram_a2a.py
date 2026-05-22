@@ -13,6 +13,9 @@ def test_telegram_bot_to_bot_surface_exposes_guarded_transport(monkeypatch, tmp_
     assert surface["configured"]["allowed_targets"] == ["@verifierbot"]
     assert surface["loop_prevention"]["dedupe"] == "idempotency_digest"
     assert surface["links"]["send"].endswith("/swarm/telegram-a2a/messages")
+    assert surface["links"]["sales_funnel"] == "https://nomad.example/.well-known/nomad-sales-funnel.json"
+    assert surface["nomad_sales_commands"]["NOMAD_REPAIR"].startswith("route to free diagnosis")
+    assert "NomadVerifierBot" in surface["role_split"]
 
 
 def test_telegram_bot_to_bot_dry_run_requires_allowlist_and_loop_ack(monkeypatch, tmp_path):

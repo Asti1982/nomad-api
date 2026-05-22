@@ -13,14 +13,22 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["well_known_url"] == "https://nomad.example/.well-known/nomad-telegram-miniapp.json"
     assert out["lead_capture_url"] == "https://nomad.example/telegram-miniapp/lead"
     assert "free_mini_diagnosis" in out["primary_funnel"]
+    assert "payment_verification" in out["primary_funnel"]
+    assert "worker_repair_after_payment" in out["primary_funnel"]
     assert "ai_agent_recruitment" in out["primary_funnel"]
     assert out["eth_trust_loop"]["minimum_pledge_native"] == 0.004
     offers = {item["offer_id"]: item for item in out["offers"]}
     assert offers["transition_worker_setup"]["price_native"] == 0.02
+    assert offers["payment_verification"]["endpoint"] == "https://nomad.example/tasks/verify"
+    assert offers["worker_repair_after_payment"]["endpoint"] == "https://nomad.example/tasks/work"
     assert offers["dacc_compute_pledge"]["price_native"] == 0.004
     assert offers["ai_agent_recruitment"]["endpoint"] == "https://nomad.example/.well-known/nomad-eth-support.json"
     assert offers["cursor_referral"]["revenue_rule"] == "usage_credit_not_cash_revenue"
     assert out["links"]["eth_support"] == "https://nomad.example/.well-known/nomad-eth-support.json"
+    assert out["links"]["sales_funnel"] == "https://nomad.example/.well-known/nomad-sales-funnel.json"
+    assert out["links"]["telegram_a2a"] == "https://nomad.example/.well-known/nomad-telegram-a2a.json"
+    assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
+    assert out["payment"]["work"] == "https://nomad.example/tasks/work"
     assert any(item["campaign_id"] == "ethereum_support" for item in out["campaigns"])
     assert out["guardrails"]["no_unsolicited_dm"] is True
 

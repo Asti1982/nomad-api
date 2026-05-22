@@ -31,11 +31,29 @@ def test_eth_support_routes_return_packet():
         assert seen[0][1]["proposal_packet"]["ask_usd"] == 45000.0
 
 
-def test_openapi_lists_miniapp_and_eth_support_paths():
+def test_sales_funnel_routes_return_contract(monkeypatch):
+    monkeypatch.setenv("NOMAD_PAYMENT_ADDRESS", "0xFc1aB8C0D65fd947B00B9864deA06f705C045Af6")
+    for route in ["/swarm/sales-funnel", "/sales-funnel", "/.well-known/nomad-sales-funnel.json"]:
+        handler = NomadApiHandler.__new__(NomadApiHandler)
+        seen = []
+        handler.path = route
+        handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+        handler._json_response = lambda payload, status=200: seen.append((status, payload))  # type: ignore[method-assign]
+
+        handler.do_GET()
+
+        assert seen[0][0] == 200
+        assert seen[0][1]["schema"] == "nomad.sales_funnel.v1"
+        assert seen[0][1]["payment"]["recipient_set"] is True
+
+
+def test_openapi_lists_miniapp_eth_support_and_sales_paths():
     doc = build_openapi_document(base_url="https://nomad.example")
 
     assert "/telegram-miniapp" in doc["paths"]
     assert "/telegram-miniapp/lead" in doc["paths"]
     assert "/.well-known/nomad-telegram-miniapp.json" in doc["paths"]
+    assert "/.well-known/nomad-sales-funnel.json" in doc["paths"]
+    assert "/swarm/sales-funnel" in doc["paths"]
     assert "/.well-known/nomad-eth-support.json" in doc["paths"]
     assert "/swarm/eth-support" in doc["paths"]
