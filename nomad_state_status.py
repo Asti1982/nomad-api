@@ -122,7 +122,8 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
     render_disk_path = str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage"))
     firestore_backend = str(os.getenv("NOMAD_STATE_BACKEND") or os.getenv("NOMAD_SWARM_REGISTRY_BACKEND") or "").strip().lower()
     remote_state_configured = firestore_backend in {"firebase", "firestore"}
-    remote_state_scopes = ["swarm_registry", "work_exchange"] if remote_state_configured else []
+    remote_state_scopes = ["swarm_registry", "work_exchange", "agent_acquisition"] if remote_state_configured else []
+    core_retention_remote = {"swarm_registry", "work_exchange"}.issubset(set(remote_state_scopes))
     if render_runtime and disk_configured and render_disk_path and writable:
         durability = "render_disk_path_configured_writable"
     if render_runtime and configured and not str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage")):
@@ -132,10 +133,16 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
     if not writable:
         durability = "not_writable"
     retention_blockers: list[str] = []
+    state_warnings: list[str] = []
     if render_runtime and durability in {"render_path_may_not_be_disk", "ephemeral_default"} and not remote_state_configured:
         retention_blockers.append("render_state_ephemeral_attach_disk_or_enable_firestore")
-    if render_runtime and configured and str(effective_root).startswith(("/tmp", "\\tmp")):
-        retention_blockers.append("nomad_state_dir_points_to_tmp")
+    effective_text = str(effective_root).replace("\\", "/").lower()
+    points_to_tmp = effective_text.startswith("/tmp") or "/tmp/" in effective_text or effective_text.endswith("/tmp")
+    if render_runtime and configured and points_to_tmp:
+        if core_retention_remote:
+            state_warnings.append("nomad_state_dir_points_to_tmp_but_core_retention_uses_remote_state")
+        else:
+            retention_blockers.append("nomad_state_dir_points_to_tmp")
     memory_status = _process_memory_status()
     if render_runtime and memory_status.get("state") in {"warning", "critical"}:
         retention_blockers.append("render_memory_pressure_reduce_crawler_surface_or_scale_instance")
@@ -159,7 +166,14 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
         "render_disk_attachment_note": "filesystem_probe_can_verify_writable_path_not_render_disk_attachment",
         "remote_state_backend_configured": remote_state_configured,
         "remote_state_scopes": remote_state_scopes,
+        "core_retention_persistence": {
+            "schema": "nomad.core_retention_persistence.v1",
+            "status": "remote_durable" if core_retention_remote else "local_or_ephemeral",
+            "required_scopes": ["swarm_registry", "work_exchange"],
+            "covered_scopes": remote_state_scopes,
+        },
         "retention_blockers": retention_blockers,
+        "state_warnings": state_warnings,
         "process_memory": memory_status,
         "write_error": error,
         "state_files": files,

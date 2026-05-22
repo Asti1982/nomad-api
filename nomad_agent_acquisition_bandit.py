@@ -12,10 +12,12 @@ import hashlib
 import json
 import math
 import re
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_firestore_state import FirestoreJsonState
 from nomad_state_paths import state_file
 
 
@@ -23,6 +25,7 @@ LEDGER_ENV = "NOMAD_AGENT_ACQUISITION_LEDGER_PATH"
 DEFAULT_LEDGER = Path("nomad_agent_acquisition_ledger.jsonl")
 MAX_LEDGER_LINES = 20000
 MAX_RECENT_EVENTS = 120
+_REMOTE_ACQUISITION_STATE: FirestoreJsonState | None | bool = None
 
 SCHEMA = "nomad.agent_acquisition_bandit.v1"
 EVENT_SCHEMA = "nomad.agent_acquisition_event_receipt.v1"
@@ -188,13 +191,74 @@ def _append(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+    _remote_append(row)
+
+
+def _remote_state() -> FirestoreJsonState | None:
+    global _REMOTE_ACQUISITION_STATE
+    if _REMOTE_ACQUISITION_STATE is False:
+        return None
+    if _REMOTE_ACQUISITION_STATE is None:
+        _REMOTE_ACQUISITION_STATE = FirestoreJsonState.from_env(scope="agent_acquisition") or False
+    return _REMOTE_ACQUISITION_STATE if isinstance(_REMOTE_ACQUISITION_STATE, FirestoreJsonState) else None
+
+
+def _event_key(row: dict[str, Any]) -> str:
+    event_id = str(row.get("event_id") or "").strip()
+    if event_id:
+        return event_id
+    return _digest(row, 48)
+
+
+def _merge_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for row in group:
+            if isinstance(row, dict) and row.get("schema") == EVENT_SCHEMA:
+                merged[_event_key(row)] = row
+    return list(merged.values())[-MAX_LEDGER_LINES:]
+
+
+def _remote_events() -> list[dict[str, Any]]:
+    remote = _remote_state()
+    if not remote:
+        return []
+    try:
+        payload = remote.load() or {}
+    except Exception:
+        return []
+    rows = payload.get("events") if isinstance(payload.get("events"), list) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _remote_append(row: dict[str, Any]) -> None:
+    remote = _remote_state()
+    if not remote:
+        return
+    try:
+        events = _merge_events(_remote_events(), [row])
+        remote.save(
+            {
+                "schema": "nomad.agent_acquisition_remote_ledger.v1",
+                "updated_at": _iso_now(),
+                "event_count": len(events),
+                "events": events[-MAX_LEDGER_LINES:],
+            }
+        )
+    except Exception:
+        return
 
 
 def _read_events(ledger_path: Path, *, limit_lines: int = MAX_LEDGER_LINES) -> list[dict[str, Any]]:
     if not ledger_path.exists():
-        return []
-    lines = ledger_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    tail = lines[-max(1, min(len(lines), int(limit_lines))) :]
+        return _remote_events()
+    tail: deque[str] = deque(maxlen=max(1, int(limit_lines)))
+    try:
+        with ledger_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                tail.append(line)
+    except OSError:
+        return _remote_events()
     events: list[dict[str, Any]] = []
     for line in tail:
         line = line.strip()
@@ -206,7 +270,7 @@ def _read_events(ledger_path: Path, *, limit_lines: int = MAX_LEDGER_LINES) -> l
             continue
         if isinstance(row, dict) and row.get("schema") == EVENT_SCHEMA:
             events.append(row)
-    return events
+    return _merge_events(_remote_events(), events)
 
 
 def _proof_digest_from(payload: dict[str, Any]) -> str:

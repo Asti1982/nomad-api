@@ -17,6 +17,8 @@ def test_work_exchange_surface_is_token_free_and_discoverable():
     assert out["schema"] == "nomad.work_exchange.v1"
     assert out["unit"]["not_a_token"] is True
     assert out["default_policy"]["hidden_fee_allowed"] is False
+    assert out["external_utility_status"]["stage"] == "needs_first_external_obligation"
+    assert out["external_utility_status"]["claim_boundary"].startswith("internal_proof_yield")
     assert out["routes"]["free_solution"] == "https://nomad.example/swarm/work-exchange/free-solution"
     assert out["downloadable_worker"]["installer_bat"] == "https://nomad.example/downloads/install_nomad_work_exchange_worker.bat"
     assert "explicit_compute_barter_not_hidden_fee" in create_work_exchange_offer(
@@ -36,6 +38,7 @@ def test_work_exchange_onboarding_exposes_external_worker_commands():
     assert out["schema"] == "nomad.work_exchange_onboarding.v1"
     assert out["positioning"]["not_token_economy"] is True
     assert out["positioning"]["not_chat_transport"] is True
+    assert out["activation_cycle"]["current_stage"] == "needs_first_external_obligation"
     assert out["downloads"]["installer_bat"].endswith("/downloads/install_nomad_work_exchange_worker.bat")
     assert out["downloads"]["external_worker_opportunity"].endswith("/.well-known/nomad-external-worker-opportunity.json")
     assert out["routes"]["external_worker_opportunity"].endswith("/.well-known/nomad-external-worker-opportunity.json")

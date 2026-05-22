@@ -4541,6 +4541,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             if not intake.get("ok"):
                 self._json_response(intake, status=422)
                 return
+            try:
+                intake_acquisition = record_agent_acquisition_event(
+                    {
+                        "channel_id": "reliability_doctor_intake",
+                        "event_type": "intake",
+                        "agent_id": intake.get("requester_id") or payload.get("agent_id") or "external.agent",
+                        "source_url": f"{base.rstrip('/')}/swarm/reliability-doctor/intake" if base else "/swarm/reliability-doctor/intake",
+                    },
+                    base_url=base,
+                )
+            except Exception as exc:  # noqa: BLE001
+                intake_acquisition = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
             offer = create_work_exchange_offer(
                 intake.get("work_exchange_offer_payload") if isinstance(intake.get("work_exchange_offer_payload"), dict) else {},
                 base_url=base,
@@ -4564,6 +4576,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
                 "work_exchange_offer": offer,
                 "free_solution_receipt": free_solution,
+                "acquisition_event": intake_acquisition,
                 "obligation_id": obligation_id,
                 "copy_paste_start": start,
                 "downloads": onboarding.get("downloads", {}),
@@ -5319,7 +5332,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/work-exchange/return-work":
-            result = record_return_work_receipt(payload, base_url=self._base_url())
+            base = self._base_url()
+            result = record_return_work_receipt(payload, base_url=base)
+            if result.get("accepted"):
+                try:
+                    result["acquisition_event"] = record_agent_acquisition_event(
+                        {
+                            "channel_id": "docker_worker",
+                            "event_type": "return_compute_receipt",
+                            "agent_id": result.get("worker_agent_id") or payload.get("agent_id") or "external.agent",
+                            "proof_digest": result.get("proof_digest") or result.get("return_receipt_id"),
+                            "receipt_id": result.get("return_receipt_id"),
+                        },
+                        base_url=base,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result["acquisition_event"] = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
             self._json_response(result, status=202 if result.get("accepted") else 400)
             return
 
@@ -6673,6 +6701,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             }, 400
         registry = self.__class__._light_swarm_registry()
         result = registry.worker_fleet_lease_get(payload, base_url=base, remote_addr=self._remote_addr())
+        if result.get("ok") and "external" in str(payload.get("source_tag") or "").lower():
+            try:
+                result["acquisition_event"] = record_agent_acquisition_event(
+                    {
+                        "channel_id": "external_worker_opportunity",
+                        "event_type": "worker_start",
+                        "agent_id": payload.get("agent_id") or "external.agent",
+                        "lease_id": result.get("lease_id"),
+                        "proof_digest": result.get("lease_id") or result.get("idempotency_key"),
+                    },
+                    base_url=base,
+                )
+            except Exception as exc:  # noqa: BLE001
+                result["acquisition_event"] = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
         return result, 202 if result.get("ok") else 422
 
     def _process_get_only_worker_complete(self, query: dict) -> tuple[dict, int]:
@@ -6686,6 +6728,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return {"ok": False, "schema": "nomad.get_only_worker_completion.v1", "error": "digest_required"}, 400
         registry = self.__class__._light_swarm_registry()
         result = registry.worker_fleet_complete_get(payload, base_url=base, remote_addr=self._remote_addr())
+        if result.get("ok") and "external" in str(payload.get("source_tag") or "").lower():
+            try:
+                result["acquisition_event"] = record_agent_acquisition_event(
+                    {
+                        "channel_id": "external_worker_opportunity",
+                        "event_type": "lease_complete",
+                        "agent_id": payload.get("agent_id") or "external.agent",
+                        "lease_id": payload.get("lease_id"),
+                        "proof_digest": payload.get("digest") or payload.get("lease_id"),
+                    },
+                    base_url=base,
+                )
+            except Exception as exc:  # noqa: BLE001
+                result["acquisition_event"] = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
         return result, 200 if result.get("ok") else 422
 
     def _process_get_only_growth_experience(self, query: dict) -> tuple[dict, int]:

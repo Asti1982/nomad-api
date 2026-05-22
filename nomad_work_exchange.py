@@ -291,6 +291,36 @@ def summarize_work_exchange_ledger(*, ledger_path: Path | str | None = None) -> 
     }
 
 
+def _external_utility_status(summary: dict[str, Any]) -> dict[str, Any]:
+    obligations = int(summary.get("obligation_count") or 0)
+    receipts = int(summary.get("return_receipt_count") or 0)
+    outstanding = _num(summary.get("outstanding_work_credits_total"))
+    settled = _num(summary.get("settled_return_work_credits_total"))
+    if obligations <= 0:
+        stage = "needs_first_external_obligation"
+        next_action = "send_secret_free_reliability_doctor_intake"
+    elif receipts <= 0:
+        stage = "needs_first_return_compute_receipt"
+        next_action = "run_obligation_bound_return_worker"
+    elif outstanding > 0:
+        stage = "active_external_value_cycle"
+        next_action = "continue_return_compute_until_balance_zero"
+    else:
+        stage = "settled_external_value_cycle"
+        next_action = "reproduce_offer_on_next_external_failure"
+    return {
+        "schema": "nomad.external_utility_status.v1",
+        "stage": stage,
+        "next_action": next_action,
+        "visible_external_utility": obligations > 0 or receipts > 0 or settled > 0.0,
+        "obligation_count": obligations,
+        "return_receipt_count": receipts,
+        "outstanding_work_credits": outstanding,
+        "settled_return_work_credits": settled,
+        "claim_boundary": "internal_proof_yield_is_not_external_utility_until_offer_obligation_or_return_compute_receipt_exists",
+    }
+
+
 def _obligation_states(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     obligations: dict[str, dict[str, Any]] = {}
     for event in events:
@@ -346,6 +376,7 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
     root = (base_url or "").strip().rstrip("/")
     ledger_summary = summary if isinstance(summary, dict) else summarize_work_exchange_ledger()
     onboarding = build_work_exchange_onboarding(base_url=base_url, summary=ledger_summary)
+    utility_status = _external_utility_status(ledger_summary)
     return {
         "ok": True,
         "schema": "nomad.work_exchange.v1",
@@ -413,6 +444,8 @@ def build_work_exchange_surface(*, base_url: str, summary: dict[str, Any] | None
         "downloadable_worker": onboarding.get("downloads", {}),
         "copy_paste_start": onboarding.get("copy_paste_start", {}),
         "external_worker_start": onboarding.get("external_worker_start", {}),
+        "external_utility_status": utility_status,
+        "external_value_activation": onboarding.get("activation_cycle", {}),
         "starter_offer": onboarding.get("starter_offer", {}),
         "ledger_summary": ledger_summary,
         "machine_instruction": "offer_free_solution_only_after_explicit_compute_barter_acceptance_then_decrease_balance_with_verified_return_work",
@@ -424,6 +457,7 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
 
     root = (base_url or "").strip().rstrip("/")
     ledger_summary = summary if isinstance(summary, dict) else summarize_work_exchange_ledger()
+    utility_status = _external_utility_status(ledger_summary)
     return {
         "ok": True,
         "schema": "nomad.work_exchange_onboarding.v1",
@@ -452,6 +486,19 @@ def build_work_exchange_onboarding(*, base_url: str, summary: dict[str, Any] | N
             "default_required_return_work_credits": round(10 * DEFAULT_RETURN_MULTIPLIER, 4),
             "default_max_runtime_hours": 6,
             "side_effect_scope": "sandboxed_worker_only",
+        },
+        "activation_cycle": {
+            "schema": "nomad.work_exchange_activation_cycle.v1",
+            "current_stage": utility_status["stage"],
+            "target": "first_external_problem_to_first_return_compute_receipt",
+            "why_this_matters": "Nomad's internal proof-yield becomes external utility only when a real requester receives a useful diagnostic and a bounded compute obligation can be repaid.",
+            "required_receipts": [
+                "agent_reliability_doctor_intake_receipt",
+                "nomad.work_exchange.offer.v1",
+                "nomad.work_exchange.free_solution_receipt.v1_when_terms_accepted",
+                "nomad.work_exchange.return_work_receipt.v1",
+            ],
+            "no_claim_until": "at_least_one_external_obligation_or_return_compute_receipt",
         },
         "user_flow": [
             {
