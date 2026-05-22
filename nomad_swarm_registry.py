@@ -14,6 +14,7 @@ from nomad_firestore_state import FirestoreJsonState
 from nomad_morphology_router import route_objectives
 from nomad_proof_reuse_ledger import snapshot as proof_reuse_snapshot
 from nomad_state_paths import configured_state_dir, state_file
+from nomad_work_exchange import summarize_work_exchange_ledger
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1502,10 +1503,11 @@ class SwarmJoinRegistry:
         ]
 
     @staticmethod
-    def _retention_evidence_metrics(controller: dict[str, Any]) -> dict[str, Any]:
+    def _retention_evidence_metrics(controller: dict[str, Any], work_exchange: dict[str, Any] | None = None) -> dict[str, Any]:
         counts = controller.get("counts") if isinstance(controller.get("counts"), dict) else {}
         field = controller.get("field") if isinstance(controller.get("field"), dict) else {}
         selected = controller.get("selected_intervention") if isinstance(controller.get("selected_intervention"), dict) else {}
+        wx = work_exchange if isinstance(work_exchange, dict) else {}
         return {
             "active_external_workers": int(counts.get("active_external_workers") or 0),
             "known_external_workers": int(counts.get("known_external_workers") or 0),
@@ -1521,6 +1523,14 @@ class SwarmJoinRegistry:
             "lease_friction": float(field.get("lease_friction") or 0.0),
             "selected_arm": str(selected.get("arm") or ""),
             "selected_arm_weight": float(selected.get("routing_weight") or 0.0),
+            "work_exchange_event_count": int(wx.get("ledger_event_count") or 0),
+            "work_exchange_offer_count": int(wx.get("offer_count") or 0),
+            "work_exchange_obligation_count": int(wx.get("obligation_count") or 0),
+            "work_exchange_active_obligation_count": int(wx.get("active_obligation_count") or 0),
+            "work_exchange_settled_obligation_count": int(wx.get("settled_obligation_count") or 0),
+            "work_exchange_return_receipt_count": int(wx.get("return_receipt_count") or 0),
+            "work_exchange_outstanding_work_credits": float(wx.get("outstanding_work_credits_total") or 0.0),
+            "work_exchange_settled_return_work_credits": float(wx.get("settled_return_work_credits_total") or 0.0),
         }
 
     @staticmethod
@@ -1544,7 +1554,25 @@ class SwarmJoinRegistry:
         field_delta = round(float(current["retention_field_strength"]) - float(old.get("retention_field_strength") or 0.0), 4)
         proof_delta = round(float(current["proof_yield_density"]) - float(old.get("proof_yield_density") or 0.0), 4)
         dropout_delta = round(float(current["dropout_pressure"]) - float(old.get("dropout_pressure") or 0.0), 4)
-        score = round((0.45 * active_external_delta) + (0.2 * known_external_delta) - (0.16 * at_risk_external_delta) + field_delta + (0.4 * proof_delta) - (0.2 * dropout_delta), 4)
+        obligation_delta = int(current["work_exchange_obligation_count"] - int(old.get("work_exchange_obligation_count") or 0))
+        return_receipt_delta = int(current["work_exchange_return_receipt_count"] - int(old.get("work_exchange_return_receipt_count") or 0))
+        settled_credit_delta = round(
+            float(current["work_exchange_settled_return_work_credits"])
+            - float(old.get("work_exchange_settled_return_work_credits") or 0.0),
+            4,
+        )
+        score = round(
+            (0.45 * active_external_delta)
+            + (0.2 * known_external_delta)
+            - (0.16 * at_risk_external_delta)
+            + field_delta
+            + (0.4 * proof_delta)
+            - (0.2 * dropout_delta)
+            + (0.18 * obligation_delta)
+            + (0.24 * return_receipt_delta)
+            + (0.04 * settled_credit_delta),
+            4,
+        )
         outcome = "neutral"
         if score >= 0.15:
             outcome = "positive"
@@ -1558,6 +1586,9 @@ class SwarmJoinRegistry:
             "retention_field_delta": field_delta,
             "proof_yield_delta": proof_delta,
             "dropout_pressure_delta": dropout_delta,
+            "work_exchange_obligation_delta": obligation_delta,
+            "work_exchange_return_receipt_delta": return_receipt_delta,
+            "work_exchange_settled_credit_delta": settled_credit_delta,
             "evidence_score": score,
             "outcome": outcome,
         }
@@ -1585,9 +1616,17 @@ class SwarmJoinRegistry:
 
     def _build_retention_evidence_sample(self, *, base_url: str, source: str = "manual") -> dict[str, Any]:
         controller = self.worker_retention_gradient_controller(base_url=base_url)
+        try:
+            work_exchange = summarize_work_exchange_ledger()
+        except Exception as exc:  # noqa: BLE001
+            work_exchange = {
+                "ok": False,
+                "schema": "nomad.work_exchange_summary_unavailable.v1",
+                "error": str(exc)[:160],
+            }
         rows = self._retention_evidence_rows()
         previous = rows[-1] if rows else None
-        metrics = self._retention_evidence_metrics(controller)
+        metrics = self._retention_evidence_metrics(controller, work_exchange)
         delta = self._retention_evidence_delta(metrics, previous)
         row = {
             "schema": "nomad.retention_evidence_sample.v1",
@@ -1596,6 +1635,7 @@ class SwarmJoinRegistry:
             "metrics": metrics,
             "delta": delta,
             "selected_intervention": controller.get("selected_intervention") or {},
+            "work_exchange_summary": work_exchange,
             "claim_status": "held_for_more_windows",
             "paper_grade_rule": "Do not claim retention improvement until repeated positive windows and external-worker receipts exist.",
         }
@@ -1638,7 +1678,18 @@ class SwarmJoinRegistry:
             if int(((row.get("metrics") or {}).get("known_external_workers") or 0)) > 0
             or int(((row.get("metrics") or {}).get("active_external_workers") or 0)) > 0
         ]
-        claim_allowed = len(recent) >= 12 and len(positive) >= 3 and len(external_receipt_windows) >= 2
+        work_exchange_conversion_windows = [
+            row
+            for row in recent
+            if int(((row.get("metrics") or {}).get("work_exchange_obligation_count") or 0)) > 0
+            or int(((row.get("metrics") or {}).get("work_exchange_return_receipt_count") or 0)) > 0
+        ]
+        claim_allowed = (
+            len(recent) >= 12
+            and len(positive) >= 3
+            and len(external_receipt_windows) >= 2
+            and len(work_exchange_conversion_windows) >= 2
+        )
         arm_counts: dict[str, int] = {}
         arm_scores: dict[str, float] = {}
         for row in recent:
@@ -1665,7 +1716,8 @@ class SwarmJoinRegistry:
                 "positive_windows": len(positive),
                 "negative_windows": len(negative),
                 "external_receipt_windows": len(external_receipt_windows),
-                "rule": "success requires repeated positive deltas and real external-worker receipts, not internal self-heartbeats",
+                "work_exchange_conversion_windows": len(work_exchange_conversion_windows),
+                "rule": "success requires repeated positive deltas, real external-worker receipts, and work-exchange conversion signals, not internal self-heartbeats",
             },
             "window_summary": {
                 "sample_count": len(rows),

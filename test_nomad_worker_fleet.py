@@ -335,6 +335,8 @@ def test_retention_evidence_ledger_records_baseline_vs_current_delta(tmp_path):
     assert second["sample"]["delta"]["has_baseline"] is True
     assert second["sample"]["delta"]["active_external_delta"] == 1
     assert second["sample"]["delta"]["outcome"] == "positive"
+    assert "work_exchange_obligation_count" in second["sample"]["metrics"]
+    assert "work_exchange_conversion_windows" in second["ledger"]["claim_gate"]
     assert ledger["schema"] == "nomad.retention_evidence_ledger.v1"
     assert ledger["claim_gate"]["paper_grade_claim_allowed"] is False
     assert ledger["window_summary"]["sample_count"] == 2
