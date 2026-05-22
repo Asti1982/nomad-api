@@ -470,6 +470,7 @@
       <button type="button" data-mode="pledge" aria-selected="false">d/acc</button>
       <button type="button" data-mode="agents" aria-selected="false">Agent</button>
       <button type="button" data-mode="cursor" aria-selected="false">Cursor</button>
+      <button type="button" data-mode="launch" aria-selected="false">Launch</button>
     </nav>
 
     <section class="layout">
@@ -541,6 +542,7 @@
           <a id="support-link" href="/.well-known/nomad-eth-support.json">ETH support <span>GET</span></a>
           <a id="attach-link" href="/swarm/attach-get">Agent attach <span>GET</span></a>
           <a id="sales-link" href="/.well-known/nomad-sales-funnel.json">Sales funnel <span>GET</span></a>
+          <a id="acquisition-link" href="/.well-known/nomad-telegram-acquisition.json">Acquisition <span>GET</span></a>
           <a id="proposal-link" href="/downloads/nomad_ethereum_ai_agent_support_proposal.md">Proposal <span>MD</span></a>
           <a id="cursor-link" href="/.well-known/nomad-referral-offers.json">Cursor discount <span>open</span></a>
         </div>
@@ -611,7 +613,7 @@
       task_id: el("task-id").value.trim(),
       tx_hash: el("tx-hash").value.trim(),
       source: "telegram_miniapp",
-      campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode,
+      campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode === "launch" ? "telegram_acquisition" : state.mode,
     });
 
     const postJson = async (path, payload) => {
@@ -796,6 +798,18 @@
       });
     };
 
+    const openAcquisitionLaunch = async () => {
+      setBusy(true);
+      try {
+        await recordLead("acquisition_launch_requested", {selected_offer: "telegram_acquisition", campaign: "telegram_acquisition"});
+        const response = await fetch(apiUrl("/swarm/telegram-acquisition"));
+        const data = await response.json().catch(() => ({ok: false, error: "invalid_acquisition_packet"}));
+        writeResult(data);
+      } finally {
+        setBusy(false);
+      }
+    };
+
     const handleMainAction = async () => {
       if (state.mode === "diagnosis") return runDiagnosis();
       if (state.mode === "task") return createTask();
@@ -803,6 +817,7 @@
       if (state.mode === "repair") return runWorkerRepair();
       if (state.mode === "pledge") return pledgeCompute();
       if (state.mode === "agents") return openAgentPacket();
+      if (state.mode === "launch") return openAcquisitionLaunch();
       return openCursor();
     };
 
@@ -837,6 +852,10 @@
       if (mode === "cursor") {
         primary.textContent = "Open Cursor discount";
         primary.classList.add("secondary");
+      }
+      if (mode === "launch") {
+        primary.textContent = "Launch acquisition";
+        primary.classList.add("blue");
       }
       if (tg && tg.MainButton) {
         tg.MainButton.setText(primary.textContent);
@@ -876,6 +895,7 @@
         el("support-link").href = manifest.links.eth_support || "/.well-known/nomad-eth-support.json";
         el("attach-link").href = manifest.links.runtime_attach_get || "/swarm/attach-get";
         el("sales-link").href = manifest.links.sales_funnel || "/.well-known/nomad-sales-funnel.json";
+        el("acquisition-link").href = manifest.links.telegram_acquisition || "/.well-known/nomad-telegram-acquisition.json";
         el("proposal-link").href = manifest.links.eth_support_proposal || "/downloads/nomad_ethereum_ai_agent_support_proposal.md";
         el("cursor-link").href = manifest.links.cursor_referral || "/.well-known/nomad-referral-offers.json";
       }

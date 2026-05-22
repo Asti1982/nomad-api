@@ -124,6 +124,20 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/telegram-acquisition": {
+                "get": {
+                    "summary": "Telegram acquisition launch contract for Mini App referrals, orders, and worker recruitment",
+                    "operationId": "getNomadTelegramAcquisition",
+                    "responses": {"200": {"description": "Telegram acquisition launch", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-telegram-acquisition.json": {
+                "get": {
+                    "summary": "Alias for the Telegram acquisition launch contract",
+                    "operationId": "getNomadTelegramAcquisitionWellKnown",
+                    "responses": {"200": {"description": "Telegram acquisition launch", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
             "/.well-known/nomad-sales-funnel.json": {
                 "get": {
                     "summary": "Sales funnel contract for free diagnosis, paid repair, workers, Cursor referral, and ETH pledge pressure",

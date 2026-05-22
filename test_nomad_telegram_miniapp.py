@@ -26,6 +26,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert offers["cursor_referral"]["revenue_rule"] == "usage_credit_not_cash_revenue"
     assert out["links"]["eth_support"] == "https://nomad.example/.well-known/nomad-eth-support.json"
     assert out["links"]["sales_funnel"] == "https://nomad.example/.well-known/nomad-sales-funnel.json"
+    assert out["links"]["telegram_acquisition"] == "https://nomad.example/.well-known/nomad-telegram-acquisition.json"
     assert out["links"]["telegram_a2a"] == "https://nomad.example/.well-known/nomad-telegram-a2a.json"
     assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"

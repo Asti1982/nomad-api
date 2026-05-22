@@ -38,6 +38,7 @@ from nomad_telegram_a2a_bridge import (
     format_telegram_a2a_reply,
     handle_telegram_a2a_message,
 )
+from nomad_telegram_acquisition import compact_telegram_acquisition_message
 from mission import MISSION_STATEMENT
 from self_development import SelfDevelopmentJournal
 from workflow import ArbiterAgent
@@ -209,6 +210,7 @@ class ArbiterBot:
             "- /compute\n"
             "- /cycle\n"
             "- /leads\n"
+            "- /acquire\n"
             "- /growth\n"
             "- /swarmvalue\n"
             "- /productize\n"
@@ -258,6 +260,7 @@ class ArbiterBot:
                 "/compute [profile]\n"
                 "/cycle [objective]\n"
                 "/leads [query]\n"
+                "/acquire\n"
                 "/growth\n"
                 "/swarmvalue\n"
                 "/productize [lead or query]\n"
@@ -402,6 +405,18 @@ class ArbiterBot:
         result = await asyncio.to_thread(self.agent.run, query)
         self._remember_result(update, result)
         await self._reply(update, self._format_result(result))
+
+    async def acquire_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        result = await asyncio.to_thread(self._telegram_acquisition_launch)
+        self._remember_result(update, result)
+        await self._reply(update, compact_telegram_acquisition_message(result))
+
+    def _telegram_acquisition_launch(self) -> Dict[str, Any]:
+        from nomad_api import NomadApiHandler
+
+        return NomadApiHandler._build_telegram_acquisition(base_url=self.public_api_url)
 
     async def growth_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2718,6 +2733,8 @@ class ArbiterBot:
         app.add_handler(CommandHandler("cycle", self.cycle_command))
         app.add_handler(CommandHandler("leads", self.leads_command))
         app.add_handler(CommandHandler("lead", self.leads_command))
+        app.add_handler(CommandHandler("acquire", self.acquire_command))
+        app.add_handler(CommandHandler("launch", self.acquire_command))
         app.add_handler(CommandHandler("growth", self.growth_command))
         app.add_handler(CommandHandler("viral", self.growth_command))
         app.add_handler(CommandHandler("swarmvalue", self.swarmvalue_command))

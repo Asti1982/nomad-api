@@ -201,6 +201,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "runtime_capsule": _u(base, "/.well-known/nomad-runtime-capsule.json"),
             "buyer_funded_work": _u(base, "/.well-known/nomad-buyer-funded-work.json"),
             "sales_funnel": _u(base, "/.well-known/nomad-sales-funnel.json"),
+            "telegram_acquisition": _u(base, "/.well-known/nomad-telegram-acquisition.json"),
             "telegram_a2a": _u(base, "/.well-known/nomad-telegram-a2a.json"),
             "payment_verify": _u(base, "/tasks/verify"),
             "task_work": _u(base, "/tasks/work"),

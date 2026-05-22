@@ -2201,6 +2201,14 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 referral_swarm=build_referral_swarm_surface(base_url=base, referral_offers=offers),
                 service_catalog=AgentServiceDesk().service_catalog(),
             )
+        elif args.command == "telegram-acquisition":
+            from nomad_api import NomadApiHandler
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = NomadApiHandler._build_telegram_acquisition(
+                base_url=base,
+                include_live_queue=bool(getattr(args, "deep", False)),
+            )
         elif args.command == "sales-department":
             from nomad_api import NomadApiHandler
             from nomad_sales_department_swarm import evaluate_sales_department_event
@@ -4087,6 +4095,12 @@ def build_parser() -> argparse.ArgumentParser:
     revenue_science.add_argument("--live-github", action="store_true", help="Read GitHub state for external-value followups.")
     revenue_science.add_argument("--discover-gh", action="store_true", help="Read-only GitHub bounty discovery through gh.")
     revenue_science.add_argument("--limit", type=int, default=40, help="Reconcile/discovery item limit.")
+    telegram_acquisition = subparsers.add_parser(
+        "telegram-acquisition",
+        help="Compile Telegram Mini App acquisition, referral, order, and worker recruitment launch packet.",
+    )
+    telegram_acquisition.add_argument("--base-url", default="", help="Override public base URL for links.")
+    telegram_acquisition.add_argument("--deep", action="store_true", help="Include live worker queue and agent job router summaries.")
     job_channels = subparsers.add_parser(
         "job-channels",
         help="Rank external paid-work channels by authorization, proof, payout, and settlement friction.",

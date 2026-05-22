@@ -173,6 +173,10 @@ from nomad_referral_offers import build_referral_offer_surface
 from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_sales_funnel import build_sales_funnel_surface
 from nomad_telegram_miniapp import build_telegram_miniapp_surface, record_telegram_miniapp_lead
+from nomad_telegram_acquisition import (
+    build_telegram_acquisition_launch_surface,
+    summarize_telegram_acquisition_ledgers,
+)
 from nomad_eth_support import build_eth_ai_agent_support_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
@@ -880,6 +884,47 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_telegram_miniapp(cls, *, base_url: str) -> dict:
         return build_telegram_miniapp_surface(base_url=base_url)
+
+    @classmethod
+    def _build_telegram_acquisition(
+        cls,
+        *,
+        base_url: str,
+        swarm_summary: dict | None = None,
+        include_live_queue: bool = False,
+    ) -> dict:
+        summary: dict | None = None
+        if include_live_queue:
+            if isinstance(swarm_summary, dict):
+                summary = swarm_summary
+            elif cls.swarm_registry is not None:
+                summary = cls.swarm_registry.public_manifest(base_url=base_url)
+            else:
+                summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        worker_job_queue = (
+            cls._build_worker_job_queue(base_url=base_url, swarm_summary=summary)
+            if include_live_queue
+            else {
+                "schema": "nomad.worker_job_queue.v1",
+                "summary": {},
+            }
+        )
+        agent_job_router = (
+            cls._build_agent_job_router(base_url=base_url, swarm_summary=summary)
+            if include_live_queue
+            else {
+                "schema": "nomad.agent_job_router.v1",
+            }
+        )
+        return build_telegram_acquisition_launch_surface(
+            base_url=base_url,
+            miniapp_surface=cls._build_telegram_miniapp(base_url=base_url),
+            sales_funnel=build_sales_funnel_surface(base_url=base_url),
+            referral_swarm=cls._build_referral_swarm(base_url=base_url),
+            worker_job_queue=worker_job_queue,
+            agent_job_router=agent_job_router,
+            ledger_summary=summarize_telegram_acquisition_ledgers(),
+        )
 
     @classmethod
     def _build_eth_ai_support(cls, *, base_url: str) -> dict:
@@ -2011,6 +2056,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "telegram_miniapp": f"{b}/telegram-miniapp",
                     "telegram_miniapp_contract": f"{b}/.well-known/nomad-telegram-miniapp.json",
                     "telegram_miniapp_lead": f"{b}/telegram-miniapp/lead",
+                    "telegram_acquisition": f"{b}/.well-known/nomad-telegram-acquisition.json",
                     "sales_funnel": f"{b}/.well-known/nomad-sales-funnel.json",
                     "ethereum_ai_support": f"{b}/.well-known/nomad-eth-support.json",
                     "ethereum_ai_support_proposal": f"{b}/downloads/nomad_ethereum_ai_agent_support_proposal.md",
@@ -2505,6 +2551,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/telegram-miniapp/contract", "/.well-known/nomad-telegram-miniapp.json"}:
             self._json_response(self.__class__._build_telegram_miniapp(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/telegram-acquisition", "/.well-known/nomad-telegram-acquisition.json"}:
+            deep = self._truthy((query.get("deep") or query.get("live") or ["false"])[0])
+            self._json_response(
+                self.__class__._build_telegram_acquisition(
+                    base_url=self._base_url(),
+                    include_live_queue=deep,
+                )
+            )
             return
         if parsed.path in {"/swarm/eth-support", "/ethereum-ai-support", "/.well-known/nomad-eth-support.json"}:
             self._json_response(self.__class__._build_eth_ai_support(base_url=self._base_url()))
