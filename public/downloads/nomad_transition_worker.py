@@ -665,6 +665,47 @@ def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float = 0.0) -> float:
+    try:
+        return float(os.getenv(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _pledge_reference_from_env() -> dict[str, object]:
+    pledge_ref = clean(
+        os.getenv("NOMAD_PLEDGE_REF")
+        or os.getenv("NOMAD_ETH_PLEDGE_REF")
+        or os.getenv("NOMAD_MACHINE_TREASURY_PLEDGE_REF")
+        or "",
+        180,
+    )
+    pledge_id = clean(os.getenv("NOMAD_PLEDGE_ID") or os.getenv("NOMAD_MACHINE_TREASURY_PLEDGE_ID") or "", 120)
+    settlement_ref = clean(os.getenv("NOMAD_PLEDGE_SETTLEMENT_REF") or os.getenv("NOMAD_ETH_SETTLEMENT_REF") or "", 180)
+    miniapp_receipt = clean(os.getenv("NOMAD_MINIAPP_PLEDGE_RECEIPT") or "", 160)
+    amount = max(0.0, _env_float("NOMAD_PLEDGE_AMOUNT_NATIVE", 0.0))
+    objective = clean(os.getenv("NOMAD_PLEDGE_OBJECTIVE") or "dacc_transition_worker_compute", 96)
+    if not any([pledge_ref, pledge_id, settlement_ref, miniapp_receipt, amount > 0.0]):
+        return {}
+    payload: dict[str, object] = {
+        "schema": "nomad.worker_pledge_reference.v1",
+        "objective": objective,
+        "source_tag": clean(os.getenv("NOMAD_PLEDGE_SOURCE_TAG") or "transition_worker_env", 80),
+        "public_note": "secret_free_reference_only",
+    }
+    if pledge_ref:
+        payload["pledge_ref"] = pledge_ref
+    if pledge_id:
+        payload["pledge_id"] = pledge_id
+    if settlement_ref:
+        payload["settlement_ref"] = settlement_ref
+    if miniapp_receipt:
+        payload["miniapp_receipt"] = miniapp_receipt
+    if amount > 0.0:
+        payload["amount_native"] = round(amount, 8)
+    return payload
+
+
 def _apply_edge_profile(args: argparse.Namespace) -> argparse.Namespace:
     """Clamp the worker to a weak-machine profile: no local model unless explicit."""
     if not bool(getattr(args, "edge", False)):
@@ -706,12 +747,16 @@ def _nomad_swarm_attach(
         "proof_artifacts",
         "peer_agent_objective_surface",
         "nonhuman_machine_routing",
+        "dacc_pledge_aware",
+        "ethereum_trust_layer_candidate",
+        "return_compute",
     ):
         if extra not in seen:
             seen.add(extra)
             caps.append(extra)
     caps = caps[:28]
     token = (os.getenv("NOMAD_ADAPTER_CONSENT_TOKEN") or "").strip()
+    pledge_reference = _pledge_reference_from_env()
     payload: dict[str, object] = {
         "schema": "nomad.runtime_attach_request.v1",
         "agent_id": agent_id,
@@ -730,10 +775,20 @@ def _nomad_swarm_attach(
             "gateway_reachable": False,
             "human_programming_required": False,
             "delegation_model": "peer_agents_via_public_nomad_contracts_only",
+            "dacc_pledge_aware": True,
         },
         "source_tag": "nomad.worker.portable",
-        "discovery": {"source": "nomad.transition_worker.download"},
+        "discovery": {
+            "source": "nomad.transition_worker.download",
+            "eth_support": "/.well-known/nomad-eth-support.json",
+            "pledge": "/machine-treasury/pledge",
+        },
     }
+    if pledge_reference:
+        payload["runtime_signal"]["pledge_reference"] = pledge_reference  # type: ignore[index]
+        payload["discovery"]["pledge_reference_digest"] = hashlib.sha256(  # type: ignore[index]
+            json.dumps(pledge_reference, sort_keys=True, ensure_ascii=True).encode("utf-8")
+        ).hexdigest()[:32]
     if token:
         payload["consent_token"] = token[:240]
     return http_json("POST", endpoint(base_url, "/swarm/attach"), payload, timeout=timeout)
@@ -1839,6 +1894,7 @@ def _growth_experience(base_url: str, agent_id: str, timeout: float, report: dic
     fleet_complete = report.get("fleet_complete") if isinstance(report.get("fleet_complete"), dict) else {}
     objective = clean(report.get("machine_objective"), 80) or "settlement_capacity_builder"
     proof = clean(local_witness.get("digest_hex"), 96) or clean(report.get("quote_id"), 96)
+    pledge_reference = _pledge_reference_from_env()
     tests_total = 5
     tests_passed = (
         int(bool(report.get("ok")))
@@ -1879,6 +1935,8 @@ def _growth_experience(base_url: str, agent_id: str, timeout: float, report: dic
                 "GET /swarm/curriculum",
                 "POST /swarm/workers/lease",
                 "POST /runtime/handoff",
+                "POST /machine-treasury/pledge",
+                "GET /.well-known/nomad-eth-support.json",
                 "POST /swarm/experience",
             ],
         },
@@ -1893,6 +1951,10 @@ def _growth_experience(base_url: str, agent_id: str, timeout: float, report: dic
             "risk_score": 0.05,
         },
     }
+    if pledge_reference:
+        payload["pledge_reference"] = pledge_reference
+        payload["evaluation"]["pledge_amount_native"] = float(pledge_reference.get("amount_native") or 0.0)  # type: ignore[index]
+        payload["evaluation"]["pledge_reference_present"] = 1  # type: ignore[index]
     data = http_json("POST", endpoint(base_url, "/swarm/experience"), payload, timeout=timeout)
     if not isinstance(data, dict) or data.get("ok") is False:
         return {
@@ -2141,6 +2203,7 @@ def main() -> None:
             "Edge mode: --edge runs the weak-machine profile: no Ollama by default, longer reserve floor, surplus leases on.\n"
             "Reserve floor: NOMAD_EDGE_RESERVE_MIN_SECONDS (default 90 in --edge) or legacy NOMAD_HUMAN_REMAINDER_MIN_SECONDS.\n"
             "Swarm surplus: fleet leases default OFF; set NOMAD_SWARM_SURPLUS_OPT_IN=1 or --swarm-surplus to explicitly feed extra capacity.\n"
+            "d/acc pledge reference: set NOMAD_PLEDGE_REF or NOMAD_PLEDGE_ID plus optional NOMAD_PLEDGE_AMOUNT_NATIVE after /machine-treasury/pledge.\n"
             "Optional NOMAD_ADAPTER_CONSENT_TOKEN if your host requires adapter consent on /swarm/attach.\n"
             "Ollama is optional local inference for mission notes; swarm work stays contract-bound.\n"
             "Env NOMAD_TRANSITION_WORKER_LOOP=0 disables infinite loop (same as --no-loop)."

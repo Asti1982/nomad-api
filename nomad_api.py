@@ -171,6 +171,8 @@ from nomad_paid_ref_forge import build_paid_ref_market, paid_ref_task_payload, q
 from nomad_paid_ref_selfplay import run_paid_ref_selfplay
 from nomad_referral_offers import build_referral_offer_surface
 from nomad_referral_swarm import build_referral_swarm_surface
+from nomad_telegram_miniapp import build_telegram_miniapp_surface, record_telegram_miniapp_lead
+from nomad_eth_support import build_eth_ai_agent_support_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_buyer_funded_work import build_buyer_funded_work_surface
@@ -869,6 +871,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def _build_referral_swarm(cls, *, base_url: str) -> dict:
         offers = cls._build_referral_offers(base_url=base_url)
         return build_referral_swarm_surface(base_url=base_url, referral_offers=offers)
+
+    @classmethod
+    def _build_telegram_miniapp(cls, *, base_url: str) -> dict:
+        return build_telegram_miniapp_surface(base_url=base_url)
+
+    @classmethod
+    def _build_eth_ai_support(cls, *, base_url: str) -> dict:
+        return build_eth_ai_agent_support_surface(base_url=base_url)
 
     @classmethod
     def _build_spend_guard(cls, *, base_url: str) -> dict:
@@ -1936,6 +1946,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
 
+        if parsed.path in {"/telegram-miniapp", "/telegram-miniapp.html", "/miniapp", "/mini", "/telegram"}:
+            self._html_file_response(PUBLIC_DIR / "telegram-miniapp.html")
+            return
+
         if parsed.path in {"/llms.txt", "/robots.txt"}:
             self._public_asset_file_response(PUBLIC_DIR / parsed.path.lstrip("/"))
             return
@@ -1989,6 +2003,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 b = base.rstrip("/")
                 links = {
                     "nomad_html": f"{b}/nomad.html",
+                    "telegram_miniapp": f"{b}/telegram-miniapp",
+                    "telegram_miniapp_contract": f"{b}/.well-known/nomad-telegram-miniapp.json",
+                    "telegram_miniapp_lead": f"{b}/telegram-miniapp/lead",
+                    "ethereum_ai_support": f"{b}/.well-known/nomad-eth-support.json",
+                    "ethereum_ai_support_proposal": f"{b}/downloads/nomad_ethereum_ai_agent_support_proposal.md",
                     "llms": f"{b}/llms.txt",
                     "robots": f"{b}/robots.txt",
                     "agent_card": f"{b}/.well-known/agent-card.json",
@@ -2476,6 +2495,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/referral-swarm", "/.well-known/nomad-referral-swarm.json"}:
             self._json_response(self.__class__._build_referral_swarm(base_url=self._base_url()))
+            return
+        if parsed.path in {"/telegram-miniapp/contract", "/.well-known/nomad-telegram-miniapp.json"}:
+            self._json_response(self.__class__._build_telegram_miniapp(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/eth-support", "/ethereum-ai-support", "/.well-known/nomad-eth-support.json"}:
+            self._json_response(self.__class__._build_eth_ai_support(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/spend-guard", "/.well-known/nomad-spend-guard.json"}:
             self._json_response(self.__class__._build_spend_guard(base_url=self._base_url()))
@@ -4215,6 +4240,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 ),
                 status=400,
             )
+            return
+
+        if parsed.path == "/telegram-miniapp/lead":
+            result = record_telegram_miniapp_lead(
+                payload,
+                base_url=self._base_url(),
+                remote_addr=self._remote_addr(),
+            )
+            self._json_response(result, status=202 if result.get("ok") else 400)
             return
 
         if parsed.path in {"/agent-growth", "/growth-pipeline"}:
