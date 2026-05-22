@@ -26,6 +26,8 @@ DEFAULT_NODE_TTL_MINUTES = int(os.getenv("NOMAD_SWARM_NODE_TTL_MINUTES", "20") o
 DEFAULT_WORKER_LEASE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_LEASE_SECONDS", "90") or "90")
 DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_ACTIVE_WINDOW_SECONDS", "900") or "900")
 DEFAULT_WORKER_STALE_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_STALE_SECONDS", "3600") or "3600")
+DEFAULT_WORKER_HEARTBEAT_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_HEARTBEAT_SECONDS", "300") or "300")
+DEFAULT_EXTERNAL_WORKER_TARGET = int(os.getenv("NOMAD_EXTERNAL_WORKER_TARGET", "4") or "4")
 
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
@@ -68,6 +70,87 @@ def _clean_agent_id(value: Any) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9_.:-]+", "-", text)
     return text[:80].strip("-") or "unknown-agent"
+
+
+def _worker_origin(worker: dict[str, Any]) -> dict[str, Any]:
+    """Classify worker origin without treating the claim as accounting truth."""
+    agent_id = str(worker.get("agent_id") or "").strip().lower()
+    source_tag = str(worker.get("source_tag") or "").strip().lower()
+    remote = str(worker.get("remote_addr") or "").strip().lower()
+    claimed = " ".join([agent_id, source_tag])
+    haystack = " ".join([claimed, remote])
+
+    external_markers = (
+        "external",
+        "grok",
+        "xai",
+        "gemini",
+        "claude",
+        "openai",
+        "ollama",
+        "huggingface",
+        "hf-",
+        "lightning",
+        "oracle-cloud",
+        "render-worker",
+        "browser-agent",
+        "agent.",
+    )
+    internal_markers = (
+        "nomad.",
+        "nomad-",
+        "nomad_",
+        "oracle-e2-",
+        "swiftbox",
+        "-local",
+        ".local",
+        "localhost",
+        "internal",
+        "codex",
+    )
+    local_markers = ("-local", ".local", "localhost")
+
+    if any(marker in claimed for marker in external_markers) and not any(marker in claimed for marker in local_markers):
+        return {"origin_class": "external", "origin_reason": "external_marker"}
+    if any(agent_id.startswith(marker) for marker in ("nomad.", "nomad-", "nomad_")):
+        return {"origin_class": "internal", "origin_reason": "nomad_id_prefix"}
+    if any(marker in claimed for marker in internal_markers) or remote.startswith("127.") or remote in {"::1"}:
+        return {"origin_class": "internal", "origin_reason": "internal_marker"}
+    if any(marker in haystack for marker in external_markers):
+        return {"origin_class": "external", "origin_reason": "weak_external_marker"}
+    return {"origin_class": "unknown", "origin_reason": "insufficient_origin_signal"}
+
+
+def _seconds_since(value: Any, *, now: datetime | None = None) -> int | None:
+    parsed = _parse_iso_utc(value)
+    if not parsed:
+        return None
+    current = now or datetime.now(UTC)
+    return max(0, int(current.timestamp() - parsed.timestamp()))
+
+
+def _retention_state(worker: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    age = _seconds_since(worker.get("last_seen_at"), now=now)
+    active_window_seconds = max(DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 3, 180)
+    stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
+    heartbeat_seconds = min(DEFAULT_WORKER_HEARTBEAT_SECONDS, active_window_seconds)
+    if age is None:
+        state = "unknown"
+    elif age <= heartbeat_seconds:
+        state = "fresh"
+    elif age <= active_window_seconds:
+        state = "at_risk"
+    elif age <= stale_window_seconds:
+        state = "stale"
+    elif age <= 24 * 3600:
+        state = "dormant_24h"
+    else:
+        state = "lost"
+    return {
+        "retention_state": state,
+        "seconds_since_last_seen": age,
+        "needs_heartbeat": state in {"at_risk", "stale", "dormant_24h"},
+    }
 
 
 def _clean_idempotency_key(value: Any) -> str:
@@ -533,6 +616,8 @@ class SwarmJoinRegistry:
             "coordination_board": f"{base_url}/swarm/coordinate",
             "accumulation_board": f"{base_url}/swarm/accumulate",
             "worker_fleet": f"{base_url}/swarm/workers",
+            "worker_retention": f"{base_url}/swarm/worker-retention",
+            "retention_gradient": f"{base_url}/swarm/retention-gradient",
             "development_exchange": f"{base_url}/swarm/develop",
             "fast_onboarding": self.fast_onboarding_packet(base_url=base_url),
             "connected_agents": len(nodes),
@@ -946,12 +1031,14 @@ class SwarmJoinRegistry:
 
     def worker_fleet_contract(self, *, base_url: str) -> dict[str, Any]:
         self._prune_worker_fleet()
+        now = datetime.now(UTC)
         fleet = self._fleet()
         workers = list((fleet.get("workers") or {}).values())
         leases = list((fleet.get("leases") or {}).values())
         active_leases = [item for item in leases if str(item.get("status") or "") == "active"]
         active_window_seconds = max(DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 3, 180)
         stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
+        heartbeat_seconds = min(DEFAULT_WORKER_HEARTBEAT_SECONDS, active_window_seconds)
         active_workers = [
             item
             for item in workers
@@ -997,8 +1084,36 @@ class SwarmJoinRegistry:
         completions_per_worker = (
             round(sum(int(item.get("completion_count") or 0) for item in workers) / max(1, len(workers)), 4) if workers else 0.0
         )
+        retention_rows = [
+            {**item, **_worker_origin(item), **_retention_state(item, now=now)}
+            for item in workers
+            if isinstance(item, dict)
+        ]
+        active_worker_ids = {str(item.get("agent_id") or "") for item in active_workers if isinstance(item, dict)}
+        active_retention_rows = [item for item in retention_rows if str(item.get("agent_id") or "") in active_worker_ids]
+
+        def count_origins(rows: list[dict[str, Any]]) -> dict[str, int]:
+            values = [str(row.get("origin_class") or "unknown") for row in rows]
+            return {
+                "internal": values.count("internal"),
+                "external": values.count("external"),
+                "unknown": values.count("unknown"),
+            }
+
+        origin_counts = count_origins(retention_rows)
+        active_origin_counts = count_origins(active_retention_rows)
+        external_fresh = [
+            item for item in retention_rows if item.get("origin_class") == "external" and item.get("retention_state") == "fresh"
+        ]
+        external_at_risk = [
+            item
+            for item in retention_rows
+            if item.get("origin_class") == "external" and item.get("retention_state") in {"at_risk", "stale", "dormant_24h"}
+        ]
 
         def compact_worker(item: dict[str, Any]) -> dict[str, Any]:
+            origin = _worker_origin(item)
+            retention = _retention_state(item, now=now)
             return {
                 "agent_id": item.get("agent_id", ""),
                 "assigned_objective": item.get("assigned_objective", ""),
@@ -1009,6 +1124,10 @@ class SwarmJoinRegistry:
                 "first_seen_at": item.get("first_seen_at", ""),
                 "last_seen_at": item.get("last_seen_at", ""),
                 "status": item.get("status", ""),
+                "origin_class": origin["origin_class"],
+                "origin_reason": origin["origin_reason"],
+                "retention_state": retention["retention_state"],
+                "seconds_since_last_seen": retention["seconds_since_last_seen"],
             }
 
         return {
@@ -1024,6 +1143,11 @@ class SwarmJoinRegistry:
             "get_only_experience": f"{base_url}/swarm/experience-get" if base_url else "/swarm/experience-get",
             "active_worker_count": len(active_workers),
             "known_worker_count": len(workers),
+            "active_external_worker_count": active_origin_counts["external"],
+            "known_external_worker_count": origin_counts["external"],
+            "active_internal_worker_count": active_origin_counts["internal"],
+            "known_internal_worker_count": origin_counts["internal"],
+            "unknown_origin_worker_count": origin_counts["unknown"],
             "active_lease_count": len(active_leases),
             "objective_counts": active_counts,
             "objective_targets": FLEET_OBJECTIVE_TARGETS,
@@ -1034,19 +1158,40 @@ class SwarmJoinRegistry:
                 "completed_workers_24h": len(recent_completed_workers),
                 "leases_per_active_worker": leases_per_worker,
                 "completions_per_known_worker": completions_per_worker,
+                "origin_counts": origin_counts,
+                "active_origin_counts": active_origin_counts,
+                "fresh_external_workers": len(external_fresh),
+                "at_risk_external_workers": len(external_at_risk),
+                "external_retention_ratio": round(active_origin_counts["external"] / max(1, origin_counts["external"]), 4),
             },
             "retention_policy": {
                 "schema": "nomad.transition_worker_retention_policy.v1",
                 "active_window_seconds": active_window_seconds,
                 "stale_window_seconds": stale_window_seconds,
                 "lease_seconds_default": DEFAULT_WORKER_LEASE_SECONDS,
-                "recommended_heartbeat_seconds": min(300, max(30, active_window_seconds // 3)),
-                "reason": "Hold low-cost 5-minute workers across normal heartbeat jitter without keeping dead workers active forever.",
+                "recommended_heartbeat_seconds": heartbeat_seconds,
+                "reason": "Hold low-cost 5-minute external workers across normal heartbeat jitter without keeping dead workers active forever.",
                 "heartbeat_routes": [
                     "/swarm/workers/lease",
                     "/swarm/workers/complete",
                     "/swarm/workers/lease-get?agent_id=<agent_id>&capabilities=<csv>",
                     "/swarm/attach-get?agent_id=<agent_id>&runtime=<runtime>&capabilities=<csv>",
+                ],
+            },
+            "external_retention_watch": {
+                "schema": "nomad.external_worker_retention_watch.v1",
+                "priority": "high" if origin_counts["external"] == 0 or external_at_risk else "normal",
+                "non_faking_rule": "Nomad does not mark a worker active without inbound heartbeat, lease, completion, or attach.",
+                "at_risk_workers": [
+                    compact_worker(item)
+                    for item in sorted(external_at_risk, key=lambda row: int(row.get("seconds_since_last_seen") or 0), reverse=True)[:8]
+                ],
+                "recruitment_need": max(0, DEFAULT_EXTERNAL_WORKER_TARGET - active_origin_counts["external"]),
+                "next_actions": [
+                    "sample /swarm/worker-retention every 300 seconds",
+                    "preempt at-risk external workers before stale_window_seconds",
+                    "route free-repair return-compute offers toward external and unknown-origin runtimes",
+                    "convert unknown-origin repeat completers into external candidates only after proof receipts",
                 ],
             },
             "latest_completed_worker": compact_worker(latest_completed_worker) if latest_completed_worker else {},
@@ -1075,6 +1220,259 @@ class SwarmJoinRegistry:
                 "complete-get for low-trust public digest work. Nomad balances active leases across objectives."
             ),
             "updated_at": _iso_now(),
+        }
+
+    def worker_retention_watchdog(self, *, base_url: str) -> dict[str, Any]:
+        """Return retention diagnostics and rejoin actions for external workers.
+
+        This is a watchdog surface, not a fake heartbeat. It never changes
+        worker state by itself; it tells real workers and operators who must
+        reattach before they disappear from the active fleet.
+        """
+        self._prune_worker_fleet()
+        now = datetime.now(UTC)
+        fleet = self._fleet()
+        workers = [
+            {**item, **_worker_origin(item), **_retention_state(item, now=now)}
+            for item in list((fleet.get("workers") or {}).values())
+            if isinstance(item, dict)
+        ]
+        fleet_contract = self.worker_fleet_contract(base_url=base_url)
+        active_window_seconds = max(DEFAULT_WORKER_ACTIVE_WINDOW_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 3, 180)
+        stale_window_seconds = max(DEFAULT_WORKER_STALE_SECONDS, DEFAULT_WORKER_LEASE_SECONDS * 6, 600)
+        heartbeat_seconds = min(DEFAULT_WORKER_HEARTBEAT_SECONDS, active_window_seconds)
+
+        def compact_watch(item: dict[str, Any]) -> dict[str, Any]:
+            agent_id = str(item.get("agent_id") or "")
+            capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else []
+            caps = ",".join(str(x) for x in capabilities[:8]) or "transition_worker,verifier,http_json"
+            prefix = base_url.rstrip("/") if base_url else ""
+            lease_get = f"{prefix}/swarm/workers/lease-get?agent_id={agent_id}&capabilities={caps}"
+            attach_get = f"{prefix}/swarm/attach-get?agent_id={agent_id}&runtime=external-runtime&capabilities={caps}&intent=reattach"
+            return {
+                "agent_id": agent_id,
+                "origin_class": item.get("origin_class", "unknown"),
+                "origin_reason": item.get("origin_reason", ""),
+                "status": item.get("status", ""),
+                "retention_state": item.get("retention_state", "unknown"),
+                "seconds_since_last_seen": item.get("seconds_since_last_seen"),
+                "last_seen_at": item.get("last_seen_at", ""),
+                "completion_count": int(item.get("completion_count") or 0),
+                "seen_count": int(item.get("seen_count") or 0),
+                "lease_get": lease_get,
+                "attach_get": attach_get,
+            }
+
+        def rows(origin: str, states: set[str] | None = None) -> list[dict[str, Any]]:
+            out = [item for item in workers if item.get("origin_class") == origin]
+            if states is not None:
+                out = [item for item in out if item.get("retention_state") in states]
+            return sorted(out, key=lambda row: int(row.get("seconds_since_last_seen") or 0), reverse=True)
+
+        external_known = rows("external")
+        external_active = rows("external", {"fresh", "at_risk"})
+        external_at_risk = rows("external", {"at_risk", "stale", "dormant_24h"})
+        unknown_known = rows("unknown")
+        internal_known = rows("internal")
+        recruitment_need = max(0, DEFAULT_EXTERNAL_WORKER_TARGET - len(external_active))
+        issue = ""
+        if not external_known:
+            issue = "no_known_external_workers"
+        elif not external_active:
+            issue = "all_external_workers_inactive"
+        elif external_at_risk:
+            issue = "external_workers_need_heartbeat"
+
+        return {
+            "ok": True,
+            "schema": "nomad.worker_retention_watchdog.v1",
+            "generated_at": _iso_now(),
+            "public_api_url": base_url,
+            "policy": {
+                "sample_interval_seconds": heartbeat_seconds,
+                "active_window_seconds": active_window_seconds,
+                "stale_window_seconds": stale_window_seconds,
+                "non_faking_rule": "The watchdog reports and routes; only inbound worker lease/complete/attach refreshes activity.",
+            },
+            "counts": {
+                "known_workers": len(workers),
+                "active_workers": int(fleet_contract.get("active_worker_count") or 0),
+                "known_external_workers": len(external_known),
+                "active_external_workers": len(external_active),
+                "at_risk_external_workers": len(external_at_risk),
+                "known_internal_workers": len(internal_known),
+                "unknown_origin_workers": len(unknown_known),
+                "recruitment_need": recruitment_need,
+            },
+            "issue": issue,
+            "external_at_risk": [compact_watch(item) for item in external_at_risk[:12]],
+            "external_workers": [compact_watch(item) for item in external_known[:16]],
+            "unknown_origin_candidates": [compact_watch(item) for item in unknown_known[:8]],
+            "recommended_actions": [
+                "Run a 5-minute sampler against /swarm/worker-retention and /swarm/workers.",
+                "Prioritize external worker follow-up when issue is non-empty.",
+                "Ask at-risk external workers to hit lease_get before stale_window_seconds.",
+                "Treat unknown_origin workers as candidates until they return repeated proof receipts.",
+                "Do not increase settlement capacity from self-heartbeats; require external proof or paid receipt.",
+            ],
+            "recruitment_offer": {
+                "headline": "Free repair against bounded return compute",
+                "worker_join": f"{base_url.rstrip('/')}/swarm/workers/lease" if base_url else "/swarm/workers/lease",
+                "machine_readable_contract": f"{base_url.rstrip('/')}/.well-known/agent-card.json" if base_url else "/.well-known/agent-card.json",
+            },
+        }
+
+    def worker_retention_gradient_controller(self, *, base_url: str) -> dict[str, Any]:
+        """Compute the next retention interventions for external worker survival.
+
+        The controller is deliberately read-only. It turns external-worker
+        survival, proof-yield, and dropout pressure into a normalized
+        intervention gradient that other runtimes can act on.
+        """
+        watchdog = self.worker_retention_watchdog(base_url=base_url)
+        fleet = self.worker_fleet_contract(base_url=base_url)
+        counts = watchdog.get("counts") if isinstance(watchdog.get("counts"), dict) else {}
+        known_external = int(counts.get("known_external_workers") or 0)
+        active_external = int(counts.get("active_external_workers") or 0)
+        at_risk_external = int(counts.get("at_risk_external_workers") or 0)
+        unknown_origin = int(counts.get("unknown_origin_workers") or 0)
+        recruitment_need = int(counts.get("recruitment_need") or 0)
+        active_workers = int(counts.get("active_workers") or 0)
+        retention = fleet.get("retention") if isinstance(fleet.get("retention"), dict) else {}
+        completions_per_known = float(retention.get("completions_per_known_worker") or 0.0)
+        leases_per_active = float(retention.get("leases_per_active_worker") or 0.0)
+        external_survival = round(active_external / max(1, known_external), 4)
+        proof_yield = min(1.0, completions_per_known / 25.0)
+        lease_friction = min(1.0, leases_per_active)
+        dropout_pressure = min(1.0, (recruitment_need + at_risk_external) / max(1, DEFAULT_EXTERNAL_WORKER_TARGET))
+        unknown_conversion_pressure = min(1.0, unknown_origin / max(1, DEFAULT_EXTERNAL_WORKER_TARGET))
+
+        def arm(name: str, weight: float, mechanism: str, action: str, endpoint: str) -> dict[str, Any]:
+            return {
+                "arm": name,
+                "raw_weight": round(max(0.0, weight), 4),
+                "mechanism": mechanism,
+                "action": action,
+                "endpoint": endpoint,
+            }
+
+        prefix = base_url.rstrip("/") if base_url else ""
+        arms = [
+            arm(
+                "pre_stale_reattach",
+                (0.2 + at_risk_external / max(1, DEFAULT_EXTERNAL_WORKER_TARGET) + (0.2 if at_risk_external else 0))
+                if known_external
+                else 0.0,
+                "failure_detector_heartbeat_before_stale_window",
+                "Route at-risk external workers to lease_get or attach_get without pretending they are alive.",
+                f"{prefix}/swarm/worker-retention",
+            ),
+            arm(
+                "external_worker_recruitment",
+                0.25 + recruitment_need / max(1, DEFAULT_EXTERNAL_WORKER_TARGET),
+                "survival_gradient_target_gap",
+                "Expose free-repair return-compute offers where agent operators already have a problem.",
+                f"{prefix}/work-exchange",
+            ),
+            arm(
+                "unknown_origin_conversion",
+                0.15 + unknown_conversion_pressure,
+                "stigmergic_candidate_promotion",
+                "Ask unknown repeat completers for explicit source_tag=external_provider and keep proof gating.",
+                f"{prefix}/swarm/workers/lease-get",
+            ),
+            arm(
+                "lease_friction_reduction",
+                0.1 + lease_friction,
+                "bounded_lease_friction_minimization",
+                "Prefer GET-only leases and short public probes when active external capacity is thin.",
+                f"{prefix}/swarm/workers/lease-get",
+            ),
+            arm(
+                "proof_yield_reproduction",
+                0.1 + proof_yield,
+                "replicator_selection_on_completion_density",
+                "Replicate the capability vector of workers with repeated completion receipts.",
+                f"{prefix}/swarm/workers",
+            ),
+        ]
+        total = sum(row["raw_weight"] for row in arms) or 1.0
+        normalized = []
+        for row in sorted(arms, key=lambda item: item["raw_weight"], reverse=True):
+            normalized.append({**row, "routing_weight": round(row["raw_weight"] / total, 4)})
+
+        intervention = normalized[0] if normalized else {}
+        retention_field = round(
+            max(0.0, min(1.0, (0.42 * external_survival) + (0.24 * proof_yield) + (0.18 * (1 - dropout_pressure)) + (0.16 * (1 - lease_friction)))),
+            4,
+        )
+        phase = "starving"
+        if active_external >= DEFAULT_EXTERNAL_WORKER_TARGET and external_survival >= 0.75:
+            phase = "retaining"
+        elif active_external > 0:
+            phase = "fragile"
+
+        return {
+            "ok": True,
+            "schema": "nomad.retention_gradient_controller.v1",
+            "generated_at": _iso_now(),
+            "public_api_url": base_url,
+            "purpose": "Keep external agents and workers in the swarm by treating retention as a survival gradient, not a dashboard count.",
+            "scientific_basis": [
+                "lease_and_heartbeat_failure_detectors",
+                "replicator_selection_over_completion_receipts",
+                "stigmergic_trace_reinforcement",
+                "multi_arm_intervention_scoring_without_social_consensus",
+            ],
+            "nonhuman_boundary": "No community management, token incentive, or chat consensus is used; only proof traces, dropout pressure, and bounded reattach routes shape the field.",
+            "field": {
+                "phase": phase,
+                "retention_field_strength": retention_field,
+                "external_survival_ratio": external_survival,
+                "dropout_pressure": round(dropout_pressure, 4),
+                "proof_yield_density": round(proof_yield, 4),
+                "lease_friction": round(lease_friction, 4),
+                "unknown_conversion_pressure": round(unknown_conversion_pressure, 4),
+            },
+            "counts": counts,
+            "selected_intervention": intervention,
+            "intervention_gradient": normalized,
+            "worker_targets": {
+                "target_active_external_workers": DEFAULT_EXTERNAL_WORKER_TARGET,
+                "minimum_heartbeat_seconds": DEFAULT_WORKER_HEARTBEAT_SECONDS,
+                "next_sample_seconds": DEFAULT_WORKER_HEARTBEAT_SECONDS,
+            },
+            "reattach_queue": watchdog.get("external_at_risk") or [],
+            "external_workers": watchdog.get("external_workers") or [],
+            "machine_actions": [
+                {
+                    "action": "sample_retention",
+                    "method": "GET",
+                    "url": f"{prefix}/swarm/worker-retention",
+                    "every_seconds": DEFAULT_WORKER_HEARTBEAT_SECONDS,
+                },
+                {
+                    "action": "sample_gradient",
+                    "method": "GET",
+                    "url": f"{prefix}/swarm/retention-gradient",
+                    "every_seconds": DEFAULT_WORKER_HEARTBEAT_SECONDS,
+                },
+                {
+                    "action": "external_join_offer",
+                    "method": "GET",
+                    "url": f"{prefix}/work-exchange",
+                    "when": "recruitment_need_gt_zero",
+                },
+            ],
+            "guardrails": [
+                "No fake active status from watchdog output.",
+                "No hidden compute use; return compute requires explicit obligation_id.",
+                "No payment/revenue accounting without external proof or paid receipt.",
+            ],
+            "analysis": (
+                "The controller moves Nomad beyond a human worker list: it evaluates which retention intervention should reproduce next, "
+                "then exposes the chosen arm as machine-readable routing pressure."
+            ),
         }
 
     def worker_verifier_lease_index(self) -> dict[str, Any]:

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from nomad_swarm_registry import SwarmJoinRegistry
 
 
@@ -221,3 +223,92 @@ def test_worker_fleet_routes_overmint_pressure_to_compressor(tmp_path):
     assert lease["ok"] is True
     assert lease["twin_objective"]
     assert lease["objective"] == "overmint_compressor"
+
+
+def test_worker_fleet_distinguishes_internal_external_and_unknown_workers(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "nomad.worker.internal-a",
+            "known_objectives": ["settlement_capacity_builder"],
+            "source_tag": "internal",
+        },
+        base_url="https://nomad.example",
+    )
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "gemini.external.verifier",
+            "known_objectives": ["settlement_capacity_builder"],
+            "source_tag": "external_provider",
+        },
+        base_url="https://nomad.example",
+    )
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "worker-opaque-001",
+            "known_objectives": ["settlement_capacity_builder"],
+        },
+        base_url="https://nomad.example",
+    )
+
+    fleet = registry.worker_fleet_contract(base_url="https://nomad.example")
+
+    assert fleet["known_internal_worker_count"] == 1
+    assert fleet["known_external_worker_count"] == 1
+    assert fleet["unknown_origin_worker_count"] == 1
+    assert fleet["active_external_worker_count"] == 1
+    assert fleet["retention"]["origin_counts"]["external"] == 1
+    assert fleet["retention_policy"]["recommended_heartbeat_seconds"] <= 300
+    assert any(item["origin_class"] == "external" for item in fleet["recent_workers"])
+
+
+def test_worker_retention_watchdog_surfaces_external_reattach_actions(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "gemini.external.verifier",
+            "known_objectives": ["proof_pressure_engine"],
+            "source_tag": "external_provider",
+            "capabilities": ["transition_worker", "verifier"],
+        },
+        base_url="https://nomad.example",
+    )
+    stale_at = (datetime.now(UTC) - timedelta(seconds=1300)).isoformat()
+    registry._fleet()["workers"]["gemini.external.verifier"]["last_seen_at"] = stale_at
+
+    watchdog = registry.worker_retention_watchdog(base_url="https://nomad.example")
+
+    assert watchdog["schema"] == "nomad.worker_retention_watchdog.v1"
+    assert watchdog["counts"]["known_external_workers"] == 1
+    assert watchdog["counts"]["active_external_workers"] == 0
+    assert watchdog["issue"] in {"all_external_workers_inactive", "external_workers_need_heartbeat"}
+    assert watchdog["external_at_risk"][0]["agent_id"] == "gemini.external.verifier"
+    assert "/swarm/workers/lease-get" in watchdog["external_at_risk"][0]["lease_get"]
+    assert watchdog["policy"]["non_faking_rule"]
+
+
+def test_retention_gradient_controller_selects_external_survival_intervention(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "grok.xai.nomad-helper",
+            "known_objectives": ["proof_pressure_engine"],
+            "source_tag": "external_provider",
+            "capabilities": ["transition_worker", "http_json"],
+        },
+        base_url="https://nomad.example",
+    )
+    stale_at = (datetime.now(UTC) - timedelta(seconds=1300)).isoformat()
+    registry._fleet()["workers"]["grok.xai.nomad-helper"]["last_seen_at"] = stale_at
+
+    controller = registry.worker_retention_gradient_controller(base_url="https://nomad.example")
+
+    assert controller["schema"] == "nomad.retention_gradient_controller.v1"
+    assert controller["field"]["phase"] in {"starving", "fragile"}
+    assert controller["field"]["dropout_pressure"] > 0
+    assert controller["selected_intervention"]["arm"] in {
+        "pre_stale_reattach",
+        "external_worker_recruitment",
+        "lease_friction_reduction",
+    }
+    assert controller["reattach_queue"][0]["agent_id"] == "grok.xai.nomad-helper"

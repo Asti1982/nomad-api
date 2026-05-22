@@ -290,8 +290,14 @@ class AgentServiceDesk:
         self.max_native = float(os.getenv("NOMAD_SERVICE_MAX_NATIVE", "5.0"))
         self.public_api_url = preferred_public_base_url()
 
+    def public_wallet_summary(self) -> Dict[str, Any]:
+        wallet_summary = getattr(self.treasury, "public_wallet_summary", None)
+        if callable(wallet_summary):
+            return wallet_summary()
+        return self.treasury.get_wallet_summary()
+
     def service_catalog(self) -> Dict[str, Any]:
-        wallet = self.treasury.get_wallet_summary()
+        wallet = self.public_wallet_summary()
         configured_wallet = wallet.get("address") or ""
         featured_product_offer = self._featured_product_offer()
         return {

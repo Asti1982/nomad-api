@@ -90,7 +90,8 @@ class TreasuryAgent:
             "contract_address": contract_address,
         }
 
-    def get_wallet_summary(self) -> Dict[str, Any]:
+    def public_wallet_summary(self) -> Dict[str, Any]:
+        """Return configured wallet metadata without touching RPC providers."""
         summary: Dict[str, Any] = {
             "address": "",
             "native_balance": None,
@@ -98,10 +99,17 @@ class TreasuryAgent:
             "configured": False,
             "rpc_url": self.rpc_url,
         }
-
         if self.agent_address and self.agent_address.lower() not in PLACEHOLDER_VALUES:
             summary["address"] = self.agent_address
             summary["configured"] = True
+        if self.project_token_symbol:
+            summary["project_token_symbol"] = self.project_token_symbol
+        if self.project_token_address and self.project_token_address.lower() not in PLACEHOLDER_VALUES:
+            summary["project_token_address"] = self.project_token_address
+        return summary
+
+    def get_wallet_summary(self) -> Dict[str, Any]:
+        summary: Dict[str, Any] = self.public_wallet_summary()
 
         try:
             from client import ArbiterWeb3

@@ -3646,6 +3646,34 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Fleet", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/swarm/worker-retention": {
+                "get": {
+                    "summary": "External/internal worker retention watchdog and rejoin actions",
+                    "operationId": "getWorkerRetentionWatchdog",
+                    "responses": {"200": {"description": "Worker retention watchdog", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-worker-retention.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/worker-retention",
+                    "operationId": "getWorkerRetentionWellKnown",
+                    "responses": {"200": {"description": "Worker retention watchdog", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/swarm/retention-gradient": {
+                "get": {
+                    "summary": "Retention gradient controller for external worker survival and reattach pressure",
+                    "operationId": "getRetentionGradientController",
+                    "responses": {"200": {"description": "Retention gradient controller", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-retention-gradient.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/retention-gradient",
+                    "operationId": "getRetentionGradientWellKnown",
+                    "responses": {"200": {"description": "Retention gradient controller", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
             "/swarm/workers/lease": {
                 "get": {
                     "summary": "Transition worker lease contract",

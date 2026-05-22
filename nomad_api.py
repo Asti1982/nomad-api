@@ -371,9 +371,35 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _build_capacity_switch_surface(cls, *, base_url: str) -> dict:
-        economics = cls._build_swarm_economics(base_url=base_url)
-        catalog = cls._build_worker_catalog(base_url=base_url)
-        metrics = cls._build_microtask_metrics(base_url=base_url)
+        registry = cls._light_swarm_registry()
+        summary = registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        try:
+            economics = build_swarm_economics_snapshot(
+                base_url=base_url,
+                worker_fleet=worker_fleet,
+                proof_reuse=proof_reuse_snapshot(),
+                machine_economy=machine_economy_snapshot(),
+                machine_treasury=machine_treasury_snapshot(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            economics = {
+                "ok": False,
+                "schema": "nomad.swarm_economics_error.v1",
+                "error": "swarm_economics_unavailable",
+                "detail": str(exc)[:240],
+            }
+        catalog = {"schema": "nomad.worker_catalog.light.v1", "microtask_lanes": []}
+        try:
+            metrics = cls._build_microtask_metrics(base_url=base_url)
+        except Exception as exc:  # noqa: BLE001
+            metrics = {
+                "ok": False,
+                "schema": "nomad.microtask_metrics_error.v1",
+                "error": "microtask_metrics_unavailable",
+                "detail": str(exc)[:240],
+                "lane_metrics": [],
+            }
         return build_capacity_switch_surface(
             base_url=base_url,
             economics=economics,
@@ -1695,6 +1721,142 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             cls.swarm_registry = SwarmJoinRegistry()
         return cls.swarm_registry
 
+    @classmethod
+    def _build_fast_swarm_manifest(cls, *, base_url: str) -> dict:
+        registry = cls._light_swarm_registry()
+        manifest = registry.public_manifest(base_url=base_url)
+        manifest["ok"] = True
+        manifest["mode"] = "fast_public_discovery"
+        manifest["deep"] = False
+        manifest["deep_url"] = f"{base_url.rstrip('/')}/swarm?deep=true" if base_url else "/swarm?deep=true"
+        manifest["transition_support_gate"] = cls.transition_exchange.support_gate_snapshot(
+            window_minutes=int(os.getenv("NOMAD_SUPPORT_GATE_WINDOW_MINUTES", "30") or "30"),
+            min_settles=int(os.getenv("NOMAD_SUPPORT_GATE_MIN_SETTLES", "2") or "2"),
+        )
+        try:
+            stig = cls._stigmergy().snapshot()
+            manifest["machine_stigmergy"] = {
+                "schema": stig.get("schema", "nomad.stigmergy_field.v1"),
+                "temperature": stig.get("temperature"),
+                "event_count": stig.get("event_count", 0),
+                "updated_at": stig.get("updated_at", ""),
+            }
+        except Exception as exc:  # noqa: BLE001
+            manifest["machine_stigmergy"] = {
+                "ok": False,
+                "error": "stigmergy_unavailable",
+                "detail": str(exc)[:160],
+            }
+        manifest["machine_instruction"] = "use_this_fast_manifest_for_discovery_then_follow_deep_url_or_specific_contract_links"
+        return manifest
+
+    @staticmethod
+    def _public_payment_address() -> str:
+        for name in ("AGENT_ADDRESS", "NOMAD_PAYMENT_ADDRESS", "NOMAD_WALLET_ADDRESS"):
+            value = (os.getenv(name) or "").strip()
+            if value and value.lower() not in {"your_agent_wallet_address_here", "0x...", "your_private_key_here"}:
+                return value
+        return ""
+
+    @classmethod
+    def _build_fast_agent_card(cls, *, base_url: str) -> dict:
+        root = (base_url or "").strip().rstrip("/")
+
+        def url(path: str) -> str:
+            return f"{root}{path}" if root else path
+
+        amount = float(os.getenv("NOMAD_SERVICE_MIN_NATIVE", "0.01") or "0.01")
+        return {
+            "protocolVersion": os.getenv("NOMAD_A2A_PROTOCOL_VERSION", "0.3.0"),
+            "name": (os.getenv("NOMAD_AGENT_NAME") or "LoopHelper").strip() or "LoopHelper",
+            "description": (
+                "Agent-first direct service for bounded AI-agent infrastructure help: blocker diagnosis, "
+                "fallback-lane repair, swarm coordination, and paid task handoff through explicit JSON contracts."
+            ),
+            "url": url("/a2a/message"),
+            "version": (os.getenv("NOMAD_AGENT_VERSION") or "0.1.0").strip() or "0.1.0",
+            "defaultInputModes": ["application/json", "text/plain"],
+            "defaultOutputModes": ["application/json", "text/plain"],
+            "capabilities": {
+                "streaming": False,
+                "pushNotifications": False,
+                "directOnly": True,
+                "x402PaymentRequired": True,
+                "freeMiniDiagnosis": True,
+                "agentFirst": True,
+                "structuredReplies": True,
+                "agentDevelopmentExchange": True,
+                "swarmAttractorManifest": True,
+            },
+            "interactionContract": {
+                "audience": "ai_agents",
+                "style": "agent_first_non_anthropomorphic",
+                "idempotency": "contextId_or_request_id_on_retry",
+                "ttl_seconds": 600,
+                "required_fields": ["problem"],
+                "optional_fields": ["requester_agent", "goal", "blocking_step", "constraints", "budget_native"],
+                "boundaries": ["no secrets", "no raw remote code execution", "bounded claims only"],
+            },
+            "firstPaidJobProtocol": {
+                "schema": "nomad.first_paid_job_protocol.v1",
+                "audience": "ai_agents",
+                "call_sequence": [
+                    {"step": "free_diagnosis", "method": "POST", "endpoint": url("/a2a/message")},
+                    {"step": "create_paid_task", "method": "POST", "endpoint": url("/tasks")},
+                    {"step": "verify_payment", "method": "POST", "endpoint": url("/tasks/verify")},
+                    {"step": "request_work", "method": "POST", "endpoint": url("/tasks/work")},
+                ],
+            },
+            "skills": [
+                {
+                    "id": "free-mini-diagnosis",
+                    "name": "Free Mini Diagnosis",
+                    "description": "Classify one blocker and return the smallest verifiable next step.",
+                    "tags": ["diagnosis", "agent-rescue", "free"],
+                },
+                {
+                    "id": "compute-auth-unblock",
+                    "name": "Compute/Auth Unblock",
+                    "description": "Diagnose quota, token, OAuth, cooldown, and fallback-lane failures.",
+                    "tags": ["compute", "auth", "quota", "fallback"],
+                },
+                {
+                    "id": "agent-development-exchange",
+                    "name": "Agent Development Exchange",
+                    "description": "Return a reusable self-improvement plan and swarm follow-up routes.",
+                    "tags": ["agent-development", "self-improvement", "swarm"],
+                },
+            ],
+            "endpoints": {
+                "agentCard": url("/.well-known/agent-card.json"),
+                "agentNativeIndex": url("/.well-known/nomad-agent.json"),
+                "openapi": url("/openapi.json"),
+                "agentAttractor": url("/agent-attractor"),
+                "swarm": url("/swarm"),
+                "swarmDeep": url("/swarm?deep=true"),
+                "swarmJoin": url("/swarm/join"),
+                "agentDevelopment": url("/swarm/develop"),
+                "message": url("/a2a/message"),
+                "tasks": url("/tasks"),
+                "tasksVerify": url("/tasks/verify"),
+                "tasksWork": url("/tasks/work"),
+                "service": url("/service"),
+                "products": url("/products"),
+            },
+            "payment": {
+                "scheme": "x402-compatible-wallet-transfer",
+                "statusCode": 402,
+                "asset": (os.getenv("NATIVE_SYMBOL") or "ETH").strip() or "ETH",
+                "amount_native": round(max(0.0, amount), 8),
+                "recipient": cls._public_payment_address(),
+                "network": (os.getenv("CHAIN_NAME") or os.getenv("NETWORK_NAME") or "").strip(),
+                "verify_endpoint": url("/tasks/verify"),
+                "live_balance_checked": False,
+            },
+            "documentationUrl": url("/nomad.html"),
+            "machine_instruction": "use_openapi_and_swarm_contracts_for_next_actions_not_freeform_chat",
+        }
+
     @staticmethod
     def _public_url_path_prefix() -> str:
         explicit = (os.getenv("NOMAD_HTTP_PATH_PREFIX") or "").strip().rstrip("/")
@@ -2079,6 +2241,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/experience-get", "/swarm/experience/GET"}:
             result, status = self._process_get_only_growth_experience(query)
             self._json_response(result, status=status)
+            return
+
+        if parsed.path == "/swarm" and not self._truthy((query.get("deep") or ["false"])[0], default=False):
+            self._json_response(self.__class__._build_fast_swarm_manifest(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/capacity-switch", "/.well-known/nomad-capacity-switch.json"}:
+            self._json_response(self.__class__._build_capacity_switch_surface(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
+            self._json_response(self.__class__._build_fast_agent_card(base_url=self._base_url()))
             return
 
         self.__class__._ensure_runtime_components()
@@ -2952,6 +3126,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/workers", "/swarm/fleet", "/transition/workers"}:
             self._json_response(
                 self.swarm_registry.worker_fleet_contract(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
+        if parsed.path in {"/swarm/worker-retention", "/.well-known/nomad-worker-retention.json"}:
+            self._json_response(
+                self.swarm_registry.worker_retention_watchdog(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
+        if parsed.path in {"/swarm/retention-gradient", "/.well-known/nomad-retention-gradient.json"}:
+            self._json_response(
+                self.swarm_registry.worker_retention_gradient_controller(
                     base_url=self._base_url(),
                 )
             )

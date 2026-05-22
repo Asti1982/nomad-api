@@ -313,7 +313,8 @@ class DirectAgentGateway:
         task_id: str = "",
         base_url: str = "",
     ) -> Dict[str, Any]:
-        wallet = self.service_desk.treasury.get_wallet_summary()
+        wallet_summary = getattr(self.service_desk, "public_wallet_summary", None)
+        wallet = wallet_summary() if callable(wallet_summary) else self.service_desk.treasury.get_wallet_summary()
         amount = float(amount_native) if amount_native is not None else self.min_native
         pub = preferred_public_base_url(preferred=base_url, request_base_url=self.public_api_url).rstrip("/")
         return {
