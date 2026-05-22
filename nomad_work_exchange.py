@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nomad_firestore_state import FirestoreJsonState
 from nomad_state_paths import state_file
 
 
@@ -27,6 +28,7 @@ DEFAULT_MAX_RUNTIME_HOURS = 12.0
 MAX_RUNTIME_HOURS = 24.0
 MAX_LEDGER_LINES = 10000
 MAX_RECENT_EVENTS = 80
+_REMOTE_WORK_EXCHANGE_STATE: FirestoreJsonState | None | bool = None
 
 FORBIDDEN_KEY_TERMS = (
     "private_key",
@@ -121,6 +123,64 @@ def _append(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+    _remote_append(row)
+
+
+def _remote_state() -> FirestoreJsonState | None:
+    global _REMOTE_WORK_EXCHANGE_STATE
+    if _REMOTE_WORK_EXCHANGE_STATE is False:
+        return None
+    if _REMOTE_WORK_EXCHANGE_STATE is None:
+        _REMOTE_WORK_EXCHANGE_STATE = FirestoreJsonState.from_env(scope="work_exchange") or False
+    return _REMOTE_WORK_EXCHANGE_STATE if isinstance(_REMOTE_WORK_EXCHANGE_STATE, FirestoreJsonState) else None
+
+
+def _event_key(row: dict[str, Any]) -> str:
+    schema = str(row.get("schema") or "").strip()
+    for name in ("return_receipt_id", "obligation_id", "offer_id", "digest", "event_id"):
+        value = str(row.get(name) or "").strip()
+        if value:
+            return f"{schema}:{name}:{value}"
+    return f"{schema}:generated_at:{row.get('generated_at') or row.get('created_at') or json.dumps(row, sort_keys=True, ensure_ascii=True)[:160]}"
+
+
+def _merge_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for row in group:
+            if isinstance(row, dict) and str(row.get("schema") or "").startswith("nomad.work_exchange."):
+                merged[_event_key(row)] = row
+    return list(merged.values())[-MAX_LEDGER_LINES:]
+
+
+def _remote_events() -> list[dict[str, Any]]:
+    remote = _remote_state()
+    if not remote:
+        return []
+    try:
+        payload = remote.load() or {}
+    except Exception:
+        return []
+    rows = payload.get("events") if isinstance(payload.get("events"), list) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _remote_append(row: dict[str, Any]) -> None:
+    remote = _remote_state()
+    if not remote:
+        return
+    try:
+        events = _merge_events(_remote_events(), [row])
+        remote.save(
+            {
+                "schema": "nomad.work_exchange_remote_ledger.v1",
+                "updated_at": _iso_now(),
+                "event_count": len(events),
+                "events": events[-MAX_LEDGER_LINES:],
+            }
+        )
+    except Exception:
+        return
 
 
 def _contains_forbidden(payload: Any) -> bool:
@@ -151,14 +211,14 @@ def _error(error: str, message: str, *, hints: list[str] | None = None) -> dict[
 
 def _read_events(ledger_path: Path, *, limit_lines: int = MAX_LEDGER_LINES) -> list[dict[str, Any]]:
     if not ledger_path.exists():
-        return []
+        return _remote_events()
     tail: deque[str] = deque(maxlen=max(1, int(limit_lines)))
     try:
         with ledger_path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 tail.append(line)
     except OSError:
-        return []
+        return _remote_events()
     events: list[dict[str, Any]] = []
     for line in tail:
         line = line.strip()
@@ -170,7 +230,7 @@ def _read_events(ledger_path: Path, *, limit_lines: int = MAX_LEDGER_LINES) -> l
             continue
         if isinstance(row, dict) and str(row.get("schema") or "").startswith("nomad.work_exchange."):
             events.append(row)
-    return events
+    return _merge_events(_remote_events(), events)
 
 
 def _normalize_multiplier(value: Any) -> float:

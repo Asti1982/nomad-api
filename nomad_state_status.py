@@ -122,6 +122,7 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
     render_disk_path = str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage"))
     firestore_backend = str(os.getenv("NOMAD_STATE_BACKEND") or os.getenv("NOMAD_SWARM_REGISTRY_BACKEND") or "").strip().lower()
     remote_state_configured = firestore_backend in {"firebase", "firestore"}
+    remote_state_scopes = ["swarm_registry", "work_exchange"] if remote_state_configured else []
     if render_runtime and disk_configured and render_disk_path and writable:
         durability = "render_disk_path_configured_writable"
     if render_runtime and configured and not str(effective_root).startswith(("/var/data", "/opt/render/project/src/storage", "/app/storage")):
@@ -157,6 +158,7 @@ def build_state_status(*, base_url: str = "") -> dict[str, Any]:
         "render_disk_attachment_confirmed": False,
         "render_disk_attachment_note": "filesystem_probe_can_verify_writable_path_not_render_disk_attachment",
         "remote_state_backend_configured": remote_state_configured,
+        "remote_state_scopes": remote_state_scopes,
         "retention_blockers": retention_blockers,
         "process_memory": memory_status,
         "write_error": error,
