@@ -25,6 +25,15 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["guardrails"]["no_unsolicited_dm"] is True
 
 
+def test_telegram_miniapp_surface_uses_public_nomad_prefix_for_syndiode():
+    out = build_telegram_miniapp_surface(base_url="https://www.syndiode.com")
+
+    assert out["public_base_url"] == "https://syndiode.com/nomad"
+    assert out["launch_url"] == "https://syndiode.com/nomad/telegram-miniapp"
+    assert out["lead_capture_url"] == "https://syndiode.com/nomad/telegram-miniapp/lead"
+    assert out["links"]["eth_support"] == "https://syndiode.com/nomad/.well-known/nomad-eth-support.json"
+
+
 def test_telegram_miniapp_lead_receipt_is_secret_free(tmp_path):
     ledger = tmp_path / "miniapp.jsonl"
     out = record_telegram_miniapp_lead(

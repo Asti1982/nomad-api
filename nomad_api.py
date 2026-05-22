@@ -7208,7 +7208,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     def _base_url(self) -> str:
         configured = preferred_public_base_url(allow_local_fallback=False)
         if configured:
-            return configured
+            base = configured.rstrip("/")
+            raw_path = urlparse(getattr(self, "path", "") or "").path or ""
+            configured_path = urlparse(base).path.rstrip("/")
+            if not configured_path:
+                for candidate in (self._edge_ingress_prefix(), "/nomad"):
+                    if candidate and (raw_path == candidate or raw_path.startswith(candidate + "/")):
+                        return f"{base}{candidate}".rstrip("/")
+            return base
 
         proto = str(self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip() or "http"
         host = (

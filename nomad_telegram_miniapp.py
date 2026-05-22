@@ -8,6 +8,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from nomad_referral_offers import build_referral_offer_surface
 from nomad_state_paths import state_file
@@ -38,6 +39,17 @@ def _u(base_url: str, path: str) -> str:
     return f"{base}{path}" if base else path
 
 
+def _canonical_public_base(base_url: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    parsed = urlparse(base)
+    host = (parsed.hostname or "").strip().lower()
+    if host in {"syndiode.com", "www.syndiode.com"} and parsed.path.rstrip("/") in {"", "/"}:
+        return urlunparse(parsed._replace(scheme="https", netloc="syndiode.com", path="/nomad")).rstrip("/")
+    return base
+
+
 def _digest(payload: Any) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
@@ -49,7 +61,7 @@ def _miniapp_ledger_path() -> Path:
 
 def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
     """Return the public Mini App contract used by Telegram and web clients."""
-    base = (base_url or "").strip().rstrip("/")
+    base = _canonical_public_base(base_url)
     referral = build_referral_offer_surface(base_url=base)
     cursor_offer = (referral.get("offers") or [{}])[0]
     payment_address = _text(

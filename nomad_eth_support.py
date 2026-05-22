@@ -11,6 +11,7 @@ import json
 import os
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 
 def _now() -> str:
@@ -34,6 +35,17 @@ def _u(base_url: str, path: str) -> str:
     return f"{base}{path}" if base else path
 
 
+def _canonical_public_base(base_url: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    parsed = urlparse(base)
+    host = (parsed.hostname or "").strip().lower()
+    if host in {"syndiode.com", "www.syndiode.com"} and parsed.path.rstrip("/") in {"", "/"}:
+        return urlunparse(parsed._replace(scheme="https", netloc="syndiode.com", path="/nomad")).rstrip("/")
+    return base
+
+
 def _digest(payload: Any) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
@@ -41,7 +53,7 @@ def _digest(payload: Any) -> str:
 
 def build_eth_ai_agent_support_surface(*, base_url: str = "") -> dict[str, Any]:
     """Return the public support/recruitment packet for Ethereum-aligned agents."""
-    base = (base_url or "").strip().rstrip("/")
+    base = _canonical_public_base(base_url)
     min_pledge = _num(os.getenv("NOMAD_TELEGRAM_COMPUTE_PLEDGE_NATIVE") or "0.003", 0.003)
     support_budget = _num(os.getenv("NOMAD_ETH_SUPPORT_BUDGET_USD") or "45000", 45000.0)
     recipient = _text(

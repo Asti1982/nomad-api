@@ -17,3 +17,11 @@ def test_eth_ai_agent_support_surface_exposes_public_goods_packet(monkeypatch):
     assert tracks["ai_agent_recruitment"]["entrypoints"]
     assert "https://ai.ethereum.foundation/" in out["official_context_links"].values()
     assert out["accounting_policy"]["cursor_referrals"] == "usage_credit_offset_not_cash_revenue"
+
+
+def test_eth_ai_agent_support_surface_uses_public_nomad_prefix_for_syndiode():
+    out = build_eth_ai_agent_support_surface(base_url="https://www.syndiode.com")
+
+    assert out["public_base_url"] == "https://syndiode.com/nomad"
+    assert out["nomad_links"]["miniapp"] == "https://syndiode.com/nomad/telegram-miniapp"
+    assert out["nomad_links"]["pledge"] == "https://syndiode.com/nomad/machine-treasury/pledge"

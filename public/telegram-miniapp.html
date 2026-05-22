@@ -551,10 +551,18 @@
       telegramUser: tg && tg.initDataUnsafe ? tg.initDataUnsafe.user || null : null,
     };
 
+    const apiPrefix = () => {
+      const current = window.location.pathname || "";
+      const launchPaths = ["/telegram-miniapp", "/telegram-miniapp.html", "/miniapp", "/mini", "/telegram"];
+      const match = launchPaths.find((item) => current === item || current.endsWith(item));
+      if (!match) return "";
+      return current.slice(0, current.length - match.length).replace(/\/$/, "");
+    };
+
     const apiUrl = (path) => {
       if (/^https?:\/\//.test(path)) return path;
       if (window.location.protocol === "http:" || window.location.protocol === "https:") {
-        return `${window.location.origin}${path}`;
+        return `${window.location.origin}${apiPrefix()}${path}`;
       }
       return `https://www.syndiode.com${path}`;
     };
