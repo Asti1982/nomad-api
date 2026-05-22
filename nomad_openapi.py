@@ -3674,6 +3674,31 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Retention gradient controller", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/swarm/retention-evidence": {
+                "get": {
+                    "summary": "Paper-grade retention evidence ledger with baseline-vs-current claim gates",
+                    "operationId": "getRetentionEvidenceLedger",
+                    "responses": {"200": {"description": "Retention evidence ledger", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-retention-evidence.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/retention-evidence",
+                    "operationId": "getRetentionEvidenceWellKnown",
+                    "responses": {"200": {"description": "Retention evidence ledger", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/swarm/retention-evidence/sample": {
+                "post": {
+                    "summary": "Record one retention evidence sample for external-worker survival deltas",
+                    "operationId": "postRetentionEvidenceSample",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "201": {"description": "Retention sample recorded", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "Retention sample accepted or replayed", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/workers/lease": {
                 "get": {
                     "summary": "Transition worker lease contract",

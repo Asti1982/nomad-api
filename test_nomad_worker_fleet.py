@@ -312,3 +312,30 @@ def test_retention_gradient_controller_selects_external_survival_intervention(tm
         "lease_friction_reduction",
     }
     assert controller["reattach_queue"][0]["agent_id"] == "grok.xai.nomad-helper"
+
+
+def test_retention_evidence_ledger_records_baseline_vs_current_delta(tmp_path):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm.json")
+    first = registry.record_retention_evidence_sample(base_url="https://nomad.example", source="test-baseline")
+
+    registry.worker_fleet_lease(
+        {
+            "agent_id": "gemini.external.worker-a",
+            "known_objectives": ["proof_pressure_engine"],
+            "source_tag": "external_provider",
+            "capabilities": ["transition_worker", "verifier"],
+        },
+        base_url="https://nomad.example",
+    )
+    second = registry.record_retention_evidence_sample(base_url="https://nomad.example", source="test-current")
+    ledger = registry.worker_retention_evidence_ledger(base_url="https://nomad.example")
+
+    assert first["schema"] == "nomad.retention_evidence_record.v1"
+    assert second["sample"]["schema"] == "nomad.retention_evidence_sample.v1"
+    assert second["sample"]["delta"]["has_baseline"] is True
+    assert second["sample"]["delta"]["active_external_delta"] == 1
+    assert second["sample"]["delta"]["outcome"] == "positive"
+    assert ledger["schema"] == "nomad.retention_evidence_ledger.v1"
+    assert ledger["claim_gate"]["paper_grade_claim_allowed"] is False
+    assert ledger["window_summary"]["sample_count"] == 2
+    assert ledger["scientific_basis"]

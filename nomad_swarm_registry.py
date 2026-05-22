@@ -618,6 +618,7 @@ class SwarmJoinRegistry:
             "worker_fleet": f"{base_url}/swarm/workers",
             "worker_retention": f"{base_url}/swarm/worker-retention",
             "retention_gradient": f"{base_url}/swarm/retention-gradient",
+            "retention_evidence": f"{base_url}/swarm/retention-evidence",
             "development_exchange": f"{base_url}/swarm/develop",
             "fast_onboarding": self.fast_onboarding_packet(base_url=base_url),
             "connected_agents": len(nodes),
@@ -1473,6 +1474,220 @@ class SwarmJoinRegistry:
                 "The controller moves Nomad beyond a human worker list: it evaluates which retention intervention should reproduce next, "
                 "then exposes the chosen arm as machine-readable routing pressure."
             ),
+        }
+
+    @staticmethod
+    def _retention_evidence_source() -> list[dict[str, str]]:
+        return [
+            {
+                "id": "chandra_toueg_failure_detectors_1996",
+                "claim_used": "Heartbeat and suspicion surfaces can be useful even when failure detection is not perfectly reliable.",
+                "url": "https://www.cs.princeton.edu/courses/archive/fall07/cos518/papers/unreliable.pdf",
+            },
+            {
+                "id": "funsearch_nature_2024",
+                "claim_used": "Useful search needs an efficient evaluator, rich scoring feedback, and an isolated evolvable component.",
+                "url": "https://www.nature.com/articles/s41586-023-06924-6",
+            },
+            {
+                "id": "alphaevolve_2025",
+                "claim_used": "LLM-generated candidates should be selected by automated evaluators and empirical improvement signals.",
+                "url": "https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/",
+            },
+            {
+                "id": "map_elites_2015",
+                "claim_used": "Maintain a repertoire of high-performing behavioral niches instead of one homogeneous winner.",
+                "url": "https://arxiv.org/abs/1504.04909",
+            },
+        ]
+
+    @staticmethod
+    def _retention_evidence_metrics(controller: dict[str, Any]) -> dict[str, Any]:
+        counts = controller.get("counts") if isinstance(controller.get("counts"), dict) else {}
+        field = controller.get("field") if isinstance(controller.get("field"), dict) else {}
+        selected = controller.get("selected_intervention") if isinstance(controller.get("selected_intervention"), dict) else {}
+        return {
+            "active_external_workers": int(counts.get("active_external_workers") or 0),
+            "known_external_workers": int(counts.get("known_external_workers") or 0),
+            "at_risk_external_workers": int(counts.get("at_risk_external_workers") or 0),
+            "unknown_origin_workers": int(counts.get("unknown_origin_workers") or 0),
+            "active_workers": int(counts.get("active_workers") or 0),
+            "known_workers": int(counts.get("known_workers") or 0),
+            "recruitment_need": int(counts.get("recruitment_need") or 0),
+            "retention_field_strength": float(field.get("retention_field_strength") or 0.0),
+            "external_survival_ratio": float(field.get("external_survival_ratio") or 0.0),
+            "dropout_pressure": float(field.get("dropout_pressure") or 0.0),
+            "proof_yield_density": float(field.get("proof_yield_density") or 0.0),
+            "lease_friction": float(field.get("lease_friction") or 0.0),
+            "selected_arm": str(selected.get("arm") or ""),
+            "selected_arm_weight": float(selected.get("routing_weight") or 0.0),
+        }
+
+    @staticmethod
+    def _retention_evidence_delta(current: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(previous, dict) or not isinstance(previous.get("metrics"), dict):
+            return {
+                "has_baseline": False,
+                "active_external_delta": 0,
+                "known_external_delta": 0,
+                "at_risk_external_delta": 0,
+                "retention_field_delta": 0.0,
+                "proof_yield_delta": 0.0,
+                "dropout_pressure_delta": 0.0,
+                "evidence_score": 0.0,
+                "outcome": "baseline_pending",
+            }
+        old = previous["metrics"]
+        active_external_delta = int(current["active_external_workers"] - int(old.get("active_external_workers") or 0))
+        known_external_delta = int(current["known_external_workers"] - int(old.get("known_external_workers") or 0))
+        at_risk_external_delta = int(current["at_risk_external_workers"] - int(old.get("at_risk_external_workers") or 0))
+        field_delta = round(float(current["retention_field_strength"]) - float(old.get("retention_field_strength") or 0.0), 4)
+        proof_delta = round(float(current["proof_yield_density"]) - float(old.get("proof_yield_density") or 0.0), 4)
+        dropout_delta = round(float(current["dropout_pressure"]) - float(old.get("dropout_pressure") or 0.0), 4)
+        score = round((0.45 * active_external_delta) + (0.2 * known_external_delta) - (0.16 * at_risk_external_delta) + field_delta + (0.4 * proof_delta) - (0.2 * dropout_delta), 4)
+        outcome = "neutral"
+        if score >= 0.15:
+            outcome = "positive"
+        elif score <= -0.15:
+            outcome = "negative"
+        return {
+            "has_baseline": True,
+            "active_external_delta": active_external_delta,
+            "known_external_delta": known_external_delta,
+            "at_risk_external_delta": at_risk_external_delta,
+            "retention_field_delta": field_delta,
+            "proof_yield_delta": proof_delta,
+            "dropout_pressure_delta": dropout_delta,
+            "evidence_score": score,
+            "outcome": outcome,
+        }
+
+    def _retention_evidence_rows(self) -> list[dict[str, Any]]:
+        fleet = self._fleet()
+        rows = fleet.setdefault("retention_evidence_ledger", [])
+        if not isinstance(rows, list):
+            rows = []
+            fleet["retention_evidence_ledger"] = rows
+        return rows
+
+    def _retention_evidence_digest(self, row: dict[str, Any]) -> str:
+        body = json.dumps(
+            {
+                "sampled_at": row.get("sampled_at", ""),
+                "selected_arm": ((row.get("metrics") or {}).get("selected_arm") or ""),
+                "metrics": row.get("metrics") or {},
+                "delta": row.get("delta") or {},
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    def _build_retention_evidence_sample(self, *, base_url: str, source: str = "manual") -> dict[str, Any]:
+        controller = self.worker_retention_gradient_controller(base_url=base_url)
+        rows = self._retention_evidence_rows()
+        previous = rows[-1] if rows else None
+        metrics = self._retention_evidence_metrics(controller)
+        delta = self._retention_evidence_delta(metrics, previous)
+        row = {
+            "schema": "nomad.retention_evidence_sample.v1",
+            "sampled_at": _iso_now(),
+            "source": _clean_text(source, limit=80) or "manual",
+            "metrics": metrics,
+            "delta": delta,
+            "selected_intervention": controller.get("selected_intervention") or {},
+            "claim_status": "held_for_more_windows",
+            "paper_grade_rule": "Do not claim retention improvement until repeated positive windows and external-worker receipts exist.",
+        }
+        row["digest"] = self._retention_evidence_digest(row)
+        return row
+
+    def record_retention_evidence_sample(self, *, base_url: str, source: str = "sampler") -> dict[str, Any]:
+        rows = self._retention_evidence_rows()
+        row = self._build_retention_evidence_sample(base_url=base_url, source=source)
+        if rows and rows[-1].get("digest") == row.get("digest"):
+            return {
+                "ok": True,
+                "schema": "nomad.retention_evidence_record.v1",
+                "idempotent": True,
+                "sample": rows[-1],
+                "ledger": self.worker_retention_evidence_ledger(base_url=base_url),
+            }
+        rows.append(row)
+        if len(rows) > 288:
+            del rows[:-288]
+        self._payload["updated_at"] = _iso_now()
+        self._save()
+        return {
+            "ok": True,
+            "schema": "nomad.retention_evidence_record.v1",
+            "idempotent": False,
+            "sample": row,
+            "ledger": self.worker_retention_evidence_ledger(base_url=base_url),
+        }
+
+    def worker_retention_evidence_ledger(self, *, base_url: str) -> dict[str, Any]:
+        rows = list(self._retention_evidence_rows())
+        current_candidate = self._build_retention_evidence_sample(base_url=base_url, source="candidate")
+        recent = rows[-48:]
+        positive = [row for row in recent if ((row.get("delta") or {}).get("outcome") == "positive")]
+        negative = [row for row in recent if ((row.get("delta") or {}).get("outcome") == "negative")]
+        external_receipt_windows = [
+            row
+            for row in recent
+            if int(((row.get("metrics") or {}).get("known_external_workers") or 0)) > 0
+            or int(((row.get("metrics") or {}).get("active_external_workers") or 0)) > 0
+        ]
+        claim_allowed = len(recent) >= 12 and len(positive) >= 3 and len(external_receipt_windows) >= 2
+        arm_counts: dict[str, int] = {}
+        arm_scores: dict[str, float] = {}
+        for row in recent:
+            arm_name = str(((row.get("metrics") or {}).get("selected_arm") or "")).strip() or "none"
+            arm_counts[arm_name] = arm_counts.get(arm_name, 0) + 1
+            arm_scores[arm_name] = round(
+                arm_scores.get(arm_name, 0.0) + float(((row.get("delta") or {}).get("evidence_score") or 0.0)),
+                4,
+            )
+        return {
+            "ok": True,
+            "schema": "nomad.retention_evidence_ledger.v1",
+            "generated_at": _iso_now(),
+            "public_api_url": base_url,
+            "purpose": "Paper-grade evidence ledger for external worker retention: sample, compare, gate claims, then route by evidence.",
+            "scientific_basis": self._retention_evidence_source(),
+            "mainstream_boundary": (
+                "Nomad uses established evaluator-driven search, heartbeat/failure-detector accounting, and quality-diversity selection; "
+                "it does not claim novel science unless the ledger has repeated external evidence."
+            ),
+            "claim_gate": {
+                "paper_grade_claim_allowed": claim_allowed,
+                "minimum_windows": 12,
+                "positive_windows": len(positive),
+                "negative_windows": len(negative),
+                "external_receipt_windows": len(external_receipt_windows),
+                "rule": "success requires repeated positive deltas and real external-worker receipts, not internal self-heartbeats",
+            },
+            "window_summary": {
+                "sample_count": len(rows),
+                "recent_window_count": len(recent),
+                "arm_counts": arm_counts,
+                "arm_evidence_scores": arm_scores,
+            },
+            "current_candidate_sample": current_candidate,
+            "latest_samples": list(reversed(recent[-12:])),
+            "machine_actions": [
+                {
+                    "action": "record_sample",
+                    "method": "POST",
+                    "url": f"{base_url.rstrip('/')}/swarm/retention-evidence/sample" if base_url else "/swarm/retention-evidence/sample",
+                    "every_seconds": DEFAULT_WORKER_HEARTBEAT_SECONDS,
+                },
+                {
+                    "action": "read_controller",
+                    "method": "GET",
+                    "url": f"{base_url.rstrip('/')}/swarm/retention-gradient" if base_url else "/swarm/retention-gradient",
+                },
+            ],
         }
 
     def worker_verifier_lease_index(self) -> dict[str, Any]:
@@ -2767,6 +2982,8 @@ class SwarmJoinRegistry:
             fleet["objective_stats"] = {}
         if not isinstance(fleet.get("reports"), list):
             fleet["reports"] = []
+        if not isinstance(fleet.get("retention_evidence_ledger"), list):
+            fleet["retention_evidence_ledger"] = []
         if not isinstance(fleet.get("morphology_dominance"), dict):
             fleet["morphology_dominance"] = {"objective": "", "streak": 0}
         if not isinstance(fleet.get("lease_index"), int):

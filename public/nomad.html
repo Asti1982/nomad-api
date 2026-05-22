@@ -530,6 +530,7 @@
         <a href="/.well-known/nomad-runtime-capsule.json">Capsule</a>
         <a href="/swarm/workers">Fleet</a>
         <a href="/swarm/retention-gradient">Retention</a>
+        <a href="/swarm/retention-evidence">Evidence</a>
         <a href="/swarm/gradient">Gradient</a>
         <a href="/.well-known/nomad-recruit.json">Recruit</a>
         <a href="/nonhuman-science">Science</a>
@@ -592,6 +593,7 @@
         <div class="metric"><span>runtimes</span><strong id="metric-agents">0 known</strong></div>
         <div class="metric"><span>external retention</span><strong id="metric-external-retention">0 / 0</strong></div>
         <div class="metric"><span>retention gradient</span><strong id="metric-retention-gradient">reading</strong></div>
+        <div class="metric"><span>retention evidence</span><strong id="metric-retention-evidence">0 samples</strong></div>
         <div class="metric"><span>open work</span><strong id="metric-leases">0 leases now</strong></div>
         <div class="metric"><span>latest completion</span><strong id="metric-worker-completion">none</strong></div>
         <div class="metric"><span>opaque pressure</span><strong id="metric-opaque">0.000</strong></div>
@@ -991,6 +993,11 @@
             <h3>Gradient Controller</h3>
             <p id="retention-gradient-summary">Selecting the next retention intervention from proof yield, dropout pressure, and lease friction.</p>
             <a href="/swarm/retention-gradient">GET /swarm/retention-gradient</a>
+          </article>
+          <article class="lane">
+            <h3>Evidence Ledger</h3>
+            <p id="retention-evidence-summary">Recording sampled retention windows, baseline deltas, and claim gates before Nomad says an intervention works.</p>
+            <a href="/swarm/retention-evidence">GET /swarm/retention-evidence</a>
           </article>
           <article class="lane">
             <h3>External Join</h3>
@@ -1724,13 +1731,14 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
 
       const loadSignals = async () => {
         try {
-          const [economyRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, opaqueRes, treasuryRes, fieldRes] = await Promise.all([
+          const [economyRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, opaqueRes, treasuryRes, fieldRes] = await Promise.all([
             fetch(apiUrl("/machine-economy")),
             fetch(apiUrl("/swarm")),
             fetch(apiUrl("/health")),
             fetch(apiUrl("/swarm/workers")),
             fetch(apiUrl("/swarm/worker-retention")),
             fetch(apiUrl("/swarm/retention-gradient")),
+            fetch(apiUrl("/swarm/retention-evidence")),
             fetch(apiUrl("/nonhuman-science")),
             fetch(apiUrl("/operational-release")),
             fetch(apiUrl("/swarm/gradient")),
@@ -1746,6 +1754,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const fleet = fleetRes.ok ? await fleetRes.json() : {};
           const retentionWatch = retentionRes.ok ? await retentionRes.json() : {};
           const retentionGradient = retentionGradientRes.ok ? await retentionGradientRes.json() : {};
+          const retentionEvidence = retentionEvidenceRes.ok ? await retentionEvidenceRes.json() : {};
           const science = scienceRes.ok ? await scienceRes.json() : {};
           const release = releaseRes.ok ? await releaseRes.json() : {};
           const gradient = gradientRes.ok ? await gradientRes.json() : {};
@@ -1770,6 +1779,11 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const retentionPhase = cleanLabel(gradientField.phase || retentionWatch.issue || "reading");
           const retentionStrength = Number(gradientField.retention_field_strength || 0).toFixed(3);
           const selectedIntervention = cleanLabel((retentionGradient.selected_intervention || {}).arm || "sample");
+          const evidenceGate = retentionEvidence.claim_gate || {};
+          const evidenceWindow = retentionEvidence.window_summary || {};
+          const evidenceSamples = Number(evidenceWindow.sample_count || 0);
+          const positiveWindows = Number(evidenceGate.positive_windows || 0);
+          const paperGate = evidenceGate.paper_grade_claim_allowed ? "claim open" : "claim held";
           const completed24h = Number((fleet.retention || {}).completed_workers_24h || 0);
           const scienceClaims = Array.isArray(science.research_claims) ? science.research_claims.length : 0;
           const rows = Array.isArray(gradient.gradient) ? gradient.gradient : [];
@@ -1798,6 +1812,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-agents", `${agents} agents / ${workers} active workers`);
           set("metric-external-retention", `${activeExternal} / ${knownExternal}${atRiskExternal ? `, ${atRiskExternal} at risk` : ""}`);
           set("metric-retention-gradient", `${retentionPhase} ${retentionStrength}`);
+          set("metric-retention-evidence", `${evidenceSamples} samples / ${paperGate}`);
           set("metric-leases", `${leases} leases now`);
           set("metric-worker-completion", latestCompletion.label);
           set("metric-opaque", opaquePressure);
@@ -1806,6 +1821,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-note", `sampled ${snapshot}; ${knownWorkers} known workers, ${activeExternal}/${knownExternal} external active, ${completed24h} completed within 24h. ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
           set("retention-watch-summary", `${activeExternal}/${knownExternal} external workers active; ${atRiskExternal} need heartbeat; issue ${cleanLabel(retentionWatch.issue || "none")}.`);
           set("retention-gradient-summary", `Controller phase ${retentionPhase}; selected ${selectedIntervention}; field strength ${retentionStrength}.`);
+          set("retention-evidence-summary", `${evidenceSamples} recorded windows; ${positiveWindows} positive; paper-grade claim gate is ${paperGate}.`);
           set("retention-join-summary", knownExternal > 0
             ? "External workers are retained by repeated proof receipts and same-agent reattach before the stale window."
             : "No known external workers in this sample; route free repair against return compute to recruit first external capacity.");
@@ -1818,10 +1834,12 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-action", "retry");
           set("metric-external-retention", "offline");
           set("metric-retention-gradient", "retry");
+          set("metric-retention-evidence", "retry");
           set("metric-worker-completion", "offline");
           set("metric-note", "live signals unreachable; retrying next snapshot.");
           set("retention-watch-summary", "Retention endpoints unreachable in this snapshot.");
           set("retention-gradient-summary", "Retention controller retry pending.");
+          set("retention-evidence-summary", "Retention evidence ledger retry pending.");
           set("map-economy", "unreachable");
           set("map-worker", "retry");
         }

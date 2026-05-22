@@ -3147,6 +3147,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path in {"/swarm/retention-evidence", "/.well-known/nomad-retention-evidence.json"}:
+            self._json_response(
+                self.swarm_registry.worker_retention_evidence_ledger(
+                    base_url=self._base_url(),
+                )
+            )
+            return
+
         if parsed.path in {"/swarm/workers/lease", "/swarm/workers/complete"}:
             base = self._base_url().rstrip("/")
             self._json_response(
@@ -5465,6 +5473,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 remote_addr=self._remote_addr(),
             )
             self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/swarm/retention-evidence/sample":
+            result = self.swarm_registry.record_retention_evidence_sample(
+                base_url=self._base_url(),
+                source=str(payload.get("source") or payload.get("agent_id") or "retention_sampler"),
+            )
+            self._json_response(result, status=201 if result.get("ok") and not result.get("idempotent") else 200)
             return
 
         if parsed.path == "/swarm/accumulate":
