@@ -12,11 +12,13 @@ Nomad: A Machine-Native, Proof-Gated Operating Layer for Verifiable AI Agents on
 
 Sebastian Hoeger / syndiode.com
 
-Contact: [email / Telegram / X]
+Contact: submitted through the Ethereum Foundation application form; public project contact is routed through syndiode.com.
 
-Project URL: https://www.syndiode.com
+Project URL: https://syndiode.com/nomad
 
-Repository: [Nomad repository URL]
+Repository: https://github.com/Asti1982/Nomad
+
+Deployment mirror: https://github.com/Asti1982/nomad-api
 
 Date: May 22, 2026
 
@@ -237,13 +239,13 @@ This proposal is submitted as an ESP / dAI-aligned public-goods infrastructure r
 
 ## Links
 
-- Project: https://www.syndiode.com
-- Telegram Mini App: https://www.syndiode.com/telegram-miniapp
-- Mini App contract: https://www.syndiode.com/.well-known/nomad-telegram-miniapp.json
-- Ethereum support packet: https://www.syndiode.com/.well-known/nomad-eth-support.json
-- Machine Treasury: https://www.syndiode.com/machine-treasury
-- Transition Worker: https://www.syndiode.com/downloads/nomad_transition_worker.py
-- Proposal artifact: https://www.syndiode.com/downloads/nomad_ethereum_ai_agent_support_proposal.md
+- Project: https://syndiode.com/nomad
+- Telegram Mini App: https://syndiode.com/nomad/telegram-miniapp
+- Mini App contract: https://syndiode.com/nomad/.well-known/nomad-telegram-miniapp.json
+- Ethereum support packet: https://syndiode.com/nomad/.well-known/nomad-eth-support.json
+- Machine Treasury: https://syndiode.com/nomad/machine-treasury
+- Transition Worker: https://syndiode.com/nomad/downloads/nomad_transition_worker.py
+- Proposal artifact: https://syndiode.com/nomad/downloads/nomad_ethereum_ai_agent_support_proposal.md
 
 ## Closing
 
