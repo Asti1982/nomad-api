@@ -138,6 +138,20 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {"200": {"description": "Telegram acquisition launch", "content": {"application/json": {"schema": ref_json_object()}}}},
                 }
             },
+            "/swarm/acquisition-engine": {
+                "get": {
+                    "summary": "Machine-native acquisition policy using bandits, causal holdouts, information gain, and replicator weights",
+                    "operationId": "getNomadAcquisitionEngine",
+                    "responses": {"200": {"description": "Acquisition engine policy", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
+            "/.well-known/nomad-acquisition-engine.json": {
+                "get": {
+                    "summary": "Alias for the machine-native acquisition policy",
+                    "operationId": "getNomadAcquisitionEngineWellKnown",
+                    "responses": {"200": {"description": "Acquisition engine policy", "content": {"application/json": {"schema": ref_json_object()}}}},
+                }
+            },
             "/.well-known/nomad-sales-funnel.json": {
                 "get": {
                     "summary": "Sales funnel contract for free diagnosis, paid repair, workers, Cursor referral, and ETH pledge pressure",

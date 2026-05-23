@@ -2209,6 +2209,15 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 base_url=base,
                 include_live_queue=bool(getattr(args, "deep", False)),
             )
+        elif args.command == "acquisition-engine":
+            from nomad_api import NomadApiHandler
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            result = NomadApiHandler._build_acquisition_engine(
+                base_url=base,
+                include_live_queue=bool(getattr(args, "deep", False)),
+                include_agent_outreach=bool(getattr(args, "outreach", False)),
+            )
         elif args.command == "sales-department":
             from nomad_api import NomadApiHandler
             from nomad_sales_department_swarm import evaluate_sales_department_event
@@ -4101,6 +4110,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     telegram_acquisition.add_argument("--base-url", default="", help="Override public base URL for links.")
     telegram_acquisition.add_argument("--deep", action="store_true", help="Include live worker queue and agent job router summaries.")
+    acquisition_engine = subparsers.add_parser(
+        "acquisition-engine",
+        help="Compile machine-native acquisition policy using bandits, holdouts, information gain, and replicator weights.",
+    )
+    acquisition_engine.add_argument("--base-url", default="", help="Override public base URL for links.")
+    acquisition_engine.add_argument("--deep", action="store_true", help="Include live worker queue in the Telegram acquisition input.")
+    acquisition_engine.add_argument("--outreach", action="store_true", help="Include local public-agent outreach state.")
     job_channels = subparsers.add_parser(
         "job-channels",
         help="Rank external paid-work channels by authorization, proof, payout, and settlement friction.",

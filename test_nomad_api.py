@@ -206,6 +206,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-agp-paper-report.json" in text
     assert "/.well-known/nomad-telegram-a2a.json" in text
     assert "/.well-known/nomad-telegram-acquisition.json" in text
+    assert "/.well-known/nomad-acquisition-engine.json" in text
     assert "/.well-known/nomad-autogenesis-recruit.json" in text
     assert "/swarm/resource-substrate/register" in text
     assert "/swarm/resource-substrate/version" in text
@@ -282,6 +283,22 @@ def test_telegram_acquisition_public_routes_return_launch_packet():
         assert seen[0][0] == 200
         assert seen[0][1]["schema"] == "nomad.telegram_acquisition_launch.v1"
         assert seen[0][1]["links"]["miniapp"] == "https://nomad.example/telegram-miniapp"
+
+
+def test_acquisition_engine_public_routes_return_machine_policy():
+    for route in ["/swarm/acquisition-engine", "/.well-known/nomad-acquisition-engine.json"]:
+        handler = NomadApiHandler.__new__(NomadApiHandler)
+        seen = []
+        handler.path = route
+        handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+        handler._json_response = lambda payload, status=200: seen.append((status, payload))  # type: ignore[method-assign]
+
+        handler.do_GET()
+
+        assert seen[0][0] == 200
+        assert seen[0][1]["schema"] == "nomad.acquisition_engine.v1"
+        assert seen[0][1]["links"]["miniapp"] == "https://nomad.example/telegram-miniapp"
+        assert seen[0][1]["guardrails"]["holdout_required_before_claiming_causal_lift"] is True
 
 
 def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
@@ -963,6 +980,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-telegram-a2a.json" in doc["paths"]
     assert "/swarm/telegram-acquisition" in doc["paths"]
     assert "/.well-known/nomad-telegram-acquisition.json" in doc["paths"]
+    assert "/swarm/acquisition-engine" in doc["paths"]
+    assert "/.well-known/nomad-acquisition-engine.json" in doc["paths"]
     assert "/swarm/telegram-a2a/messages" in doc["paths"]
     assert "/.well-known/nomad-autonomous-agp.json" in doc["paths"]
     assert "/swarm/autogenesis/cycle" in doc["paths"]

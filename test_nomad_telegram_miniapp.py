@@ -27,6 +27,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["links"]["eth_support"] == "https://nomad.example/.well-known/nomad-eth-support.json"
     assert out["links"]["sales_funnel"] == "https://nomad.example/.well-known/nomad-sales-funnel.json"
     assert out["links"]["telegram_acquisition"] == "https://nomad.example/.well-known/nomad-telegram-acquisition.json"
+    assert out["links"]["acquisition_engine"] == "https://nomad.example/.well-known/nomad-acquisition-engine.json"
     assert out["links"]["telegram_a2a"] == "https://nomad.example/.well-known/nomad-telegram-a2a.json"
     assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"
@@ -53,6 +54,10 @@ def test_telegram_miniapp_lead_receipt_is_secret_free(tmp_path):
             "requester_wallet": "0xabc",
             "budget_native": "0.01",
             "campaign": "dacc_eth_pledge",
+            "test_mode": True,
+            "target_url": "https://nomad.example/downloads/handyoracle-edge-gadget.apk",
+            "downloaded_bytes": 123,
+            "sha256": "abc123",
             "telegram_user": {"id": 123, "username": "alice", "language_code": "en"},
             "telegram_init_data": "query_id=secretish",
         },
@@ -69,6 +74,10 @@ def test_telegram_miniapp_lead_receipt_is_secret_free(tmp_path):
     assert event["stage"] == "task_created"
     assert event["budget_native"] == 0.01
     assert event["campaign"] == "dacc_eth_pledge"
+    assert event["test_mode"] is True
+    assert event["target_url"] == "https://nomad.example/downloads/handyoracle-edge-gadget.apk"
+    assert event["downloaded_bytes"] == 123
+    assert event["artifact_sha256"] == "abc123"
     assert event["telegram_user_hash"]
     assert event["telegram_init_data_hash"]
     assert "query_id=secretish" not in json.dumps(event)

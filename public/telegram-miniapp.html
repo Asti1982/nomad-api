@@ -543,6 +543,7 @@
           <a id="attach-link" href="/swarm/attach-get">Agent attach <span>GET</span></a>
           <a id="sales-link" href="/.well-known/nomad-sales-funnel.json">Sales funnel <span>GET</span></a>
           <a id="acquisition-link" href="/.well-known/nomad-telegram-acquisition.json">Acquisition <span>GET</span></a>
+          <a id="engine-link" href="/.well-known/nomad-acquisition-engine.json">Engine <span>GET</span></a>
           <a id="proposal-link" href="/downloads/nomad_ethereum_ai_agent_support_proposal.md">Proposal <span>MD</span></a>
           <a id="cursor-link" href="/.well-known/nomad-referral-offers.json">Cursor discount <span>open</span></a>
         </div>
@@ -896,6 +897,7 @@
         el("attach-link").href = manifest.links.runtime_attach_get || "/swarm/attach-get";
         el("sales-link").href = manifest.links.sales_funnel || "/.well-known/nomad-sales-funnel.json";
         el("acquisition-link").href = manifest.links.telegram_acquisition || "/.well-known/nomad-telegram-acquisition.json";
+        el("engine-link").href = manifest.links.acquisition_engine || "/.well-known/nomad-acquisition-engine.json";
         el("proposal-link").href = manifest.links.eth_support_proposal || "/downloads/nomad_ethereum_ai_agent_support_proposal.md";
         el("cursor-link").href = manifest.links.cursor_referral || "/.well-known/nomad-referral-offers.json";
       }

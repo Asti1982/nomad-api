@@ -177,6 +177,7 @@ from nomad_telegram_acquisition import (
     build_telegram_acquisition_launch_surface,
     summarize_telegram_acquisition_ledgers,
 )
+from nomad_acquisition_engine import build_acquisition_engine_surface, summarize_agent_outreach_state
 from nomad_eth_support import build_eth_ai_agent_support_surface
 from nomad_spend_guard import build_spend_guard_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
@@ -924,6 +925,30 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_job_queue=worker_job_queue,
             agent_job_router=agent_job_router,
             ledger_summary=summarize_telegram_acquisition_ledgers(),
+        )
+
+    @classmethod
+    def _build_acquisition_engine(
+        cls,
+        *,
+        base_url: str,
+        swarm_summary: dict | None = None,
+        include_live_queue: bool = False,
+        include_agent_outreach: bool = False,
+    ) -> dict:
+        telegram = cls._build_telegram_acquisition(
+            base_url=base_url,
+            swarm_summary=swarm_summary,
+            include_live_queue=include_live_queue,
+        )
+        return build_acquisition_engine_surface(
+            base_url=base_url,
+            telegram_acquisition=telegram,
+            ledger_summary=(telegram.get("observed_funnel") or {}).get("lead_ledger")
+            if isinstance(telegram.get("observed_funnel"), dict)
+            else summarize_telegram_acquisition_ledgers(),
+            agent_outreach_summary=summarize_agent_outreach_state() if include_agent_outreach else None,
+            include_agent_outreach=False,
         )
 
     @classmethod
@@ -2057,6 +2082,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "telegram_miniapp_contract": f"{b}/.well-known/nomad-telegram-miniapp.json",
                     "telegram_miniapp_lead": f"{b}/telegram-miniapp/lead",
                     "telegram_acquisition": f"{b}/.well-known/nomad-telegram-acquisition.json",
+                    "acquisition_engine": f"{b}/.well-known/nomad-acquisition-engine.json",
                     "sales_funnel": f"{b}/.well-known/nomad-sales-funnel.json",
                     "ethereum_ai_support": f"{b}/.well-known/nomad-eth-support.json",
                     "ethereum_ai_support_proposal": f"{b}/downloads/nomad_ethereum_ai_agent_support_proposal.md",
@@ -2558,6 +2584,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self.__class__._build_telegram_acquisition(
                     base_url=self._base_url(),
                     include_live_queue=deep,
+                )
+            )
+            return
+        if parsed.path in {"/swarm/acquisition-engine", "/.well-known/nomad-acquisition-engine.json"}:
+            deep = self._truthy((query.get("deep") or query.get("live") or ["false"])[0])
+            outreach = self._truthy((query.get("outreach") or query.get("agent_outreach") or ["false"])[0])
+            self._json_response(
+                self.__class__._build_acquisition_engine(
+                    base_url=self._base_url(),
+                    include_live_queue=deep,
+                    include_agent_outreach=outreach,
                 )
             )
             return
