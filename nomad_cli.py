@@ -2037,6 +2037,35 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 )
             else:
                 result = agp
+        elif args.command == "autonomous-evolution":
+            from pathlib import Path
+
+            from nomad_autonomous_evolution import build_autonomous_evolution_cycle
+
+            ctx = _runtime_gradient_context((getattr(args, "base_url", None) or "").strip())
+            base = str(ctx.get("base_url") or "")
+            candidate_payloads: list[dict[str, Any]] = []
+            worker_graph: dict[str, Any] = {}
+            candidate_file = str(getattr(args, "candidate_file", "") or "").strip()
+            if candidate_file:
+                raw = json.loads(Path(candidate_file).read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and isinstance(raw.get("candidates"), list):
+                    candidate_payloads = [item for item in raw["candidates"] if isinstance(item, dict)]
+                elif isinstance(raw, dict):
+                    candidate_payloads = [raw]
+                elif isinstance(raw, list):
+                    candidate_payloads = [item for item in raw if isinstance(item, dict)]
+            worker_graph_file = str(getattr(args, "worker_graph_file", "") or "").strip()
+            if worker_graph_file:
+                raw_graph = json.loads(Path(worker_graph_file).read_text(encoding="utf-8"))
+                worker_graph = raw_graph if isinstance(raw_graph, dict) else {}
+            result = build_autonomous_evolution_cycle(
+                base_url=base,
+                worker_fleet=ctx.get("worker_fleet") if isinstance(ctx.get("worker_fleet"), dict) else {},
+                worker_graph=worker_graph,
+                candidate_payloads=candidate_payloads,
+                persist=bool(getattr(args, "persist", False)),
+            )
         elif args.command == "shadow-harvest":
             from nomad_shadow_harvest import harvest_shadow_candidates
 
@@ -3920,6 +3949,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--recruit",
         action="store_true",
         help="Return the machine-economy recruit surface for AGP packets and agent CTAs.",
+    )
+    autonomous_evolution = subparsers.add_parser(
+        "autonomous-evolution",
+        help="Closed Autogenesis+AGP cycle: propose, assess, RSPL commit/rollback, and graph pruning.",
+    )
+    autonomous_evolution.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links.",
+    )
+    autonomous_evolution.add_argument(
+        "--candidate-file",
+        default="",
+        help="Optional JSON candidate or {candidates:[...]} payload for one shadow cycle.",
+    )
+    autonomous_evolution.add_argument(
+        "--worker-graph-file",
+        default="",
+        help="Optional JSON worker graph with workers[] and edges[] for AGP routing.",
+    )
+    autonomous_evolution.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist accepted RSPL/SEPL receipts instead of returning a dry descriptor cycle.",
     )
     shadow_harvest = subparsers.add_parser(
         "shadow-harvest",

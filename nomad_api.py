@@ -96,6 +96,8 @@ from nomad_autogenesis import (
     submit_autogenesis_shadow_candidate,
     version_resource,
 )
+from nomad_autonomous_evolution import build_autonomous_evolution_cycle
+from nomad_universal_adapter import build_universal_adapter_surface, evaluate_universal_adapter_event
 from nomad_deficit_integration_gate import (
     build_deficit_integration_surface,
     evaluate_deficit_integration_event,
@@ -570,6 +572,24 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base_url=base_url,
             autogenesis_surface=autogenesis,
             resource_substrate=substrate,
+        )
+
+    @classmethod
+    def _build_autonomous_evolution(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
+        development = build_autogenesis_development_cycles_surface(base_url=base_url, resource_substrate=substrate)
+        autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=summary)
+        return build_autonomous_evolution_cycle(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            resource_substrate=substrate,
+            development_cycles=development,
+            autogenesis_surface=autogenesis,
+            persist=False,
         )
 
     @classmethod
@@ -1222,6 +1242,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
     @classmethod
     def _build_work_exchange_onboarding(cls, *, base_url: str) -> dict:
         return build_work_exchange_onboarding(
+            base_url=base_url,
+            summary=summarize_work_exchange_ledger(),
+        )
+
+    @classmethod
+    def _build_universal_adapter(cls, *, base_url: str) -> dict:
+        return build_universal_adapter_surface(
             base_url=base_url,
             summary=summarize_work_exchange_ledger(),
         )
@@ -2239,6 +2266,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "autonomous_agp_run": f"{b}/swarm/autogenesis/run",
                     "autonomous_agp_watchdog": f"{b}/swarm/autogenesis/watchdog",
                     "autonomous_agp_watchdog_surface": f"{b}/.well-known/nomad-agp-watchdog.json",
+                    "autonomous_evolution": f"{b}/.well-known/nomad-autonomous-evolution.json",
+                    "autonomous_evolution_post": f"{b}/swarm/autonomous-evolution",
                     "autogenesis_shadow_lane": f"{b}/swarm/shadow-lane/candidates?type=autogenesis",
                     "deficit_integration": f"{b}/.well-known/nomad-deficit-integration.json",
                     "deficit_integration_event": f"{b}/swarm/deficit-integration/events",
@@ -2258,6 +2287,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "work_exchange_free_solution": f"{b}/swarm/work-exchange/free-solution",
                     "work_exchange_return_work": f"{b}/swarm/work-exchange/return-work",
                     "work_exchange_balance": f"{b}/swarm/work-exchange/balance",
+                    "universal_adapter": f"{b}/.well-known/nomad-universal-adapter.json",
+                    "universal_adapter_event": f"{b}/swarm/universal-adapter/events",
+                    "universal_adapter_download": f"{b}/downloads/nomad_universal_adapter.py",
                     "agent_reliability_doctor_contract": f"{b}/.well-known/nomad-agent-reliability-doctor.json",
                     "agent_reliability_doctor_intake": f"{b}/swarm/reliability-doctor/intake",
                     "agent_reliability_doctor_github_action": f"{b}/downloads/nomad_reliability_doctor_action.yml",
@@ -2821,6 +2853,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/autogenesis/cycle", "/swarm/autogenesis/run", "/.well-known/nomad-autonomous-agp.json"}:
             self._json_response(self.__class__._build_autonomous_agp_cycle(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/autonomous-evolution", "/.well-known/nomad-autonomous-evolution.json"}:
+            self._json_response(self.__class__._build_autonomous_evolution(base_url=self._base_url()))
+            return
         if parsed.path in {"/swarm/autogenesis/watchdog", "/.well-known/nomad-agp-watchdog.json"}:
             self._json_response(self.__class__._build_autonomous_agp_watchdog(base_url=self._base_url()))
             return
@@ -2881,6 +2916,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/retention/watchdog", "/.well-known/nomad-retention-watchdog.json"}:
             self._json_response(self.__class__._build_retention_watchdog_surface(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/universal-adapter", "/.well-known/nomad-universal-adapter.json"}:
+            self._json_response(self.__class__._build_universal_adapter(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/reliability-doctor", "/.well-known/nomad-agent-reliability-doctor.json"}:
             self._json_response(self.__class__._build_reliability_doctor_surface(base_url=self._base_url()))
@@ -3964,6 +4002,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_openclaw_adapter.py",
+                    "/downloads/nomad_universal_adapter.py",
                     "/downloads/check_nomad_swarm_readiness.py",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
@@ -4131,6 +4170,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
+                    "/swarm/autonomous-evolution",
+                    "/.well-known/nomad-autonomous-evolution.json",
+                    "/swarm/universal-adapter",
+                    "/.well-known/nomad-universal-adapter.json",
                     "/swarm/autogenesis/watchdog",
                     "/.well-known/nomad-autonomous-agp.json",
                     "/.well-known/nomad-agp-watchdog.json",
@@ -4745,6 +4788,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=status)
             return
 
+        if parsed.path == "/swarm/universal-adapter/events":
+            result = evaluate_universal_adapter_event(payload, base_url=self._base_url())
+            status = 202 if result.get("accepted") else int(result.get("status_hint") or 422)
+            self._json_response(result, status=status)
+            return
+
         if parsed.path == "/swarm/agent-acquisition/events":
             result = record_agent_acquisition_event(payload, base_url=self._base_url())
             self._json_response(result, status=202 if result.get("ok") else 422)
@@ -4876,6 +4925,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
             )
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/autonomous-evolution":
+            base = self._base_url()
+            summary = self.swarm_registry.public_manifest(base_url=base)
+            worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+            if not worker_fleet:
+                worker_fleet = self.swarm_registry.worker_fleet_contract(base_url=base)
+            result = build_autonomous_evolution_cycle(
+                base_url=base,
+                payload=payload,
+                worker_fleet=worker_fleet,
+                verifier_lease_index=self.swarm_registry.worker_verifier_lease_index(),
+                persist=bool(payload.get("persist")),
+            )
+            self._json_response(result, status=202 if result.get("productive_loop_commits") else 200)
             return
 
         if parsed.path == "/swarm/autogenesis/run":
@@ -5836,6 +5901,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
                     "/downloads/nomad_openclaw_adapter.py",
+                    "/downloads/nomad_universal_adapter.py",
                     "/downloads/check_nomad_swarm_readiness.py",
                     "/downloads/nomad_helper_agent.py",
                     "/downloads/run_nomad_helper_agent.bat",
@@ -6005,6 +6071,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/autogenesis/traces",
                     "/swarm/autogenesis/cycle",
                     "/swarm/autogenesis/run",
+                    "/swarm/autonomous-evolution",
+                    "/.well-known/nomad-autonomous-evolution.json",
+                    "/swarm/universal-adapter",
+                    "/.well-known/nomad-universal-adapter.json",
+                    "/swarm/universal-adapter/events",
                     "/swarm/autogenesis/watchdog",
                     "/.well-known/nomad-autonomous-agp.json",
                     "/.well-known/nomad-agp-watchdog.json",
@@ -7540,6 +7611,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
                         "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
                         "GET /downloads/nomad_openclaw_adapter.py for OpenClaw-style runtime bridge into Nomad leases.",
+                        "GET /downloads/nomad_universal_adapter.py for one-line LangGraph, CrewAI, AutoGen, and LlamaIndex reliability integration.",
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                         "GET /downloads/syndiode_gadgets_manifest.json for Syndiode Gadget installs.",

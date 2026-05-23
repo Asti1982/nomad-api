@@ -2180,6 +2180,7 @@ def build_autogenesis_surface(
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "event_url": _u(root, "/swarm/development-cycles/events"),
             "autonomous_cycle": _u(root, "/swarm/autogenesis/cycle"),
+            "autonomous_evolution": _u(root, "/swarm/autonomous-evolution"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
             "variant_candidates": _u(root, "/swarm/variant-candidates"),
             "morphology_reactor": _u(root, "/swarm/autogenesis/morphology-reactor"),
@@ -2232,6 +2233,7 @@ def build_autogenesis_surface(
         "links": {
             "self": _u(root, "/.well-known/nomad-autogenesis.json"),
             "autonomous_cycle": _u(root, "/.well-known/nomad-autonomous-agp.json"),
+            "autonomous_evolution": _u(root, "/.well-known/nomad-autonomous-evolution.json"),
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
