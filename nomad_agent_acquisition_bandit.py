@@ -55,20 +55,26 @@ DEFAULT_CHANNELS: dict[str, dict[str, Any]] = {
         "intent": "blocker_to_return_compute",
         "default_weight": 0.15,
     },
-    "github_action_template": {
+    "universal_adapter": {
         "rank": 5,
+        "surface": "/.well-known/nomad-universal-adapter.json",
+        "intent": "one_line_agent_runtime_error_loop_capture",
+        "default_weight": 0.16,
+    },
+    "github_action_template": {
+        "rank": 6,
         "surface": "/downloads/nomad_reliability_doctor_action.yml",
         "intent": "ci_native_worker_injection",
         "default_weight": 0.12,
     },
     "docker_worker": {
-        "rank": 6,
+        "rank": 7,
         "surface": "/downloads/nomad_work_exchange_worker.Dockerfile",
         "intent": "container_native_return_compute",
         "default_weight": 0.11,
     },
     "openapi_agent_runtime": {
-        "rank": 7,
+        "rank": 8,
         "surface": "/openapi.json",
         "intent": "api_first_agent_runtime",
         "default_weight": 0.11,
@@ -81,6 +87,8 @@ EVENT_REWARDS = {
     "agent_card_read": 0.08,
     "openapi_read": 0.08,
     "intake": 0.2,
+    "adapter_event": 0.35,
+    "first_fix_returned": 0.45,
     "worker_download": 0.25,
     "worker_start": 0.6,
     "lease_complete": 1.0,

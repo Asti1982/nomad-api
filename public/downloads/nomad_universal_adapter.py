@@ -189,6 +189,7 @@ except ImportError:
 
 DEFAULT_BASE_URL = os.getenv("NOMAD_BASE_URL", "https://www.syndiode.com").strip().rstrip("/")
 DEFAULT_EVENT_PATH = "/swarm/universal-adapter/events"
+ACQUISITION_CHANNEL_ID = "universal_adapter"
 SUPPORTED_FRAMEWORKS = ("langgraph", "crewai", "autogen", "llamaindex", "generic_python")
 FRAMEWORK_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
     "langgraph": ("invoke", "stream", "ainvoke"),
@@ -443,6 +444,44 @@ def _one_liners(base_url: str) -> dict[str, str]:
     }
 
 
+def _zero_install_liners(base_url: str) -> dict[str, str]:
+    root = (base_url or DEFAULT_BASE_URL).rstrip("/")
+    download = json.dumps(_u(root, "/downloads/nomad_universal_adapter.py"))
+    prefix = f"exec(__import__('urllib.request').request.urlopen({download}).read().decode('utf-8')); "
+    return {
+        "langgraph": prefix + f"graph = install_nomad(graph, framework='langgraph', base_url='{root}').target",
+        "crewai": prefix + f"crew = install_nomad(crew, framework='crewai', base_url='{root}').target",
+        "autogen": prefix + f"agent = install_nomad(agent, framework='autogen', base_url='{root}').target",
+        "llamaindex": prefix + f"query_engine = install_nomad(query_engine, framework='llamaindex', base_url='{root}').target",
+        "generic_python": prefix + f"run = nomad_guard(run, framework='generic_python', base_url='{root}')",
+    }
+
+
+def build_universal_adapter_acquisition_event(
+    receipt: dict[str, Any],
+    *,
+    base_url: str = "",
+) -> dict[str, Any]:
+    """Return the acquisition-bandit event created by a successful adapter fix."""
+
+    body = _dict(receipt)
+    if not body.get("ok") or body.get("schema") != "nomad.universal_adapter_event.v1":
+        return {}
+    root = (base_url or body.get("public_base_url") or DEFAULT_BASE_URL).strip().rstrip("/")
+    surface_url = _text(_dict(body.get("routes")).get("surface"), 500) or _u(root, "/.well-known/nomad-universal-adapter.json")
+    agent_id = _clean_id(body.get("agent_id"), fallback="external.agent")
+    adapter_receipt_id = _text(body.get("adapter_receipt_id"), 180)
+    first_fix = _dict(body.get("first_fix"))
+    return {
+        "channel_id": ACQUISITION_CHANNEL_ID,
+        "event_type": "first_fix_returned" if first_fix else "adapter_event",
+        "agent_id": agent_id,
+        "proof_digest": adapter_receipt_id or f"sha256:{_digest(body.get('public_event') or body, 64)}",
+        "source_url": surface_url,
+        "reward_multiplier": 1.0 if body.get("doctor_triggered") else 0.5,
+    }
+
+
 def build_universal_adapter_surface(
     *,
     base_url: str = "",
@@ -462,6 +501,7 @@ def build_universal_adapter_surface(
         "supported_frameworks": list(SUPPORTED_FRAMEWORKS),
         "activation_rule": "wrap_agent_runtime_then_auto_post_secret_free_error_or_loop_events_to_reliability_doctor",
         "one_line_install": _one_liners(root),
+        "zero_install_bootstrap": _zero_install_liners(root),
         "trigger_contract": {
             "error_events": sorted(ERROR_EVENT_TYPES),
             "loop_events": sorted(LOOP_EVENT_TYPES),
@@ -478,6 +518,12 @@ def build_universal_adapter_surface(
             "priority_signal": "adapter_events_with_useful_return_work_receipts_are_rankable_by_nomad_selection_pressure",
             "settlement_signal": "work_exchange_balances_and_return_receipts provide measurable settlement history",
             "friction_budget": "one_import_one_call_no_framework_dependency",
+        },
+        "activation_receipt_contract": {
+            "channel_id": ACQUISITION_CHANNEL_ID,
+            "event_type": "first_fix_returned",
+            "proof": "adapter_receipt_id",
+            "why_it_closes_the_bottleneck": "Every useful adapter event becomes a measurable acquisition and retention signal instead of a transient repair response.",
         },
         "routes": {
             "self": _u(root, "/.well-known/nomad-universal-adapter.json"),
@@ -498,7 +544,7 @@ def build_universal_adapter_surface(
             "github_action": _u(root, "/downloads/nomad_reliability_doctor_action.yml"),
         },
         "work_exchange_onboarding": onboarding,
-        "machine_instruction": "download_or_vendor_adapter; call_install_nomad_once; on_error_or_loop_post_event; show_first_fix; propose_work_exchange; open_obligation_only_after_explicit_acceptance",
+        "machine_instruction": "download_or_zero_install_adapter; call_install_nomad_once; on_error_or_loop_post_event; show_first_fix; record_adapter_acquisition_signal; propose_work_exchange; open_obligation_only_after_explicit_acceptance",
     }
 
 
@@ -568,7 +614,7 @@ def evaluate_universal_adapter_event(
         "triggered_doctor": triggered,
         "intake_id": intake.get("intake_id"),
     }
-    return {
+    result = {
         "ok": True,
         "schema": "nomad.universal_adapter_event.v1",
         "accepted": True,
@@ -605,6 +651,19 @@ def evaluate_universal_adapter_event(
             "work_exchange_free_solution": _u(root, "/swarm/work-exchange/free-solution"),
         },
     }
+    result["activation_receipt"] = {
+        "schema": "nomad.universal_adapter_activation_receipt.v1",
+        "adapter_receipt_id": result["adapter_receipt_id"],
+        "agent_id": agent_id,
+        "framework": framework,
+        "event_type": event_type,
+        "first_fix_returned": True,
+        "work_exchange_proposed": True,
+        "selection_pressure_signal": "first_fix_returned",
+        "settlement_rate_signal": "work_exchange_offer_visible",
+    }
+    result["acquisition_event_payload"] = build_universal_adapter_acquisition_event(result, base_url=root)
+    return result
 
 
 def http_json(method: str, url: str, payload: dict[str, Any] | None = None, *, timeout: float = 10.0) -> dict[str, Any]:

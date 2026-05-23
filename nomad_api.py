@@ -97,7 +97,11 @@ from nomad_autogenesis import (
     version_resource,
 )
 from nomad_autonomous_evolution import build_autonomous_evolution_cycle
-from nomad_universal_adapter import build_universal_adapter_surface, evaluate_universal_adapter_event
+from nomad_universal_adapter import (
+    build_universal_adapter_acquisition_event,
+    build_universal_adapter_surface,
+    evaluate_universal_adapter_event,
+)
 from nomad_deficit_integration_gate import (
     build_deficit_integration_surface,
     evaluate_deficit_integration_event,
@@ -4789,7 +4793,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/universal-adapter/events":
-            result = evaluate_universal_adapter_event(payload, base_url=self._base_url())
+            base = self._base_url()
+            result = evaluate_universal_adapter_event(payload, base_url=base)
+            if result.get("accepted"):
+                try:
+                    acquisition_payload = build_universal_adapter_acquisition_event(result, base_url=base)
+                    result["acquisition_event"] = (
+                        record_agent_acquisition_event(acquisition_payload, base_url=base)
+                        if acquisition_payload
+                        else {"ok": False, "error": "missing_adapter_acquisition_payload"}
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result["acquisition_event"] = {
+                        "ok": False,
+                        "error": "adapter_acquisition_event_failed",
+                        "message": str(exc)[:160],
+                    }
             status = 202 if result.get("accepted") else int(result.get("status_hint") or 422)
             self._json_response(result, status=status)
             return

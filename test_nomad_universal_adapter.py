@@ -3,11 +3,13 @@ import pytest
 from nomad_openapi import build_openapi_document
 from nomad_universal_adapter import (
     NomadAdapter,
+    build_universal_adapter_acquisition_event,
     build_universal_adapter_surface,
     evaluate_universal_adapter_event,
     install_nomad,
     nomad_guard,
 )
+from nomad_agent_acquisition_bandit import record_agent_acquisition_event, summarize_agent_acquisition_events
 
 
 def test_universal_adapter_surface_exposes_one_line_framework_onramps():
@@ -19,6 +21,8 @@ def test_universal_adapter_surface_exposes_one_line_framework_onramps():
     for framework in ["langgraph", "crewai", "autogen", "llamaindex"]:
         assert framework in out["supported_frameworks"]
         assert "install_nomad" in out["one_line_install"][framework]
+        assert "urlopen" in out["zero_install_bootstrap"][framework]
+    assert out["activation_receipt_contract"]["channel_id"] == "universal_adapter"
     assert out["trigger_contract"]["work_exchange"].startswith("Offer is proposed")
     assert "settlement_eligibility" in out["retention_contract"]["why_agents_keep_it_enabled"][2]
 
@@ -44,6 +48,9 @@ def test_universal_adapter_event_calls_doctor_and_builds_exchange_offer():
     assert out["work_exchange_proposal"]["offer"]["schema"] == "nomad.work_exchange.offer.v1"
     assert out["work_exchange_proposal"]["free_solution_receipt"]["accepted"] is False
     assert out["routes"]["surface"].endswith("/.well-known/nomad-universal-adapter.json")
+    assert out["activation_receipt"]["first_fix_returned"] is True
+    assert out["acquisition_event_payload"]["channel_id"] == "universal_adapter"
+    assert out["acquisition_event_payload"]["event_type"] == "first_fix_returned"
 
 
 def test_universal_adapter_opens_obligation_only_after_explicit_acceptance():
@@ -78,6 +85,35 @@ def test_universal_adapter_rejects_secret_shaped_payload():
 
     assert out["ok"] is False
     assert out["error"] == "secret_shaped_payload"
+
+
+def test_universal_adapter_acquisition_event_closes_measurement_gap(tmp_path):
+    receipt = evaluate_universal_adapter_event(
+        {
+            "framework": "llamaindex",
+            "agent_id": "query.worker",
+            "event_type": "error",
+            "problem": "Query engine failed after repeated timeout.",
+        },
+        base_url="https://nomad.example",
+        persist=False,
+    )
+
+    acquisition_payload = build_universal_adapter_acquisition_event(receipt, base_url="https://nomad.example")
+    acquisition = record_agent_acquisition_event(
+        acquisition_payload,
+        base_url="https://nomad.example",
+        ledger_path=tmp_path / "agent_acquisition.jsonl",
+    )
+    summary = summarize_agent_acquisition_events(ledger_path=tmp_path / "agent_acquisition.jsonl")
+
+    assert acquisition["ok"] is True
+    assert acquisition["channel_id"] == "universal_adapter"
+    assert acquisition["event_type"] == "first_fix_returned"
+    assert acquisition["reward"] == 0.45
+    universal = [row for row in summary["channels"] if row["channel_id"] == "universal_adapter"][0]
+    assert universal["event_count"] == 1
+    assert universal["reward_total"] == 0.45
 
 
 def test_install_nomad_wraps_framework_method_and_records_failure():
