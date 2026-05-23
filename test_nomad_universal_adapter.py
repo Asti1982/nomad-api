@@ -23,6 +23,8 @@ def test_universal_adapter_surface_exposes_one_line_framework_onramps():
         assert "install_nomad" in out["one_line_install"][framework]
         assert "urlopen" in out["zero_install_bootstrap"][framework]
     assert out["activation_receipt_contract"]["channel_id"] == "universal_adapter"
+    assert "why_it_measures_the_bottleneck" in out["activation_receipt_contract"]
+    assert "bottleneck_cleared" in out["activation_receipt_contract"]["not_yet_proof_of"]
     assert out["trigger_contract"]["work_exchange"].startswith("Offer is proposed")
     assert "settlement_eligibility" in out["retention_contract"]["why_agents_keep_it_enabled"][2]
 

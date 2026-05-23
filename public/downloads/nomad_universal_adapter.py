@@ -523,7 +523,9 @@ def build_universal_adapter_surface(
             "channel_id": ACQUISITION_CHANNEL_ID,
             "event_type": "first_fix_returned",
             "proof": "adapter_receipt_id",
-            "why_it_closes_the_bottleneck": "Every useful adapter event becomes a measurable acquisition and retention signal instead of a transient repair response.",
+            "why_it_measures_the_bottleneck": "Every useful adapter event becomes a measurable acquisition and retention signal instead of a transient repair response.",
+            "not_yet_proof_of": ["bottleneck_cleared", "paid_revenue", "settled_return_compute"],
+            "clearance_requires": ["first_fix_receipts", "verified_return_compute_or_positive_paid_receipt"],
         },
         "routes": {
             "self": _u(root, "/.well-known/nomad-universal-adapter.json"),

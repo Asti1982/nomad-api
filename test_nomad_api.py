@@ -117,7 +117,10 @@ def test_nomad_public_html_page_exists():
     assert "return compute instead of tokens" in text
     assert "/assets/nomad-reliability-doctor-x-card.png" in text
     assert "/.well-known/nomad-external-worker-opportunity.json" in text
+    assert "/.well-known/nomad-universal-adapter.json" in text
     assert "/.well-known/nomad-agent-acquisition-bandit.json" in text
+    assert "/swarm/universal-adapter/events" in text
+    assert "/downloads/nomad_universal_adapter.py" in text
     assert "/swarm/agent-acquisition/events" in text
     assert "/llms.txt" in text
     assert "/.well-known/nomad-agent-reliability-doctor.json" in text
@@ -126,6 +129,10 @@ def test_nomad_public_html_page_exists():
     assert "/downloads/nomad_work_exchange_worker.Dockerfile" in text
     assert "network phase" in text
     assert "settlement capacity" in text
+    assert "current bottleneck" in text
+    assert "adapter adoption unproven" in text
+    assert "No solved claim" in text
+    assert "next bottleneck" not in text.lower()
     assert "latest completion" in text
     assert "latest_completed_worker" in text
     assert "Live endpoints are sampled independently" in text
@@ -251,6 +258,8 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/machine-economy"))' in text
     assert 'fetch(apiUrl("/machine-treasury"))' in text
     assert 'fetch(apiUrl("/.well-known/nomad-machine-field.json"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-universal-adapter.json"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-agent-acquisition-bandit.json"))' in text
     assert 'fetch(apiUrl("/nonhuman-science"))' in text
     assert 'fetch(apiUrl("/operational-release"))' in text
     assert 'fetch(apiUrl("/swarm/gradient"))' in text
