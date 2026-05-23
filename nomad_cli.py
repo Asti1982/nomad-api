@@ -3429,6 +3429,44 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_receipt_prediction_event(payload, base_url=base, predictor_surface=predictor)
             else:
                 result = predictor
+        elif args.command == "bottleneck-resolver":
+            from nomad_api import NomadApiHandler
+            from nomad_bottleneck_resolver import evaluate_bottleneck_resolution_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            resolver = NomadApiHandler._build_bottleneck_resolver(base_url=base)
+            action = str(getattr(args, "resolver_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "lane_id": str(getattr(args, "lane_id", "") or "").strip()
+                        or str(resolver.get("recommended_now", {}).get("lane_id") or ""),
+                        "intent": str(getattr(args, "intent", "") or "select").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip(),
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "obligation_id": str(getattr(args, "obligation_id", "") or "").strip(),
+                        "return_work_credits": float(getattr(args, "return_work_credits", 0.0) or 0.0),
+                        "authorization_url": str(getattr(args, "authorization_url", "") or "").strip(),
+                        "record": bool(getattr(args, "record", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.bottleneck_resolver_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_bottleneck_resolution_event(payload, base_url=base, resolver_surface=resolver)
+            else:
+                result = resolver
         elif args.command == "ad-cycles":
             from nomad_ad_cycle_mesh import evaluate_ad_cycle_event
             from nomad_api import NomadApiHandler
@@ -4530,6 +4568,28 @@ def build_parser() -> argparse.ArgumentParser:
     receipt_predictor.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, or settlement reference.")
     receipt_predictor.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for intent=paid.")
     receipt_predictor.add_argument("--execute", action="store_true", help="Request execution; the predictor gate should block this.")
+    bottleneck_resolver = subparsers.add_parser(
+        "bottleneck-resolver",
+        help="Expose the honest current bottleneck and concrete paid/return-compute resolution packet.",
+    )
+    bottleneck_resolver.add_argument(
+        "resolver_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    bottleneck_resolver.add_argument("--base-url", default="", help="Override public base URL for links.")
+    bottleneck_resolver.add_argument("--event-json", default="", help="Full JSON bottleneck resolver event payload.")
+    bottleneck_resolver.add_argument("--lane-id", default="", help="Resolution lane id; defaults to resolver recommended_now.")
+    bottleneck_resolver.add_argument("--intent", default="select", help="select | paid | return_compute | clear | commit.")
+    bottleneck_resolver.add_argument("--proof-digest", default="", help="Proof or verifier digest.")
+    bottleneck_resolver.add_argument("--settlement-ref", default="", help="Receipt, paid_ref, payout ref, or settlement reference.")
+    bottleneck_resolver.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for paid receipt lanes.")
+    bottleneck_resolver.add_argument("--obligation-id", default="", help="Work-exchange obligation id for return-compute proof.")
+    bottleneck_resolver.add_argument("--return-work-credits", type=float, default=0.0, help="Positive return-work credits for work-exchange proof.")
+    bottleneck_resolver.add_argument("--authorization-url", default="", help="Program/scope URL for HackerOne/security-bounty lanes.")
+    bottleneck_resolver.add_argument("--record", action="store_true", help="Request record/write; the resolver gate should block this.")
     ad_cycles = subparsers.add_parser(
         "ad-cycles",
         help="Expose and gate shadow-only advertising/acquisition cycles.",

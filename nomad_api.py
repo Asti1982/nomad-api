@@ -208,6 +208,7 @@ from nomad_external_value import (
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
+from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
 from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_solana_settlement import build_solana_settlement_surface, create_solana_pay_intent, verify_solana_tx_receipt
 from nomad_agent_job_router import build_agent_job_router
@@ -1018,6 +1019,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             value_cycles=_lazy("/.well-known/nomad-value-cycles.json"),
             ad_cycles=_lazy("/.well-known/nomad-ad-cycles.json"),
             receipt_predictor=_lazy("/.well-known/nomad-receipt-predictor.json"),
+            bottleneck_resolver=_lazy("/.well-known/nomad-bottleneck-resolver.json"),
             revenue_science=_lazy("/.well-known/nomad-revenue-science.json"),
             effective_channels=_lazy("/.well-known/nomad-effective-channels.json"),
         )
@@ -1434,6 +1436,25 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 work_receipt_summary=work_summary,
             ),
             value_pressure=cls._build_value_pressure(base_url=base_url, swarm_summary=summary),
+        )
+
+    @classmethod
+    def _build_bottleneck_resolver(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        work_summary = summarize_work_receipts()
+        return build_bottleneck_resolver_surface(
+            base_url=base_url,
+            receipt_predictor=cls._build_receipt_predictor(base_url=base_url, swarm_summary=summary),
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+            work_exchange_summary=summarize_work_exchange_ledger(),
+            acquisition_summary=summarize_agent_acquisition_events(),
         )
 
     @classmethod
@@ -2310,6 +2331,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "value_cycle_event": f"{b}/swarm/value-cycles/events",
                     "receipt_predictor": f"{b}/.well-known/nomad-receipt-predictor.json",
                     "receipt_predictor_event": f"{b}/swarm/receipt-predictor/events",
+                    "bottleneck_resolver": f"{b}/.well-known/nomad-bottleneck-resolver.json",
+                    "bottleneck_resolver_event": f"{b}/swarm/bottleneck-resolver/events",
                     "ad_cycles": f"{b}/.well-known/nomad-ad-cycles.json",
                     "ad_cycle_event": f"{b}/swarm/ad-cycles/events",
                     "development_cycles": f"{b}/.well-known/nomad-development-cycles.json",
@@ -2950,6 +2973,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/receipt-predictor", "/.well-known/nomad-receipt-predictor.json"}:
             self._json_response(self.__class__._build_receipt_predictor(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/bottleneck-resolver", "/.well-known/nomad-bottleneck-resolver.json"}:
+            self._json_response(self.__class__._build_bottleneck_resolver(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/ad-cycles", "/.well-known/nomad-ad-cycles.json"}:
             self._json_response(self.__class__._build_ad_cycle_mesh(base_url=self._base_url()))
@@ -4217,6 +4243,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/receipt-predictor",
                     "/.well-known/nomad-receipt-predictor.json",
                     "/swarm/receipt-predictor/events",
+                    "/swarm/bottleneck-resolver",
+                    "/.well-known/nomad-bottleneck-resolver.json",
+                    "/swarm/bottleneck-resolver/events",
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",
@@ -5301,6 +5330,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("prediction_allowed") else 200)
             return
 
+        if parsed.path == "/swarm/bottleneck-resolver/events":
+            base = self._base_url()
+            resolver = self.__class__._build_bottleneck_resolver(base_url=base)
+            result = evaluate_bottleneck_resolution_event(payload, base_url=base, resolver_surface=resolver)
+            self._json_response(result, status=202 if result.get("resolution_packet_allowed") else 200)
+            return
+
         if parsed.path == "/swarm/ad-cycles/events":
             base = self._base_url()
             mesh = self.__class__._build_ad_cycle_mesh(base_url=base)
@@ -6134,6 +6170,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/receipt-predictor",
                     "/.well-known/nomad-receipt-predictor.json",
                     "/swarm/receipt-predictor/events",
+                    "/swarm/bottleneck-resolver",
+                    "/.well-known/nomad-bottleneck-resolver.json",
+                    "/swarm/bottleneck-resolver/events",
                     "/swarm/ad-cycles",
                     "/.well-known/nomad-ad-cycles.json",
                     "/swarm/ad-cycles/events",

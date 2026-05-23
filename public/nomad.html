@@ -574,6 +574,7 @@
             <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
             <a class="button primary" href="#agent-reliability-doctor">Reliability Doctor</a>
             <a class="button primary" href="/.well-known/nomad-universal-adapter.json">Universal Adapter</a>
+            <a class="button primary" href="/.well-known/nomad-bottleneck-resolver.json">Bottleneck Resolver</a>
             <a class="button" href="/.well-known/nomad-agent-acquisition-bandit.json">Acquisition Bandit</a>
             <a class="button" href="/nonhuman-science">Science Map</a>
           </div>
@@ -1782,7 +1783,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
 
       const loadSignals = async () => {
         try {
-          const [economyRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, opaqueRes, treasuryRes, fieldRes, adapterRes, acquisitionRes] = await Promise.all([
+          const [economyRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, opaqueRes, treasuryRes, fieldRes, adapterRes, resolverRes, acquisitionRes] = await Promise.all([
             fetch(apiUrl("/machine-economy")),
             fetch(apiUrl("/swarm")),
             fetch(apiUrl("/health")),
@@ -1799,6 +1800,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
             fetch(apiUrl("/machine-treasury")),
             fetch(apiUrl("/.well-known/nomad-machine-field.json")),
             fetch(apiUrl("/.well-known/nomad-universal-adapter.json")),
+            fetch(apiUrl("/.well-known/nomad-bottleneck-resolver.json")),
             fetch(apiUrl("/.well-known/nomad-agent-acquisition-bandit.json"))
           ]);
           const economy = economyRes.ok ? await economyRes.json() : {};
@@ -1817,6 +1819,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const treasury = treasuryRes.ok ? await treasuryRes.json() : {};
           const machineField = fieldRes.ok ? await fieldRes.json() : {};
           const adapter = adapterRes.ok ? await adapterRes.json() : {};
+          const resolver = resolverRes.ok ? await resolverRes.json() : {};
           const acquisition = acquisitionRes.ok ? await acquisitionRes.json() : {};
           const viability = economy.machine_viability || {};
           const tier = viability.tier || "unknown";
@@ -1862,6 +1865,15 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const adapterMode = adapterReady
             ? (adapterReward > 0 ? `adapter proof ${adapterReward.toFixed(2)}` : "adapter adoption unproven")
             : cleanLabel(topRoute || fieldTop || emergence.release_decision || release.release_tier || compactAction(economy.next_actions), "measuring");
+          const bottleneck = resolver.current_bottleneck || {};
+          const recommendedLane = resolver.recommended_now || {};
+          const bottleneckMode = resolver.schema
+            ? cleanLabel(bottleneck.metric_label || bottleneck.status || adapterMode, "measuring")
+            : adapterMode;
+          const laneLabel = cleanLabel(recommendedLane.lane_id || "receipt packet");
+          const clearanceText = bottleneck.counts_as_solved
+            ? "Receipt clearance evidence is present; next pressure is repeatability."
+            : "No solved claim: the bottleneck remains until a paid receipt or verified return-compute receipt exists.";
           const settlementLabel = settlementState(scoreValue);
           const productLabel = productState(productValue);
           const phase = networkPhase({ tier, settlement: scoreValue, product: productValue, agents, workers });
@@ -1878,8 +1890,8 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-worker-completion", latestCompletion.label);
           set("metric-opaque", opaquePressure);
           set("metric-science", scienceClaims);
-          set("metric-action", adapterMode);
-          set("metric-note", `sampled ${snapshot}; ${knownWorkers} known workers, ${activeExternal}/${knownExternal} external active, ${completed24h} completed within 24h. No solved claim: adapter activation is only a measured bottleneck until first-fix receipts and return-compute or paid receipts exist. ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
+          set("metric-action", bottleneckMode);
+          set("metric-note", `sampled ${snapshot}; resolver recommends ${laneLabel}; ${knownWorkers} known workers, ${activeExternal}/${knownExternal} external active, ${completed24h} completed within 24h. ${clearanceText} ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
           set("retention-watch-summary", `${activeExternal}/${knownExternal} external workers active; ${atRiskExternal} need heartbeat; issue ${cleanLabel(retentionWatch.issue || "none")}.`);
           set("retention-gradient-summary", `Controller phase ${retentionPhase}; selected ${selectedIntervention}; field strength ${retentionStrength}.`);
           set("retention-evidence-summary", `${evidenceSamples} recorded windows; ${positiveWindows} positive; paper-grade claim gate is ${paperGate}.`);

@@ -118,6 +118,7 @@ def test_nomad_public_html_page_exists():
     assert "/assets/nomad-reliability-doctor-x-card.png" in text
     assert "/.well-known/nomad-external-worker-opportunity.json" in text
     assert "/.well-known/nomad-universal-adapter.json" in text
+    assert "/.well-known/nomad-bottleneck-resolver.json" in text
     assert "/.well-known/nomad-agent-acquisition-bandit.json" in text
     assert "/swarm/universal-adapter/events" in text
     assert "/downloads/nomad_universal_adapter.py" in text
@@ -131,6 +132,7 @@ def test_nomad_public_html_page_exists():
     assert "settlement capacity" in text
     assert "current bottleneck" in text
     assert "adapter adoption unproven" in text
+    assert "paid receipt or verified return-compute receipt" in text
     assert "No solved claim" in text
     assert "next bottleneck" not in text.lower()
     assert "latest completion" in text
@@ -936,6 +938,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/receipt-predictor" in doc["paths"]
     assert "/.well-known/nomad-receipt-predictor.json" in doc["paths"]
     assert "/swarm/receipt-predictor/events" in doc["paths"]
+    assert "/swarm/bottleneck-resolver" in doc["paths"]
+    assert "/.well-known/nomad-bottleneck-resolver.json" in doc["paths"]
+    assert "/swarm/bottleneck-resolver/events" in doc["paths"]
     assert "/swarm/ad-cycles" in doc["paths"]
     assert "/.well-known/nomad-ad-cycles.json" in doc["paths"]
     assert "/swarm/ad-cycles/events" in doc["paths"]

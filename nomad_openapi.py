@@ -2763,6 +2763,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/bottleneck-resolver": {
+                "get": {
+                    "summary": "Truthful bottleneck resolver for paid receipt or return-compute conversion",
+                    "operationId": "getSwarmBottleneckResolver",
+                    "responses": {
+                        "200": {"description": "Bottleneck resolver surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-bottleneck-resolver.json": {
+                "get": {
+                    "summary": "Alias of /swarm/bottleneck-resolver",
+                    "operationId": "getBottleneckResolverWellKnown",
+                    "responses": {
+                        "200": {"description": "Bottleneck resolver surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/bottleneck-resolver/events": {
+                "post": {
+                    "summary": "Evaluate one bottleneck-resolution evidence packet without mutating ledgers",
+                    "operationId": "postSwarmBottleneckResolverEvent",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "200": {"description": "Bottleneck-resolution packet held or blocked", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Bottleneck-resolution packet admitted as evidence-ready", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/ad-cycles": {
                 "get": {
                     "summary": "Shadow-only advertising and acquisition cycle mesh",
