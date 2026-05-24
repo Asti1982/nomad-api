@@ -2702,7 +2702,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/swarm/optimal-transport": {
                 "get": {
-                    "summary": "Exact 1D Wasserstein optimal-transport routing surface for runtime, proof, lease, and settlement pressure",
+                    "summary": "Dynamic multi-axis Wasserstein optimal-transport routing over capability, proof quality, dynamics, and settlement",
                     "operationId": "getNomadOptimalTransport",
                     "responses": {
                         "200": {"description": "Optimal transport routing surface", "content": {"application/json": {"schema": ref_json_object()}}}
@@ -2720,12 +2720,12 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
             },
             "/swarm/optimal-transport/solve": {
                 "post": {
-                    "summary": "Solve exact 1D W1/W2 transport for supplied atoms or piecewise-uniform intervals",
+                    "summary": "Solve explicit 1D quantile, multi-axis discrete/continuous, or dynamic time-sliced Wasserstein OT",
                     "operationId": "postNomadOptimalTransportSolve",
                     "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
                     "responses": {
-                        "200": {"description": "Exact OT plan", "content": {"application/json": {"schema": ref_json_object()}}},
-                        "422": {"description": "Input outside exact 1D OT boundary", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "200": {"description": "OT plan", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Input outside supported OT boundary", "content": {"application/json": {"schema": ref_json_object()}}},
                     },
                 }
             },

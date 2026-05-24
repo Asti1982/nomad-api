@@ -708,7 +708,9 @@ def test_optimal_transport_route_is_public_json(monkeypatch, tmp_path):
     payload, status, _headers = responses[0]
     assert status == 200
     assert payload["schema"] == "nomad.optimal_transport.v1"
-    assert payload["plan"]["solver"] == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax"
+    assert payload["plan"]["solver"] == "exact_balanced_discrete_min_cost_flow_on_compiled_atoms"
+    assert payload["legacy_1d_quantile_plan"]["solver"] == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax"
+    assert payload["mathematical_contract"]["feature_space"] == ["capability", "proof_quality", "dynamics", "settlement"]
     assert payload["solve_url"] == "https://nomad.example/swarm/optimal-transport/solve"
 
 
