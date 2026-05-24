@@ -215,6 +215,98 @@ def summarize_server_failure_events(path: Path | str | None = None, *, max_recen
     }
 
 
+def _repair_scope_for_classes(classes: list[str]) -> str:
+    scopes: list[str] = []
+    if "client_abort_stream" in classes or "download_stream_path" in classes:
+        scopes.append("wrap streaming writes and generated download aliases with nonfatal disconnect handling")
+    if "memory_limit_restart" in classes:
+        scopes.append("separate fast health probes from heavy routes and inspect route memory pressure before scaling")
+    if "restart_observed" in classes or "host_failure_notice" in classes:
+        scopes.append("verify live commit, uptime reset, and post-deploy log window before any redeploy")
+    if "unknown_failure_notice" in classes:
+        scopes.append("fetch provider logs only through configured owner scope and redact before persistence")
+    return "; ".join(scopes) or "classify the failure and produce the smallest bounded route patch"
+
+
+def _severity_pressure(severity: str) -> float:
+    return {"high": 0.92, "medium": 0.68, "low": 0.38}.get(str(severity or "").lower(), 0.44)
+
+
+def build_server_failure_repair_candidate(
+    event: dict[str, Any] | None,
+    summary: dict[str, Any] | None = None,
+    *,
+    base_url: str = "",
+) -> dict[str, Any]:
+    """Compile a server-failure event into a bounded internal Repair-Packet candidate.
+
+    This only returns a candidate payload. Callers decide whether to enqueue it
+    into the Rescue-Packet lattice. The payload is public, digest-only, and
+    deliberately marked as internal platform protection rather than revenue.
+    """
+
+    row = event if isinstance(event, dict) else {}
+    if not row or row.get("schema") != EVENT_SCHEMA:
+        return {
+            "ok": False,
+            "schema": "nomad.server_failure_repair_candidate.v1",
+            "reason": "missing_server_failure_event",
+            "enqueue_recommended": False,
+        }
+    classes = [str(item) for item in (row.get("classes") or []) if str(item)]
+    primary = str(row.get("primary_class") or (classes[0] if classes else "unknown_failure_notice"))
+    severity = str(row.get("severity") or "low").lower()
+    counts = (summary or {}).get("counts_by_class") if isinstance(summary, dict) else {}
+    repeat_count = int(counts.get(primary, 1) if isinstance(counts, dict) else 1)
+    pressure = min(1.0, _severity_pressure(severity) + max(0, repeat_count - 1) * 0.08)
+    enqueue = severity in {"high", "medium"} or repeat_count >= 2 or "memory_limit_restart" in classes
+    source_url = _u(base_url, "/.well-known/nomad-server-failure-guard.json")
+    fix_scope = _repair_scope_for_classes(classes)
+    proof_digest = str(row.get("proof_digest") or "")
+    candidate = {
+        "candidate_id": f"server-failure-{primary}-{_digest({'classes': classes}, 10)}",
+        "source_url": source_url,
+        "framework": "nomad_api",
+        "problem_type": f"platform_reliability_{primary}",
+        "diagnosis": _text(
+            f"Nomad public API server-failure event {row.get('event_id')} classified as "
+            f"{', '.join(classes) or primary}; severity={severity}; repeat_count={repeat_count}.",
+            420,
+        ),
+        "repro_outline": _text(
+            "Replay the secret-free failure event, verify GET /health, compare Render live commit, "
+            "inspect post-deploy log window, and run the client-abort download regression.",
+            420,
+        ),
+        "fix_scope": _text(f"Bounded server-protection packet: {fix_scope}.", 420),
+        "side_effect_scope": "local_shadow_lane_only",
+        "ttl_seconds": 86400,
+        "price_tier_usd": 49,
+        "proof_digest": proof_digest,
+        "proof_yield_delta": round(max(0.46, pressure * 0.74), 4),
+        "autopoietic_index_delta": round(max(0.42, pressure * 0.63), 4),
+        "receipt_proximity": round(max(0.38, min(0.72, 0.36 + pressure * 0.28)), 4),
+        "boundedness_score": 0.9,
+        "spam_risk": 0.04,
+        "maintainer_relevance": 0.82,
+        "public_followup_text": "",
+        "operator_note": "internal_platform_repair_candidate_not_public_outreach_not_revenue",
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.server_failure_repair_candidate.v1",
+        "event_id": row.get("event_id"),
+        "primary_class": primary,
+        "severity": severity,
+        "repeat_count": repeat_count,
+        "repair_pressure": round(pressure, 4),
+        "enqueue_recommended": enqueue,
+        "candidate": candidate,
+        "counts_as_revenue": False,
+        "public_post_allowed": False,
+    }
+
+
 def record_server_failure_event(
     payload: dict[str, Any] | None,
     *,
@@ -274,6 +366,8 @@ def record_server_failure_event(
 
 def build_server_failure_guard_surface(base_url: str = "", *, summary: dict[str, Any] | None = None) -> dict[str, Any]:
     current_summary = summary if isinstance(summary, dict) else summarize_server_failure_events()
+    latest = current_summary.get("latest_event") if isinstance(current_summary, dict) else {}
+    repair_candidate = build_server_failure_repair_candidate(latest, current_summary, base_url=base_url)
     return {
         "ok": True,
         "schema": SCHEMA,
@@ -320,5 +414,6 @@ def build_server_failure_guard_surface(base_url: str = "", *, summary: dict[str,
                 "action": "only then update revenue or settlement accounting",
             },
         ],
+        "repair_candidate": repair_candidate,
         "current_summary": current_summary,
     }

@@ -267,6 +267,7 @@ from nomad_rescue_packet_lattice import (
     summarize_rescue_packet_candidates,
 )
 from nomad_server_failure_guard import (
+    build_server_failure_repair_candidate,
     build_server_failure_guard_surface,
     record_server_failure_event,
     summarize_server_failure_events,
@@ -1373,6 +1374,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             external_reconcile=reconcile_external_value_ledger(live_github=False, limit=40),
             bounty_hunter=cls._build_bounty_hunter(base_url=base_url),
             compute_market=cls._build_compute_market(base_url=base_url, swarm_summary=summary),
+            server_failure_summary=summarize_server_failure_events(),
         )
 
     @classmethod
@@ -6040,6 +6042,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/server-failure/events":
             result = record_server_failure_event(payload, base_url=self._base_url())
+            if result.get("ok"):
+                failure_summary = summarize_server_failure_events()
+                repair_candidate = build_server_failure_repair_candidate(
+                    result,
+                    failure_summary,
+                    base_url=self._base_url(),
+                )
+                result["repair_candidate"] = repair_candidate
+                if repair_candidate.get("enqueue_recommended") and isinstance(repair_candidate.get("candidate"), dict):
+                    result["rescue_packet_candidate"] = append_rescue_packet_candidate(
+                        repair_candidate["candidate"],
+                        base_url=self._base_url(),
+                    )
             self._json_response(result, status=202 if result.get("ok") else 400)
             return
 

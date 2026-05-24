@@ -620,6 +620,7 @@ def test_server_failure_guard_route_is_public_json(monkeypatch, tmp_path):
 
 def test_server_failure_event_post_classifies_render_notice(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    monkeypatch.setenv("NOMAD_RESCUE_PACKET_LATTICE_LEDGER_PATH", str(tmp_path / "rescue_lattice.jsonl"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
     handler.path = "/swarm/server-failure/events"
@@ -641,6 +642,9 @@ def test_server_failure_event_post_classifies_render_notice(monkeypatch, tmp_pat
     assert payload["counts_as_revenue"] is False
     assert "memory_limit_restart" in payload["classes"]
     assert "client_abort_stream" in payload["classes"]
+    assert payload["repair_candidate"]["enqueue_recommended"] is True
+    assert payload["rescue_packet_candidate"]["decision"] == "promote"
+    assert payload["rescue_packet_candidate"]["counts_as_revenue"] is False
 
 
 def test_public_download_handles_client_abort(tmp_path):
@@ -662,6 +666,33 @@ def test_public_download_handles_client_abort(tmp_path):
     handler._public_download_file_response(download)
 
     assert handler.close_connection is True
+
+
+def test_value_pressure_includes_server_failure_repair_row():
+    from nomad_value_pressure import build_value_pressure_surface
+
+    surface = build_value_pressure_surface(
+        base_url="https://nomad.example",
+        server_failure_summary={
+            "schema": "nomad.server_failure_summary.v1",
+            "event_count": 2,
+            "counts_by_class": {"memory_limit_restart": 2},
+            "latest_event": {
+                "schema": "nomad.server_failure_event.v1",
+                "event_id": "nomad-server-failure-test",
+                "primary_class": "memory_limit_restart",
+                "severity": "high",
+                "classes": ["memory_limit_restart", "restart_observed"],
+                "proof_digest": "sha256:test",
+            },
+        },
+    )
+
+    rows = [row for row in surface["rows"] if row.get("source") == "server_failure_guard"]
+    assert rows
+    assert rows[0]["action"] == "produce_bounded_server_repair_packet"
+    assert "post_deploy_log_window_without_repeat_exception" in rows[0]["required_evidence"]
+    assert surface["summary"]["server_failure_event_count"] == 2
 
 
 def test_retention_route_is_public_json():

@@ -1,4 +1,5 @@
 from nomad_server_failure_guard import (
+    build_server_failure_repair_candidate,
     build_server_failure_guard_surface,
     classify_server_failure_event,
     record_server_failure_event,
@@ -49,4 +50,29 @@ def test_record_and_summarize_server_failure_event(tmp_path):
     assert "host_failure_notice" in event["classes"]
     assert summary["event_count"] == 1
     assert surface["schema"] == "nomad.server_failure_guard.v1"
+    assert surface["repair_candidate"]["enqueue_recommended"] is True
     assert surface["post_event_url"] == "https://nomad.example/swarm/server-failure/events"
+
+
+def test_build_server_failure_repair_candidate_is_bounded_and_internal(tmp_path):
+    ledger = tmp_path / "server_failures.jsonl"
+    event = record_server_failure_event(
+        {
+            "source": "render",
+            "message": "Web Service syndiode exceeded its memory limit while restarting.",
+            "observed_log_excerpt": "BrokenPipeError in _public_download_file_response",
+        },
+        base_url="https://nomad.example",
+        ledger_path=ledger,
+    )
+    candidate = build_server_failure_repair_candidate(
+        event,
+        summarize_server_failure_events(ledger),
+        base_url="https://nomad.example",
+    )
+
+    assert candidate["enqueue_recommended"] is True
+    assert candidate["counts_as_revenue"] is False
+    assert candidate["public_post_allowed"] is False
+    assert candidate["candidate"]["side_effect_scope"] == "local_shadow_lane_only"
+    assert candidate["candidate"]["source_url"] == "https://nomad.example/.well-known/nomad-server-failure-guard.json"

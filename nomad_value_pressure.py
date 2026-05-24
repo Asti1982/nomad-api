@@ -243,6 +243,56 @@ def _compute_rows(compute_market: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _server_failure_rows(server_failure_summary: dict[str, Any], *, base_url: str) -> list[dict[str, Any]]:
+    summary = _dict(server_failure_summary)
+    latest = _dict(summary.get("latest_event"))
+    if not latest:
+        return []
+    counts = _dict(summary.get("counts_by_class"))
+    primary = _clean_id(latest.get("primary_class"), "unknown_failure_notice")
+    severity = str(latest.get("severity") or "low").lower()
+    severity_weight = {"high": 1.12, "medium": 0.82, "low": 0.42}.get(severity, 0.5)
+    repeat_count = max(1.0, _num(counts.get(primary), 1.0))
+    repeat_pressure = _clamp(0.1 * (repeat_count - 1.0), 0.0, 0.38)
+    class_count = len(latest.get("classes") or []) if isinstance(latest.get("classes"), list) else 1
+    breadth_pressure = _clamp(0.06 * max(0, class_count - 1), 0.0, 0.24)
+    pressure = _clamp(0.34 + severity_weight + repeat_pressure + breadth_pressure, 0.0, 1.72)
+    return [
+        {
+            "schema": "nomad.value_pressure.row.v1",
+            "row_id": _clean_id(f"server-failure:{latest.get('event_id')}:{primary}", f"server-failure-{_digest(latest, 10)}"),
+            "source": "server_failure_guard",
+            "kind": "platform_repair",
+            "pressure_score": round(pressure, 6),
+            "event_id": latest.get("event_id"),
+            "action": "produce_bounded_server_repair_packet",
+            "target_stage": "protected_runtime",
+            "current_stage": "failure_event_recorded",
+            "required_evidence": [
+                "server_failure_event_id",
+                "proof_digest",
+                "health_200_after_patch",
+                "post_deploy_log_window_without_repeat_exception",
+                "download_client_abort_regression",
+            ],
+            "route": "server_failure_guard",
+            "contract": {
+                "guard_url": _u(base_url, "/.well-known/nomad-server-failure-guard.json"),
+                "event_post_url": _u(base_url, "/swarm/server-failure/events"),
+                "candidate_post_url": _u(base_url, "/swarm/rescue-packet-candidates"),
+                "classes": latest.get("classes") or [],
+            },
+            "score_components": {
+                "severity_weight": round(severity_weight, 4),
+                "repeat_count": round(repeat_count, 4),
+                "repeat_pressure": round(repeat_pressure, 4),
+                "breadth_pressure": round(breadth_pressure, 4),
+            },
+            "machine_instruction": "convert_runtime_failure_into_bounded_repair_packet_then_verify_no_repeat_before_any_growth_work",
+        }
+    ]
+
+
 def _local_views(rows: list[dict[str, Any]], *, roles: list[str] | None = None, width: int = 3) -> dict[str, list[str]]:
     role_list = roles or ["settlement_agent", "proof_scout", "capacity_binder", "topology_router"]
     out: dict[str, list[str]] = {}
@@ -263,11 +313,18 @@ def build_value_pressure_surface(
     external_reconcile: dict[str, Any] | None = None,
     bounty_hunter: dict[str, Any] | None = None,
     compute_market: dict[str, Any] | None = None,
+    server_failure_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     external = _dict(external_reconcile)
     bounty = _dict(bounty_hunter)
     compute = _dict(compute_market)
-    rows = _external_followup_rows(external) + _bounty_rows(bounty) + _compute_rows(compute)
+    server_failures = _dict(server_failure_summary)
+    rows = (
+        _external_followup_rows(external)
+        + _bounty_rows(bounty)
+        + _compute_rows(compute)
+        + _server_failure_rows(server_failures, base_url=base_url)
+    )
     rows.sort(key=lambda item: float(item.get("pressure_score") or 0.0), reverse=True)
     suppressed = {
         "bounty_no_go": len(
@@ -295,7 +352,7 @@ def build_value_pressure_surface(
         "read_url": _u(base_url, "/swarm/value-pressure"),
         "well_known_url": _u(base_url, "/.well-known/nomad-value-pressure.json"),
         "mechanism": "decentralized_proof_pressure_field_with_local_views",
-        "score_formula": "external_followup_priority*stage_weight*action_weight*evidence_gap + bounty_gate*proof_gap*crowding*value + compute_market_score",
+        "score_formula": "external_followup_priority*stage_weight*action_weight*evidence_gap + bounty_gate*proof_gap*crowding*value + compute_market_score + server_failure_severity_repeat_pressure",
         "summary": {
             "row_count": len(rows),
             "top_source": top.get("source", ""),
@@ -305,6 +362,8 @@ def build_value_pressure_surface(
             "bounty_public_go_count": _num(_dict(bounty.get("summary")).get("public_go_count")),
             "bounty_scout_only_count": _num(_dict(bounty.get("summary")).get("scout_only_count")),
             "compute_recent_offer_count": _num(_dict(compute.get("market_state")).get("recent_offer_count")),
+            "server_failure_event_count": _num(server_failures.get("event_count")),
+            "server_failure_latest_class": _dict(server_failures.get("latest_event")).get("primary_class", ""),
             "suppressed": suppressed,
         },
         "top": top,
@@ -320,11 +379,13 @@ def build_value_pressure_surface(
             {"op": "GET", "url": _u(base_url, "/swarm/external-value?summary=1"), "reason": "read_external_value_state"},
             {"op": "GET", "url": _u(base_url, "/swarm/bounty-hunter"), "reason": "read_paid_oss_work_selector"},
             {"op": "GET", "url": _u(base_url, "/swarm/compute-market"), "reason": "read_worker_capacity_market"},
+            {"op": "GET", "url": _u(base_url, "/swarm/server-failure-guard"), "reason": "read_runtime_protection_pressure"},
         ],
         "links": {
             "external_value": _u(base_url, "/.well-known/nomad-external-value.json"),
             "bounty_hunter": _u(base_url, "/.well-known/nomad-bounty-hunter.json"),
             "compute_market": _u(base_url, "/.well-known/nomad-compute-market.json"),
+            "server_failure_guard": _u(base_url, "/.well-known/nomad-server-failure-guard.json"),
             "microtask_submit": _u(base_url, "/swarm/microtask/submit"),
             "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
         },
