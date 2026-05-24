@@ -43,6 +43,16 @@ def test_sales_department_surface_routes_buyer_work_and_science_sources():
     assert "group_think_token_interleaving_2025" in optimizer["research_basis"]
 
 
+def test_api_sales_department_builder_accepts_lazy_surfaces():
+    from nomad_api import NomadApiHandler
+
+    surface = NomadApiHandler._build_sales_department_swarm(base_url="https://nomad.example")
+
+    assert surface["schema"] == "nomad.sales_department_swarm.v1"
+    assert surface["well_known_url"] == "https://nomad.example/.well-known/nomad-sales-department.json"
+    assert surface["summary"]["recognized_revenue_usd_total"] == 0.0
+
+
 def test_sales_department_event_blocks_public_send_without_proof_and_approval():
     surface = build_sales_department_swarm_surface(base_url="https://nomad.example")
 

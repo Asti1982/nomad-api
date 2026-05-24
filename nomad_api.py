@@ -1019,7 +1019,6 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             value_cycles=_lazy("/.well-known/nomad-value-cycles.json"),
             ad_cycles=_lazy("/.well-known/nomad-ad-cycles.json"),
             receipt_predictor=_lazy("/.well-known/nomad-receipt-predictor.json"),
-            bottleneck_resolver=_lazy("/.well-known/nomad-bottleneck-resolver.json"),
             revenue_science=_lazy("/.well-known/nomad-revenue-science.json"),
             effective_channels=_lazy("/.well-known/nomad-effective-channels.json"),
         )
