@@ -1066,6 +1066,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/server-failure-guard": {
+                "get": {
+                    "summary": "Secret-free server failure guard for provider notifications, restart signals, and bounded recovery routing",
+                    "operationId": "getServerFailureGuard",
+                    "responses": {
+                        "200": {"description": "Server failure guard surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-server-failure-guard.json": {
+                "get": {
+                    "summary": "Alias of /swarm/server-failure-guard",
+                    "operationId": "getNomadServerFailureGuardWellKnown",
+                    "responses": {
+                        "200": {"description": "Server failure guard surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/server-failure/events": {
+                "post": {
+                    "summary": "Record one secret-free server failure event; never books recovery as revenue",
+                    "operationId": "postServerFailureEvent",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Failure event classified and recorded", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "400": {"description": "Secret-like or invalid failure event rejected", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",

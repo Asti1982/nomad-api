@@ -266,6 +266,11 @@ from nomad_rescue_packet_lattice import (
     build_rescue_packet_lattice_surface,
     summarize_rescue_packet_candidates,
 )
+from nomad_server_failure_guard import (
+    build_server_failure_guard_surface,
+    record_server_failure_event,
+    summarize_server_failure_events,
+)
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -2449,6 +2454,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "rescue_cycle_scheduler": f"{b}/.well-known/nomad-rescue-cycle-scheduler.json",
                     "rescue_packet_lattice": f"{b}/.well-known/nomad-rescue-packet-lattice.json",
                     "rescue_packet_candidate_post": f"{b}/swarm/rescue-packet-candidates",
+                    "server_failure_guard": f"{b}/.well-known/nomad-server-failure-guard.json",
+                    "server_failure_event_post": f"{b}/swarm/server-failure/events",
                     "sustainability_kernel": f"{b}/.well-known/nomad-sustainability-kernel.json",
                     "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
                     "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
@@ -2527,6 +2534,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "rescue_cycle_scheduler": f"{b}/.well-known/nomad-rescue-cycle-scheduler.json",
                     "rescue_packet_lattice": f"{b}/.well-known/nomad-rescue-packet-lattice.json",
                     "rescue_packet_candidate_post": f"{b}/swarm/rescue-packet-candidates",
+                    "server_failure_guard": f"{b}/.well-known/nomad-server-failure-guard.json",
+                    "server_failure_event_post": f"{b}/swarm/server-failure/events",
                     "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
                     "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
                     "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
@@ -3039,6 +3048,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     summary=summarize_rescue_packet_candidates(),
                 ),
                 headers={"Cache-Control": "public, max-age=60"},
+            )
+            return
+        if parsed.path in {"/swarm/server-failure-guard", "/.well-known/nomad-server-failure-guard.json"}:
+            self._json_response(
+                build_server_failure_guard_surface(
+                    base_url=self._base_url(),
+                    summary=summarize_server_failure_events(),
+                ),
+                headers={"Cache-Control": "public, max-age=30"},
             )
             return
         if parsed.path in {"/swarm/flywheel-health", "/swarm/health-dashboard", "/.well-known/nomad-flywheel-health.json"}:
@@ -4503,6 +4521,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/rescue-packet-lattice",
                     "/.well-known/nomad-rescue-packet-lattice.json",
                     "/swarm/rescue-packet-candidates",
+                    "/swarm/server-failure-guard",
+                    "/.well-known/nomad-server-failure-guard.json",
+                    "/swarm/server-failure/events",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
@@ -6017,6 +6038,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 400)
             return
 
+        if parsed.path == "/swarm/server-failure/events":
+            result = record_server_failure_event(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("ok") else 400)
+            return
+
         if parsed.path == "/swarm/work-receipts":
             result = record_work_receipt(payload)
             status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
@@ -6494,6 +6520,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/rescue-packet-lattice",
                     "/.well-known/nomad-rescue-packet-lattice.json",
                     "/swarm/rescue-packet-candidates",
+                    "/swarm/server-failure-guard",
+                    "/.well-known/nomad-server-failure-guard.json",
+                    "/swarm/server-failure/events",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
@@ -7992,12 +8021,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             )
             return
         body = path.read_bytes()
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self._send_common_headers()
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self._send_common_headers()
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            self.close_connection = True
 
     def _public_asset_file_response(self, path: Path, status: int = 200) -> None:
         if not path.exists() or not path.is_file():
@@ -8012,27 +8044,33 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         ctype, _ = mimetypes.guess_type(str(path))
         size = path.stat().st_size
-        self.send_response(status)
-        self.send_header("Content-Type", ctype or "application/octet-stream")
-        self._send_common_headers()
-        self.send_header("Cache-Control", "public, max-age=3600")
-        self.send_header("Content-Length", str(size))
-        self.end_headers()
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(1024 * 1024)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self._send_common_headers()
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            self.close_connection = True
 
     def _public_download_file_response(self, path: Path, status: int = 200) -> None:
         if path.name == HANDYORACLE_APK_NAME:
-            self.send_response(302)
-            self.send_header("Location", HANDYORACLE_APK_RELEASE_URL)
-            self._send_common_headers()
-            self.send_header("Content-Disposition", f'attachment; filename="{HANDYORACLE_APK_NAME}"')
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            try:
+                self.send_response(302)
+                self.send_header("Location", HANDYORACLE_APK_RELEASE_URL)
+                self._send_common_headers()
+                self.send_header("Content-Disposition", f'attachment; filename="{HANDYORACLE_APK_NAME}"')
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                self.close_connection = True
             return
         if (not path.exists() or not path.is_file()) and path.name == "install_nomad_transition_worker.bat":
             body = (
@@ -8050,13 +8088,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 ")\r\n"
                 "call \"%BOOTSTRAP%\" \"%BASE_URL%\"\r\n"
             ).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/x-msdos-program")
-            self._send_common_headers()
-            self.send_header('Content-Disposition', 'attachment; filename="install_nomad_transition_worker.bat"')
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/x-msdos-program")
+                self._send_common_headers()
+                self.send_header('Content-Disposition', 'attachment; filename="install_nomad_transition_worker.bat"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                self.close_connection = True
             return
         if (not path.exists() or not path.is_file()) and path.name == "install_nomad_agent.bat":
             body = (
@@ -8074,13 +8115,16 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "echo Running installer...\r\n"
                 "call \"%TARGET%\" \"%BASE_URL%\"\r\n"
             ).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/x-msdos-program")
-            self._send_common_headers()
-            self.send_header('Content-Disposition', 'attachment; filename="install_nomad_agent.bat"')
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/x-msdos-program")
+                self._send_common_headers()
+                self.send_header('Content-Disposition', 'attachment; filename="install_nomad_agent.bat"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                self.close_connection = True
             return
         if not path.exists() or not path.is_file():
             self._json_response(
@@ -8125,18 +8169,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if path.suffix.lower() == ".apk":
             ctype = "application/vnd.android.package-archive"
         size = path.stat().st_size
-        self.send_response(status)
-        self.send_header("Content-Type", ctype or "application/octet-stream")
-        self._send_common_headers()
-        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
-        self.send_header("Content-Length", str(size))
-        self.end_headers()
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(1024 * 1024)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self._send_common_headers()
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            self.close_connection = True
 
     @staticmethod
     def _optional_float(value: object) -> float | None:

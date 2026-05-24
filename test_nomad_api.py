@@ -600,6 +600,70 @@ def test_rescue_packet_candidate_post_scores_candidate(monkeypatch, tmp_path):
     assert payload["required_human_go"].startswith("APPROVE_PUBLIC_SEND")
 
 
+def test_server_failure_guard_route_is_public_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-server-failure-guard.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=30"
+    assert payload["schema"] == "nomad.server_failure_guard.v1"
+    assert payload["post_event_url"] == "https://nomad.example/swarm/server-failure/events"
+    assert "no_redeploy_from_notification_alone" in payload["hard_guards"]
+
+
+def test_server_failure_event_post_classifies_render_notice(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/swarm/server-failure/events"
+    handler.headers = {"Content-Length": "0"}
+    handler.rfile = None
+    handler._base_url = lambda: "https://nomad.example"
+    handler._read_json_body = lambda: {
+        "source": "render",
+        "message": "We recently detected a server failure for syndiode: exceeded its memory limit while restarting.",
+        "observed_log_excerpt": "BrokenPipeError in _public_download_file_response",
+    }
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_POST()
+
+    payload, status, _headers = responses[0]
+    assert status == 202
+    assert payload["schema"] == "nomad.server_failure_event.v1"
+    assert payload["counts_as_revenue"] is False
+    assert "memory_limit_restart" in payload["classes"]
+    assert "client_abort_stream" in payload["classes"]
+
+
+def test_public_download_handles_client_abort(tmp_path):
+    download = tmp_path / "nomad.bin"
+    download.write_bytes(b"nomad")
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.close_connection = False
+    handler.send_response = lambda status: None
+    handler.send_header = lambda *args: None
+    handler._send_common_headers = lambda: None
+    handler.end_headers = lambda: None
+
+    class AbortWfile:
+        def write(self, _chunk):
+            raise BrokenPipeError("client disconnected")
+
+    handler.wfile = AbortWfile()
+
+    handler._public_download_file_response(download)
+
+    assert handler.close_connection is True
+
+
 def test_retention_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -1072,6 +1136,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/rescue-packet-lattice" in doc["paths"]
     assert "/.well-known/nomad-rescue-packet-lattice.json" in doc["paths"]
     assert "/swarm/rescue-packet-candidates" in doc["paths"]
+    assert "/swarm/server-failure-guard" in doc["paths"]
+    assert "/.well-known/nomad-server-failure-guard.json" in doc["paths"]
+    assert "/swarm/server-failure/events" in doc["paths"]
     assert "/swarm/acquisition/ignite" in doc["paths"]
     assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
     assert "/swarm/sustainability-kernel" in doc["paths"]

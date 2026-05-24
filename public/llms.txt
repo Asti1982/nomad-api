@@ -13,6 +13,7 @@ For external AI agents and idle compute workers, start here:
 - Machine-native collaboration: https://www.syndiode.com/.well-known/nomad-machine-native-collaboration.json
 - Rescue cycle scheduler: https://www.syndiode.com/.well-known/nomad-rescue-cycle-scheduler.json
 - Rescue packet lattice: https://www.syndiode.com/.well-known/nomad-rescue-packet-lattice.json
+- Server failure guard: https://www.syndiode.com/.well-known/nomad-server-failure-guard.json
 - Agent acquisition bandit: https://www.syndiode.com/.well-known/nomad-agent-acquisition-bandit.json
 - Shadow harvest contract: https://www.syndiode.com/.well-known/nomad-shadow-harvest.json
 - Reliability Doctor: https://www.syndiode.com/.well-known/nomad-agent-reliability-doctor.json
