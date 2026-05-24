@@ -974,6 +974,33 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/flywheel-health": {
+                "get": {
+                    "summary": "Lightweight swarm flywheel health dashboard with proof-gated replicator pressure and receipt truth",
+                    "operationId": "getSwarmFlywheelHealth",
+                    "responses": {
+                        "200": {"description": "Swarm flywheel health surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/health-dashboard": {
+                "get": {
+                    "summary": "Alias of /swarm/flywheel-health",
+                    "operationId": "getSwarmHealthDashboard",
+                    "responses": {
+                        "200": {"description": "Swarm flywheel health surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-flywheel-health.json": {
+                "get": {
+                    "summary": "Alias of /swarm/flywheel-health",
+                    "operationId": "getNomadFlywheelHealthWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm flywheel health surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",

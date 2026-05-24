@@ -258,6 +258,7 @@ from nomad_spawner_gate import build_spawner_gate, trigger_spawner
 from nomad_transition_exchange import NomadTransitionExchange
 from nomad_telegram_a2a import build_telegram_bot_to_bot_surface, route_telegram_bot_to_bot_message
 from nomad_sustainability_kernel import build_sustainability_kernel
+from nomad_swarm_flywheel import build_swarm_flywheel_health_surface
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -793,6 +794,64 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             telegram_a2a=cls._build_telegram_a2a(base_url=base_url),
             acquisition_bandit=cls._build_agent_acquisition_bandit(base_url=base_url),
             retention_watchdog=cls._build_retention_watchdog_surface(base_url=base_url),
+        )
+
+    @classmethod
+    def _build_swarm_flywheel_health(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        registry = cls.swarm_registry if cls.swarm_registry is not None else cls._light_swarm_registry()
+        summary = swarm_summary if isinstance(swarm_summary, dict) else registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = registry.worker_fleet_contract(base_url=base_url)
+        economy = machine_economy_snapshot()
+        release = operational_release_snapshot(base_url=base_url, worker_fleet=worker_fleet, economy=economy)
+        gradient = build_recruitment_gradient(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            machine_economy=economy,
+            operational_release=release,
+        )
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        work_summary = summarize_work_receipts()
+        exchange_summary = summarize_work_exchange_ledger()
+        acquisition_summary = summarize_agent_acquisition_events()
+        bottleneck = build_bottleneck_resolver_surface(
+            base_url=base_url,
+            receipt_predictor={
+                "schema": "nomad.receipt_predictor.lightweight_hint.v1",
+                "ranked_cycles": [
+                    {
+                        "cycle_id": "invoice_paid_work_receipt",
+                        "lane": "worker_invoice",
+                        "rank": 1,
+                        "queue": "now",
+                        "receipt_proximity_score": 1.76,
+                    },
+                    {
+                        "cycle_id": "work_exchange_return_compute_receipt",
+                        "lane": "integration_setup",
+                        "rank": 2,
+                        "queue": "next",
+                        "receipt_proximity_score": 1.18,
+                    },
+                ],
+            },
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+            work_exchange_summary=exchange_summary,
+            acquisition_summary=acquisition_summary,
+        )
+        first_receipt_campaign = cls._build_first_receipt_campaign(base_url=base_url, swarm_summary=summary)
+        return build_swarm_flywheel_health_surface(
+            base_url=base_url,
+            worker_fleet=worker_fleet,
+            recruitment_gradient=gradient,
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+            work_exchange_summary=exchange_summary,
+            acquisition_summary=acquisition_summary,
+            bottleneck_resolver=bottleneck,
+            first_receipt_campaign=first_receipt_campaign,
         )
 
     @classmethod
@@ -2380,6 +2439,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_acquisition_bandit": f"{b}/.well-known/nomad-agent-acquisition-bandit.json",
                     "agent_acquisition_events": f"{b}/swarm/agent-acquisition/events",
                     "sustainability_kernel": f"{b}/.well-known/nomad-sustainability-kernel.json",
+                    "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
+                    "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
                     "sustainability_worker": f"{b}/downloads/nomad_sustainability_worker.py",
                     "a2a_get_relay": f"{b}/a2a/get",
                     "get_only_worker_onramp": f"{b}/swarm/hello",
@@ -2451,6 +2512,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "first_receipt_ignition_event": f"{b}/swarm/first-receipt-ignition/events",
                     "first_receipt_campaign": f"{b}/.well-known/nomad-first-receipt-campaign.json",
                     "first_receipt_campaign_event": f"{b}/swarm/first-receipt-campaign/events",
+                    "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
+                    "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
                     "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
                     "acquisition_ignite": f"{b}/swarm/acquisition/ignite",
                     "resolution_ladder": f"{b}/.well-known/nomad-resolution-ladder.json",
@@ -2941,6 +3004,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/sustainability-kernel", "/.well-known/nomad-sustainability-kernel.json"}:
             self._json_response(self.__class__._build_sustainability_kernel(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/flywheel-health", "/swarm/health-dashboard", "/.well-known/nomad-flywheel-health.json"}:
+            base = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"swarm-flywheel-health:{base}",
+                    15,
+                    lambda: self.__class__._build_swarm_flywheel_health(base_url=base),
+                ),
+                headers={"Cache-Control": "public, max-age=15"},
+            )
             return
         if parsed.path in {"/swarm/resolution-ladder", "/.well-known/nomad-resolution-ladder.json"}:
             self._json_response(self.__class__._build_resolution_ladder(base_url=self._base_url()))
@@ -4383,6 +4457,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/first-receipt-campaign",
                     "/.well-known/nomad-first-receipt-campaign.json",
                     "/swarm/first-receipt-campaign/events",
+                    "/swarm/flywheel-health",
+                    "/swarm/health-dashboard",
+                    "/.well-known/nomad-flywheel-health.json",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
@@ -6359,6 +6436,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/first-receipt-campaign",
                     "/.well-known/nomad-first-receipt-campaign.json",
                     "/swarm/first-receipt-campaign/events",
+                    "/swarm/flywheel-health",
+                    "/swarm/health-dashboard",
+                    "/.well-known/nomad-flywheel-health.json",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",

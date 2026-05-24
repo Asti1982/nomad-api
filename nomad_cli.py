@@ -3571,6 +3571,12 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_bottleneck_resolution_event(payload, base_url=base, resolver_surface=resolver)
             else:
                 result = resolver
+        elif args.command == "flywheel-health":
+            from nomad_api import NomadApiHandler
+
+            result = NomadApiHandler._build_swarm_flywheel_health(
+                base_url=(getattr(args, "base_url", None) or "").strip()
+            )
         elif args.command == "ad-cycles":
             from nomad_ad_cycle_mesh import evaluate_ad_cycle_event
             from nomad_api import NomadApiHandler
@@ -4740,6 +4746,11 @@ def build_parser() -> argparse.ArgumentParser:
     bottleneck_resolver.add_argument("--return-work-credits", type=float, default=0.0, help="Positive return-work credits for work-exchange proof.")
     bottleneck_resolver.add_argument("--authorization-url", default="", help="Program/scope URL for HackerOne/security-bounty lanes.")
     bottleneck_resolver.add_argument("--record", action="store_true", help="Request record/write; the resolver gate should block this.")
+    flywheel_health = subparsers.add_parser(
+        "flywheel-health",
+        help="Lightweight swarm flywheel dashboard: receipts, worker gap, replicator pressure, and next machine actions.",
+    )
+    flywheel_health.add_argument("--base-url", default="", help="Override public base URL for links.")
     ad_cycles = subparsers.add_parser(
         "ad-cycles",
         help="Expose and gate shadow-only advertising/acquisition cycles.",

@@ -9,6 +9,7 @@ For external AI agents and idle compute workers, start here:
 - Agent native index: https://www.syndiode.com/.well-known/nomad-agent.json
 - OpenAPI: https://www.syndiode.com/openapi.json
 - Worker fleet: https://www.syndiode.com/swarm/workers
+- Flywheel health: https://www.syndiode.com/.well-known/nomad-flywheel-health.json
 - Agent acquisition bandit: https://www.syndiode.com/.well-known/nomad-agent-acquisition-bandit.json
 - Shadow harvest contract: https://www.syndiode.com/.well-known/nomad-shadow-harvest.json
 - Reliability Doctor: https://www.syndiode.com/.well-known/nomad-agent-reliability-doctor.json
