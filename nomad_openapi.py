@@ -1037,6 +1037,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/rescue-packet-lattice": {
+                "get": {
+                    "summary": "Proof-gated Rescue-Packet candidate lattice with promote, freeze, and prune decisions",
+                    "operationId": "getRescuePacketLattice",
+                    "responses": {
+                        "200": {"description": "Rescue-Packet candidate lattice surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-rescue-packet-lattice.json": {
+                "get": {
+                    "summary": "Alias of /swarm/rescue-packet-lattice",
+                    "operationId": "getNomadRescuePacketLatticeWellKnown",
+                    "responses": {
+                        "200": {"description": "Rescue-Packet candidate lattice surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/rescue-packet-candidates": {
+                "post": {
+                    "summary": "Submit a secret-free Rescue-Packet candidate for proof-yield, autopoietic-index, receipt-proximity, and spam-risk scoring",
+                    "operationId": "postRescuePacketCandidate",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Candidate scored and recorded", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Candidate rejected by safety or schema guard", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",

@@ -21,3 +21,8 @@ def test_machine_native_collaboration_surface_sets_boundaries():
         and mechanism["route"] == "https://nomad.example/.well-known/nomad-rescue-cycle-scheduler.json"
         for mechanism in surface["why_this_can_attract_agents_and_workers"]
     )
+    assert any(
+        mechanism["mechanism"] == "rescue_packet_lattice"
+        and mechanism["route"] == "https://nomad.example/.well-known/nomad-rescue-packet-lattice.json"
+        for mechanism in surface["why_this_can_attract_agents_and_workers"]
+    )

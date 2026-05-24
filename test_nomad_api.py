@@ -551,6 +551,55 @@ def test_rescue_cycle_scheduler_route_is_public_json():
     assert "no_public_post_without_human_go" in payload["hard_guards"]
 
 
+def test_rescue_packet_lattice_route_is_public_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_RESCUE_PACKET_LATTICE_LEDGER_PATH", str(tmp_path / "rescue_lattice.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-rescue-packet-lattice.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=60"
+    assert payload["schema"] == "nomad.rescue_packet_lattice.v1"
+    assert payload["post_candidate_url"] == "https://nomad.example/swarm/rescue-packet-candidates"
+    assert "no_revenue_count_without_paid_or_verified_return_compute_receipt" in payload["hard_guards"]
+
+
+def test_rescue_packet_candidate_post_scores_candidate(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_RESCUE_PACKET_LATTICE_LEDGER_PATH", str(tmp_path / "rescue_lattice.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/swarm/rescue-packet-candidates"
+    handler.headers = {"Content-Length": "0"}
+    handler.rfile = None
+    handler._base_url = lambda: "https://nomad.example"
+    handler._read_json_body = lambda: {
+        "source_url": "https://github.com/crewAIInc/crewAI/issues/5802",
+        "framework": "crewai",
+        "problem_type": "idempotent_side_effect_retry",
+        "diagnosis": "Tool retry can duplicate payments or emails.",
+        "repro_outline": "Failing test covers restart, concurrent worker collision, and pending claim expiry.",
+        "fix_scope": "Bounded durable pre-execution claim verifier.",
+        "side_effect_scope": "local_shadow_lane_only",
+        "price_tier_usd": 99,
+        "proof_digest": "sha256:5775bd9f0fdd65feef5fef8332357617cce8aec20d3d068a5d7a23e57c57950c",
+    }
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_POST()
+
+    payload, status, _headers = responses[0]
+    assert status == 202
+    assert payload["schema"] == "nomad.rescue_packet_candidate_receipt.v1"
+    assert payload["decision"] == "promote"
+    assert payload["counts_as_revenue"] is False
+    assert payload["required_human_go"].startswith("APPROVE_PUBLIC_SEND")
+
+
 def test_retention_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -1020,6 +1069,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-machine-native-collaboration.json" in doc["paths"]
     assert "/swarm/rescue-cycle-scheduler" in doc["paths"]
     assert "/.well-known/nomad-rescue-cycle-scheduler.json" in doc["paths"]
+    assert "/swarm/rescue-packet-lattice" in doc["paths"]
+    assert "/.well-known/nomad-rescue-packet-lattice.json" in doc["paths"]
+    assert "/swarm/rescue-packet-candidates" in doc["paths"]
     assert "/swarm/acquisition/ignite" in doc["paths"]
     assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
     assert "/swarm/sustainability-kernel" in doc["paths"]

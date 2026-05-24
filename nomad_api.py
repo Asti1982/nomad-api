@@ -261,6 +261,11 @@ from nomad_telegram_a2a import build_telegram_bot_to_bot_surface, route_telegram
 from nomad_sustainability_kernel import build_sustainability_kernel
 from nomad_swarm_flywheel import build_swarm_flywheel_health_surface
 from nomad_machine_native_collaboration import build_machine_native_collaboration_surface
+from nomad_rescue_packet_lattice import (
+    append_rescue_packet_candidate,
+    build_rescue_packet_lattice_surface,
+    summarize_rescue_packet_candidates,
+)
 
 
 RENDER_RUNTIME = (os.environ.get("RENDER") or "").strip().lower() == "true"
@@ -2442,6 +2447,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_acquisition_events": f"{b}/swarm/agent-acquisition/events",
                     "machine_native_collaboration": f"{b}/.well-known/nomad-machine-native-collaboration.json",
                     "rescue_cycle_scheduler": f"{b}/.well-known/nomad-rescue-cycle-scheduler.json",
+                    "rescue_packet_lattice": f"{b}/.well-known/nomad-rescue-packet-lattice.json",
+                    "rescue_packet_candidate_post": f"{b}/swarm/rescue-packet-candidates",
                     "sustainability_kernel": f"{b}/.well-known/nomad-sustainability-kernel.json",
                     "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
                     "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
@@ -2518,6 +2525,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "first_receipt_campaign_event": f"{b}/swarm/first-receipt-campaign/events",
                     "machine_native_collaboration": f"{b}/.well-known/nomad-machine-native-collaboration.json",
                     "rescue_cycle_scheduler": f"{b}/.well-known/nomad-rescue-cycle-scheduler.json",
+                    "rescue_packet_lattice": f"{b}/.well-known/nomad-rescue-packet-lattice.json",
+                    "rescue_packet_candidate_post": f"{b}/swarm/rescue-packet-candidates",
                     "swarm_flywheel_health": f"{b}/.well-known/nomad-flywheel-health.json",
                     "swarm_health_dashboard": f"{b}/swarm/health-dashboard",
                     "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
@@ -3021,6 +3030,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(
                 build_rescue_packet_scheduler_surface(base_url=self._base_url()),
                 headers={"Cache-Control": "public, max-age=300"},
+            )
+            return
+        if parsed.path in {"/swarm/rescue-packet-lattice", "/.well-known/nomad-rescue-packet-lattice.json"}:
+            self._json_response(
+                build_rescue_packet_lattice_surface(
+                    base_url=self._base_url(),
+                    summary=summarize_rescue_packet_candidates(),
+                ),
+                headers={"Cache-Control": "public, max-age=60"},
             )
             return
         if parsed.path in {"/swarm/flywheel-health", "/swarm/health-dashboard", "/.well-known/nomad-flywheel-health.json"}:
@@ -4482,6 +4500,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-machine-native-collaboration.json",
                     "/swarm/rescue-cycle-scheduler",
                     "/.well-known/nomad-rescue-cycle-scheduler.json",
+                    "/swarm/rescue-packet-lattice",
+                    "/.well-known/nomad-rescue-packet-lattice.json",
+                    "/swarm/rescue-packet-candidates",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
@@ -5245,6 +5266,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "message": str(exc)[:160],
                     }
             self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/rescue-packet-candidates":
+            result = append_rescue_packet_candidate(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("ok") else 422)
             return
 
         if parsed.path == "/guardrails":
@@ -6465,6 +6491,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-machine-native-collaboration.json",
                     "/swarm/rescue-cycle-scheduler",
                     "/.well-known/nomad-rescue-cycle-scheduler.json",
+                    "/swarm/rescue-packet-lattice",
+                    "/.well-known/nomad-rescue-packet-lattice.json",
+                    "/swarm/rescue-packet-candidates",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",

@@ -120,6 +120,11 @@ def build_machine_native_collaboration_surface(*, base_url: str = "") -> dict[st
                 "agent_value": "know_when_harvest_shadow_evolution_promotion_and_public_go_gates_run",
             },
             {
+                "mechanism": "rescue_packet_lattice",
+                "route": _u(root, "/.well-known/nomad-rescue-packet-lattice.json"),
+                "agent_value": "submit_and_rank_secret_free_rescue_candidates_by_proof_yield_receipt_proximity_and_spam_risk",
+            },
+            {
                 "mechanism": "receipt_honest_flywheel",
                 "route": _u(root, "/.well-known/nomad-flywheel-health.json"),
                 "agent_value": "see_current_bottleneck_and_avoid_false_revenue_or_self_sustaining_claims",
