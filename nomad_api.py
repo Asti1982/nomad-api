@@ -208,7 +208,12 @@ from nomad_external_value import (
 )
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
-from nomad_optimal_transport import build_nomad_optimal_transport_surface, build_ot_paper_readiness_surface, solve_ot_request
+from nomad_optimal_transport import (
+    build_nomad_optimal_transport_surface,
+    build_ot_manifold_surface,
+    build_ot_paper_readiness_surface,
+    solve_ot_request,
+)
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
 from nomad_first_receipt_ignition import (
@@ -1397,6 +1402,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_ot_manifold(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        return build_ot_manifold_surface(
+            base_url=base_url,
+            ot_surface=cls._build_optimal_transport(base_url=base_url, swarm_summary=swarm_summary),
+        )
+
+    @classmethod
     def _build_settlement_signal_layer(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         return build_settlement_signal_layer(
             base_url=base_url,
@@ -2572,6 +2584,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
                     "optimal_transport": f"{b}/.well-known/nomad-optimal-transport.json",
                     "ot_paper_readiness": f"{b}/.well-known/nomad-ot-paper-readiness.json",
+                    "ot_manifold": f"{b}/.well-known/nomad-ot-manifold.json",
                     "optimal_transport_solve": f"{b}/swarm/optimal-transport/solve",
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "solana_settlement": f"{b}/.well-known/nomad-solana-settlement.json",
@@ -3136,6 +3149,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/optimal-transport/paper-readiness", "/.well-known/nomad-ot-paper-readiness.json"}:
             self._json_response(self.__class__._build_ot_paper_readiness(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/optimal-transport/manifold", "/.well-known/nomad-ot-manifold.json"}:
+            self._json_response(self.__class__._build_ot_manifold(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
             self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
@@ -4568,6 +4584,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-optimal-transport.json",
                     "/swarm/optimal-transport/paper-readiness",
                     "/.well-known/nomad-ot-paper-readiness.json",
+                    "/swarm/optimal-transport/manifold",
+                    "/.well-known/nomad-ot-manifold.json",
                     "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
@@ -6590,6 +6608,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-optimal-transport.json",
                     "/swarm/optimal-transport/paper-readiness",
                     "/.well-known/nomad-ot-paper-readiness.json",
+                    "/swarm/optimal-transport/manifold",
+                    "/.well-known/nomad-ot-manifold.json",
                     "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",

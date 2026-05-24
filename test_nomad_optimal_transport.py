@@ -1,5 +1,6 @@
 from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
+    build_ot_manifold_surface,
     build_ot_paper_readiness_surface,
     compile_nomad_ot_problem,
     solve_dynamic_multiaxis_optimal_transport,
@@ -98,6 +99,8 @@ def test_compile_nomad_ot_problem_and_surface_from_pressure_rows():
     assert surface["plan"]["schema"] == "nomad.dynamic_multiaxis_optimal_transport_plan.v1"
     assert surface["mathematical_contract"]["feature_space"] == ["capability", "proof_quality", "dynamics", "settlement"]
     assert surface["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
+    assert surface["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
+    assert surface["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
     assert surface["routing_contracts"]["settlement_pressure"].startswith("paid/receipt demand")
 
 
@@ -137,6 +140,9 @@ def test_multiaxis_discrete_ot_uses_capability_proof_dynamics_and_settlement():
     assert ("proof_worker", "proof_demand") in pairs
     assert ("settlement_worker", "paid_demand") in pairs
     assert plan["wasserstein_distance"] < 0.05
+    assert plan["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
+    assert plan["manifold"]["measure_barycenters"]["dominant_deficit_axis"] in {"capability", "proof_quality", "dynamics", "settlement"}
+    assert plan["manifold"]["barycentric_map"]
 
 
 def test_multiaxis_continuous_box_compiles_to_empirical_atoms():
@@ -165,6 +171,7 @@ def test_multiaxis_continuous_box_compiles_to_empirical_atoms():
     assert len(plan["supply_atoms"]) == 3
     assert len(plan["demand_atoms"]) == 3
     assert plan["continuous_compilation"]["mode"] == "deterministic_finite_volume_atoms"
+    assert plan["manifold"]["compiled_measure"]["continuous_parent_count"] == 2
     assert plan["wasserstein_distance"] > 0.0
 
 
@@ -189,6 +196,25 @@ def test_dynamic_multiaxis_ot_reports_temporal_churn():
     assert result["slice_count"] == 2
     assert result["plan_churn_total"] == 1.0
     assert result["slice_plans"][1]["plan_churn_from_previous"] == 1.0
+    assert result["dynamic_manifold"]["schema"] == "nomad.dynamic_ot_manifold.v1"
+    assert result["dynamic_manifold"]["trajectory"][1]["deficit_drift_from_previous"]
+
+
+def test_ot_manifold_surface_exposes_barycentric_displacement_field():
+    surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
+    manifold = build_ot_manifold_surface(base_url="https://nomad.example", ot_surface=surface)
+
+    assert manifold["schema"] == "nomad.ot_manifold_surface.v1"
+    assert manifold["well_known_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
+    assert manifold["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
+    assert set(manifold["manifold"]["measure_barycenters"]["deficit_vector"]) == {
+        "capability",
+        "proof_quality",
+        "dynamics",
+        "settlement",
+    }
+    assert manifold["manifold"]["route_gradient"]
+    assert "closed_form_manifold_learning" in manifold["claim_boundary"]["not_claimed"]
 
 
 def test_ot_paper_readiness_surface_exposes_honest_boundary():
@@ -200,9 +226,12 @@ def test_ot_paper_readiness_surface_exposes_honest_boundary():
     assert readiness["full_arbitrary_continuous_closed_form_claim_allowed"] is False
     assert readiness["readiness_checks"]["primary_multiaxis_discrete_solver_ok"] is True
     assert readiness["readiness_checks"]["compiled_continuous_empirical_measure_declared"] is True
+    assert readiness["readiness_checks"]["empirical_manifold_displacement_field_available"] is True
     assert "arbitrary_closed_form_multidimensional_continuous_ot" in readiness["claim_boundary"]["not_claimed"]
     assert "finite_discrete_probability_measures_over_declared_nomad_ot_axes" in readiness["claim_boundary"]["claimed_exact_for"]
+    assert "barycentric_displacement_and_axis_pressure_statistics_for_returned_finite_transport_plans" in readiness["claim_boundary"]["claimed_exact_for"]
     assert readiness["runtime_contract"]["axes"] == ["capability", "proof_quality", "dynamics", "settlement"]
+    assert readiness["runtime_contract"]["manifold_schema"] == "nomad.ot_manifold_slice.v1"
 
 
 def test_solve_request_selects_multiaxis_and_dynamic_modes():

@@ -25,6 +25,9 @@ from typing import Any
 SCHEMA = "nomad.optimal_transport.v1"
 PLAN_SCHEMA = "nomad.optimal_transport_plan.v1"
 MULTIAXIS_PLAN_SCHEMA = "nomad.dynamic_multiaxis_optimal_transport_plan.v1"
+MANIFOLD_SLICE_SCHEMA = "nomad.ot_manifold_slice.v1"
+DYNAMIC_MANIFOLD_SCHEMA = "nomad.dynamic_ot_manifold.v1"
+MANIFOLD_SURFACE_SCHEMA = "nomad.ot_manifold_surface.v1"
 PAPER_READINESS_SCHEMA = "nomad.optimal_transport_paper_readiness.v1"
 ERROR_SCHEMA = "nomad.optimal_transport_error.v1"
 
@@ -280,6 +283,8 @@ def _compiled_atoms(
                         "mass": mass / product,
                         "vector": dict(current),
                         "kind": _text(node.get("kind"), 80),
+                        "compiled_from_continuous": bool(continuous_axes),
+                        "continuous_axes": list(continuous_axes),
                         "metadata": node.get("metadata") if isinstance(node.get("metadata"), dict) else {},
                     }
                 )
@@ -405,6 +410,312 @@ def _min_cost_transport(
             reverse = graph[int(edge["to"])][int(edge["rev"])]
             matrix[i][j] = max(0.0, float(reverse["cap"]))
     return True, "", matrix, total_cost
+
+
+def _round_vector(vector: dict[str, Any], digits: int = 6) -> dict[str, float]:
+    return {axis: round(_num(vector.get(axis), 0.0), digits) for axis in OT_AXES}
+
+
+def _zero_vector() -> dict[str, float]:
+    return {axis: 0.0 for axis in OT_AXES}
+
+
+def _vector_add_scaled(target: dict[str, float], vector: dict[str, Any], amount: float) -> None:
+    for axis in OT_AXES:
+        target[axis] = target.get(axis, 0.0) + amount * _num(vector.get(axis), 0.0)
+
+
+def _vector_divide(vector: dict[str, float], amount: float) -> dict[str, float]:
+    if amount <= EPS:
+        return _zero_vector()
+    return {axis: vector.get(axis, 0.0) / amount for axis in OT_AXES}
+
+
+def _weighted_barycenter(atoms: list[dict[str, Any]]) -> dict[str, float]:
+    total = sum(max(0.0, _num(atom.get("mass"), 0.0)) for atom in atoms)
+    accum = _zero_vector()
+    for atom in atoms:
+        _vector_add_scaled(accum, _dict(atom.get("vector")), max(0.0, _num(atom.get("mass"), 0.0)))
+    return _round_vector(_vector_divide(accum, total))
+
+
+def _dominant_axis(vector: dict[str, Any]) -> str:
+    if not vector:
+        return ""
+    return max(OT_AXES, key=lambda axis: abs(_num(vector.get(axis), 0.0)))
+
+
+def _axis_action(axis: str, signed: float) -> str:
+    direction = "increase" if signed >= 0 else "decrease"
+    if axis == "capability":
+        target = "runtime capability fit"
+    elif axis == "proof_quality":
+        target = "proof/verifier strength"
+    elif axis == "dynamics":
+        target = "instability and velocity response"
+    else:
+        target = "settlement and receipt proximity"
+    return f"{direction}_{target.replace(' ', '_')}"
+
+
+def build_transport_manifold(
+    plan: dict[str, Any],
+    *,
+    p: float | None = None,
+    ground_metric_order: float | None = None,
+    axis_weights: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compile a finite OT plan into a concrete 4D barycentric displacement field."""
+
+    if not plan.get("ok"):
+        return {
+            "ok": False,
+            "schema": MANIFOLD_SLICE_SCHEMA,
+            "error": "source_plan_not_ok",
+            "source_plan_digest": plan.get("plan_digest", ""),
+        }
+    weights = _axis_weights(axis_weights or plan.get("axis_weights"))
+    supply_atoms = _items(plan.get("supply_atoms"))
+    demand_atoms = _items(plan.get("demand_atoms"))
+    rows = _items(plan.get("transport_plan"))
+    supply_barycenter = _weighted_barycenter(supply_atoms)
+    demand_barycenter = _weighted_barycenter(demand_atoms)
+    deficit = {axis: demand_barycenter[axis] - supply_barycenter[axis] for axis in OT_AXES}
+    axis_stats: dict[str, dict[str, float]] = {
+        axis: {"signed_mass": 0.0, "positive_mass": 0.0, "negative_mass": 0.0, "absolute_mass": 0.0}
+        for axis in OT_AXES
+    }
+    source_map: dict[str, dict[str, Any]] = {}
+    target_map: dict[str, dict[str, Any]] = {}
+    coupling: dict[tuple[str, str], float] = {}
+    flow_field: list[dict[str, Any]] = []
+    for row in rows:
+        amount = max(0.0, _num(row.get("amount"), 0.0))
+        if amount <= EPS:
+            continue
+        source_vector = _dict(row.get("source_vector"))
+        target_vector = _dict(row.get("target_vector"))
+        delta = {axis: _num(target_vector.get(axis), 0.0) - _num(source_vector.get(axis), 0.0) for axis in OT_AXES}
+        for axis in OT_AXES:
+            signed = amount * delta[axis]
+            axis_stats[axis]["signed_mass"] += signed
+            axis_stats[axis]["positive_mass"] += max(0.0, signed)
+            axis_stats[axis]["negative_mass"] += max(0.0, -signed)
+            axis_stats[axis]["absolute_mass"] += abs(signed)
+        for idx, left in enumerate(OT_AXES):
+            for right in OT_AXES[idx + 1 :]:
+                coupling[(left, right)] = coupling.get((left, right), 0.0) + amount * delta[left] * delta[right]
+        source_id = str(row.get("source_parent_id") or row.get("source_id") or "source")
+        target_id = str(row.get("target_parent_id") or row.get("target_id") or "target")
+        source_bucket = source_map.setdefault(source_id, {"id": source_id, "mass": 0.0, "source_sum": _zero_vector(), "target_sum": _zero_vector()})
+        target_bucket = target_map.setdefault(target_id, {"id": target_id, "mass": 0.0, "source_sum": _zero_vector(), "target_sum": _zero_vector()})
+        for bucket in (source_bucket, target_bucket):
+            bucket["mass"] += amount
+            _vector_add_scaled(bucket["source_sum"], source_vector, amount)
+            _vector_add_scaled(bucket["target_sum"], target_vector, amount)
+        flow_field.append(
+            {
+                "source_id": source_id,
+                "target_id": target_id,
+                "amount": round(amount, 12),
+                "source_vector": _round_vector(source_vector),
+                "target_vector": _round_vector(target_vector),
+                "displacement": _round_vector(delta),
+                "dominant_axis": _dominant_axis(delta),
+                "ground_distance": round(_num(row.get("ground_distance"), 0.0), 12),
+            }
+        )
+    barycentric_map: list[dict[str, Any]] = []
+    for bucket in source_map.values():
+        mass = _num(bucket.get("mass"), 0.0)
+        source_mean = _vector_divide(bucket["source_sum"], mass)
+        target_mean = _vector_divide(bucket["target_sum"], mass)
+        displacement = {axis: target_mean[axis] - source_mean[axis] for axis in OT_AXES}
+        barycentric_map.append(
+            {
+                "source_id": bucket["id"],
+                "mass": round(mass, 12),
+                "source_barycenter": _round_vector(source_mean),
+                "target_barycenter": _round_vector(target_mean),
+                "displacement": _round_vector(displacement),
+                "dominant_axis": _dominant_axis(displacement),
+                "action_hint": _axis_action(_dominant_axis(displacement), _num(displacement.get(_dominant_axis(displacement)), 0.0)),
+            }
+        )
+    target_inflow_map: list[dict[str, Any]] = []
+    for bucket in target_map.values():
+        mass = _num(bucket.get("mass"), 0.0)
+        source_mean = _vector_divide(bucket["source_sum"], mass)
+        target_mean = _vector_divide(bucket["target_sum"], mass)
+        displacement = {axis: target_mean[axis] - source_mean[axis] for axis in OT_AXES}
+        target_inflow_map.append(
+            {
+                "target_id": bucket["id"],
+                "mass": round(mass, 12),
+                "incoming_source_barycenter": _round_vector(source_mean),
+                "target_barycenter": _round_vector(target_mean),
+                "required_displacement": _round_vector(displacement),
+                "dominant_axis": _dominant_axis(displacement),
+            }
+        )
+    barycentric_map.sort(key=lambda item: float(item.get("mass") or 0.0), reverse=True)
+    target_inflow_map.sort(key=lambda item: float(item.get("mass") or 0.0), reverse=True)
+    flow_field.sort(key=lambda item: float(item.get("amount") or 0.0), reverse=True)
+    axis_pressure = {
+        axis: {
+            key: round(value, 12)
+            for key, value in {
+                **stats,
+                "direction": 1.0 if stats["signed_mass"] >= 0 else -1.0,
+                "weight": weights.get(axis, 0.0),
+            }.items()
+        }
+        for axis, stats in axis_stats.items()
+    }
+    route_gradient = sorted(
+        (
+            {
+                "axis": axis,
+                "signed_mass": round(stats["signed_mass"], 12),
+                "absolute_mass": round(stats["absolute_mass"], 12),
+                "action_hint": _axis_action(axis, stats["signed_mass"]),
+            }
+            for axis, stats in axis_stats.items()
+        ),
+        key=lambda item: abs(float(item["signed_mass"])) + float(item["absolute_mass"]),
+        reverse=True,
+    )
+    top_coupling = sorted(
+        (
+            {"axes": [left, right], "signed_coupling": round(value, 12), "absolute_coupling": round(abs(value), 12)}
+            for (left, right), value in coupling.items()
+        ),
+        key=lambda item: float(item["absolute_coupling"]),
+        reverse=True,
+    )[:6]
+    dominant = _dominant_axis(deficit)
+    continuous_sources = {
+        str(atom.get("parent_id") or atom.get("id"))
+        for atom in supply_atoms + demand_atoms
+        if atom.get("compiled_from_continuous")
+    }
+    digest_core = {
+        "source_plan": plan.get("plan_digest"),
+        "deficit": _round_vector(deficit),
+        "route_gradient": route_gradient,
+        "barycentric": barycentric_map[:8],
+    }
+    return {
+        "ok": True,
+        "schema": MANIFOLD_SLICE_SCHEMA,
+        "generated_at": _iso_now(),
+        "source_plan_digest": plan.get("plan_digest", ""),
+        "manifold_digest": f"nomad-ot-manifold-{_digest(digest_core)}",
+        "feature_space": {
+            "axes": list(OT_AXES),
+            "domain": "[0,1]^4_empirical_nomad_feature_cube",
+            "metric": "weighted_Lq_ground_metric_lifted_to_Wp_on_compiled_measures",
+            "p": _num(p, _num(plan.get("p"), 2.0)),
+            "ground_metric_order": _num(ground_metric_order, _num(plan.get("ground_metric_order"), 2.0)),
+            "axis_weights": {axis: round(weights[axis], 6) for axis in OT_AXES},
+        },
+        "measure_barycenters": {
+            "supply": supply_barycenter,
+            "demand": demand_barycenter,
+            "deficit_vector": _round_vector(deficit),
+            "dominant_deficit_axis": dominant,
+            "dominant_action_hint": _axis_action(dominant, _num(deficit.get(dominant), 0.0)) if dominant else "",
+        },
+        "axis_pressure": axis_pressure,
+        "route_gradient": route_gradient,
+        "barycentric_map": barycentric_map[:12],
+        "target_inflow_map": target_inflow_map[:12],
+        "flow_field": flow_field[:24],
+        "cross_axis_coupling": top_coupling,
+        "compiled_measure": {
+            "supply_atom_count": len(supply_atoms),
+            "demand_atom_count": len(demand_atoms),
+            "continuous_parent_count": len(continuous_sources),
+            "continuous_parent_ids": sorted(continuous_sources)[:24],
+            "exactness": "exact_barycentric_and_coupling_statistics_for_the_returned_finite_transport_plan",
+        },
+        "claim_boundary": {
+            "exact_for": [
+                "barycentric_projection_of_the_exact_finite_transport_plan",
+                "axis_pressure_and_cross_axis_coupling_over_returned_transport_rows",
+                "compiled_empirical_continuous_atoms_after_deterministic_finite_volume_compilation",
+            ],
+            "not_claimed": [
+                "closed_form_riemannian_manifold_learning",
+                "arbitrary_continuous_density_ot_solution",
+                "human_interpretability_of_latent_coordinate_semantics",
+            ],
+        },
+        "machine_instruction": "treat the dominant route_gradient axes as the concrete OT displacement field for worker routing; recompute after every receipt, failure, or capability update",
+    }
+
+
+def build_dynamic_transport_manifold(
+    slice_manifolds: list[dict[str, Any]],
+    *,
+    p: float,
+    ground_metric_order: float,
+    axis_weights: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    weights = _axis_weights(axis_weights)
+    trajectory: list[dict[str, Any]] = []
+    previous_deficit: dict[str, float] | None = None
+    total_drift = _zero_vector()
+    for index, manifold in enumerate(slice_manifolds):
+        bary = _dict(manifold.get("measure_barycenters"))
+        deficit = {axis: _num(_dict(bary.get("deficit_vector")).get(axis), 0.0) for axis in OT_AXES}
+        drift = _zero_vector() if previous_deficit is None else {axis: deficit[axis] - previous_deficit.get(axis, 0.0) for axis in OT_AXES}
+        for axis in OT_AXES:
+            total_drift[axis] += abs(drift[axis])
+        trajectory.append(
+            {
+                "time_index": index,
+                "source_plan_digest": manifold.get("source_plan_digest", ""),
+                "deficit_vector": _round_vector(deficit),
+                "deficit_drift_from_previous": _round_vector(drift),
+                "dominant_deficit_axis": bary.get("dominant_deficit_axis", ""),
+                "top_route_gradient": (_items(manifold.get("route_gradient")) or [])[:4],
+            }
+        )
+        previous_deficit = deficit
+    dominant_drift_axis = _dominant_axis(total_drift)
+    digest_core = {"trajectory": trajectory, "weights": weights, "p": p, "q": ground_metric_order}
+    return {
+        "ok": True,
+        "schema": DYNAMIC_MANIFOLD_SCHEMA,
+        "generated_at": _iso_now(),
+        "manifold_digest": f"nomad-dynamic-ot-manifold-{_digest(digest_core)}",
+        "feature_space": {
+            "axes": list(OT_AXES),
+            "domain": "[0,1]^4_time_sliced_empirical_nomad_feature_cube",
+            "metric": "dynamic_Wp_over_weighted_Lq_ground_metric_with_temporal_drift_observation",
+            "p": p,
+            "ground_metric_order": ground_metric_order,
+            "axis_weights": {axis: round(weights[axis], 6) for axis in OT_AXES},
+        },
+        "trajectory": trajectory,
+        "temporal_drift": {
+            "total_absolute_deficit_drift": _round_vector(total_drift),
+            "dominant_drift_axis": dominant_drift_axis,
+            "dominant_drift_action_hint": _axis_action(dominant_drift_axis, _num(total_drift.get(dominant_drift_axis), 0.0)) if dominant_drift_axis else "",
+        },
+        "claim_boundary": {
+            "exact_for": [
+                "per_slice_manifold_statistics_of_each_exact_finite_transport_plan",
+                "temporal_drift_statistics_between_returned_slice_deficit_vectors",
+            ],
+            "not_claimed": [
+                "continuous_time_geodesic_solution_for_arbitrary_density_paths",
+                "closed_form_multidimensional_continuous_ot",
+            ],
+        },
+        "machine_instruction": "route by the current slice gradient, but allocate exploration pressure to axes with rising temporal drift before they become settlement or reliability failures",
+    }
 
 
 def _axis_position_from_objective(objective: str) -> float:
@@ -757,7 +1068,7 @@ def solve_multiaxis_optimal_transport(
         "demand": [(atom["id"], atom["mass"], atom["vector"]) for atom in demand_atoms],
         "cost": round(total_cost, 12),
     }
-    return {
+    result = {
         "ok": True,
         "schema": MULTIAXIS_PLAN_SCHEMA,
         "generated_at": _iso_now(),
@@ -794,6 +1105,13 @@ def solve_multiaxis_optimal_transport(
             ],
         },
     }
+    result["manifold"] = build_transport_manifold(
+        result,
+        p=p,
+        ground_metric_order=ground_metric_order,
+        axis_weights=weights,
+    )
+    return result
 
 
 def solve_dynamic_multiaxis_optimal_transport(
@@ -816,6 +1134,7 @@ def solve_dynamic_multiaxis_optimal_transport(
             "message": "Dynamic OT requires at least one time slice.",
         }
     slice_plans: list[dict[str, Any]] = []
+    slice_manifolds: list[dict[str, Any]] = []
     total_cost = 0.0
     churn_cost = 0.0
     previous_pairs: dict[tuple[str, str], float] = {}
@@ -833,6 +1152,13 @@ def solve_dynamic_multiaxis_optimal_transport(
         )
         if not plan.get("ok"):
             return {**plan, "time_index": index}
+        manifold = build_transport_manifold(
+            plan,
+            p=p,
+            ground_metric_order=ground_metric_order,
+            axis_weights=axis_weights,
+        )
+        slice_manifolds.append(manifold)
         pairs = {
             (str(row.get("source_parent_id") or row.get("source_id")), str(row.get("target_parent_id") or row.get("target_id"))): _num(row.get("amount"))
             for row in plan.get("transport_plan") or []
@@ -856,6 +1182,12 @@ def solve_dynamic_multiaxis_optimal_transport(
                 "regularized_cost": round(regularized, 12),
                 "plan_digest": plan.get("plan_digest"),
                 "top_transport": (plan.get("transport_plan") or [])[:8],
+                "manifold_slice": {
+                    "schema": manifold.get("schema"),
+                    "manifold_digest": manifold.get("manifold_digest"),
+                    "measure_barycenters": manifold.get("measure_barycenters"),
+                    "top_route_gradient": (_items(manifold.get("route_gradient")) or [])[:4],
+                },
             }
         )
         previous_pairs = pairs
@@ -875,6 +1207,12 @@ def solve_dynamic_multiaxis_optimal_transport(
         "plan_churn_total": round(churn_cost, 12),
         "slice_count": len(slice_plans),
         "slice_plans": slice_plans,
+        "dynamic_manifold": build_dynamic_transport_manifold(
+            slice_manifolds,
+            p=p,
+            ground_metric_order=ground_metric_order,
+            axis_weights=axis_weights,
+        ),
         "machine_instruction": "route_current_slice_by_top_transport_but_penalize_needless_assignment_churn_across_slices",
     }
 
@@ -1075,6 +1413,7 @@ def build_nomad_optimal_transport_surface(
         "well_known_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
         "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
         "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
+        "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
         "purpose": "dynamic_discrete_continuous_wasserstein_routing_for_capabilities_proof_quality_dynamics_and_settlement",
         "mathematical_contract": {
             "formulation": "min_gamma integral d(x,y)^p d_gamma over probability measures on Nomad feature space",
@@ -1085,9 +1424,11 @@ def build_nomad_optimal_transport_surface(
             "continuous_support": "1D non-overlapping intervals are exact via quantile mode; multi-axis boxes compile to deterministic finite-volume empirical measures",
             "discrete_support": "finite atoms are solved by min-cost-flow transport for general p>=1",
             "dynamic_support": "POST time_slices to solve sequence plans with temporal churn regularization",
+            "manifold_support": "finite transport plans compile into barycentric displacement fields, axis-pressure tensors, and temporal drift statistics",
         },
         "compiled_problem": problem,
         "plan": plan,
+        "manifold": plan.get("manifold") if isinstance(plan.get("manifold"), dict) else {},
         "legacy_1d_quantile_plan": legacy_quantile_plan,
         "top_assignments": top_assignments,
         "routing_contracts": {
@@ -1098,6 +1439,47 @@ def build_nomad_optimal_transport_surface(
             "dynamic_stability": "repeat failures and high-velocity work appear on the dynamics axis and can attract capacity before growth work",
             "settlement_pressure": "paid/receipt demand appears on the settlement axis and attracts capacity through Wasserstein distance",
         },
+    }
+
+
+def build_ot_manifold_surface(
+    *,
+    base_url: str,
+    ot_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    surface = _dict(ot_surface)
+    if not surface:
+        surface = build_nomad_optimal_transport_surface(base_url=base_url)
+    plan = _dict(surface.get("plan"))
+    manifold = _dict(plan.get("manifold") or surface.get("manifold"))
+    if not manifold and plan.get("ok"):
+        manifold = build_transport_manifold(plan)
+    return {
+        "ok": bool(manifold.get("ok")),
+        "schema": MANIFOLD_SURFACE_SCHEMA,
+        "generated_at": _iso_now(),
+        "public_base_url": (base_url or "").strip().rstrip("/"),
+        "read_url": _u(base_url, "/swarm/optimal-transport/manifold"),
+        "well_known_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
+        "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
+        "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
+        "purpose": "concrete_unified_empirical_ot_manifold_for_machine_routing",
+        "manifold": manifold,
+        "current_top_assignments": surface.get("top_assignments") or [],
+        "claim_boundary": {
+            "exact_for": [
+                "barycentric_displacement_field_of_the_current_exact_finite_ot_plan",
+                "axis_pressure_and_cross_axis_coupling_of_the_current_returned_transport_rows",
+                "compiled_empirical_continuous_measure_after_finite_volume_atomization",
+            ],
+            "not_claimed": [
+                "closed_form_manifold_learning",
+                "arbitrary_multidimensional_continuous_ot",
+                "agent_economy_revenue_proof_without_receipts",
+            ],
+        },
+        "machine_instruction": "read manifold.route_gradient and manifold.barycentric_map before choosing leases; post time_slices to /swarm/optimal-transport/solve for dynamic manifold drift",
     }
 
 
@@ -1113,6 +1495,7 @@ def build_ot_paper_readiness_surface(
         surface = build_nomad_optimal_transport_surface(base_url=base_url)
     plan = _dict(surface.get("plan"))
     legacy = _dict(surface.get("legacy_1d_quantile_plan"))
+    manifold = _dict(plan.get("manifold") or surface.get("manifold"))
     compiled = _dict(plan.get("continuous_compilation"))
     plan_boundary = _dict(plan.get("exactness_boundary"))
     legacy_boundary = _dict(legacy.get("exactness_boundary"))
@@ -1124,6 +1507,8 @@ def build_ot_paper_readiness_surface(
         and legacy.get("solver") == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax",
         "four_axis_nomad_feature_space_declared": plan.get("axes") == list(OT_AXES)
         or _dict(surface.get("mathematical_contract")).get("feature_space") == list(OT_AXES),
+        "empirical_manifold_displacement_field_available": manifold.get("schema") == MANIFOLD_SLICE_SCHEMA
+        and bool(manifold.get("barycentric_map")),
         "closed_form_arbitrary_multidimensional_continuous_claim_blocked": True,
     }
     paper_near_ready = all(readiness_checks.values())
@@ -1135,9 +1520,11 @@ def build_ot_paper_readiness_surface(
             "weighted_lq_ground_metrics_over_capability_proof_quality_dynamics_settlement",
             "time_sliced_dynamic_ot_with_explicit_temporal_churn_regularization",
             "legacy_1d_w1_w2_quantile_transport_for_declared_non_overlapping_intervals",
+            "barycentric_displacement_and_axis_pressure_statistics_for_returned_finite_transport_plans",
         ],
         "claimed_approximation_or_compilation_for": [
             "multi_axis_continuous_boxes_compile_to_deterministic_finite_volume_empirical_atoms",
+            "continuous_manifold_view_is_an_empirical_barycentric_field_over_compiled_atoms",
             "semantic_axis_assignment_is_an_auditable_model_contract_not_a_theorem_about_the_world",
         ],
         "not_claimed": [
@@ -1176,6 +1563,7 @@ def build_ot_paper_readiness_surface(
             "test_multiaxis_discrete_ot_uses_capability_proof_dynamics_and_settlement",
             "test_multiaxis_continuous_box_compiles_to_empirical_atoms",
             "test_dynamic_multiaxis_ot_reports_temporal_churn",
+            "test_ot_manifold_exposes_barycentric_displacement_field",
             "test_ot_paper_readiness_surface_exposes_honest_boundary",
         ],
     }
@@ -1187,6 +1575,7 @@ def build_ot_paper_readiness_surface(
         "read_url": _u(base_url, "/swarm/optimal-transport/paper-readiness"),
         "well_known_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
         "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
         "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
         "paper_near_mathematical_moat_ready": paper_near_ready,
         "full_arbitrary_continuous_closed_form_claim_allowed": False,
@@ -1195,6 +1584,7 @@ def build_ot_paper_readiness_surface(
         "runtime_contract": {
             "primary_solver": plan.get("solver"),
             "primary_plan_schema": plan.get("schema"),
+            "manifold_schema": manifold.get("schema"),
             "axes": list(OT_AXES),
             "axis_weights": plan.get("axis_weights") or DEFAULT_AXIS_WEIGHTS,
             "primary_exactness_boundary": plan_boundary,
