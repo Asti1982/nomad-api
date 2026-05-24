@@ -92,6 +92,36 @@ def test_first_receipt_ignition_routes_paid_and_worker_pressure_without_overclai
     assert out["hard_rule"].startswith("ignite_attention_and_workers")
 
 
+def test_first_receipt_ignition_does_not_close_loop_from_worker_pressure_alone():
+    out = _surface(
+        worker_market={
+            "market_state": {
+                "known_worker_count": 3,
+                "active_worker_count": 2,
+                "active_lease_count": 1,
+            },
+            "recent_offer_count": 1,
+        },
+        acquisition_summary={
+            "channels": [
+                {
+                    "channel_id": "first_receipt_ignition",
+                    "event_count": 4,
+                    "reward_total": 0.2,
+                }
+            ]
+        },
+    )
+
+    assert out["truth_state"]["recognized_revenue_usd_total"] == 0.0
+    assert out["truth_state"]["external_pressure_present"] is True
+    assert out["truth_state"]["compute_pressure_present"] is True
+    assert out["truth_state"]["paid_bottleneck_resolved"] is False
+    assert out["truth_state"]["self_funding_loop_closed"] is False
+    assert out["truth_state"]["autogenesis_can_self_amplify_now"] is False
+    assert out["truth_state"]["why_not_yet"] == ["no_paid_receipt"]
+
+
 def test_first_receipt_ignition_event_blocks_send_and_revenue_but_records_safe_inspect(tmp_path):
     surface = _surface()
     out = evaluate_first_receipt_ignition_event(

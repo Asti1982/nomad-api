@@ -193,7 +193,10 @@ def build_first_receipt_ignition_surface(
     has_paid_receipt = recognized_usd > 0.0 or bool(bottleneck.get("paid_confirmed"))
     has_worker_pressure = worker["known_worker_count"] > 0 or worker["recent_offer_count"] > 0
     has_adapter_pressure = adapter["universal_adapter_events"] > 0
-    autogenesis_open = has_paid_receipt or has_worker_pressure or has_adapter_pressure
+    has_ignition_attention = adapter["first_receipt_ignition_events"] > 0
+    has_compute_pressure = has_worker_pressure or has_adapter_pressure
+    has_external_pressure = has_compute_pressure or has_ignition_attention
+    self_funding_loop_closed = has_paid_receipt and has_compute_pressure
 
     buyer_entry = _text(recommended.get("offer_packet", {}).get("public_cta"), 500) or _u(root, "/service/e2e?service_type=repo_issue_help")
     first_sales_draft = _first_sales_draft(_dict(first_sales))
@@ -253,7 +256,11 @@ def build_first_receipt_ignition_surface(
         "paid_receipt_present": has_paid_receipt,
         "worker_pressure_present": has_worker_pressure,
         "adapter_pressure_present": has_adapter_pressure,
-        "autogenesis_pressure_open": autogenesis_open,
+        "ignition_attention_present": has_ignition_attention,
+        "compute_pressure_present": has_compute_pressure,
+        "external_pressure_present": has_external_pressure,
+        "self_funding_loop_closed": self_funding_loop_closed,
+        "autogenesis_pressure_open": self_funding_loop_closed,
         **worker,
         **adapter,
     }
@@ -280,14 +287,24 @@ def build_first_receipt_ignition_surface(
             "worker_count": worker["known_worker_count"],
             "active_worker_count": worker["active_worker_count"],
             "adapter_event_count": adapter["universal_adapter_events"],
-            "autogenesis_can_self_amplify_now": autogenesis_open,
+            "ignition_attention_present": has_ignition_attention,
+            "compute_pressure_present": has_compute_pressure,
+            "external_pressure_present": has_external_pressure,
+            "paid_bottleneck_resolved": has_paid_receipt,
+            "self_funding_loop_closed": self_funding_loop_closed,
+            "autogenesis_can_self_amplify_now": self_funding_loop_closed,
             "why_not_yet": []
-            if autogenesis_open
+            if self_funding_loop_closed
             else [
-                "no_paid_receipt",
-                "no_external_worker_offer",
-                "no_adapter_first_fix_signal",
-                "no_selection_pressure_from_market",
+                reason
+                for reason, missing in [
+                    ("no_paid_receipt", not has_paid_receipt),
+                    ("no_compute_pressure", not has_compute_pressure),
+                    ("no_external_worker_offer", not has_compute_pressure and not has_worker_pressure),
+                    ("no_adapter_first_fix_signal", not has_compute_pressure and not has_adapter_pressure),
+                    ("no_selection_pressure_from_market", not has_external_pressure),
+                ]
+                if missing
             ],
         },
         "science_to_execute": [
