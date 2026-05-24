@@ -366,6 +366,34 @@ def _compact_text(result: Dict[str, Any]) -> str:
         ]
         return "\n".join(line for line in lines if line)
 
+    if result.get("schema") == "nomad.first_receipt_campaign.v1":
+        truth = result.get("truth_state") or {}
+        rec = result.get("recommended_now") or {}
+        slots = result.get("campaign_slots") or []
+        lines = [
+            "Nomad first receipt campaign",
+            f"Paid bottleneck resolved: {bool(truth.get('paid_bottleneck_resolved'))}",
+            f"Self-funding loop closed: {bool(truth.get('self_funding_loop_closed'))}",
+            f"Recognized revenue USD: {truth.get('recognized_revenue_usd_total', 0)}",
+            f"Recommended: {rec.get('action', '')} lane={rec.get('lane', '')}",
+            f"Slots: {len(slots)}",
+        ]
+        for item in slots[:5]:
+            lines.append(f"- {item.get('slot_id', '')}: {item.get('action', '')} [{item.get('lane', '')}]")
+        return "\n".join(line for line in lines if line)
+
+    if result.get("schema") == "nomad.first_receipt_campaign_event.v1":
+        return "\n".join(
+            [
+                "Nomad first receipt campaign event",
+                f"Accepted: {bool(result.get('accepted'))}",
+                f"Decision: {result.get('decision', '')}",
+                f"Event: {result.get('event_type', '')}",
+                f"Counts as revenue: {bool(result.get('counts_as_revenue'))}",
+                f"Side effect allowed: {bool(result.get('side_effect_allowed'))}",
+            ]
+        )
+
     if result.get("schema") == "nomad.sales_department_event_decision.v1":
         blockers = result.get("blockers") or []
         return "\n".join(
@@ -2333,6 +2361,45 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                     result = evaluate_first_receipt_ignition_event(payload, base_url=base, ignition_surface=surface)
             else:
                 result = surface
+        elif args.command == "first-receipt-campaign":
+            from nomad_api import NomadApiHandler
+            from nomad_first_receipt_campaign import evaluate_first_receipt_campaign_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = NomadApiHandler._build_first_receipt_campaign(base_url=base)
+            action = str(getattr(args, "campaign_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-campaign",
+                        "event_type": str(getattr(args, "event_type", "") or "lead_observed").strip(),
+                        "lead_url": str(getattr(args, "lead_url", "") or "").strip(),
+                        "source_url": str(getattr(args, "source_url", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip(),
+                        "buyer_intent_digest": str(getattr(args, "buyer_intent_digest", "") or "").strip(),
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "send": bool(getattr(args, "send", False)),
+                        "human_approved": bool(getattr(args, "human_approved", False)),
+                        "record_revenue": bool(getattr(args, "record_revenue", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.first_receipt_campaign_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_first_receipt_campaign_event(payload, base_url=base, campaign_surface=surface)
+            else:
+                result = surface
         elif args.command == "external-value":
             from nomad_external_value import (
                 agent_selection_bonus,
@@ -4173,6 +4240,30 @@ def build_parser() -> argparse.ArgumentParser:
     first_receipt_ignition.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for paid candidates.")
     first_receipt_ignition.add_argument("--send", action="store_true", help="Request public send; the ignition gate should block this.")
     first_receipt_ignition.add_argument("--record-revenue", action="store_true", help="Request revenue recording; the ignition gate should block this.")
+    first_receipt_campaign = subparsers.add_parser(
+        "first-receipt-campaign",
+        help="Compile and gate the proof-first paid-customer, worker, and adapter campaign.",
+    )
+    first_receipt_campaign.add_argument(
+        "campaign_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    first_receipt_campaign.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    first_receipt_campaign.add_argument("--event-json", default="", help="Full JSON first-receipt campaign event payload.")
+    first_receipt_campaign.add_argument("--agent-id", default="", help="Agent id for generated event.")
+    first_receipt_campaign.add_argument("--event-type", default="lead_observed", help="lead_observed | first_fix_prepared | buyer_intent | adapter_activation | worker_start | paid_candidate.")
+    first_receipt_campaign.add_argument("--lead-url", default="", help="Public lead, issue, PR, or work URL.")
+    first_receipt_campaign.add_argument("--source-url", default="", help="Source URL or referrer.")
+    first_receipt_campaign.add_argument("--proof-digest", default="", help="Proof, diagnosis, patch, or verifier digest.")
+    first_receipt_campaign.add_argument("--buyer-intent-digest", default="", help="Buyer intent digest required for public send preflight.")
+    first_receipt_campaign.add_argument("--settlement-ref", default="", help="Receipt or settlement reference for paid candidates.")
+    first_receipt_campaign.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for paid candidates.")
+    first_receipt_campaign.add_argument("--send", action="store_true", help="Request public send preflight; still no send is performed.")
+    first_receipt_campaign.add_argument("--human-approved", action="store_true", help="Mark the public send preflight as human approved.")
+    first_receipt_campaign.add_argument("--record-revenue", action="store_true", help="Request revenue recording; the campaign gate blocks this.")
     external_value = subparsers.add_parser(
         "external-value",
         help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",

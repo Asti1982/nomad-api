@@ -120,6 +120,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-universal-adapter.json" in text
     assert "/.well-known/nomad-bottleneck-resolver.json" in text
     assert "/.well-known/nomad-first-receipt-ignition.json" in text
+    assert "/.well-known/nomad-first-receipt-campaign.json" in text
     assert "/.well-known/nomad-agent-acquisition-bandit.json" in text
     assert "/swarm/universal-adapter/events" in text
     assert "/downloads/nomad_universal_adapter.py" in text
@@ -480,6 +481,23 @@ def test_first_receipt_ignition_route_does_not_rebuild_heavy_meshes(monkeypatch)
     assert headers["Cache-Control"] == "public, max-age=15"
     assert payload["schema"] == "nomad.first_receipt_ignition.v1"
     assert payload["status"]["self_funding_loop_closed"] is False
+
+
+def test_first_receipt_campaign_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-first-receipt-campaign.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=15"
+    assert payload["schema"] == "nomad.first_receipt_campaign.v1"
+    assert payload["event_url"] == "https://nomad.example/swarm/first-receipt-campaign/events"
+    assert payload["truth_state"]["paid_bottleneck_resolved"] is False
 
 
 def test_sustainability_kernel_route_is_public_json():
@@ -957,6 +975,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/sales-department/events" in doc["paths"]
     assert "/swarm/first-sales" in doc["paths"]
     assert "/.well-known/nomad-first-sales.json" in doc["paths"]
+    assert "/swarm/first-receipt-campaign" in doc["paths"]
+    assert "/.well-known/nomad-first-receipt-campaign.json" in doc["paths"]
+    assert "/swarm/first-receipt-campaign/events" in doc["paths"]
     assert "/swarm/acquisition/ignite" in doc["paths"]
     assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
     assert "/swarm/sustainability-kernel" in doc["paths"]

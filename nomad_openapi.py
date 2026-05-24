@@ -945,6 +945,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/first-receipt-campaign": {
+                "get": {
+                    "summary": "Proof-gated campaign controller for first paid customer, worker, and adapter activation",
+                    "operationId": "getSwarmFirstReceiptCampaign",
+                    "responses": {
+                        "200": {"description": "First receipt campaign surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-first-receipt-campaign.json": {
+                "get": {
+                    "summary": "Alias of /swarm/first-receipt-campaign",
+                    "operationId": "getFirstReceiptCampaignWellKnown",
+                    "responses": {
+                        "200": {"description": "First receipt campaign surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/first-receipt-campaign/events": {
+                "post": {
+                    "summary": "Evaluate a lead, first-fix, buyer-intent, adapter, worker, or paid-candidate campaign signal without sending or booking revenue",
+                    "operationId": "postSwarmFirstReceiptCampaignEvent",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "200": {"description": "Campaign event held or blocked", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Campaign event admitted as an acquisition signal", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",
