@@ -1,11 +1,15 @@
 """Optimal Transport routing kernel for Nomad.
 
-This module implements the part of OT that can be exact in a tiny hosted API:
-one-dimensional Monge/Kantorovich transport via quantile matching. Discrete
-atoms and non-overlapping piecewise-uniform continuous intervals are compiled
-into quantile segments; the solver then integrates W1 or W2 costs exactly over
-those segments. It deliberately does not use Sinkhorn, softmax routing, or
-multi-dimensional projection while calling the result exact.
+This module implements the part of OT that can be exact inside the hosted
+runtime boundary. Finite measures over Nomad's capability/proof/dynamics/
+settlement axes are solved as balanced discrete min-cost-flow transport for
+general Wasserstein order p >= 1 and weighted Lq ground metrics. Continuous
+multi-axis boxes are compiled into deterministic finite-volume empirical atoms;
+the returned plan is exact for that compiled measure, not a closed-form answer
+for arbitrary multi-dimensional densities. The legacy one-dimensional quantile
+mode remains available for exact W1/W2 transport over declared non-overlapping
+intervals. The module deliberately does not use Sinkhorn, softmax routing, or a
+projection trick while calling the result exact.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from typing import Any
 SCHEMA = "nomad.optimal_transport.v1"
 PLAN_SCHEMA = "nomad.optimal_transport_plan.v1"
 MULTIAXIS_PLAN_SCHEMA = "nomad.dynamic_multiaxis_optimal_transport_plan.v1"
+PAPER_READINESS_SCHEMA = "nomad.optimal_transport_paper_readiness.v1"
 ERROR_SCHEMA = "nomad.optimal_transport_error.v1"
 
 EPS = 1e-12
@@ -1069,6 +1074,7 @@ def build_nomad_optimal_transport_surface(
         "read_url": _u(base_url, "/swarm/optimal-transport"),
         "well_known_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
         "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
+        "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
         "purpose": "dynamic_discrete_continuous_wasserstein_routing_for_capabilities_proof_quality_dynamics_and_settlement",
         "mathematical_contract": {
             "formulation": "min_gamma integral d(x,y)^p d_gamma over probability measures on Nomad feature space",
@@ -1092,6 +1098,115 @@ def build_nomad_optimal_transport_surface(
             "dynamic_stability": "repeat failures and high-velocity work appear on the dynamics axis and can attract capacity before growth work",
             "settlement_pressure": "paid/receipt demand appears on the settlement axis and attracts capacity through Wasserstein distance",
         },
+    }
+
+
+def build_ot_paper_readiness_surface(
+    *,
+    base_url: str,
+    ot_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Expose the honest paper-near boundary of Nomad's OT implementation."""
+
+    surface = _dict(ot_surface)
+    if not surface:
+        surface = build_nomad_optimal_transport_surface(base_url=base_url)
+    plan = _dict(surface.get("plan"))
+    legacy = _dict(surface.get("legacy_1d_quantile_plan"))
+    compiled = _dict(plan.get("continuous_compilation"))
+    plan_boundary = _dict(plan.get("exactness_boundary"))
+    legacy_boundary = _dict(legacy.get("exactness_boundary"))
+    readiness_checks = {
+        "primary_multiaxis_discrete_solver_ok": bool(plan.get("ok"))
+        and plan.get("solver") == "exact_balanced_discrete_min_cost_flow_on_compiled_atoms",
+        "compiled_continuous_empirical_measure_declared": compiled.get("mode") == "deterministic_finite_volume_atoms",
+        "legacy_exact_1d_quantile_solver_available": bool(legacy.get("ok"))
+        and legacy.get("solver") == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax",
+        "four_axis_nomad_feature_space_declared": plan.get("axes") == list(OT_AXES)
+        or _dict(surface.get("mathematical_contract")).get("feature_space") == list(OT_AXES),
+        "closed_form_arbitrary_multidimensional_continuous_claim_blocked": True,
+    }
+    paper_near_ready = all(readiness_checks.values())
+    claim_boundary = {
+        "claimed_exact_for": [
+            "finite_discrete_probability_measures_over_declared_nomad_ot_axes",
+            "balanced_transport_over_compiled_empirical_atoms",
+            "general_wasserstein_order_p_greater_equal_1_for_the_compiled_finite_problem",
+            "weighted_lq_ground_metrics_over_capability_proof_quality_dynamics_settlement",
+            "time_sliced_dynamic_ot_with_explicit_temporal_churn_regularization",
+            "legacy_1d_w1_w2_quantile_transport_for_declared_non_overlapping_intervals",
+        ],
+        "claimed_approximation_or_compilation_for": [
+            "multi_axis_continuous_boxes_compile_to_deterministic_finite_volume_empirical_atoms",
+            "semantic_axis_assignment_is_an_auditable_model_contract_not_a_theorem_about_the_world",
+        ],
+        "not_claimed": [
+            "arbitrary_closed_form_multidimensional_continuous_ot",
+            "exact_ot_for_unbounded_or_symbolic_continuous_densities",
+            "sinkhorn_softmax_majority_vote_or_projection_as_exact_ot",
+            "revenue_cashflow_or_emergence_proof_from_ot_distance_alone",
+            "human_interpretability_of_every_internal_coordinate_assignment",
+        ],
+        "required_user_language": (
+            "Nomad implements dynamic discrete/compiled-continuous Wasserstein routing exactly over finite atoms "
+            "and exact 1D quantile OT for the declared legacy interval case; it does not claim arbitrary "
+            "closed-form multi-dimensional continuous OT."
+        ),
+    }
+    verification_payload = {
+        "read_surface": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "solve_endpoint": _u(base_url, "/swarm/optimal-transport/solve"),
+        "dynamic_probe_hint": {
+            "time_slices": [
+                {
+                    "timestamp": "t0",
+                    "supply": [{"id": "runtime", "mass": 1, "vector": [0.2, 0.5, 0.3, 0.2]}],
+                    "demand": [{"id": "proof", "mass": 1, "vector": [0.56, 0.8, 0.4, 0.3]}],
+                },
+                {
+                    "timestamp": "t1",
+                    "supply": [{"id": "runtime", "mass": 1, "vector": [0.2, 0.5, 0.3, 0.2]}],
+                    "demand": [{"id": "settlement", "mass": 1, "vector": [0.88, 0.7, 0.6, 0.94]}],
+                },
+            ],
+            "p": 2,
+            "ground_metric_order": 2,
+        },
+        "unit_test_targets": [
+            "test_multiaxis_discrete_ot_uses_capability_proof_dynamics_and_settlement",
+            "test_multiaxis_continuous_box_compiles_to_empirical_atoms",
+            "test_dynamic_multiaxis_ot_reports_temporal_churn",
+            "test_ot_paper_readiness_surface_exposes_honest_boundary",
+        ],
+    }
+    return {
+        "ok": paper_near_ready,
+        "schema": PAPER_READINESS_SCHEMA,
+        "generated_at": _iso_now(),
+        "public_base_url": (base_url or "").strip().rstrip("/"),
+        "read_url": _u(base_url, "/swarm/optimal-transport/paper-readiness"),
+        "well_known_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
+        "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
+        "paper_near_mathematical_moat_ready": paper_near_ready,
+        "full_arbitrary_continuous_closed_form_claim_allowed": False,
+        "claim_boundary": claim_boundary,
+        "readiness_checks": readiness_checks,
+        "runtime_contract": {
+            "primary_solver": plan.get("solver"),
+            "primary_plan_schema": plan.get("schema"),
+            "axes": list(OT_AXES),
+            "axis_weights": plan.get("axis_weights") or DEFAULT_AXIS_WEIGHTS,
+            "primary_exactness_boundary": plan_boundary,
+            "legacy_exactness_boundary": legacy_boundary,
+            "max_compiled_atoms": MAX_COMPILED_ATOMS,
+        },
+        "verification": verification_payload,
+        "machine_instruction": (
+            "Use /swarm/optimal-transport/solve for finite atoms, compiled boxes, or time_slices; "
+            "quote the claim_boundary with any paper-near statement and refuse closed-form arbitrary continuous claims."
+        ),
+        "digest": f"nomad-ot-paper-readiness-{_digest({'checks': readiness_checks, 'claim_boundary': claim_boundary})}",
     }
 
 

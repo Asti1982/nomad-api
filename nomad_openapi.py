@@ -2718,6 +2718,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/optimal-transport/paper-readiness": {
+                "get": {
+                    "summary": "Honest paper-near OT readiness boundary for discrete and compiled-continuous Wasserstein routing",
+                    "operationId": "getNomadOtPaperReadiness",
+                    "responses": {
+                        "200": {"description": "OT paper-readiness and exactness-boundary surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-ot-paper-readiness.json": {
+                "get": {
+                    "summary": "Alias of /swarm/optimal-transport/paper-readiness",
+                    "operationId": "getNomadOtPaperReadinessWellKnown",
+                    "responses": {
+                        "200": {"description": "OT paper-readiness and exactness-boundary surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/optimal-transport/solve": {
                 "post": {
                     "summary": "Solve explicit 1D quantile, multi-axis discrete/continuous, or dynamic time-sliced Wasserstein OT",

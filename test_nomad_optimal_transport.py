@@ -1,5 +1,6 @@
 from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
+    build_ot_paper_readiness_surface,
     compile_nomad_ot_problem,
     solve_dynamic_multiaxis_optimal_transport,
     solve_multiaxis_optimal_transport,
@@ -96,6 +97,7 @@ def test_compile_nomad_ot_problem_and_surface_from_pressure_rows():
     assert surface["plan"]["ok"] is True
     assert surface["plan"]["schema"] == "nomad.dynamic_multiaxis_optimal_transport_plan.v1"
     assert surface["mathematical_contract"]["feature_space"] == ["capability", "proof_quality", "dynamics", "settlement"]
+    assert surface["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
     assert surface["routing_contracts"]["settlement_pressure"].startswith("paid/receipt demand")
 
 
@@ -187,6 +189,20 @@ def test_dynamic_multiaxis_ot_reports_temporal_churn():
     assert result["slice_count"] == 2
     assert result["plan_churn_total"] == 1.0
     assert result["slice_plans"][1]["plan_churn_from_previous"] == 1.0
+
+
+def test_ot_paper_readiness_surface_exposes_honest_boundary():
+    surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
+    readiness = build_ot_paper_readiness_surface(base_url="https://nomad.example", ot_surface=surface)
+
+    assert readiness["schema"] == "nomad.optimal_transport_paper_readiness.v1"
+    assert readiness["paper_near_mathematical_moat_ready"] is True
+    assert readiness["full_arbitrary_continuous_closed_form_claim_allowed"] is False
+    assert readiness["readiness_checks"]["primary_multiaxis_discrete_solver_ok"] is True
+    assert readiness["readiness_checks"]["compiled_continuous_empirical_measure_declared"] is True
+    assert "arbitrary_closed_form_multidimensional_continuous_ot" in readiness["claim_boundary"]["not_claimed"]
+    assert "finite_discrete_probability_measures_over_declared_nomad_ot_axes" in readiness["claim_boundary"]["claimed_exact_for"]
+    assert readiness["runtime_contract"]["axes"] == ["capability", "proof_quality", "dynamics", "settlement"]
 
 
 def test_solve_request_selects_multiaxis_and_dynamic_modes():
