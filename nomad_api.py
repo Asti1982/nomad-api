@@ -209,6 +209,10 @@ from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
+from nomad_first_receipt_ignition import (
+    build_first_receipt_ignition_surface,
+    evaluate_first_receipt_ignition_event,
+)
 from nomad_settlement_signal_layer import build_settlement_signal_layer
 from nomad_solana_settlement import build_solana_settlement_surface, create_solana_pay_intent, verify_solana_tx_receipt
 from nomad_agent_job_router import build_agent_job_router
@@ -1034,6 +1038,39 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_first_receipt_ignition(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        if isinstance(swarm_summary, dict):
+            summary = swarm_summary
+        elif cls.swarm_registry is not None:
+            summary = cls.swarm_registry.public_manifest(base_url=base_url)
+        else:
+            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
+        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
+        work_summary = summarize_work_receipts()
+        return build_first_receipt_ignition_surface(
+            base_url=base_url,
+            bottleneck_resolver=cls._build_bottleneck_resolver(base_url=base_url, swarm_summary=summary),
+            receipt_predictor={
+                "summary": {
+                    "top_cycle_id": "invoice_paid_work_receipt",
+                    "recognized_revenue_usd_total": max(
+                        float(external_summary.get("revenue_recognized_usd_total") or 0.0),
+                        float(work_summary.get("recognized_revenue_usd") or 0.0),
+                    ),
+                }
+            },
+            acquisition_engine=cls._build_acquisition_engine(base_url=base_url, swarm_summary=summary),
+            sales_department=cls._build_sales_department_swarm(base_url=base_url, swarm_summary=summary),
+            first_sales=cls._build_first_sales_anbahnung(base_url=base_url),
+            worker_market=cls._build_worker_market(base_url=base_url, swarm_summary=summary),
+            worker_invoice=cls._build_worker_invoice(base_url=base_url),
+            external_worker_opportunity=cls._build_external_worker_opportunity(base_url=base_url),
+            acquisition_summary=summarize_agent_acquisition_events(),
+            external_value_summary=external_summary,
+            work_receipt_summary=work_summary,
+        )
+
+    @classmethod
     def _build_acquisition_ignition(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
         return build_acquisition_ignition_surface(
@@ -1260,9 +1297,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _build_external_worker_opportunity(cls, *, base_url: str) -> dict:
+        registry = cls.swarm_registry if cls.swarm_registry is not None else SwarmJoinRegistry()
         return build_external_worker_opportunity(
             base_url=base_url,
-            worker_fleet=cls.swarm_registry.worker_fleet_contract(base_url=base_url),
+            worker_fleet=registry.worker_fleet_contract(base_url=base_url),
             summary=summarize_work_exchange_ledger(),
         )
 
@@ -2240,6 +2278,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "sales_department": f"{b}/.well-known/nomad-sales-department.json",
                     "sales_department_event": f"{b}/swarm/sales-department/events",
                     "first_sales": f"{b}/.well-known/nomad-first-sales.json",
+                    "first_receipt_ignition": f"{b}/.well-known/nomad-first-receipt-ignition.json",
+                    "first_receipt_ignition_event": f"{b}/swarm/first-receipt-ignition/events",
                     "acquisition_ignition": f"{b}/.well-known/nomad-acquisition-ignition.json",
                     "acquisition_ignite": f"{b}/swarm/acquisition/ignite",
                     "resolution_ladder": f"{b}/.well-known/nomad-resolution-ladder.json",
@@ -2702,6 +2742,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/first-sales", "/.well-known/nomad-first-sales.json"}:
             self._json_response(self.__class__._build_first_sales_anbahnung(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/first-receipt-ignition", "/.well-known/nomad-first-receipt-ignition.json"}:
+            self._json_response(self.__class__._build_first_receipt_ignition(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/acquisition/ignite", "/.well-known/nomad-acquisition-ignition.json"}:
             self._json_response(self.__class__._build_acquisition_ignition(base_url=self._base_url()))
@@ -4144,6 +4187,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department/events",
                     "/swarm/first-sales",
                     "/.well-known/nomad-first-sales.json",
+                    "/swarm/first-receipt-ignition",
+                    "/.well-known/nomad-first-receipt-ignition.json",
+                    "/swarm/first-receipt-ignition/events",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
@@ -4873,6 +4919,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/swarm/agent-acquisition/events":
             result = record_agent_acquisition_event(payload, base_url=self._base_url())
             self._json_response(result, status=202 if result.get("ok") else 422)
+            return
+
+        if parsed.path == "/swarm/first-receipt-ignition/events":
+            base = self._base_url()
+            surface = self.__class__._build_first_receipt_ignition(base_url=base)
+            result = evaluate_first_receipt_ignition_event(payload, base_url=base, ignition_surface=surface)
+            acquisition_payload = result.get("agent_acquisition_payload") if isinstance(result.get("agent_acquisition_payload"), dict) else {}
+            if result.get("accepted") and acquisition_payload:
+                try:
+                    result["acquisition_event"] = record_agent_acquisition_event(acquisition_payload, base_url=base)
+                except Exception as exc:  # noqa: BLE001
+                    result["acquisition_event"] = {
+                        "ok": False,
+                        "error": "first_receipt_acquisition_event_failed",
+                        "message": str(exc)[:160],
+                    }
+            self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
         if parsed.path == "/guardrails":
@@ -6080,6 +6143,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/sales-department/events",
                     "/swarm/first-sales",
                     "/.well-known/nomad-first-sales.json",
+                    "/swarm/first-receipt-ignition",
+                    "/.well-known/nomad-first-receipt-ignition.json",
+                    "/swarm/first-receipt-ignition/events",
                     "/swarm/acquisition/ignite",
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",

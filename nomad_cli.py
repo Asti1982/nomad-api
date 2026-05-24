@@ -2296,6 +2296,43 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 buyer_funded_work=NomadApiHandler._build_buyer_funded_work(base_url=base),
                 lead_discovery=lead_discovery,
             )
+        elif args.command == "first-receipt-ignition":
+            from nomad_api import NomadApiHandler
+            from nomad_first_receipt_ignition import evaluate_first_receipt_ignition_event
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            surface = NomadApiHandler._build_first_receipt_ignition(base_url=base)
+            action = str(getattr(args, "ignition_action", "surface") or "surface").strip().lower()
+            if action == "evaluate":
+                raw_json = str(getattr(args, "event_json", "") or "").strip()
+                if raw_json:
+                    try:
+                        payload = json.loads(raw_json)
+                    except json.JSONDecodeError as exc:
+                        payload = {"_invalid_json": str(exc)}
+                else:
+                    payload = {
+                        "agent_id": str(getattr(args, "agent_id", "") or "").strip() or "nomad-cli-ignition",
+                        "packet_id": str(getattr(args, "packet_id", "") or "").strip() or "paid_receipt_buyer_packet",
+                        "event_type": str(getattr(args, "event_type", "") or "inspect").strip(),
+                        "source_url": str(getattr(args, "source_url", "") or "").strip(),
+                        "proof_digest": str(getattr(args, "proof_digest", "") or "").strip(),
+                        "settlement_ref": str(getattr(args, "settlement_ref", "") or "").strip(),
+                        "amount_usd": float(getattr(args, "amount_usd", 0.0) or 0.0),
+                        "send": bool(getattr(args, "send", False)),
+                        "record_revenue": bool(getattr(args, "record_revenue", False)),
+                    }
+                if not isinstance(payload, dict) or payload.get("_invalid_json"):
+                    result = {
+                        "ok": False,
+                        "schema": "nomad.first_receipt_ignition_cli_error.v1",
+                        "error": "invalid_event_json",
+                        "detail": payload.get("_invalid_json") if isinstance(payload, dict) else "event_json_not_object",
+                    }
+                else:
+                    result = evaluate_first_receipt_ignition_event(payload, base_url=base, ignition_surface=surface)
+            else:
+                result = surface
         elif args.command == "external-value":
             from nomad_external_value import (
                 agent_selection_bonus,
@@ -4114,6 +4151,28 @@ def build_parser() -> argparse.ArgumentParser:
     first_sales.add_argument("--discover", action="store_true", help="Run read-only public lead scout before compiling packets.")
     first_sales.add_argument("--focus", default="agent_infra_prime", help="Lead focus used with --discover.")
     first_sales.add_argument("--limit", type=int, default=5, help="Lead limit used with --discover.")
+    first_receipt_ignition = subparsers.add_parser(
+        "first-receipt-ignition",
+        help="Compile and gate the first paid receipt / return-compute worker ignition packet.",
+    )
+    first_receipt_ignition.add_argument(
+        "ignition_action",
+        nargs="?",
+        default="surface",
+        choices=("surface", "evaluate"),
+        help="surface | evaluate",
+    )
+    first_receipt_ignition.add_argument("--base-url", default="", help="Override public base URL for absolute links.")
+    first_receipt_ignition.add_argument("--event-json", default="", help="Full JSON first-receipt ignition event payload.")
+    first_receipt_ignition.add_argument("--agent-id", default="", help="Agent or buyer id for generated event.")
+    first_receipt_ignition.add_argument("--packet-id", default="", help="Action packet id to evaluate.")
+    first_receipt_ignition.add_argument("--event-type", default="inspect", help="impression | inspect | worker_start | first_fix_returned | paid_candidate.")
+    first_receipt_ignition.add_argument("--source-url", default="", help="Source URL or referrer.")
+    first_receipt_ignition.add_argument("--proof-digest", default="", help="Proof or verifier digest for gated events.")
+    first_receipt_ignition.add_argument("--settlement-ref", default="", help="Receipt or settlement reference for paid candidates.")
+    first_receipt_ignition.add_argument("--amount-usd", type=float, default=0.0, help="Positive amount for paid candidates.")
+    first_receipt_ignition.add_argument("--send", action="store_true", help="Request public send; the ignition gate should block this.")
+    first_receipt_ignition.add_argument("--record-revenue", action="store_true", help="Request revenue recording; the ignition gate should block this.")
     external_value = subparsers.add_parser(
         "external-value",
         help="Append-only ledger for external OSS/bounty value: monotonic stages; revenue only at paid.",

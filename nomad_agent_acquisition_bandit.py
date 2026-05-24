@@ -61,20 +61,26 @@ DEFAULT_CHANNELS: dict[str, dict[str, Any]] = {
         "intent": "one_line_agent_runtime_error_loop_capture",
         "default_weight": 0.16,
     },
-    "github_action_template": {
+    "first_receipt_ignition": {
         "rank": 6,
+        "surface": "/.well-known/nomad-first-receipt-ignition.json",
+        "intent": "paid_receipt_or_return_compute_ignition",
+        "default_weight": 0.18,
+    },
+    "github_action_template": {
+        "rank": 7,
         "surface": "/downloads/nomad_reliability_doctor_action.yml",
         "intent": "ci_native_worker_injection",
         "default_weight": 0.12,
     },
     "docker_worker": {
-        "rank": 7,
+        "rank": 8,
         "surface": "/downloads/nomad_work_exchange_worker.Dockerfile",
         "intent": "container_native_return_compute",
         "default_weight": 0.11,
     },
     "openapi_agent_runtime": {
-        "rank": 8,
+        "rank": 9,
         "surface": "/openapi.json",
         "intent": "api_first_agent_runtime",
         "default_weight": 0.11,

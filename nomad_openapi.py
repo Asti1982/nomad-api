@@ -916,6 +916,35 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/first-receipt-ignition": {
+                "get": {
+                    "summary": "First paid receipt and return-compute worker ignition surface",
+                    "operationId": "getSwarmFirstReceiptIgnition",
+                    "responses": {
+                        "200": {"description": "First receipt ignition surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-first-receipt-ignition.json": {
+                "get": {
+                    "summary": "Alias of /swarm/first-receipt-ignition",
+                    "operationId": "getFirstReceiptIgnitionWellKnown",
+                    "responses": {
+                        "200": {"description": "First receipt ignition surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/first-receipt-ignition/events": {
+                "post": {
+                    "summary": "Evaluate one buyer, worker, or adapter ignition signal without posting or booking revenue",
+                    "operationId": "postSwarmFirstReceiptIgnitionEvent",
+                    "requestBody": {"content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "200": {"description": "Ignition event held or blocked", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "202": {"description": "Ignition event admitted as an acquisition signal", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",

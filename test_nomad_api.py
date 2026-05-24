@@ -119,6 +119,7 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-external-worker-opportunity.json" in text
     assert "/.well-known/nomad-universal-adapter.json" in text
     assert "/.well-known/nomad-bottleneck-resolver.json" in text
+    assert "/.well-known/nomad-first-receipt-ignition.json" in text
     assert "/.well-known/nomad-agent-acquisition-bandit.json" in text
     assert "/swarm/universal-adapter/events" in text
     assert "/downloads/nomad_universal_adapter.py" in text
@@ -432,6 +433,22 @@ def test_agent_acquisition_bandit_route_is_public_json():
     assert status == 200
     assert payload["schema"] == "nomad.agent_acquisition_bandit.v1"
     assert payload["routes"]["events"] == "https://nomad.example/swarm/agent-acquisition/events"
+
+
+def test_first_receipt_ignition_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-first-receipt-ignition.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status))
+
+    handler.do_GET()
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.first_receipt_ignition.v1"
+    assert payload["truth_state"]["recommended_receipt_lane"] == "invoice_paid_work_receipt"
+    assert payload["event_url"] == "https://nomad.example/swarm/first-receipt-ignition/events"
 
 
 def test_sustainability_kernel_route_is_public_json():
@@ -941,6 +958,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/bottleneck-resolver" in doc["paths"]
     assert "/.well-known/nomad-bottleneck-resolver.json" in doc["paths"]
     assert "/swarm/bottleneck-resolver/events" in doc["paths"]
+    assert "/swarm/first-receipt-ignition" in doc["paths"]
+    assert "/.well-known/nomad-first-receipt-ignition.json" in doc["paths"]
+    assert "/swarm/first-receipt-ignition/events" in doc["paths"]
     assert "/swarm/ad-cycles" in doc["paths"]
     assert "/.well-known/nomad-ad-cycles.json" in doc["paths"]
     assert "/swarm/ad-cycles/events" in doc["paths"]
