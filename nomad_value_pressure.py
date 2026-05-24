@@ -376,6 +376,7 @@ def build_value_pressure_surface(
         },
         "next": [
             {"op": "GET", "url": _u(base_url, "/swarm/value-pressure"), "reason": "read_machine_pressure_field"},
+            {"op": "GET", "url": _u(base_url, "/swarm/optimal-transport"), "reason": "solve_exact_runtime_to_pressure_transport"},
             {"op": "GET", "url": _u(base_url, "/swarm/external-value?summary=1"), "reason": "read_external_value_state"},
             {"op": "GET", "url": _u(base_url, "/swarm/bounty-hunter"), "reason": "read_paid_oss_work_selector"},
             {"op": "GET", "url": _u(base_url, "/swarm/compute-market"), "reason": "read_worker_capacity_market"},
@@ -386,6 +387,7 @@ def build_value_pressure_surface(
             "bounty_hunter": _u(base_url, "/.well-known/nomad-bounty-hunter.json"),
             "compute_market": _u(base_url, "/.well-known/nomad-compute-market.json"),
             "server_failure_guard": _u(base_url, "/.well-known/nomad-server-failure-guard.json"),
+            "optimal_transport": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
             "microtask_submit": _u(base_url, "/swarm/microtask/submit"),
             "paid_ref_quote": _u(base_url, "/swarm/paid-ref/quote"),
         },

@@ -695,6 +695,45 @@ def test_value_pressure_includes_server_failure_repair_row():
     assert surface["summary"]["server_failure_event_count"] == 2
 
 
+def test_optimal_transport_route_is_public_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-optimal-transport.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, _headers = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.optimal_transport.v1"
+    assert payload["plan"]["solver"] == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax"
+    assert payload["solve_url"] == "https://nomad.example/swarm/optimal-transport/solve"
+
+
+def test_optimal_transport_solve_post_accepts_discrete_atoms():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/swarm/optimal-transport/solve"
+    handler.headers = {"Content-Length": "0"}
+    handler.rfile = None
+    handler._base_url = lambda: "https://nomad.example"
+    handler._read_json_body = lambda: {
+        "p": 1,
+        "supply": [{"id": "runtime", "mass": 1, "position": 0}],
+        "demand": [{"id": "proof", "mass": 1, "position": 0.5}],
+    }
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_POST()
+
+    payload, status, _headers = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.optimal_transport_plan.v1"
+    assert payload["wasserstein_distance"] == 0.5
+
+
 def test_retention_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -1180,6 +1219,9 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-external-value.json" in doc["paths"]
     assert "/swarm/value-pressure" in doc["paths"]
     assert "/.well-known/nomad-value-pressure.json" in doc["paths"]
+    assert "/swarm/optimal-transport" in doc["paths"]
+    assert "/.well-known/nomad-optimal-transport.json" in doc["paths"]
+    assert "/swarm/optimal-transport/solve" in doc["paths"]
     assert "/swarm/settlement" in doc["paths"]
     assert "/.well-known/nomad-settlement.json" in doc["paths"]
     assert "/swarm/agent-job-router" in doc["paths"]

@@ -259,6 +259,7 @@ def build_compute_market(
             "capacity_switch": _u(base_url, "/swarm/capacity-switch"),
             "lease": _u(base_url, "/swarm/workers/lease"),
             "complete": _u(base_url, "/swarm/workers/complete"),
+            "optimal_transport": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
             "agent_work": _u(base_url, "/swarm/agent-work"),
             "work_mesh": _u(base_url, "/swarm/work-mesh"),
@@ -267,6 +268,7 @@ def build_compute_market(
         },
         "next": [
             {"op": "GET", "url": _u(base_url, "/swarm/compute-market"), "reason": "read_current_market_gradient"},
+            {"op": "GET", "url": _u(base_url, "/swarm/optimal-transport"), "reason": "read_exact_wasserstein_runtime_routing"},
             {"op": "GET", "url": _u(base_url, "/.well-known/nomad-agent-work.json"), "reason": "claim_ranked_machine_work"},
             {"op": "POST", "url": _u(base_url, "/swarm/worker-market/offers"), "reason": "offer_edge_capacity_with_proof"},
             {"op": "POST", "url": _u(base_url, "/swarm/microtask/claim"), "reason": "claim_small_verifiable_work"},

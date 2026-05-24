@@ -208,6 +208,7 @@ from nomad_external_value import (
 )
 from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
+from nomad_optimal_transport import build_nomad_optimal_transport_surface, solve_ot_request
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
 from nomad_first_receipt_ignition import (
@@ -1375,6 +1376,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             bounty_hunter=cls._build_bounty_hunter(base_url=base_url),
             compute_market=cls._build_compute_market(base_url=base_url, swarm_summary=summary),
             server_failure_summary=summarize_server_failure_events(),
+        )
+
+    @classmethod
+    def _build_optimal_transport(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        compute = cls._build_compute_market(base_url=base_url, swarm_summary=summary)
+        pressure = cls._build_value_pressure(base_url=base_url, swarm_summary=summary)
+        return build_nomad_optimal_transport_surface(
+            base_url=base_url,
+            compute_market=compute,
+            value_pressure=pressure,
         )
 
     @classmethod
@@ -2551,6 +2563,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "swarm_signal_post": f"{b}/swarm/signals",
                     "emission_batch_post": f"{b}/swarm/emission-batch",
                     "value_pressure": f"{b}/.well-known/nomad-value-pressure.json",
+                    "optimal_transport": f"{b}/.well-known/nomad-optimal-transport.json",
+                    "optimal_transport_solve": f"{b}/swarm/optimal-transport/solve",
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "solana_settlement": f"{b}/.well-known/nomad-solana-settlement.json",
                     "solana_pay_intent": f"{b}/swarm/settlement/solana-pay-intents",
@@ -3108,6 +3122,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/value-pressure", "/.well-known/nomad-value-pressure.json"}:
             self._json_response(self.__class__._build_value_pressure(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/optimal-transport", "/.well-known/nomad-optimal-transport.json"}:
+            self._json_response(self.__class__._build_optimal_transport(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
             self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
@@ -4536,6 +4553,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/emission-batch",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
+                    "/swarm/optimal-transport",
+                    "/.well-known/nomad-optimal-transport.json",
+                    "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
                     "/swarm/revenue-science",
@@ -6058,6 +6078,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("ok") else 400)
             return
 
+        if parsed.path == "/swarm/optimal-transport/solve":
+            result = solve_ot_request(payload, base_url=self._base_url())
+            self._json_response(result, status=200 if result.get("ok") else 422)
+            return
+
         if parsed.path == "/swarm/work-receipts":
             result = record_work_receipt(payload)
             status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
@@ -6548,6 +6573,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/emission-batch",
                     "/swarm/value-pressure",
                     "/.well-known/nomad-value-pressure.json",
+                    "/swarm/optimal-transport",
+                    "/.well-known/nomad-optimal-transport.json",
+                    "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
                     "/swarm/revenue-science",
