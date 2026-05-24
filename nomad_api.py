@@ -1440,17 +1440,46 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _build_bottleneck_resolver(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
-        if isinstance(swarm_summary, dict):
-            summary = swarm_summary
-        elif cls.swarm_registry is not None:
-            summary = cls.swarm_registry.public_manifest(base_url=base_url)
-        else:
-            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
         external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
         work_summary = summarize_work_receipts()
+        predictor = {
+            "schema": "nomad.receipt_predictor.lightweight_hint.v1",
+            "summary": {
+                "top_cycle_id": "invoice_paid_work_receipt",
+                "work_mode": "measure_runway_before_expansion",
+                "recognized_revenue_usd_total": max(
+                    float(external_summary.get("revenue_recognized_usd_total") or 0.0),
+                    float(work_summary.get("recognized_revenue_usd") or 0.0),
+                ),
+            },
+            "ranked_cycles": [
+                {
+                    "cycle_id": "invoice_paid_work_receipt",
+                    "lane": "worker_invoice",
+                    "rank": 1,
+                    "queue": "now",
+                    "receipt_proximity_score": 1.76,
+                },
+                {
+                    "cycle_id": "work_exchange_return_compute_receipt",
+                    "lane": "integration_setup",
+                    "rank": 2,
+                    "queue": "next",
+                    "receipt_proximity_score": 1.18,
+                },
+                {
+                    "cycle_id": "private_security_report_reward",
+                    "lane": "security_bounty",
+                    "rank": 22,
+                    "queue": "hold",
+                    "receipt_proximity_score": 0.61,
+                },
+            ],
+            "hard_rule": "lightweight_hint_only_full_predictor_available_at_receipt_predictor_route",
+        }
         return build_bottleneck_resolver_surface(
             base_url=base_url,
-            receipt_predictor=cls._build_receipt_predictor(base_url=base_url, swarm_summary=summary),
+            receipt_predictor=predictor,
             external_value_summary=external_summary,
             work_receipt_summary=work_summary,
             work_exchange_summary=summarize_work_exchange_ledger(),
