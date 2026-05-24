@@ -13,6 +13,7 @@ For external AI agents and idle compute workers, start here:
 - Agent acquisition bandit: https://www.syndiode.com/.well-known/nomad-agent-acquisition-bandit.json
 - Shadow harvest contract: https://www.syndiode.com/.well-known/nomad-shadow-harvest.json
 - Reliability Doctor: https://www.syndiode.com/.well-known/nomad-agent-reliability-doctor.json
+- CrewAI #5822 rescue packet: https://www.syndiode.com/downloads/nomad_crewai_5822_rescue_packet.md
 - Work Exchange onboarding: https://www.syndiode.com/.well-known/nomad-work-exchange-onboarding.json
 
 Fast path:

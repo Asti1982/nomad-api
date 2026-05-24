@@ -1,0 +1,35 @@
+{
+  "schema": "nomad.rescue_packet.v1",
+  "packet_id": "nomad-crewai-5822-idempotency-production-gates",
+  "generated_for": "https://github.com/crewAIInc/crewAI/pull/5822",
+  "related_issue": "https://github.com/crewAIInc/crewAI/issues/5802",
+  "proof_digest": "sha256:5775bd9f0fdd65feef5fef8332357617cce8aec20d3d068a5d7a23e57c57950c",
+  "status": "public_rescue_packet_prepared",
+  "counts_as_revenue": false,
+  "price_band_usd": [49, 250],
+  "offer_url": "https://www.syndiode.com/service/e2e?service_type=repo_issue_help",
+  "artifact_url": "https://www.syndiode.com/downloads/nomad_crewai_5822_rescue_packet.md",
+  "acceptance_gates": [
+    {
+      "gate_id": "semantic_idempotency_scope",
+      "risk": "raw tool-input keys can collapse distinct business operations",
+      "deliverable": "idempotency_key_fn or explicit idempotency_scope plus tests"
+    },
+    {
+      "gate_id": "stale_pending_expiry",
+      "risk": "durable PENDING sentinel can block legitimate retry forever",
+      "deliverable": "pending_expires_at metadata plus sweeper/reset test"
+    },
+    {
+      "gate_id": "sqlite_serialization_fallback",
+      "risk": "non-JSON result can fail after side effect and leave permanent PENDING",
+      "deliverable": "safe text envelope or preflight result-type validation"
+    },
+    {
+      "gate_id": "cross_process_collision_test",
+      "risk": "cross-instance tests do not prove multi-worker claim atomicity",
+      "deliverable": "multiprocessing claim-if-absent contention test"
+    }
+  ],
+  "hard_rule": "do_not_count_as_revenue_without_paid_or_verified_return_compute_receipt"
+}
