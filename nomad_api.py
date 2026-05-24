@@ -1039,33 +1039,144 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
     @classmethod
     def _build_first_receipt_ignition(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        root = (base_url or "").strip().rstrip("/")
+
+        def _u(path: str) -> str:
+            return f"{root}{path}" if root else path
+
+        def _n(value, default: int = 0) -> int:
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return default
+
         if isinstance(swarm_summary, dict):
             summary = swarm_summary
-        elif cls.swarm_registry is not None:
-            summary = cls.swarm_registry.public_manifest(base_url=base_url)
         else:
-            summary = SwarmJoinRegistry().public_manifest(base_url=base_url)
-        external_summary = summarize_external_value_ledger(limit=1000, latest_limit=200)
-        work_summary = summarize_work_receipts()
+            registry = cls.swarm_registry if cls.swarm_registry is not None else SwarmJoinRegistry()
+            try:
+                summary = registry.summary()
+            except Exception:
+                summary = registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        recent_workers = worker_fleet.get("recent_workers") if isinstance(worker_fleet.get("recent_workers"), list) else []
+        active_workers = _n(worker_fleet.get("active_worker_count") or summary.get("active_transition_workers"))
+        known_workers = _n(worker_fleet.get("known_worker_count") or summary.get("known_transition_workers"))
+        active_leases = _n(worker_fleet.get("active_lease_count") or summary.get("active_worker_leases"))
+        external_summary = summarize_external_value_ledger(limit=200, latest_limit=5)
+        work_summary = summarize_work_receipts(limit=5)
+        recognized_usd = max(
+            float(external_summary.get("revenue_recognized_usd_total") or 0.0),
+            float(work_summary.get("recognized_revenue_usd") or 0.0),
+        )
+        buyer_route = _u("/service/e2e?service_type=repo_issue_help")
+        worker_route = _u("/.well-known/nomad-external-worker-opportunity.json")
+        acquisition_summary = summarize_agent_acquisition_events()
         return build_first_receipt_ignition_surface(
             base_url=base_url,
-            bottleneck_resolver=cls._build_bottleneck_resolver(base_url=base_url, swarm_summary=summary),
+            bottleneck_resolver={
+                "schema": "nomad.bottleneck_resolver.lightweight_hint.v1",
+                "current_bottleneck": {
+                    "status": (
+                        "paid_receipt_present"
+                        if recognized_usd > 0.0
+                        else "current_bottleneck_external_receipt_absent"
+                    ),
+                    "paid_confirmed": recognized_usd > 0.0,
+                    "recognized_revenue_usd": round(recognized_usd, 4),
+                },
+                "recommended_now": {
+                    "lane_id": "invoice_paid_work_receipt",
+                    "offer_packet": {
+                        "public_cta": buyer_route,
+                        "price_band_usd": [49, 250],
+                        "buyer_copy": (
+                            "Send one public CI, deploy, tool-call, or agent-loop failure. "
+                            "Nomad returns the smallest verifiable fix path and records revenue "
+                            "only after a real paid receipt."
+                        ),
+                    },
+                },
+            },
             receipt_predictor={
+                "schema": "nomad.receipt_predictor.lightweight_hint.v1",
                 "summary": {
                     "top_cycle_id": "invoice_paid_work_receipt",
-                    "recognized_revenue_usd_total": max(
-                        float(external_summary.get("revenue_recognized_usd_total") or 0.0),
-                        float(work_summary.get("recognized_revenue_usd") or 0.0),
-                    ),
+                    "recognized_revenue_usd_total": round(recognized_usd, 4),
                 }
             },
-            acquisition_engine=cls._build_acquisition_engine(base_url=base_url, swarm_summary=summary),
-            sales_department=cls._build_sales_department_swarm(base_url=base_url, swarm_summary=summary),
-            first_sales=cls._build_first_sales_anbahnung(base_url=base_url),
-            worker_market=cls._build_worker_market(base_url=base_url, swarm_summary=summary),
-            worker_invoice=cls._build_worker_invoice(base_url=base_url),
-            external_worker_opportunity=cls._build_external_worker_opportunity(base_url=base_url),
-            acquisition_summary=summarize_agent_acquisition_events(),
+            acquisition_engine={
+                "schema": "nomad.acquisition_engine.lightweight_hint.v1",
+                "top_next_actions": [
+                    {
+                        "rank": 1,
+                        "arm_id": "paid_task_order",
+                        "holdout_fraction": 0.25,
+                        "action": {
+                            "op": "route_opt_in_order",
+                            "surface": "first_receipt_ignition",
+                            "url": buyer_route,
+                        },
+                    },
+                    {
+                        "rank": 2,
+                        "arm_id": "transition_worker_recruit",
+                        "holdout_fraction": 0.25,
+                        "action": {
+                            "op": "route_link_with_receipt",
+                            "surface": "worker_recruitment",
+                            "url": worker_route,
+                        },
+                    },
+                ],
+            },
+            sales_department={
+                "schema": "nomad.sales_department.lightweight_hint.v1",
+                "route": _u("/.well-known/nomad-sales-department.json"),
+            },
+            first_sales={
+                "active_lead_packet": {
+                    "service_type": "repo_issue_help",
+                    "package_id": "repo_diagnostic_patch_starter",
+                    "entry_url": buyer_route,
+                    "public_send_allowed": False,
+                    "public_help_draft": "Draft only. Do not send public outreach without explicit operator approval.",
+                }
+            },
+            worker_market={
+                "schema": "nomad.worker_market.lightweight_hint.v1",
+                "market_state": {
+                    "known_worker_count": known_workers,
+                    "active_worker_count": active_workers,
+                    "active_lease_count": active_leases,
+                },
+                "recent_offer_count": max(len(recent_workers), active_workers),
+            },
+            worker_invoice={
+                "schema": "nomad.worker_invoice.lightweight_hint.v1",
+                "receive_ref": {
+                    "kind": "public_receive_ref_route",
+                    "route": _u("/.well-known/nomad-worker-invoice.json"),
+                },
+            },
+            external_worker_opportunity={
+                "schema": "nomad.external_worker_opportunity.lightweight_hint.v1",
+                "route": worker_route,
+                "opportunity_digest": "nomad-worker-opportunity-"
+                + hashlib.sha256(
+                    json.dumps(
+                        {
+                            "base_url": root,
+                            "known_workers": known_workers,
+                            "active_workers": active_workers,
+                            "active_leases": active_leases,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()[:20],
+            },
+            acquisition_summary=acquisition_summary,
             external_value_summary=external_summary,
             work_receipt_summary=work_summary,
         )
@@ -2744,7 +2855,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(self.__class__._build_first_sales_anbahnung(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/first-receipt-ignition", "/.well-known/nomad-first-receipt-ignition.json"}:
-            self._json_response(self.__class__._build_first_receipt_ignition(base_url=self._base_url()))
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"first_receipt_ignition:{base_url}",
+                    15,
+                    lambda: self.__class__._build_first_receipt_ignition(base_url=base_url),
+                ),
+                headers={"Cache-Control": "public, max-age=15"},
+            )
             return
         if parsed.path in {"/swarm/acquisition/ignite", "/.well-known/nomad-acquisition-ignition.json"}:
             self._json_response(self.__class__._build_acquisition_ignition(base_url=self._base_url()))

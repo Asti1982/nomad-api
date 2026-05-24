@@ -451,6 +451,37 @@ def test_first_receipt_ignition_route_is_public_json():
     assert payload["event_url"] == "https://nomad.example/swarm/first-receipt-ignition/events"
 
 
+def test_first_receipt_ignition_route_does_not_rebuild_heavy_meshes(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("first receipt ignition must stay lightweight")
+
+    for name in [
+        "_build_acquisition_engine",
+        "_build_bottleneck_resolver",
+        "_build_external_worker_opportunity",
+        "_build_first_sales_anbahnung",
+        "_build_sales_department_swarm",
+        "_build_worker_invoice",
+        "_build_worker_market",
+    ]:
+        monkeypatch.setattr(NomadApiHandler, name, classmethod(fail))
+    monkeypatch.setattr(NomadApiHandler, "_surface_cache", {})
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-first-receipt-ignition.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=15"
+    assert payload["schema"] == "nomad.first_receipt_ignition.v1"
+    assert payload["status"]["self_funding_loop_closed"] is False
+
+
 def test_sustainability_kernel_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
