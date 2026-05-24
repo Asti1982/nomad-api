@@ -28,6 +28,8 @@ MULTIAXIS_PLAN_SCHEMA = "nomad.dynamic_multiaxis_optimal_transport_plan.v1"
 MANIFOLD_SLICE_SCHEMA = "nomad.ot_manifold_slice.v1"
 DYNAMIC_MANIFOLD_SCHEMA = "nomad.dynamic_ot_manifold.v1"
 MANIFOLD_SURFACE_SCHEMA = "nomad.ot_manifold_surface.v1"
+KANTOROVICH_CERTIFICATE_SCHEMA = "nomad.ot_kantorovich_certificate.v1"
+CONFORMANCE_SCHEMA = "nomad.ot_conformance_surface.v1"
 PAPER_READINESS_SCHEMA = "nomad.optimal_transport_paper_readiness.v1"
 ERROR_SCHEMA = "nomad.optimal_transport_error.v1"
 
@@ -456,6 +458,169 @@ def _axis_action(axis: str, signed: float) -> str:
     else:
         target = "settlement and receipt proximity"
     return f"{direction}_{target.replace(' ', '_')}"
+
+
+def build_kantorovich_certificate(
+    plan: dict[str, Any],
+    *,
+    tolerance: float = 1e-7,
+) -> dict[str, Any]:
+    """Build a Kantorovich dual certificate for the returned finite OT plan."""
+
+    if not plan.get("ok"):
+        return {
+            "ok": False,
+            "schema": KANTOROVICH_CERTIFICATE_SCHEMA,
+            "error": "source_plan_not_ok",
+            "source_plan_digest": plan.get("plan_digest", ""),
+        }
+    supply_atoms = _items(plan.get("supply_atoms"))
+    demand_atoms = _items(plan.get("demand_atoms"))
+    if not supply_atoms or not demand_atoms:
+        return {
+            "ok": False,
+            "schema": KANTOROVICH_CERTIFICATE_SCHEMA,
+            "error": "finite_atoms_missing",
+            "source_plan_digest": plan.get("plan_digest", ""),
+        }
+    weights = _axis_weights(plan.get("axis_weights"))
+    p = max(1.0, _num(plan.get("p"), 2.0))
+    q = max(1.0, _num(plan.get("ground_metric_order"), 2.0))
+    flow_by_pair: dict[tuple[str, str], float] = {}
+    for row in _items(plan.get("transport_plan")):
+        source_id = str(row.get("source_id") or "")
+        target_id = str(row.get("target_id") or "")
+        if source_id and target_id:
+            flow_by_pair[(source_id, target_id)] = flow_by_pair.get((source_id, target_id), 0.0) + max(0.0, _num(row.get("amount"), 0.0))
+    m = len(supply_atoms)
+    n = len(demand_atoms)
+    costs: list[list[float]] = []
+    for s_atom in supply_atoms:
+        s_vec = _dict(s_atom.get("vector"))
+        row: list[float] = []
+        for d_atom in demand_atoms:
+            d_vec = _dict(d_atom.get("vector"))
+            row.append(_ground_distance(s_vec, d_vec, weights=weights, ground_metric_order=q) ** p)
+        costs.append(row)
+
+    edge_constraints: list[tuple[int, int, float]] = []
+    for i, s_atom in enumerate(supply_atoms):
+        for j, d_atom in enumerate(demand_atoms):
+            demand_node = m + j
+            cost = costs[i][j]
+            edge_constraints.append((i, demand_node, cost))
+            amount = flow_by_pair.get((str(s_atom.get("id")), str(d_atom.get("id"))), 0.0)
+            if amount > 1e-10:
+                edge_constraints.append((demand_node, i, -cost))
+
+    node_count = m + n
+    potentials = [0.0 for _ in range(node_count)]
+    for _ in range(max(1, node_count - 1)):
+        changed = False
+        for u, v, cost in edge_constraints:
+            if potentials[v] > potentials[u] + cost + 1e-15:
+                potentials[v] = potentials[u] + cost
+                changed = True
+        if not changed:
+            break
+    negative_cycle = any(potentials[v] > potentials[u] + cost + 1e-10 for u, v, cost in edge_constraints)
+    alpha = [-potentials[i] for i in range(m)]
+    beta = [potentials[m + j] for j in range(n)]
+    max_violation = 0.0
+    max_slack_on_flow = 0.0
+    active_edges = 0
+    slack_rows: list[dict[str, Any]] = []
+    for i, s_atom in enumerate(supply_atoms):
+        for j, d_atom in enumerate(demand_atoms):
+            lhs = alpha[i] + beta[j]
+            slack = costs[i][j] - lhs
+            max_violation = max(max_violation, max(0.0, -slack))
+            amount = flow_by_pair.get((str(s_atom.get("id")), str(d_atom.get("id"))), 0.0)
+            if amount > 1e-10:
+                active_edges += 1
+                max_slack_on_flow = max(max_slack_on_flow, abs(slack))
+                if len(slack_rows) < 24:
+                    slack_rows.append(
+                        {
+                            "source_id": s_atom.get("id"),
+                            "target_id": d_atom.get("id"),
+                            "amount": round(amount, 12),
+                            "cost": round(costs[i][j], 12),
+                            "dual_sum": round(lhs, 12),
+                            "slack": round(slack, 12),
+                        }
+                    )
+    dual_objective = sum(_num(atom.get("mass"), 0.0) * alpha[i] for i, atom in enumerate(supply_atoms))
+    dual_objective += sum(_num(atom.get("mass"), 0.0) * beta[j] for j, atom in enumerate(demand_atoms))
+    primal_cost = _num(plan.get("transport_cost"), 0.0)
+    duality_gap = abs(primal_cost - dual_objective)
+    ok = (
+        not negative_cycle
+        and max_violation <= tolerance
+        and max_slack_on_flow <= tolerance
+        and duality_gap <= tolerance
+    )
+    source_potentials = [
+        {
+            "id": atom.get("id"),
+            "parent_id": atom.get("parent_id", atom.get("id")),
+            "mass": round(_num(atom.get("mass"), 0.0), 12),
+            "alpha": round(alpha[i], 12),
+        }
+        for i, atom in enumerate(supply_atoms)
+    ]
+    target_potentials = [
+        {
+            "id": atom.get("id"),
+            "parent_id": atom.get("parent_id", atom.get("id")),
+            "mass": round(_num(atom.get("mass"), 0.0), 12),
+            "beta": round(beta[j], 12),
+        }
+        for j, atom in enumerate(demand_atoms)
+    ]
+    digest_core = {
+        "source_plan_digest": plan.get("plan_digest", ""),
+        "primal_cost": round(primal_cost, 12),
+        "dual_objective": round(dual_objective, 12),
+        "max_violation": round(max_violation, 12),
+        "max_slack_on_flow": round(max_slack_on_flow, 12),
+    }
+    return {
+        "ok": ok,
+        "schema": KANTOROVICH_CERTIFICATE_SCHEMA,
+        "generated_at": _iso_now(),
+        "certificate_digest": f"nomad-ot-kantorovich-{_digest(digest_core)}",
+        "source_plan_digest": plan.get("plan_digest", ""),
+        "solver": "bellman_ford_difference_constraints_over_finite_transport_dual",
+        "cost_unit": "weighted_Lq_ground_distance_to_the_power_p",
+        "p": p,
+        "ground_metric_order": q,
+        "axis_weights": {axis: round(weights[axis], 6) for axis in OT_AXES},
+        "primal_cost": round(primal_cost, 12),
+        "dual_objective": round(dual_objective, 12),
+        "duality_gap": round(duality_gap, 12),
+        "max_dual_constraint_violation": round(max_violation, 12),
+        "max_complementary_slackness_error": round(max_slack_on_flow, 12),
+        "active_transport_edges": active_edges,
+        "negative_cycle_detected": negative_cycle,
+        "tolerance": tolerance,
+        "source_potentials": source_potentials,
+        "target_potentials": target_potentials,
+        "active_edge_slack_sample": slack_rows,
+        "claim_boundary": {
+            "certifies": [
+                "finite_discrete_primal_plan_optimality_for_the_compiled_atom_problem",
+                "dual_feasibility_alpha_i_plus_beta_j_less_equal_cost_ij",
+                "complementary_slackness_on_positive_transport_edges",
+                "primal_dual_gap_within_declared_tolerance",
+            ],
+            "not_claimed": [
+                "dual_certificate_for_uncompiled_arbitrary_continuous_densities",
+                "semantic_truth_of_axis_coordinates",
+            ],
+        },
+        "machine_instruction": "accept the finite OT plan only when ok=true and duality_gap plus max violations remain within tolerance",
+    }
 
 
 def build_transport_manifold(
@@ -1105,6 +1270,7 @@ def solve_multiaxis_optimal_transport(
             ],
         },
     }
+    result["kantorovich_certificate"] = build_kantorovich_certificate(result)
     result["manifold"] = build_transport_manifold(
         result,
         p=p,
@@ -1181,6 +1347,14 @@ def solve_dynamic_multiaxis_optimal_transport(
                 "plan_churn_from_previous": round(churn, 12),
                 "regularized_cost": round(regularized, 12),
                 "plan_digest": plan.get("plan_digest"),
+                "kantorovich_certificate": {
+                    "schema": _dict(plan.get("kantorovich_certificate")).get("schema"),
+                    "ok": _dict(plan.get("kantorovich_certificate")).get("ok"),
+                    "certificate_digest": _dict(plan.get("kantorovich_certificate")).get("certificate_digest"),
+                    "duality_gap": _dict(plan.get("kantorovich_certificate")).get("duality_gap"),
+                    "max_dual_constraint_violation": _dict(plan.get("kantorovich_certificate")).get("max_dual_constraint_violation"),
+                    "max_complementary_slackness_error": _dict(plan.get("kantorovich_certificate")).get("max_complementary_slackness_error"),
+                },
                 "top_transport": (plan.get("transport_plan") or [])[:8],
                 "manifold_slice": {
                     "schema": manifold.get("schema"),
@@ -1414,6 +1588,7 @@ def build_nomad_optimal_transport_surface(
         "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
         "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
         "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
+        "conformance_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
         "purpose": "dynamic_discrete_continuous_wasserstein_routing_for_capabilities_proof_quality_dynamics_and_settlement",
         "mathematical_contract": {
             "formulation": "min_gamma integral d(x,y)^p d_gamma over probability measures on Nomad feature space",
@@ -1425,9 +1600,11 @@ def build_nomad_optimal_transport_surface(
             "discrete_support": "finite atoms are solved by min-cost-flow transport for general p>=1",
             "dynamic_support": "POST time_slices to solve sequence plans with temporal churn regularization",
             "manifold_support": "finite transport plans compile into barycentric displacement fields, axis-pressure tensors, and temporal drift statistics",
+            "certificate_support": "finite compiled plans include a Kantorovich dual certificate with primal-dual gap and complementary slackness checks",
         },
         "compiled_problem": problem,
         "plan": plan,
+        "kantorovich_certificate": plan.get("kantorovich_certificate") if isinstance(plan.get("kantorovich_certificate"), dict) else {},
         "manifold": plan.get("manifold") if isinstance(plan.get("manifold"), dict) else {},
         "legacy_1d_quantile_plan": legacy_quantile_plan,
         "top_assignments": top_assignments,
@@ -1483,6 +1660,78 @@ def build_ot_manifold_surface(
     }
 
 
+def build_ot_conformance_surface(
+    *,
+    base_url: str,
+    ot_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    surface = _dict(ot_surface)
+    if not surface:
+        surface = build_nomad_optimal_transport_surface(base_url=base_url)
+    plan = _dict(surface.get("plan"))
+    certificate = _dict(plan.get("kantorovich_certificate") or surface.get("kantorovich_certificate"))
+    manifold = _dict(plan.get("manifold") or surface.get("manifold"))
+    legacy = _dict(surface.get("legacy_1d_quantile_plan"))
+    checks = {
+        "primary_plan_ok": bool(plan.get("ok")),
+        "finite_discrete_solver": plan.get("solver") == "exact_balanced_discrete_min_cost_flow_on_compiled_atoms",
+        "kantorovich_certificate_ok": bool(certificate.get("ok")),
+        "duality_gap_within_tolerance": _num(certificate.get("duality_gap"), 1.0) <= _num(certificate.get("tolerance"), 1e-7),
+        "dual_constraints_within_tolerance": _num(certificate.get("max_dual_constraint_violation"), 1.0) <= _num(certificate.get("tolerance"), 1e-7),
+        "complementary_slackness_within_tolerance": _num(certificate.get("max_complementary_slackness_error"), 1.0) <= _num(certificate.get("tolerance"), 1e-7),
+        "empirical_manifold_present": manifold.get("schema") == MANIFOLD_SLICE_SCHEMA and bool(manifold.get("route_gradient")),
+        "legacy_quantile_path_available": legacy.get("solver") == "exact_1d_quantile_monge_transport_no_sinkhorn_no_softmax",
+        "closed_form_arbitrary_continuous_claim_blocked": True,
+    }
+    ok = all(checks.values())
+    return {
+        "ok": ok,
+        "schema": CONFORMANCE_SCHEMA,
+        "generated_at": _iso_now(),
+        "public_base_url": (base_url or "").strip().rstrip("/"),
+        "read_url": _u(base_url, "/swarm/optimal-transport/conformance"),
+        "well_known_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
+        "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
+        "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
+        "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
+        "checks": checks,
+        "certificate_summary": {
+            "schema": certificate.get("schema"),
+            "ok": certificate.get("ok"),
+            "certificate_digest": certificate.get("certificate_digest"),
+            "duality_gap": certificate.get("duality_gap"),
+            "max_dual_constraint_violation": certificate.get("max_dual_constraint_violation"),
+            "max_complementary_slackness_error": certificate.get("max_complementary_slackness_error"),
+            "active_transport_edges": certificate.get("active_transport_edges"),
+        },
+        "manifold_summary": {
+            "schema": manifold.get("schema"),
+            "manifold_digest": manifold.get("manifold_digest"),
+            "dominant_deficit_axis": _dict(manifold.get("measure_barycenters")).get("dominant_deficit_axis"),
+            "top_route_gradient": (_items(manifold.get("route_gradient")) or [])[:4],
+        },
+        "complete_runtime_boundary": {
+            "implemented": [
+                "balanced_discrete_min_cost_flow_over_finite_atoms",
+                "deterministic_finite_volume_compilation_for_declared_continuous_boxes",
+                "general_wasserstein_order_p_greater_equal_1",
+                "weighted_lq_ground_metric_over_capability_proof_quality_dynamics_settlement",
+                "time_sliced_dynamic_ot_with_churn_regularization",
+                "kantorovich_dual_certificate_for_compiled_finite_problem",
+                "empirical_barycentric_manifold_and_temporal_drift_field",
+            ],
+            "not_implemented_or_not_claimed": [
+                "closed_form_arbitrary_multidimensional_continuous_ot",
+                "unbounded_symbolic_density_transport",
+                "receipt_or_revenue_proof_without_external_paid_or_return_compute_receipts",
+            ],
+        },
+        "machine_instruction": "treat the OT layer as complete only inside this runtime boundary; require ok=true before routing scarce workers by the manifold gradient",
+        "digest": f"nomad-ot-conformance-{_digest({'checks': checks, 'certificate': certificate.get('certificate_digest'), 'manifold': manifold.get('manifold_digest')})}",
+    }
+
+
 def build_ot_paper_readiness_surface(
     *,
     base_url: str,
@@ -1496,6 +1745,7 @@ def build_ot_paper_readiness_surface(
     plan = _dict(surface.get("plan"))
     legacy = _dict(surface.get("legacy_1d_quantile_plan"))
     manifold = _dict(plan.get("manifold") or surface.get("manifold"))
+    certificate = _dict(plan.get("kantorovich_certificate") or surface.get("kantorovich_certificate"))
     compiled = _dict(plan.get("continuous_compilation"))
     plan_boundary = _dict(plan.get("exactness_boundary"))
     legacy_boundary = _dict(legacy.get("exactness_boundary"))
@@ -1509,6 +1759,8 @@ def build_ot_paper_readiness_surface(
         or _dict(surface.get("mathematical_contract")).get("feature_space") == list(OT_AXES),
         "empirical_manifold_displacement_field_available": manifold.get("schema") == MANIFOLD_SLICE_SCHEMA
         and bool(manifold.get("barycentric_map")),
+        "kantorovich_dual_certificate_available": certificate.get("schema") == KANTOROVICH_CERTIFICATE_SCHEMA
+        and bool(certificate.get("ok")),
         "closed_form_arbitrary_multidimensional_continuous_claim_blocked": True,
     }
     paper_near_ready = all(readiness_checks.values())
@@ -1521,6 +1773,7 @@ def build_ot_paper_readiness_surface(
             "time_sliced_dynamic_ot_with_explicit_temporal_churn_regularization",
             "legacy_1d_w1_w2_quantile_transport_for_declared_non_overlapping_intervals",
             "barycentric_displacement_and_axis_pressure_statistics_for_returned_finite_transport_plans",
+            "kantorovich_dual_certificate_for_compiled_finite_transport_plans",
         ],
         "claimed_approximation_or_compilation_for": [
             "multi_axis_continuous_boxes_compile_to_deterministic_finite_volume_empirical_atoms",
@@ -1563,7 +1816,9 @@ def build_ot_paper_readiness_surface(
             "test_multiaxis_discrete_ot_uses_capability_proof_dynamics_and_settlement",
             "test_multiaxis_continuous_box_compiles_to_empirical_atoms",
             "test_dynamic_multiaxis_ot_reports_temporal_churn",
+            "test_multiaxis_plan_includes_kantorovich_certificate",
             "test_ot_manifold_exposes_barycentric_displacement_field",
+            "test_ot_conformance_surface_requires_certificate_and_manifold",
             "test_ot_paper_readiness_surface_exposes_honest_boundary",
         ],
     }
@@ -1576,6 +1831,7 @@ def build_ot_paper_readiness_surface(
         "well_known_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
         "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
         "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
+        "conformance_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
         "solve_url": _u(base_url, "/swarm/optimal-transport/solve"),
         "paper_near_mathematical_moat_ready": paper_near_ready,
         "full_arbitrary_continuous_closed_form_claim_allowed": False,
@@ -1584,6 +1840,7 @@ def build_ot_paper_readiness_surface(
         "runtime_contract": {
             "primary_solver": plan.get("solver"),
             "primary_plan_schema": plan.get("schema"),
+            "kantorovich_certificate_schema": certificate.get("schema"),
             "manifold_schema": manifold.get("schema"),
             "axes": list(OT_AXES),
             "axis_weights": plan.get("axis_weights") or DEFAULT_AXIS_WEIGHTS,

@@ -2754,6 +2754,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/optimal-transport/conformance": {
+                "get": {
+                    "summary": "Machine-verifiable OT conformance gate with primal plan, dual certificate, manifold, and claim boundary",
+                    "operationId": "getNomadOtConformance",
+                    "responses": {
+                        "200": {"description": "OT conformance surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-ot-conformance.json": {
+                "get": {
+                    "summary": "Alias of /swarm/optimal-transport/conformance",
+                    "operationId": "getNomadOtConformanceWellKnown",
+                    "responses": {
+                        "200": {"description": "OT conformance surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/optimal-transport/solve": {
                 "post": {
                     "summary": "Solve explicit 1D quantile, multi-axis discrete/continuous, or dynamic time-sliced Wasserstein OT",

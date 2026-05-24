@@ -714,6 +714,8 @@ def test_optimal_transport_route_is_public_json(monkeypatch, tmp_path):
     assert payload["solve_url"] == "https://nomad.example/swarm/optimal-transport/solve"
     assert payload["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
     assert payload["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
+    assert payload["conformance_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
+    assert payload["kantorovich_certificate"]["ok"] is True
     assert payload["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
 
 
@@ -733,6 +735,7 @@ def test_ot_paper_readiness_route_is_public_json(monkeypatch, tmp_path):
     assert payload["paper_near_mathematical_moat_ready"] is True
     assert payload["full_arbitrary_continuous_closed_form_claim_allowed"] is False
     assert payload["readiness_checks"]["empirical_manifold_displacement_field_available"] is True
+    assert payload["readiness_checks"]["kantorovich_dual_certificate_available"] is True
     assert "arbitrary_closed_form_multidimensional_continuous_ot" in payload["claim_boundary"]["not_claimed"]
     assert payload["solve_url"] == "https://nomad.example/swarm/optimal-transport/solve"
 
@@ -753,6 +756,25 @@ def test_ot_manifold_route_is_public_json(monkeypatch, tmp_path):
     assert payload["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
     assert payload["manifold"]["route_gradient"]
     assert "closed_form_manifold_learning" in payload["claim_boundary"]["not_claimed"]
+
+
+def test_ot_conformance_route_is_public_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-ot-conformance.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, _headers = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.ot_conformance_surface.v1"
+    assert payload["ok"] is True
+    assert payload["checks"]["kantorovich_certificate_ok"] is True
+    assert payload["checks"]["empirical_manifold_present"] is True
+    assert payload["certificate_summary"]["duality_gap"] <= 1e-7
 
 
 def test_optimal_transport_solve_post_accepts_discrete_atoms():
@@ -1268,6 +1290,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-ot-paper-readiness.json" in doc["paths"]
     assert "/swarm/optimal-transport/manifold" in doc["paths"]
     assert "/.well-known/nomad-ot-manifold.json" in doc["paths"]
+    assert "/swarm/optimal-transport/conformance" in doc["paths"]
+    assert "/.well-known/nomad-ot-conformance.json" in doc["paths"]
     assert "/swarm/optimal-transport/solve" in doc["paths"]
     assert "/swarm/settlement" in doc["paths"]
     assert "/.well-known/nomad-settlement.json" in doc["paths"]

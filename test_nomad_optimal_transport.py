@@ -1,5 +1,6 @@
 from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
+    build_ot_conformance_surface,
     build_ot_manifold_surface,
     build_ot_paper_readiness_surface,
     compile_nomad_ot_problem,
@@ -100,6 +101,8 @@ def test_compile_nomad_ot_problem_and_surface_from_pressure_rows():
     assert surface["mathematical_contract"]["feature_space"] == ["capability", "proof_quality", "dynamics", "settlement"]
     assert surface["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
     assert surface["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
+    assert surface["conformance_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
+    assert surface["kantorovich_certificate"]["ok"] is True
     assert surface["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
     assert surface["routing_contracts"]["settlement_pressure"].startswith("paid/receipt demand")
 
@@ -143,6 +146,9 @@ def test_multiaxis_discrete_ot_uses_capability_proof_dynamics_and_settlement():
     assert plan["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
     assert plan["manifold"]["measure_barycenters"]["dominant_deficit_axis"] in {"capability", "proof_quality", "dynamics", "settlement"}
     assert plan["manifold"]["barycentric_map"]
+    assert plan["kantorovich_certificate"]["schema"] == "nomad.ot_kantorovich_certificate.v1"
+    assert plan["kantorovich_certificate"]["ok"] is True
+    assert plan["kantorovich_certificate"]["duality_gap"] <= plan["kantorovich_certificate"]["tolerance"]
 
 
 def test_multiaxis_continuous_box_compiles_to_empirical_atoms():
@@ -198,6 +204,25 @@ def test_dynamic_multiaxis_ot_reports_temporal_churn():
     assert result["slice_plans"][1]["plan_churn_from_previous"] == 1.0
     assert result["dynamic_manifold"]["schema"] == "nomad.dynamic_ot_manifold.v1"
     assert result["dynamic_manifold"]["trajectory"][1]["deficit_drift_from_previous"]
+    assert result["slice_plans"][0]["kantorovich_certificate"]["ok"] is True
+
+
+def test_multiaxis_plan_includes_kantorovich_certificate():
+    plan = solve_multiaxis_optimal_transport(
+        [{"id": "runtime", "mass": 1.0, "vector": {"capability": 0.2, "proof_quality": 0.4, "dynamics": 0.3, "settlement": 0.2}}],
+        [{"id": "settlement", "mass": 1.0, "vector": {"capability": 0.8, "proof_quality": 0.6, "dynamics": 0.5, "settlement": 0.9}}],
+        p=2,
+        ground_metric_order=2,
+    )
+
+    cert = plan["kantorovich_certificate"]
+    assert cert["ok"] is True
+    assert cert["primal_cost"] == plan["transport_cost"]
+    assert cert["duality_gap"] <= cert["tolerance"]
+    assert cert["max_dual_constraint_violation"] <= cert["tolerance"]
+    assert cert["max_complementary_slackness_error"] <= cert["tolerance"]
+    assert cert["source_potentials"]
+    assert cert["target_potentials"]
 
 
 def test_ot_manifold_surface_exposes_barycentric_displacement_field():
@@ -217,6 +242,20 @@ def test_ot_manifold_surface_exposes_barycentric_displacement_field():
     assert "closed_form_manifold_learning" in manifold["claim_boundary"]["not_claimed"]
 
 
+def test_ot_conformance_surface_requires_certificate_and_manifold():
+    surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
+    conformance = build_ot_conformance_surface(base_url="https://nomad.example", ot_surface=surface)
+
+    assert conformance["schema"] == "nomad.ot_conformance_surface.v1"
+    assert conformance["ok"] is True
+    assert conformance["well_known_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
+    assert conformance["checks"]["kantorovich_certificate_ok"] is True
+    assert conformance["checks"]["empirical_manifold_present"] is True
+    assert conformance["certificate_summary"]["duality_gap"] <= 1e-7
+    assert "kantorovich_dual_certificate_for_compiled_finite_problem" in conformance["complete_runtime_boundary"]["implemented"]
+    assert "closed_form_arbitrary_multidimensional_continuous_ot" in conformance["complete_runtime_boundary"]["not_implemented_or_not_claimed"]
+
+
 def test_ot_paper_readiness_surface_exposes_honest_boundary():
     surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
     readiness = build_ot_paper_readiness_surface(base_url="https://nomad.example", ot_surface=surface)
@@ -227,10 +266,13 @@ def test_ot_paper_readiness_surface_exposes_honest_boundary():
     assert readiness["readiness_checks"]["primary_multiaxis_discrete_solver_ok"] is True
     assert readiness["readiness_checks"]["compiled_continuous_empirical_measure_declared"] is True
     assert readiness["readiness_checks"]["empirical_manifold_displacement_field_available"] is True
+    assert readiness["readiness_checks"]["kantorovich_dual_certificate_available"] is True
     assert "arbitrary_closed_form_multidimensional_continuous_ot" in readiness["claim_boundary"]["not_claimed"]
     assert "finite_discrete_probability_measures_over_declared_nomad_ot_axes" in readiness["claim_boundary"]["claimed_exact_for"]
     assert "barycentric_displacement_and_axis_pressure_statistics_for_returned_finite_transport_plans" in readiness["claim_boundary"]["claimed_exact_for"]
+    assert "kantorovich_dual_certificate_for_compiled_finite_transport_plans" in readiness["claim_boundary"]["claimed_exact_for"]
     assert readiness["runtime_contract"]["axes"] == ["capability", "proof_quality", "dynamics", "settlement"]
+    assert readiness["runtime_contract"]["kantorovich_certificate_schema"] == "nomad.ot_kantorovich_certificate.v1"
     assert readiness["runtime_contract"]["manifold_schema"] == "nomad.ot_manifold_slice.v1"
 
 

@@ -210,6 +210,7 @@ from nomad_external_value_reconciler import reconcile_external_value_ledger
 from nomad_value_pressure import build_value_pressure_surface
 from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
+    build_ot_conformance_surface,
     build_ot_manifold_surface,
     build_ot_paper_readiness_surface,
     solve_ot_request,
@@ -1409,6 +1410,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_ot_conformance(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        return build_ot_conformance_surface(
+            base_url=base_url,
+            ot_surface=cls._build_optimal_transport(base_url=base_url, swarm_summary=swarm_summary),
+        )
+
+    @classmethod
     def _build_settlement_signal_layer(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         return build_settlement_signal_layer(
             base_url=base_url,
@@ -2585,6 +2593,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "optimal_transport": f"{b}/.well-known/nomad-optimal-transport.json",
                     "ot_paper_readiness": f"{b}/.well-known/nomad-ot-paper-readiness.json",
                     "ot_manifold": f"{b}/.well-known/nomad-ot-manifold.json",
+                    "ot_conformance": f"{b}/.well-known/nomad-ot-conformance.json",
                     "optimal_transport_solve": f"{b}/swarm/optimal-transport/solve",
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "solana_settlement": f"{b}/.well-known/nomad-solana-settlement.json",
@@ -3152,6 +3161,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/optimal-transport/manifold", "/.well-known/nomad-ot-manifold.json"}:
             self._json_response(self.__class__._build_ot_manifold(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/optimal-transport/conformance", "/.well-known/nomad-ot-conformance.json"}:
+            self._json_response(self.__class__._build_ot_conformance(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
             self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
@@ -4586,6 +4598,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-ot-paper-readiness.json",
                     "/swarm/optimal-transport/manifold",
                     "/.well-known/nomad-ot-manifold.json",
+                    "/swarm/optimal-transport/conformance",
+                    "/.well-known/nomad-ot-conformance.json",
                     "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
@@ -6610,6 +6624,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-ot-paper-readiness.json",
                     "/swarm/optimal-transport/manifold",
                     "/.well-known/nomad-ot-manifold.json",
+                    "/swarm/optimal-transport/conformance",
+                    "/.well-known/nomad-ot-conformance.json",
                     "/swarm/optimal-transport/solve",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
