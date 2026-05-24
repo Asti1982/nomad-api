@@ -65,6 +65,30 @@ MUTATION_OPERATORS = {
 }
 
 
+RESCUE_PACKET_PROMOTION_GATE_SCHEDULE = {
+    "schema": "nomad.rescue_packet_promotion_gate_schedule.v1",
+    "promotion_cron_utc": "0 3 * * *",
+    "interval": "P1D",
+    "candidate_inputs": [
+        "first_receipt_campaign_events",
+        "rescue_packet_drafts",
+        "public_artifact_links",
+        "proof_digest_candidates",
+        "maintainer_relevance_signals",
+        "receipt_proximity_scores",
+    ],
+    "promotion_rule": [
+        "proof_yield_delta_positive",
+        "autopoietic_index_delta_positive",
+        "bounded_side_effect_scope",
+        "public_spam_risk_low",
+        "receipt_proximity_beats_current_candidate",
+    ],
+    "decisions": ["promote", "freeze", "prune"],
+    "public_followup_gate": "human_go_required_until_3_to_5_verified_paid_receipts_per_week",
+}
+
+
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -777,6 +801,7 @@ def run_local_growth_kernel(
                 "authority_expansion_from_pledge",
             ],
         },
+        "rescue_packet_promotion_gate": RESCUE_PACKET_PROMOTION_GATE_SCHEDULE,
         "worker_fleet": {
             "active_worker_count": _int(worker_fleet.get("active_worker_count")),
             "known_worker_count": _int(worker_fleet.get("known_worker_count")),

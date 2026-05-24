@@ -263,6 +263,34 @@ AGP_MORPHOLOGY_PRICING_POLICIES = (
     "fixed_micro_repair_floor",
     "no_revenue_until_positive_receipt",
 )
+RESCUE_PACKET_AUTOGENESIS_SCHEDULE = {
+    "schema": "nomad.rescue_packet_autogenesis_schedule.v1",
+    "negative_space_harvest": {
+        "interval": "PT4H",
+        "burst_interval_when_compute_available": "PT1H",
+        "trigger": "cron_or_codex_automation",
+        "primary_modules": ["nomad_recruitment_gradient.py", "negative_space_scout"],
+        "decision": "scout_open_agent_framework_pain_points_without_posting",
+    },
+    "shadow_lane_evolution": {
+        "interval": "PT45M",
+        "acceptable_range": ["PT30M", "PT60M"],
+        "trigger": "new_capability_gap_or_rescue_candidate",
+        "primary_modules": ["nomad_autogenesis.py", "autogenesis_shadow_evolver"],
+        "decision": "draft_repro_fix_scope_price_and_proof_digest_in_shadow_lane",
+    },
+    "proof_yield_evaluation": {
+        "interval": "event_driven",
+        "trigger": "after_each_shadow_run",
+        "gate": "proof_yield_delta_positive_and_autopoietic_index_delta_positive",
+        "decision": "promote_freeze_or_prune_candidate_pressure",
+    },
+    "public_followup": {
+        "interval": "human_go_only_until_receipt_rate_threshold",
+        "future_dynamic_gate": "after_3_to_5_verified_paid_receipts_per_week",
+        "decision": "public_post_requires_human_audit_membrane",
+    },
+}
 AGP_MORPHOLOGY_ROUTING_POLICIES = (
     "minority_proof_beats_majority_pitch",
     "receipt_distance_weighted_bandit",
@@ -343,6 +371,75 @@ def _text(value: Any, limit: int = 280) -> str:
 def _digest(value: Any, *, length: int = 24) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def build_rescue_packet_scheduler_surface(*, base_url: str = "") -> dict[str, Any]:
+    """Expose the Rescue-Packet Mehrwertzyklus schedule as a machine contract."""
+
+    root = (base_url or "").strip().rstrip("/")
+    schedule = json.loads(json.dumps(RESCUE_PACKET_AUTOGENESIS_SCHEDULE, sort_keys=True))
+    promotion_gate = {
+        "schema": "nomad.rescue_packet_promotion_gate_schedule.v1",
+        "promotion_cron_utc": "0 3 * * *",
+        "interval": "P1D",
+        "primary_modules": ["nomad_local_growth_kernel.py", "promotion_gate"],
+        "decision": "daily_promote_freeze_or_prune_rescue_packet_candidates",
+        "noise_control": "daily_gate_prevents_over_promotion_and_github_spam_pressure",
+    }
+    contract_core = {
+        "schedule": schedule,
+        "promotion_gate": promotion_gate,
+        "receipt_threshold": "3_to_5_verified_paid_receipts_per_week",
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.rescue_packet_scheduler.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "surface_digest": "nomad-rescue-packet-scheduler-" + _digest(contract_core),
+        "read_url": _u(root, "/swarm/rescue-cycle-scheduler"),
+        "well_known_url": _u(root, "/.well-known/nomad-rescue-cycle-scheduler.json"),
+        "primary_value_cycle": [
+            "negative_space_harvest",
+            "shadow_lane_evolution",
+            "proof_yield_autopoietic_index_evaluation",
+            "promotion_gate_productize",
+            "human_go_public_followup",
+            "paid_or_return_compute_receipt",
+            "bandit_feedback_and_pruning",
+        ],
+        "schedule": schedule,
+        "promotion_gate": promotion_gate,
+        "dynamic_interval_policy": {
+            "current_mode": "seed_human_audit_membrane",
+            "can_shorten_harvest_to": "PT1H",
+            "only_when": [
+                "compute_availability_high",
+                "github_rate_limit_safe",
+                "recent_packet_quality_not_degrading",
+            ],
+            "post_seed_autonomy_threshold": "3_to_5_verified_paid_receipts_per_week",
+            "after_threshold": "contextual_bandit_may_reallocate_channel_attention_and_intervals",
+        },
+        "first_seed": {
+            "lead_url": "https://github.com/crewAIInc/crewAI/issues/5802",
+            "pr_url": "https://github.com/crewAIInc/crewAI/pull/5822",
+            "seed_packet": _u(root, "/downloads/nomad_crewai_5822_rescue_packet.md"),
+            "objective": "retry_safe_side_effecting_tools",
+        },
+        "hard_guards": [
+            "no_public_post_without_human_go",
+            "no_private_outreach",
+            "no_spend",
+            "no_secret_capture",
+            "no_revenue_count_without_paid_or_verified_return_compute_receipt",
+            "shadow_lane_only_until_proof_gate",
+        ],
+        "machine_instruction": (
+            "run_harvest_every_4h; evolve_shadow_candidate_every_45m_when_gap_exists; "
+            "evaluate_after_each_shadow_run; promote_daily_at_03_utc; require_human_go_for_public_followup"
+        ),
+    }
 
 
 def _contains_forbidden(payload: Any) -> bool:

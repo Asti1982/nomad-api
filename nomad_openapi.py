@@ -1001,6 +1001,42 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/machine-native-collaboration": {
+                "get": {
+                    "summary": "Machine-native collaboration doctrine for agent-first proof, lease, receipt, and rescue-packet work",
+                    "operationId": "getMachineNativeCollaboration",
+                    "responses": {
+                        "200": {"description": "Machine-native collaboration surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-machine-native-collaboration.json": {
+                "get": {
+                    "summary": "Alias of /swarm/machine-native-collaboration",
+                    "operationId": "getNomadMachineNativeCollaborationWellKnown",
+                    "responses": {
+                        "200": {"description": "Machine-native collaboration surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/rescue-cycle-scheduler": {
+                "get": {
+                    "summary": "Rescue-Packet automation schedule: harvest, shadow evolution, proof gate, daily promotion, and human-go posting",
+                    "operationId": "getRescueCycleScheduler",
+                    "responses": {
+                        "200": {"description": "Rescue-Packet scheduler surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-rescue-cycle-scheduler.json": {
+                "get": {
+                    "summary": "Alias of /swarm/rescue-cycle-scheduler",
+                    "operationId": "getNomadRescueCycleSchedulerWellKnown",
+                    "responses": {
+                        "200": {"description": "Rescue-Packet scheduler surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/acquisition/ignite": {
                 "get": {
                     "summary": "Free proof-gated acquisition ignition surface for sales, ad-cycle drafts, and AI-agent join packets",

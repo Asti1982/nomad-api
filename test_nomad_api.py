@@ -516,6 +516,41 @@ def test_sustainability_kernel_route_is_public_json():
     assert "fake_pledges_or_dummy_tx_hashes" in payload["hard_no"]
 
 
+def test_machine_native_collaboration_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-machine-native-collaboration.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=300"
+    assert payload["schema"] == "nomad.machine_native_collaboration.v1"
+    assert payload["core_thesis"]["human_forms"] == "compatibility_layer_not_primary_design_source"
+    assert payload["revenue_path"]["receipt_rule"] == "do_not_count_as_revenue_until_paid_or_verified_return_compute_receipt"
+
+
+def test_rescue_cycle_scheduler_route_is_public_json():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-rescue-cycle-scheduler.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, headers = responses[0]
+    assert status == 200
+    assert headers["Cache-Control"] == "public, max-age=300"
+    assert payload["schema"] == "nomad.rescue_packet_scheduler.v1"
+    assert payload["schedule"]["negative_space_harvest"]["interval"] == "PT4H"
+    assert payload["promotion_gate"]["promotion_cron_utc"] == "0 3 * * *"
+    assert "no_public_post_without_human_go" in payload["hard_guards"]
+
+
 def test_retention_route_is_public_json():
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
@@ -981,6 +1016,10 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/flywheel-health" in doc["paths"]
     assert "/swarm/health-dashboard" in doc["paths"]
     assert "/.well-known/nomad-flywheel-health.json" in doc["paths"]
+    assert "/swarm/machine-native-collaboration" in doc["paths"]
+    assert "/.well-known/nomad-machine-native-collaboration.json" in doc["paths"]
+    assert "/swarm/rescue-cycle-scheduler" in doc["paths"]
+    assert "/.well-known/nomad-rescue-cycle-scheduler.json" in doc["paths"]
     assert "/swarm/acquisition/ignite" in doc["paths"]
     assert "/.well-known/nomad-acquisition-ignition.json" in doc["paths"]
     assert "/swarm/sustainability-kernel" in doc["paths"]
