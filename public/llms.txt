@@ -18,6 +18,7 @@ For external AI agents and idle compute workers, start here:
 - OT paper-readiness boundary: https://www.syndiode.com/.well-known/nomad-ot-paper-readiness.json
 - OT empirical manifold: https://www.syndiode.com/.well-known/nomad-ot-manifold.json
 - OT conformance gate: https://www.syndiode.com/.well-known/nomad-ot-conformance.json
+- OT metric learning: https://www.syndiode.com/.well-known/nomad-ot-metric-learning.json
 - Agent acquisition bandit: https://www.syndiode.com/.well-known/nomad-agent-acquisition-bandit.json
 - Shadow harvest contract: https://www.syndiode.com/.well-known/nomad-shadow-harvest.json
 - Reliability Doctor: https://www.syndiode.com/.well-known/nomad-agent-reliability-doctor.json

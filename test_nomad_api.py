@@ -697,6 +697,7 @@ def test_value_pressure_includes_server_failure_repair_row():
 
 def test_optimal_transport_route_is_public_json(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(tmp_path / "ot_outcomes.jsonl"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
     handler.path = "/.well-known/nomad-optimal-transport.json"
@@ -715,12 +716,15 @@ def test_optimal_transport_route_is_public_json(monkeypatch, tmp_path):
     assert payload["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
     assert payload["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
     assert payload["conformance_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
+    assert payload["metric_learning_url"] == "https://nomad.example/.well-known/nomad-ot-metric-learning.json"
+    assert payload["metric_learning"]["schema"] == "nomad.ot_metric_learning.v1"
     assert payload["kantorovich_certificate"]["ok"] is True
     assert payload["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
 
 
 def test_ot_paper_readiness_route_is_public_json(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(tmp_path / "ot_outcomes.jsonl"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
     handler.path = "/.well-known/nomad-ot-paper-readiness.json"
@@ -742,6 +746,7 @@ def test_ot_paper_readiness_route_is_public_json(monkeypatch, tmp_path):
 
 def test_ot_manifold_route_is_public_json(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(tmp_path / "ot_outcomes.jsonl"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
     handler.path = "/.well-known/nomad-ot-manifold.json"
@@ -760,6 +765,7 @@ def test_ot_manifold_route_is_public_json(monkeypatch, tmp_path):
 
 def test_ot_conformance_route_is_public_json(monkeypatch, tmp_path):
     monkeypatch.setenv("NOMAD_SERVER_FAILURE_LEDGER_PATH", str(tmp_path / "server_failures.jsonl"))
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(tmp_path / "ot_outcomes.jsonl"))
     handler = NomadApiHandler.__new__(NomadApiHandler)
     responses = []
     handler.path = "/.well-known/nomad-ot-conformance.json"
@@ -775,6 +781,47 @@ def test_ot_conformance_route_is_public_json(monkeypatch, tmp_path):
     assert payload["checks"]["kantorovich_certificate_ok"] is True
     assert payload["checks"]["empirical_manifold_present"] is True
     assert payload["certificate_summary"]["duality_gap"] <= 1e-7
+
+
+def test_ot_metric_learning_route_and_outcome_post_are_public_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(tmp_path / "ot_outcomes.jsonl"))
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/swarm/optimal-transport/outcomes"
+    handler.headers = {"Content-Length": "0"}
+    handler.rfile = None
+    handler._base_url = lambda: "https://nomad.example"
+    handler._read_json_body = lambda: {
+        "plan_digest": "nomad-dynamic-ot-plan-test",
+        "source_id": "worker-a",
+        "target_id": "paid-demand",
+        "outcome": "paid",
+        "receipt_ref": "receipt:public-test",
+        "paid_usd": 49,
+        "proof_digest": "sha256:test",
+    }
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_POST()
+
+    payload, status, _headers = responses[0]
+    assert status == 202
+    assert payload["schema"] == "nomad.ot_outcome_event.v1"
+    assert payload["counts_as_revenue"] is False
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    responses = []
+    handler.path = "/.well-known/nomad-ot-metric-learning.json"
+    handler._base_url = lambda: "https://nomad.example"
+    handler._json_response = lambda payload, status=200, headers=None: responses.append((payload, status, headers))
+
+    handler.do_GET()
+
+    payload, status, _headers = responses[0]
+    assert status == 200
+    assert payload["schema"] == "nomad.ot_metric_learning.v1"
+    assert payload["outcome_summary"]["event_count"] == 1
+    assert payload["recommended_axis_weights"]["settlement"] > payload["outcome_summary"]["default_axis_weights"]["settlement"]
 
 
 def test_optimal_transport_solve_post_accepts_discrete_atoms():
@@ -1292,7 +1339,10 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-ot-manifold.json" in doc["paths"]
     assert "/swarm/optimal-transport/conformance" in doc["paths"]
     assert "/.well-known/nomad-ot-conformance.json" in doc["paths"]
+    assert "/swarm/optimal-transport/metric-learning" in doc["paths"]
+    assert "/.well-known/nomad-ot-metric-learning.json" in doc["paths"]
     assert "/swarm/optimal-transport/solve" in doc["paths"]
+    assert "/swarm/optimal-transport/outcomes" in doc["paths"]
     assert "/swarm/settlement" in doc["paths"]
     assert "/.well-known/nomad-settlement.json" in doc["paths"]
     assert "/swarm/agent-job-router" in doc["paths"]

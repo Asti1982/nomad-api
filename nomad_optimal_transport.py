@@ -18,8 +18,12 @@ import hashlib
 import json
 import math
 import re
+from collections import deque
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
+
+from nomad_state_paths import state_file
 
 
 SCHEMA = "nomad.optimal_transport.v1"
@@ -30,10 +34,16 @@ DYNAMIC_MANIFOLD_SCHEMA = "nomad.dynamic_ot_manifold.v1"
 MANIFOLD_SURFACE_SCHEMA = "nomad.ot_manifold_surface.v1"
 KANTOROVICH_CERTIFICATE_SCHEMA = "nomad.ot_kantorovich_certificate.v1"
 CONFORMANCE_SCHEMA = "nomad.ot_conformance_surface.v1"
+OUTCOME_EVENT_SCHEMA = "nomad.ot_outcome_event.v1"
+METRIC_LEARNING_SCHEMA = "nomad.ot_metric_learning.v1"
 PAPER_READINESS_SCHEMA = "nomad.optimal_transport_paper_readiness.v1"
 ERROR_SCHEMA = "nomad.optimal_transport_error.v1"
 
 EPS = 1e-12
+OT_OUTCOME_LEDGER_ENV = "NOMAD_OT_OUTCOME_LEDGER_PATH"
+DEFAULT_OT_OUTCOME_LEDGER = Path("nomad_ot_outcome_events.jsonl")
+MAX_OUTCOME_LEDGER_LINES = 4000
+MAX_RECENT_OUTCOMES = 40
 OT_AXES = ("capability", "proof_quality", "dynamics", "settlement")
 DEFAULT_AXIS_WEIGHTS = {
     "capability": 0.28,
@@ -42,6 +52,25 @@ DEFAULT_AXIS_WEIGHTS = {
     "settlement": 0.25,
 }
 MAX_COMPILED_ATOMS = 256
+FORBIDDEN_OUTCOME_KEY_TERMS = (
+    "authorization",
+    "api_key",
+    "cookie",
+    "password",
+    "private_key",
+    "secret",
+    "seed_phrase",
+    "token",
+)
+FORBIDDEN_OUTCOME_VALUE_TERMS = (
+    "authorization:",
+    "bearer ",
+    "cookie:",
+    "ghp_",
+    "private key",
+    "seed phrase",
+    "sk-",
+)
 
 
 def _iso_now() -> str:
@@ -107,6 +136,15 @@ def _axis_weights(value: Any) -> dict[str, float]:
     if total <= EPS:
         return dict(DEFAULT_AXIS_WEIGHTS)
     return {axis: weights[axis] / total for axis in OT_AXES}
+
+
+def _bounded_axis_weights(value: dict[str, float], *, low: float = 0.08, high: float = 0.55) -> dict[str, float]:
+    raw = _axis_weights(value)
+    bounded = {axis: min(high, max(low, raw[axis])) for axis in OT_AXES}
+    total = sum(bounded.values())
+    if total <= EPS:
+        return dict(DEFAULT_AXIS_WEIGHTS)
+    return {axis: bounded[axis] / total for axis in OT_AXES}
 
 
 def _keyword_score(text: str, table: tuple[tuple[str, float], ...], default: float = 0.5) -> float:
@@ -412,6 +450,188 @@ def _min_cost_transport(
             reverse = graph[int(edge["to"])][int(edge["rev"])]
             matrix[i][j] = max(0.0, float(reverse["cap"]))
     return True, "", matrix, total_cost
+
+
+def _outcome_ledger_path(path: Path | str | None = None) -> Path:
+    return Path(path) if path else state_file(DEFAULT_OT_OUTCOME_LEDGER, env_name=OT_OUTCOME_LEDGER_ENV)
+
+
+def _contains_forbidden_outcome_payload(payload: Any) -> bool:
+    def walk(value: Any, *, key: str = "") -> bool:
+        k = str(key or "").strip().lower()
+        if k and any(term in k for term in FORBIDDEN_OUTCOME_KEY_TERMS):
+            return True
+        if isinstance(value, dict):
+            return any(walk(item, key=str(name)) for name, item in value.items())
+        if isinstance(value, list):
+            return any(walk(item) for item in value)
+        text = str(value or "").strip().lower()
+        return any(term in text for term in FORBIDDEN_OUTCOME_VALUE_TERMS)
+
+    return walk(payload)
+
+
+def _read_ot_outcome_events(path: Path | str | None = None, *, limit_lines: int = MAX_OUTCOME_LEDGER_LINES) -> list[dict[str, Any]]:
+    p = _outcome_ledger_path(path)
+    if not p.exists():
+        return []
+    tail: deque[str] = deque(maxlen=max(1, int(limit_lines)))
+    try:
+        with p.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                tail.append(line)
+    except OSError:
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in tail:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("schema") == OUTCOME_EVENT_SCHEMA:
+            rows.append(row)
+    return rows
+
+
+def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True, ensure_ascii=True) + "\n")
+
+
+def _outcome_axis_reward(payload: dict[str, Any]) -> dict[str, float]:
+    outcome = _clean_id(payload.get("outcome") or payload.get("status"))
+    paid_amount = max(0.0, _num(payload.get("paid_usd") or payload.get("paid_amount_usd"), 0.0))
+    return_compute = max(0.0, _num(payload.get("return_compute_units") or payload.get("return_compute_hours"), 0.0))
+    failure_count = max(0.0, _num(payload.get("failure_count"), 0.0))
+    retry_count = max(0.0, _num(payload.get("retry_count"), 0.0))
+    latency_delta = _num(payload.get("latency_delta"), 0.0)
+    proof_delta = _num(payload.get("proof_delta") or payload.get("proof_quality_delta"), 0.0)
+    settlement_delta = _num(payload.get("settlement_delta"), 0.0)
+    capability_delta = _num(payload.get("capability_delta"), 0.0)
+    dynamics_delta = _num(payload.get("dynamics_delta"), 0.0)
+
+    proof_signal = proof_delta
+    if payload.get("proof_digest") or payload.get("verifier_trace_digest") or outcome in {"proof_verified", "verified", "merged"}:
+        proof_signal += 0.45
+    if outcome in {"failed", "rollback", "stale", "spam", "duplicate"}:
+        proof_signal -= 0.25
+
+    settlement_signal = settlement_delta
+    if paid_amount > 0:
+        settlement_signal += min(1.0, math.log1p(paid_amount) / math.log(251.0))
+    if return_compute > 0:
+        settlement_signal += min(0.75, math.log1p(return_compute) / math.log(25.0))
+    if payload.get("receipt_ref") or payload.get("settlement_ref") or outcome in {"paid", "settled", "return_compute_receipt"}:
+        settlement_signal += 0.45
+    if outcome in {"failed", "rollback", "unpaid"}:
+        settlement_signal -= 0.35
+
+    dynamics_signal = dynamics_delta
+    if outcome in {"completed", "proof_verified", "paid", "settled"}:
+        dynamics_signal += 0.22
+    dynamics_signal -= min(0.8, 0.18 * failure_count + 0.10 * retry_count)
+    if latency_delta < 0:
+        dynamics_signal += min(0.4, abs(latency_delta))
+    elif latency_delta > 0:
+        dynamics_signal -= min(0.4, latency_delta)
+
+    capability_signal = capability_delta
+    if outcome in {"completed", "accepted", "merged", "proof_verified"}:
+        capability_signal += 0.28
+    if outcome in {"failed", "rollback", "misrouted"}:
+        capability_signal -= 0.38
+
+    return {
+        "capability": _clamp(capability_signal, -1.0, 1.0),
+        "proof_quality": _clamp(proof_signal, -1.0, 1.0),
+        "dynamics": _clamp(dynamics_signal, -1.0, 1.0),
+        "settlement": _clamp(settlement_signal, -1.0, 1.0),
+    }
+
+
+def record_ot_outcome_event(payload: dict[str, Any] | None, *, base_url: str = "", path: Path | str | None = None) -> dict[str, Any]:
+    body = _dict(payload)
+    if _contains_forbidden_outcome_payload(body):
+        return {
+            "ok": False,
+            "schema": ERROR_SCHEMA,
+            "error": "secret_like_material_rejected",
+            "message": "OT outcome events must be secret-free and public-proof oriented.",
+        }
+    plan_digest = _text(body.get("plan_digest"), 160)
+    source_id = _text(body.get("source_id") or body.get("source_parent_id"), 160)
+    target_id = _text(body.get("target_id") or body.get("target_parent_id"), 160)
+    if not plan_digest:
+        return {"ok": False, "schema": ERROR_SCHEMA, "error": "plan_digest_required"}
+    if not source_id and not target_id:
+        return {"ok": False, "schema": ERROR_SCHEMA, "error": "source_or_target_required"}
+    axis_reward = _outcome_axis_reward(body)
+    outcome_strength = max(abs(value) for value in axis_reward.values())
+    row = {
+        "ok": True,
+        "schema": OUTCOME_EVENT_SCHEMA,
+        "generated_at": _iso_now(),
+        "event_id": f"nomad-ot-outcome-{_digest({'plan': plan_digest, 'source': source_id, 'target': target_id, 'body': body}, 18)}",
+        "plan_digest": plan_digest,
+        "certificate_digest": _text(body.get("certificate_digest"), 180),
+        "manifold_digest": _text(body.get("manifold_digest"), 180),
+        "source_id": source_id,
+        "target_id": target_id,
+        "outcome": _clean_id(body.get("outcome") or body.get("status"), "observed"),
+        "axis_reward": {axis: round(axis_reward[axis], 6) for axis in OT_AXES},
+        "outcome_strength": round(outcome_strength, 6),
+        "proof_digest": _text(body.get("proof_digest") or body.get("verifier_trace_digest"), 180),
+        "receipt_ref": _text(body.get("receipt_ref") or body.get("settlement_ref"), 180),
+        "paid_usd": max(0.0, _num(body.get("paid_usd") or body.get("paid_amount_usd"), 0.0)),
+        "return_compute_units": max(0.0, _num(body.get("return_compute_units") or body.get("return_compute_hours"), 0.0)),
+        "counts_as_revenue": False,
+        "revenue_accounting_boundary": "outcome feedback may calibrate routing weights but revenue is recognized only by external-value or settlement receipt ledgers",
+        "public_base_url": (base_url or "").strip().rstrip("/"),
+    }
+    _append_jsonl(_outcome_ledger_path(path), row)
+    return {
+        **row,
+        "accepted": True,
+        "metric_learning_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
+    }
+
+
+def summarize_ot_outcome_events(path: Path | str | None = None) -> dict[str, Any]:
+    events = _read_ot_outcome_events(path)
+    axis_totals = {axis: 0.0 for axis in OT_AXES}
+    axis_abs = {axis: 0.0 for axis in OT_AXES}
+    for event in events:
+        reward = _dict(event.get("axis_reward"))
+        for axis in OT_AXES:
+            value = _num(reward.get(axis), 0.0)
+            axis_totals[axis] += value
+            axis_abs[axis] += abs(value)
+    count = len(events)
+    mean_reward = {axis: (axis_totals[axis] / count if count else 0.0) for axis in OT_AXES}
+    learning_rate = 0.75
+    adjusted = {axis: DEFAULT_AXIS_WEIGHTS[axis] * math.exp(learning_rate * mean_reward[axis]) for axis in OT_AXES}
+    recommended = _bounded_axis_weights(adjusted)
+    dominant_axis = max(OT_AXES, key=lambda axis: abs(mean_reward[axis])) if count else ""
+    return {
+        "schema": "nomad.ot_outcome_summary.v1",
+        "event_count": count,
+        "axis_reward_sum": {axis: round(axis_totals[axis], 6) for axis in OT_AXES},
+        "axis_reward_abs_sum": {axis: round(axis_abs[axis], 6) for axis in OT_AXES},
+        "mean_axis_reward": {axis: round(mean_reward[axis], 6) for axis in OT_AXES},
+        "recommended_axis_weights": {axis: round(recommended[axis], 6) for axis in OT_AXES},
+        "default_axis_weights": dict(DEFAULT_AXIS_WEIGHTS),
+        "dominant_learning_axis": dominant_axis,
+        "recent_events": events[-MAX_RECENT_OUTCOMES:],
+        "counts_as_revenue": False,
+    }
+
+
+def learned_axis_weights(path: Path | str | None = None) -> dict[str, float]:
+    summary = summarize_ot_outcome_events(path)
+    if int(summary.get("event_count") or 0) <= 0:
+        return dict(DEFAULT_AXIS_WEIGHTS)
+    return _axis_weights(summary.get("recommended_axis_weights"))
 
 
 def _round_vector(vector: dict[str, Any], digits: int = 6) -> dict[str, float]:
@@ -1555,6 +1775,8 @@ def build_nomad_optimal_transport_surface(
     settlement: dict[str, Any] | None = None,
     p: float = 2.0,
 ) -> dict[str, Any]:
+    metric_learning = build_ot_metric_learning_surface(base_url=base_url)
+    active_axis_weights = _axis_weights(metric_learning.get("recommended_axis_weights"))
     problem = compile_nomad_ot_problem(
         base_url=base_url,
         compute_market=compute_market,
@@ -1566,7 +1788,7 @@ def build_nomad_optimal_transport_surface(
         problem["demand"],
         p=p,
         ground_metric_order=2.0,
-        axis_weights=DEFAULT_AXIS_WEIGHTS,
+        axis_weights=active_axis_weights,
         continuous_resolution=3,
         base_url=base_url,
     )
@@ -1589,6 +1811,7 @@ def build_nomad_optimal_transport_surface(
         "paper_readiness_url": _u(base_url, "/.well-known/nomad-ot-paper-readiness.json"),
         "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
         "conformance_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
+        "metric_learning_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
         "purpose": "dynamic_discrete_continuous_wasserstein_routing_for_capabilities_proof_quality_dynamics_and_settlement",
         "mathematical_contract": {
             "formulation": "min_gamma integral d(x,y)^p d_gamma over probability measures on Nomad feature space",
@@ -1601,9 +1824,11 @@ def build_nomad_optimal_transport_surface(
             "dynamic_support": "POST time_slices to solve sequence plans with temporal churn regularization",
             "manifold_support": "finite transport plans compile into barycentric displacement fields, axis-pressure tensors, and temporal drift statistics",
             "certificate_support": "finite compiled plans include a Kantorovich dual certificate with primal-dual gap and complementary slackness checks",
+            "metric_learning_support": "secret-free outcome events can calibrate bounded axis weights without counting revenue",
         },
         "compiled_problem": problem,
         "plan": plan,
+        "metric_learning": metric_learning,
         "kantorovich_certificate": plan.get("kantorovich_certificate") if isinstance(plan.get("kantorovich_certificate"), dict) else {},
         "manifold": plan.get("manifold") if isinstance(plan.get("manifold"), dict) else {},
         "legacy_1d_quantile_plan": legacy_quantile_plan,
@@ -1657,6 +1882,50 @@ def build_ot_manifold_surface(
             ],
         },
         "machine_instruction": "read manifold.route_gradient and manifold.barycentric_map before choosing leases; post time_slices to /swarm/optimal-transport/solve for dynamic manifold drift",
+    }
+
+
+def build_ot_metric_learning_surface(*, base_url: str, path: Path | str | None = None) -> dict[str, Any]:
+    summary = summarize_ot_outcome_events(path)
+    return {
+        "ok": True,
+        "schema": METRIC_LEARNING_SCHEMA,
+        "generated_at": _iso_now(),
+        "public_base_url": (base_url or "").strip().rstrip("/"),
+        "read_url": _u(base_url, "/swarm/optimal-transport/metric-learning"),
+        "well_known_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
+        "outcome_event_url": _u(base_url, "/swarm/optimal-transport/outcomes"),
+        "ot_surface_url": _u(base_url, "/.well-known/nomad-optimal-transport.json"),
+        "conformance_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
+        "outcome_summary": summary,
+        "recommended_axis_weights": summary.get("recommended_axis_weights") or DEFAULT_AXIS_WEIGHTS,
+        "learning_rule": {
+            "name": "bounded_exponentiated_gradient_from_secret_free_outcome_events",
+            "learning_rate": 0.75,
+            "weight_floor": 0.08,
+            "weight_ceiling": 0.55,
+            "signals": {
+                "capability": "completion, acceptance, merge, or misroute feedback",
+                "proof_quality": "proof digest, verifier trace, proof delta, or rollback signal",
+                "dynamics": "failure count, retry pressure, latency delta, and stability outcome",
+                "settlement": "receipt reference, paid amount hint, return-compute units, or settlement delta",
+            },
+        },
+        "claim_boundary": {
+            "does": [
+                "calibrates_future_ot_axis_weights_from_observed_outcomes",
+                "keeps_paid_hints_out_of_revenue_accounting",
+                "keeps_default_weights_when_no_outcomes_exist",
+                "bounds_weight_shift_to_prevent_single_event_collapse",
+            ],
+            "does_not": [
+                "recognize_revenue",
+                "execute_remote_work",
+                "override_explicit_axis_weights_in_a_request",
+                "prove_that_axis_semantics_are_objectively_true",
+            ],
+        },
+        "machine_instruction": "after using an OT assignment, POST a secret-free outcome with plan_digest, source_id, target_id, and proof/settlement/failure signals so the metric can calibrate without human relabeling",
     }
 
 
@@ -1860,12 +2129,13 @@ def build_ot_paper_readiness_surface(
 def solve_ot_request(payload: dict[str, Any] | None, *, base_url: str = "") -> dict[str, Any]:
     body = _dict(payload)
     p = _num(body.get("p") or body.get("wasserstein_order"), 1.0)
+    active_axis_weights = body.get("axis_weights") if isinstance(body.get("axis_weights"), dict) else learned_axis_weights()
     if body.get("time_slices"):
         return solve_dynamic_multiaxis_optimal_transport(
             _items(body.get("time_slices")),
             p=p,
             ground_metric_order=_num(body.get("ground_metric_order"), 2.0),
-            axis_weights=body.get("axis_weights") if isinstance(body.get("axis_weights"), dict) else None,
+            axis_weights=active_axis_weights,
             continuous_resolution=int(_num(body.get("continuous_resolution"), 3)),
             temporal_regularization=_num(body.get("temporal_regularization"), 0.08),
             base_url=base_url,
@@ -1885,7 +2155,7 @@ def solve_ot_request(payload: dict[str, Any] | None, *, base_url: str = "") -> d
             demand,
             p=p,
             ground_metric_order=_num(body.get("ground_metric_order"), 2.0),
-            axis_weights=body.get("axis_weights") if isinstance(body.get("axis_weights"), dict) else None,
+            axis_weights=active_axis_weights,
             continuous_resolution=int(_num(body.get("continuous_resolution"), 3)),
             base_url=base_url,
         )

@@ -212,7 +212,9 @@ from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
     build_ot_conformance_surface,
     build_ot_manifold_surface,
+    build_ot_metric_learning_surface,
     build_ot_paper_readiness_surface,
+    record_ot_outcome_event,
     solve_ot_request,
 )
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
@@ -1417,6 +1419,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_ot_metric_learning(cls, *, base_url: str) -> dict:
+        return build_ot_metric_learning_surface(base_url=base_url)
+
+    @classmethod
     def _build_settlement_signal_layer(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
         return build_settlement_signal_layer(
             base_url=base_url,
@@ -2594,6 +2600,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "ot_paper_readiness": f"{b}/.well-known/nomad-ot-paper-readiness.json",
                     "ot_manifold": f"{b}/.well-known/nomad-ot-manifold.json",
                     "ot_conformance": f"{b}/.well-known/nomad-ot-conformance.json",
+                    "ot_metric_learning": f"{b}/.well-known/nomad-ot-metric-learning.json",
+                    "ot_outcome_event_post": f"{b}/swarm/optimal-transport/outcomes",
                     "optimal_transport_solve": f"{b}/swarm/optimal-transport/solve",
                     "settlement_signal": f"{b}/.well-known/nomad-settlement.json",
                     "solana_settlement": f"{b}/.well-known/nomad-solana-settlement.json",
@@ -3164,6 +3172,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/optimal-transport/conformance", "/.well-known/nomad-ot-conformance.json"}:
             self._json_response(self.__class__._build_ot_conformance(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/optimal-transport/metric-learning", "/.well-known/nomad-ot-metric-learning.json"}:
+            self._json_response(self.__class__._build_ot_metric_learning(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/settlement", "/.well-known/nomad-settlement.json"}:
             self._json_response(self.__class__._build_settlement_signal_layer(base_url=self._base_url()))
@@ -4600,7 +4611,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-ot-manifold.json",
                     "/swarm/optimal-transport/conformance",
                     "/.well-known/nomad-ot-conformance.json",
+                    "/swarm/optimal-transport/metric-learning",
+                    "/.well-known/nomad-ot-metric-learning.json",
                     "/swarm/optimal-transport/solve",
+                    "/swarm/optimal-transport/outcomes",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
                     "/swarm/revenue-science",
@@ -6128,6 +6142,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 422)
             return
 
+        if parsed.path == "/swarm/optimal-transport/outcomes":
+            result = record_ot_outcome_event(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("ok") else 400)
+            return
+
         if parsed.path == "/swarm/work-receipts":
             result = record_work_receipt(payload)
             status = 200 if result.get("idempotent_replay") else 201 if result.get("ok") else 400
@@ -6626,7 +6645,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-ot-manifold.json",
                     "/swarm/optimal-transport/conformance",
                     "/.well-known/nomad-ot-conformance.json",
+                    "/swarm/optimal-transport/metric-learning",
+                    "/.well-known/nomad-ot-metric-learning.json",
                     "/swarm/optimal-transport/solve",
+                    "/swarm/optimal-transport/outcomes",
                     "/swarm/agent-job-router",
                     "/.well-known/nomad-agent-jobs.json",
                     "/swarm/revenue-science",

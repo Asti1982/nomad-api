@@ -2,8 +2,10 @@ from nomad_optimal_transport import (
     build_nomad_optimal_transport_surface,
     build_ot_conformance_surface,
     build_ot_manifold_surface,
+    build_ot_metric_learning_surface,
     build_ot_paper_readiness_surface,
     compile_nomad_ot_problem,
+    record_ot_outcome_event,
     solve_dynamic_multiaxis_optimal_transport,
     solve_multiaxis_optimal_transport,
     solve_ot_request,
@@ -102,7 +104,9 @@ def test_compile_nomad_ot_problem_and_surface_from_pressure_rows():
     assert surface["paper_readiness_url"] == "https://nomad.example/.well-known/nomad-ot-paper-readiness.json"
     assert surface["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
     assert surface["conformance_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
+    assert surface["metric_learning_url"] == "https://nomad.example/.well-known/nomad-ot-metric-learning.json"
     assert surface["kantorovich_certificate"]["ok"] is True
+    assert surface["metric_learning"]["schema"] == "nomad.ot_metric_learning.v1"
     assert surface["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
     assert surface["routing_contracts"]["settlement_pressure"].startswith("paid/receipt demand")
 
@@ -254,6 +258,32 @@ def test_ot_conformance_surface_requires_certificate_and_manifold():
     assert conformance["certificate_summary"]["duality_gap"] <= 1e-7
     assert "kantorovich_dual_certificate_for_compiled_finite_problem" in conformance["complete_runtime_boundary"]["implemented"]
     assert "closed_form_arbitrary_multidimensional_continuous_ot" in conformance["complete_runtime_boundary"]["not_implemented_or_not_claimed"]
+
+
+def test_ot_metric_learning_records_outcomes_and_reweights_settlement(tmp_path, monkeypatch):
+    ledger = tmp_path / "ot_outcomes.jsonl"
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(ledger))
+    result = record_ot_outcome_event(
+        {
+            "plan_digest": "nomad-dynamic-ot-plan-test",
+            "source_id": "worker-a",
+            "target_id": "paid-demand",
+            "outcome": "paid",
+            "receipt_ref": "receipt:public-test",
+            "paid_usd": 49,
+            "return_compute_units": 3,
+            "proof_digest": "sha256:test",
+        },
+        base_url="https://nomad.example",
+    )
+    surface = build_ot_metric_learning_surface(base_url="https://nomad.example")
+
+    assert result["accepted"] is True
+    assert result["counts_as_revenue"] is False
+    assert surface["schema"] == "nomad.ot_metric_learning.v1"
+    assert surface["outcome_summary"]["event_count"] == 1
+    assert surface["recommended_axis_weights"]["settlement"] > surface["outcome_summary"]["default_axis_weights"]["settlement"]
+    assert surface["outcome_event_url"] == "https://nomad.example/swarm/optimal-transport/outcomes"
 
 
 def test_ot_paper_readiness_surface_exposes_honest_boundary():

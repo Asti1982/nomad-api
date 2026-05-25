@@ -2772,6 +2772,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/optimal-transport/metric-learning": {
+                "get": {
+                    "summary": "Outcome-calibrated OT axis-weight learning surface",
+                    "operationId": "getNomadOtMetricLearning",
+                    "responses": {
+                        "200": {"description": "OT metric-learning surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-ot-metric-learning.json": {
+                "get": {
+                    "summary": "Alias of /swarm/optimal-transport/metric-learning",
+                    "operationId": "getNomadOtMetricLearningWellKnown",
+                    "responses": {
+                        "200": {"description": "OT metric-learning surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/optimal-transport/solve": {
                 "post": {
                     "summary": "Solve explicit 1D quantile, multi-axis discrete/continuous, or dynamic time-sliced Wasserstein OT",
@@ -2780,6 +2798,17 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "responses": {
                         "200": {"description": "OT plan", "content": {"application/json": {"schema": ref_json_object()}}},
                         "422": {"description": "Input outside supported OT boundary", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
+            "/swarm/optimal-transport/outcomes": {
+                "post": {
+                    "summary": "Record a secret-free OT routing outcome to calibrate future axis weights without booking revenue",
+                    "operationId": "postNomadOtOutcome",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Outcome accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "400": {"description": "Invalid or secret-like outcome payload", "content": {"application/json": {"schema": ref_json_object()}}},
                     },
                 }
             },
