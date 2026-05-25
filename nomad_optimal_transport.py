@@ -1617,12 +1617,14 @@ def compile_nomad_ot_problem(
     compute_market: dict[str, Any] | None = None,
     value_pressure: dict[str, Any] | None = None,
     settlement: dict[str, Any] | None = None,
+    axis_weights: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Compile live Nomad surfaces into a declared 1D OT routing problem."""
+    """Compile live Nomad surfaces into a declared multi-axis OT routing problem."""
 
     compute = _dict(compute_market)
     pressure = _dict(value_pressure)
     settlement_surface = _dict(settlement)
+    weights = _axis_weights(axis_weights)
     supply: list[dict[str, Any]] = []
     for worker in _items(compute.get("scored_workers")):
         score = max(0.0, _num(worker.get("market_score"), 0.0))
@@ -1753,7 +1755,7 @@ def compile_nomad_ot_problem(
         },
         "vector_axes": {
             "names": list(OT_AXES),
-            "axis_weights": DEFAULT_AXIS_WEIGHTS,
+            "axis_weights": {axis: round(weights[axis], 6) for axis in OT_AXES},
             "coordinate_contract": {
                 "capability": "semantic runtime capability class: protection/capacity/proof/settlement",
                 "proof_quality": "verifier, digest, failing-test, and evidence strength",
@@ -1782,6 +1784,7 @@ def build_nomad_optimal_transport_surface(
         compute_market=compute_market,
         value_pressure=value_pressure,
         settlement=settlement,
+        axis_weights=active_axis_weights,
     )
     plan = solve_multiaxis_optimal_transport(
         problem["supply"],
@@ -1812,6 +1815,7 @@ def build_nomad_optimal_transport_surface(
         "manifold_url": _u(base_url, "/.well-known/nomad-ot-manifold.json"),
         "conformance_url": _u(base_url, "/.well-known/nomad-ot-conformance.json"),
         "metric_learning_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
+        "active_axis_weights": {axis: round(active_axis_weights[axis], 6) for axis in OT_AXES},
         "purpose": "dynamic_discrete_continuous_wasserstein_routing_for_capabilities_proof_quality_dynamics_and_settlement",
         "mathematical_contract": {
             "formulation": "min_gamma integral d(x,y)^p d_gamma over probability measures on Nomad feature space",

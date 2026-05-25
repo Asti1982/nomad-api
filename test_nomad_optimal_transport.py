@@ -105,6 +105,8 @@ def test_compile_nomad_ot_problem_and_surface_from_pressure_rows():
     assert surface["manifold_url"] == "https://nomad.example/.well-known/nomad-ot-manifold.json"
     assert surface["conformance_url"] == "https://nomad.example/.well-known/nomad-ot-conformance.json"
     assert surface["metric_learning_url"] == "https://nomad.example/.well-known/nomad-ot-metric-learning.json"
+    assert surface["active_axis_weights"] == surface["plan"]["axis_weights"]
+    assert surface["compiled_problem"]["vector_axes"]["axis_weights"] == surface["active_axis_weights"]
     assert surface["kantorovich_certificate"]["ok"] is True
     assert surface["metric_learning"]["schema"] == "nomad.ot_metric_learning.v1"
     assert surface["manifold"]["schema"] == "nomad.ot_manifold_slice.v1"
@@ -284,6 +286,9 @@ def test_ot_metric_learning_records_outcomes_and_reweights_settlement(tmp_path, 
     assert surface["outcome_summary"]["event_count"] == 1
     assert surface["recommended_axis_weights"]["settlement"] > surface["outcome_summary"]["default_axis_weights"]["settlement"]
     assert surface["outcome_event_url"] == "https://nomad.example/swarm/optimal-transport/outcomes"
+    ot_surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
+    assert ot_surface["active_axis_weights"] == surface["recommended_axis_weights"]
+    assert ot_surface["compiled_problem"]["vector_axes"]["axis_weights"] == surface["recommended_axis_weights"]
 
 
 def test_ot_paper_readiness_surface_exposes_honest_boundary():
