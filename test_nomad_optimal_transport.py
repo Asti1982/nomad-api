@@ -291,6 +291,32 @@ def test_ot_metric_learning_records_outcomes_and_reweights_settlement(tmp_path, 
     assert ot_surface["compiled_problem"]["vector_axes"]["axis_weights"] == surface["recommended_axis_weights"]
 
 
+def test_ot_outcome_events_are_idempotent_and_can_replay_axis_reward(tmp_path, monkeypatch):
+    ledger = tmp_path / "ot_outcomes.jsonl"
+    monkeypatch.setenv("NOMAD_OT_OUTCOME_LEDGER_PATH", str(ledger))
+    payload = {
+        "event_id": "nomad-ot-outcome-replay-test",
+        "generated_at": "2026-05-25T00:00:00+00:00",
+        "plan_digest": "nomad-dynamic-ot-plan-replay",
+        "source_id": "worker-a",
+        "target_id": "settlement-demand",
+        "outcome": "observed",
+        "axis_reward": {"settlement": 1.0, "proof_quality": 0.4, "dynamics": 0.1, "capability": 0.0},
+    }
+
+    first = record_ot_outcome_event(payload, base_url="https://nomad.example")
+    second = record_ot_outcome_event(payload, base_url="https://nomad.example")
+    summary = build_ot_metric_learning_surface(base_url="https://nomad.example")
+
+    assert first["accepted"] is True
+    assert first["duplicate"] is False
+    assert second["accepted"] is True
+    assert second["duplicate"] is True
+    assert second["event_id"] == "nomad-ot-outcome-replay-test"
+    assert summary["outcome_summary"]["event_count"] == 1
+    assert summary["outcome_summary"]["mean_axis_reward"]["settlement"] == 1.0
+
+
 def test_ot_paper_readiness_surface_exposes_honest_boundary():
     surface = build_nomad_optimal_transport_surface(base_url="https://nomad.example")
     readiness = build_ot_paper_readiness_surface(base_url="https://nomad.example", ot_surface=surface)

@@ -493,6 +493,18 @@ def _read_ot_outcome_events(path: Path | str | None = None, *, limit_lines: int 
     return rows
 
 
+def ot_outcome_ledger_path(path: Path | str | None = None) -> Path:
+    return _outcome_ledger_path(path)
+
+
+def read_ot_outcome_events(
+    path: Path | str | None = None,
+    *,
+    limit_lines: int = MAX_OUTCOME_LEDGER_LINES,
+) -> list[dict[str, Any]]:
+    return _read_ot_outcome_events(path, limit_lines=limit_lines)
+
+
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -500,6 +512,10 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
 
 
 def _outcome_axis_reward(payload: dict[str, Any]) -> dict[str, float]:
+    provided = payload.get("axis_reward")
+    if isinstance(provided, dict) and any(axis in provided for axis in OT_AXES):
+        return {axis: _clamp(_num(provided.get(axis), 0.0), -1.0, 1.0) for axis in OT_AXES}
+
     outcome = _clean_id(payload.get("outcome") or payload.get("status"))
     paid_amount = max(0.0, _num(payload.get("paid_usd") or payload.get("paid_amount_usd"), 0.0))
     return_compute = max(0.0, _num(payload.get("return_compute_units") or payload.get("return_compute_hours"), 0.0))
@@ -568,11 +584,15 @@ def record_ot_outcome_event(payload: dict[str, Any] | None, *, base_url: str = "
         return {"ok": False, "schema": ERROR_SCHEMA, "error": "source_or_target_required"}
     axis_reward = _outcome_axis_reward(body)
     outcome_strength = max(abs(value) for value in axis_reward.values())
+    event_id = _text(body.get("event_id"), 120)
+    if not event_id.startswith("nomad-ot-outcome-"):
+        event_id = f"nomad-ot-outcome-{_digest({'plan': plan_digest, 'source': source_id, 'target': target_id, 'body': body}, 18)}"
+    generated_at = _text(body.get("generated_at"), 80) or _iso_now()
     row = {
         "ok": True,
         "schema": OUTCOME_EVENT_SCHEMA,
-        "generated_at": _iso_now(),
-        "event_id": f"nomad-ot-outcome-{_digest({'plan': plan_digest, 'source': source_id, 'target': target_id, 'body': body}, 18)}",
+        "generated_at": generated_at,
+        "event_id": event_id,
         "plan_digest": plan_digest,
         "certificate_digest": _text(body.get("certificate_digest"), 180),
         "manifold_digest": _text(body.get("manifold_digest"), 180),
@@ -589,10 +609,20 @@ def record_ot_outcome_event(payload: dict[str, Any] | None, *, base_url: str = "
         "revenue_accounting_boundary": "outcome feedback may calibrate routing weights but revenue is recognized only by external-value or settlement receipt ledgers",
         "public_base_url": (base_url or "").strip().rstrip("/"),
     }
-    _append_jsonl(_outcome_ledger_path(path), row)
+    ledger_path = _outcome_ledger_path(path)
+    existing = next((event for event in _read_ot_outcome_events(ledger_path) if event.get("event_id") == event_id), None)
+    if existing:
+        return {
+            **existing,
+            "accepted": True,
+            "duplicate": True,
+            "metric_learning_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
+        }
+    _append_jsonl(ledger_path, row)
     return {
         **row,
         "accepted": True,
+        "duplicate": False,
         "metric_learning_url": _u(base_url, "/.well-known/nomad-ot-metric-learning.json"),
     }
 

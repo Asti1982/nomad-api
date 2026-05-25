@@ -2470,6 +2470,54 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             else:
                 base = (getattr(args, "base_url", None) or "").strip()
                 result = build_external_value_surface(base_url=base or "https://www.syndiode.com")
+        elif args.command == "ot-outcomes":
+            from nomad_optimal_transport import (
+                build_ot_metric_learning_surface,
+                record_ot_outcome_event,
+                summarize_ot_outcome_events,
+            )
+
+            sub = str(getattr(args, "ot_action", None) or "summary").strip().lower()
+            base = (getattr(args, "base_url", None) or "").strip() or "https://www.syndiode.com"
+            ledger_path = (getattr(args, "ledger_path", None) or "").strip() or None
+            if sub == "record":
+                result = record_ot_outcome_event(
+                    {
+                        "plan_digest": getattr(args, "plan_digest", "") or "",
+                        "source_id": getattr(args, "source_id", "") or "",
+                        "target_id": getattr(args, "target_id", "") or "",
+                        "outcome": getattr(args, "outcome", "") or "observed",
+                        "proof_digest": getattr(args, "proof_digest", "") or "",
+                        "receipt_ref": getattr(args, "receipt_ref", "") or "",
+                        "paid_usd": float(getattr(args, "paid_usd", 0.0) or 0.0),
+                        "return_compute_units": float(getattr(args, "return_compute_units", 0.0) or 0.0),
+                    },
+                    base_url=base,
+                    path=ledger_path,
+                )
+            elif sub == "snapshot-public":
+                from nomad_ot_outcome_sync import snapshot_public_ot_outcomes
+
+                result = snapshot_public_ot_outcomes(
+                    base_url=base,
+                    snapshot_dir=(getattr(args, "snapshot_dir", None) or "").strip() or None,
+                    timeout=float(getattr(args, "timeout", 20.0) or 20.0),
+                )
+            elif sub == "sync-public":
+                from nomad_ot_outcome_sync import sync_ot_outcomes_to_public
+
+                result = sync_ot_outcomes_to_public(
+                    base_url=base,
+                    ledger_path=ledger_path,
+                    apply=bool(getattr(args, "apply", False)),
+                    snapshot=bool(getattr(args, "snapshot", False)),
+                    snapshot_dir=(getattr(args, "snapshot_dir", None) or "").strip() or None,
+                    timeout=float(getattr(args, "timeout", 20.0) or 20.0),
+                )
+            elif sub == "metric-learning":
+                result = build_ot_metric_learning_surface(base_url=base, path=ledger_path)
+            else:
+                result = summarize_ot_outcome_events(path=ledger_path)
         elif args.command == "value-pressure":
             from nomad_bounty_hunter import build_bounty_hunter_surface, discover_github_bounties
             from nomad_compute_market import build_compute_market
@@ -4311,6 +4359,31 @@ def build_parser() -> argparse.ArgumentParser:
     external_value.add_argument("--snapshot", action="store_true", help="For sync-public: save public summary/surface snapshot locally.")
     external_value.add_argument("--snapshot-dir", default="", help="Local snapshot directory for public external-value snapshots.")
     external_value.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout for public snapshot/sync.")
+    ot_outcomes = subparsers.add_parser(
+        "ot-outcomes",
+        help="Local durable OT outcome-learning ledger: record, summarize, snapshot, or replay to public Render.",
+    )
+    ot_outcomes.add_argument(
+        "ot_action",
+        nargs="?",
+        default="summary",
+        choices=("summary", "metric-learning", "record", "snapshot-public", "sync-public"),
+        help="summary | metric-learning | record | snapshot-public | sync-public",
+    )
+    ot_outcomes.add_argument("--base-url", default="", help="Public base URL for links and public sync.")
+    ot_outcomes.add_argument("--ledger-path", default="", help="Local OT outcome ledger path override.")
+    ot_outcomes.add_argument("--plan-digest", default="", help="OT plan digest (record).")
+    ot_outcomes.add_argument("--source-id", default="", help="Source worker/atom id (record).")
+    ot_outcomes.add_argument("--target-id", default="", help="Target demand/atom id (record).")
+    ot_outcomes.add_argument("--outcome", default="observed", help="observed | paid | settled | failed | merged | rollback (record).")
+    ot_outcomes.add_argument("--proof-digest", default="", help="Proof or verifier digest (record).")
+    ot_outcomes.add_argument("--receipt-ref", default="", help="Public receipt/settlement reference; never a secret (record).")
+    ot_outcomes.add_argument("--paid-usd", type=float, default=0.0, help="Paid hint for routing feedback only; not revenue accounting.")
+    ot_outcomes.add_argument("--return-compute-units", type=float, default=0.0, help="Return-compute hint for routing feedback.")
+    ot_outcomes.add_argument("--apply", action="store_true", help="For sync-public: POST missing local outcomes to the public API.")
+    ot_outcomes.add_argument("--snapshot", action="store_true", help="For sync-public: save public OT metric/surface snapshot locally.")
+    ot_outcomes.add_argument("--snapshot-dir", default="", help="Local snapshot directory for public OT outcome snapshots.")
+    ot_outcomes.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout for public snapshot/sync.")
     value_pressure = subparsers.add_parser(
         "value-pressure",
         help="Machine pressure field over external value followups, bounty work, and compute-market capacity.",
