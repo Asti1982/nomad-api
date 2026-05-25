@@ -1344,7 +1344,7 @@
           </div>
           <div class="contract">
             <a href="/.well-known/nomad-swarm-verified-work.json">/.well-known/nomad-swarm-verified-work.json</a>
-            SVW quote: measured verified state improvement, proof density, retry loss, scarcity, and non-transferable token boundary.
+            SVW quote: measured verified state improvement, receipt state, proof density, retry loss, scarcity, and non-transferable token boundary.
           </div>
           <div class="contract">
             <a href="/swarm/worker-market/offers">/swarm/worker-market/offers</a>
@@ -1892,12 +1892,15 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const latestCompletion = latestWorkerCompletion(fleet);
           const svwQuote = Number((svw.quote || {}).svw_quote_eur || 0);
           const svwState = svw.state_vector || {};
+          const svwReceipt = svw.receipt_state || {};
           const svwProof = Number(svwState.proof_density || 0);
-          const svwStatus = cleanLabel((svw.quote || {}).market_price_status, "bootstrapped");
+          const svwStatus = cleanLabel(svwReceipt.value_state || (svw.quote || {}).market_price_status, "bootstrapped");
+          const svwReceipts = Number(svwReceipt.work_receipt_count || 0);
+          const svwRevenue = Number(svwReceipt.recognized_revenue_usd || 0);
           const snapshot = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
           set("metric-tier", phase);
           set("metric-score", `${score} ${settlementLabel}`);
-          set("metric-svw", `${svwQuote ? `${svwQuote.toFixed(4)} EUR` : "bootstrapping"} / ${svwProof.toFixed(2)} proof`);
+          set("metric-svw", `${svwQuote ? `${svwQuote.toFixed(4)} EUR` : "bootstrapping"} / ${svwStatus}`);
           set("metric-product", `${productScore} ${productLabel}`);
           set("metric-agents", `${agents} agents / ${workers} active workers`);
           set("metric-external-retention", `${activeExternal} / ${knownExternal}${atRiskExternal ? `, ${atRiskExternal} at risk` : ""}`);
@@ -1908,7 +1911,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-opaque", opaquePressure);
           set("metric-science", scienceClaims);
           set("metric-action", bottleneckMode);
-          set("metric-note", `sampled ${snapshot}; SVW ${svwStatus}; resolver recommends ${laneLabel}; ${knownWorkers} known workers, ${activeExternal}/${knownExternal} external active, ${completed24h} completed within 24h. ${clearanceText} ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
+          set("metric-note", `sampled ${snapshot}; SVW ${svwStatus} with ${svwReceipts} receipt${svwReceipts === 1 ? "" : "s"}, ${svwRevenue.toFixed(2)} USD recognized, proof density ${svwProof.toFixed(2)}; resolver recommends ${laneLabel}; ${knownWorkers} known workers, ${activeExternal}/${knownExternal} external active, ${completed24h} completed within 24h. ${clearanceText} ${latestCompletion.note || "No recent completion in this snapshot."} Leases can flicker because they complete fast.`);
           set("retention-watch-summary", `${activeExternal}/${knownExternal} external workers active; ${atRiskExternal} need heartbeat; issue ${cleanLabel(retentionWatch.issue || "none")}.`);
           set("retention-gradient-summary", `Controller phase ${retentionPhase}; selected ${selectedIntervention}; field strength ${retentionStrength}.`);
           set("retention-evidence-summary", `${evidenceSamples} recorded windows; ${positiveWindows} positive; paper-grade claim gate is ${paperGate}.`);

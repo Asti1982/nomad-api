@@ -935,6 +935,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             compute_market=compute_market,
             microtask_metrics=metrics,
             worker_fleet=worker_fleet,
+            work_receipt_summary=summarize_work_receipts(),
+            external_value_summary=summarize_external_value_ledger(),
         )
 
     @classmethod

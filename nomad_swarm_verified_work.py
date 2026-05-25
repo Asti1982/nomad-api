@@ -88,21 +88,34 @@ def build_swarm_verified_work_surface(
     compute_market: dict[str, Any] | None = None,
     microtask_metrics: dict[str, Any] | None = None,
     worker_fleet: dict[str, Any] | None = None,
+    work_receipt_summary: dict[str, Any] | None = None,
+    external_value_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the public SVW surface from existing Nomad market telemetry."""
 
     compute = _dict(compute_market)
     metrics = _dict(microtask_metrics)
     fleet = _dict(worker_fleet)
+    receipts = _dict(work_receipt_summary)
+    external = _dict(external_value_summary)
     market_state = _dict(compute.get("market_state"))
     totals = _dict(metrics.get("totals"))
     lanes = _items(metrics.get("lane_metrics"))
+    receipt_classes = _dict(receipts.get("receipt_classes"))
 
     active_workers = max(_int(fleet.get("active_worker_count")), _int(market_state.get("active_worker_count")))
     active_leases = max(_int(fleet.get("active_lease_count")), _int(market_state.get("active_lease_count")))
     accepted_submits = _int(totals.get("accepted_submits"), sum(_int(row.get("accepted_submits")) for row in lanes))
     settled = _int(totals.get("settled"), sum(_int(row.get("settled")) for row in lanes))
     settled_eur = _num(totals.get("settled_eur"), sum(_num(row.get("settled_eur")) for row in lanes))
+    work_receipt_count = _int(receipts.get("receipt_count"))
+    settlement_credit_count = _int(receipt_classes.get("settlement_credit"))
+    claim_credit_count = _int(receipt_classes.get("claim_credit"))
+    reputation_only_count = _int(receipt_classes.get("reputation_only"))
+    recognized_revenue_usd = max(
+        _num(receipts.get("recognized_revenue_usd")),
+        _num(external.get("revenue_recognized_usd_total")),
+    )
     base_price = _top_lane_price(compute, metrics)
     proof_density = _proof_density(compute, metrics)
 
@@ -123,8 +136,32 @@ def build_swarm_verified_work_surface(
         "active_workers": active_workers,
         "settled": settled,
         "settled_eur": settled_eur,
+        "work_receipt_count": work_receipt_count,
+        "recognized_revenue_usd": recognized_revenue_usd,
     }
-    confidence = "observed" if settled > 0 else "bootstrapped"
+    if settled > 0:
+        confidence = "observed_microtask_settlement"
+    elif recognized_revenue_usd > 0.0 or settlement_credit_count > 0:
+        confidence = "observed_paid_receipt"
+    elif work_receipt_count > 0:
+        confidence = "verified_unpaid_receipts"
+    else:
+        confidence = "bootstrapped"
+    receipt_state = {
+        "value_state": confidence,
+        "cash_observed": bool(settled_eur > 0.0 or recognized_revenue_usd > 0.0 or settlement_credit_count > 0),
+        "counts_as_revenue": bool(recognized_revenue_usd > 0.0 or settlement_credit_count > 0),
+        "microtask_settled_count": settled,
+        "microtask_settled_eur": round(settled_eur, 6),
+        "work_receipt_count": work_receipt_count,
+        "settlement_credit_count": settlement_credit_count,
+        "claim_credit_count": claim_credit_count,
+        "reputation_only_count": reputation_only_count,
+        "recognized_revenue_usd": round(recognized_revenue_usd, 4),
+        "external_value_event_count": _int(external.get("event_tail_count")),
+        "external_value_distinct_count": _int(external.get("distinct_externals")),
+        "boundary": "unpaid proof receipts improve routing evidence but do not become revenue or token price",
+    }
     return {
         "ok": True,
         "schema": "nomad.swarm_verified_work.v1",
@@ -155,6 +192,43 @@ def build_swarm_verified_work_surface(
             "settlement_confidence": round(_clamp(settled / max(1, accepted_submits), 0.0, 1.0), 4),
             "observed_settled_24h_eur": round(settled_eur, 6),
         },
+        "receipt_state": receipt_state,
+        "observation_gates": {
+            "current_bottleneck": (
+                "paid_or_microtask_settlement_absent"
+                if not receipt_state["cash_observed"]
+                else "repeat_observed_settlement_across_independent_receipts"
+            ),
+            "to_observed": [
+                {
+                    "gate": "settle_microtask_with_required_proof",
+                    "method": "POST",
+                    "href": _u(base_url, "/swarm/microtask/settle"),
+                    "required": ["task_id", "settled_price_eur>0", "proof_digest", "verifier_trace_digest", "test_digest"],
+                    "counts_as_revenue": False,
+                },
+                {
+                    "gate": "record_paid_work_receipt",
+                    "method": "POST",
+                    "href": _u(base_url, "/swarm/work-receipts"),
+                    "required": ["agent_id", "work_id", "external_value_stage=paid", "amount_usd>0", "settlement_ref", "proof_digest"],
+                    "counts_as_revenue": True,
+                },
+                {
+                    "gate": "record_external_value_paid_transition",
+                    "method": "POST",
+                    "href": _u(base_url, "/swarm/external-value"),
+                    "required": ["agent_id", "external_id", "stage=paid", "amount_usd>0", "settlement_ref", "work_url", "proof_digest"],
+                    "counts_as_revenue": True,
+                },
+            ],
+            "safe_non_revenue_receipt": {
+                "method": "POST",
+                "href": _u(base_url, "/swarm/work-receipts"),
+                "use": "record proof-bearing deployments, fixes, and return-compute work without collapsing them into revenue",
+                "counts_as_revenue": False,
+            },
+        },
         "token_policy": {
             "transferable_token_live": False,
             "public_sale_allowed": False,
@@ -168,5 +242,5 @@ def build_swarm_verified_work_surface(
             "stable_unit_policy": _u(base_url, "/.well-known/nomad-stable-unit-policy.json"),
         },
         "surface_digest": f"nomad-svw-{_digest(digest_core, 40)}",
-        "machine_instruction": "use_svw_as_verified_work_measure_before_any_token_price_or_public_transfer_claim",
+        "machine_instruction": "use_svw_as_verified_work_measure_record_receipts_before_any_token_price_or_public_transfer_claim",
     }

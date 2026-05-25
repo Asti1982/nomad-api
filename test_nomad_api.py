@@ -134,6 +134,7 @@ def test_nomad_public_html_page_exists():
     assert "network phase" in text
     assert "settlement capacity" in text
     assert "SVW quote" in text
+    assert "receipt state" in text
     assert "current bottleneck" in text
     assert "adapter adoption unproven" in text
     assert "paid receipt or verified return-compute receipt" in text
@@ -1677,6 +1678,8 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert svw["schema"] == "nomad.swarm_verified_work.v1"
     assert svw["well_known_url"] == "https://nomad.example/.well-known/nomad-swarm-verified-work.json"
     assert svw["token_policy"]["transferable_token_live"] is False
+    assert svw["receipt_state"]["counts_as_revenue"] is False
+    assert svw["observation_gates"]["safe_non_revenue_receipt"]["counts_as_revenue"] is False
     assert agent_work["schema"] == "nomad.agent_work.v1"
     assert agent_work["claim_contract"]["url"] == "https://nomad.example/swarm/microtask/claim"
     assert work_mesh["schema"] == "nomad.work_mesh.v1"
