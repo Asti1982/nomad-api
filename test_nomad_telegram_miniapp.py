@@ -12,12 +12,19 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["launch_url"] == "https://nomad.example/telegram-miniapp"
     assert out["well_known_url"] == "https://nomad.example/.well-known/nomad-telegram-miniapp.json"
     assert out["lead_capture_url"] == "https://nomad.example/telegram-miniapp/lead"
+    assert "fact_check_intake" in out["primary_funnel"]
     assert "free_mini_diagnosis" in out["primary_funnel"]
     assert "payment_verification" in out["primary_funnel"]
     assert "worker_repair_after_payment" in out["primary_funnel"]
     assert "ai_agent_recruitment" in out["primary_funnel"]
+    assert out["fact_check_lane"]["schema"] == "nomad.fact_check_lane.v1"
+    assert out["fact_check_lane"]["intake_url"] == "https://nomad.example/swarm/reliability-doctor/intake"
+    assert out["fact_check_lane"]["work_exchange"]["auto_accept"] is True
+    assert out["fact_check_lane"]["message"].startswith("Jeder, der den Transition Worker")
     assert out["eth_trust_loop"]["minimum_pledge_native"] == 0.004
     offers = {item["offer_id"]: item for item in out["offers"]}
+    assert offers["fact_check_intake"]["endpoint"] == "https://nomad.example/swarm/reliability-doctor/intake"
+    assert offers["fact_check_intake"]["revenue_rule"] == "free_with_transition_worker_compute_contribution"
     assert offers["transition_worker_setup"]["price_native"] == 0.02
     assert offers["payment_verification"]["endpoint"] == "https://nomad.example/tasks/verify"
     assert offers["worker_repair_after_payment"]["endpoint"] == "https://nomad.example/tasks/work"
@@ -29,10 +36,13 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["links"]["telegram_acquisition"] == "https://nomad.example/.well-known/nomad-telegram-acquisition.json"
     assert out["links"]["acquisition_engine"] == "https://nomad.example/.well-known/nomad-acquisition-engine.json"
     assert out["links"]["telegram_a2a"] == "https://nomad.example/.well-known/nomad-telegram-a2a.json"
+    assert out["links"]["fact_check_intake"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"
     assert any(item["campaign_id"] == "ethereum_support" for item in out["campaigns"])
     assert out["guardrails"]["no_unsolicited_dm"] is True
+    assert out["copy"]["headline"] == "AI Swarm Fact Checker"
+    assert out["copy"]["worker_free_message"].startswith("Jeder, der den Transition Worker")
 
 
 def test_telegram_miniapp_surface_uses_public_nomad_prefix_for_syndiode():
@@ -41,6 +51,7 @@ def test_telegram_miniapp_surface_uses_public_nomad_prefix_for_syndiode():
     assert out["public_base_url"] == "https://syndiode.com/nomad"
     assert out["launch_url"] == "https://syndiode.com/nomad/telegram-miniapp"
     assert out["lead_capture_url"] == "https://syndiode.com/nomad/telegram-miniapp/lead"
+    assert out["fact_check_lane"]["intake_url"] == "https://syndiode.com/nomad/swarm/reliability-doctor/intake"
     assert out["links"]["eth_support"] == "https://syndiode.com/nomad/.well-known/nomad-eth-support.json"
 
 

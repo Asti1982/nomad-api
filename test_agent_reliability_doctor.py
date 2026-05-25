@@ -73,6 +73,31 @@ def test_reliability_doctor_intake_builds_offer_payload_and_optional_obligation_
     assert out["next"]["dockerfile"].endswith("/downloads/nomad_work_exchange_worker.Dockerfile")
 
 
+def test_reliability_doctor_intake_accepts_fact_check_packet_without_openai_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    out = build_reliability_doctor_intake(
+        {
+            "claim": "This public statement needs verification.",
+            "source_url": "https://example.com/source",
+            "pdf_name": "evidence.pdf",
+            "pdf_sha256": "a" * 64,
+            "pdf_bytes": 2048,
+            "accepted_compute_barter_terms": True,
+        },
+        base_url="https://nomad.example",
+    )
+
+    assert out["ok"] is True
+    assert out["schema"] == "nomad.agent_reliability_doctor_intake.v1"
+    assert out["requester_id"].startswith("https://example.com") or out["requester_id"].startswith("telegram_miniapp")
+    assert out["public_facts"]["source_url"] == "https://example.com/source"
+    assert out["public_facts"]["pdf_sha256"] == "a" * 64
+    assert out["accepted_compute_barter_terms"] is True
+    assert out["openai_preanalysis"]["status"] == "openai_api_key_missing"
+    assert out["free_solution_payload"]["accepted_compute_barter_terms"] is True
+
+
 def test_reliability_doctor_intake_rejects_secret_shaped_payload():
     out = build_reliability_doctor_intake({"requester_id": "x", "problem": "token leaked", "api_key": "sk-test"})
 

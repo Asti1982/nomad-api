@@ -1,4 +1,4 @@
-"""Telegram Mini App funnel for Nomad revenue and compute onramps."""
+"""Telegram Mini App funnel for Nomad fact checking, revenue, and compute onramps."""
 
 from __future__ import annotations
 
@@ -92,6 +92,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         "well_known_url": _u(base, "/.well-known/nomad-telegram-miniapp.json"),
         "lead_capture_url": _u(base, "/telegram-miniapp/lead"),
         "primary_funnel": [
+            "fact_check_intake",
             "free_mini_diagnosis",
             "paid_transition_worker_setup",
             "payment_verification",
@@ -100,6 +101,21 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "ai_agent_recruitment",
             "optional_cursor_discount",
         ],
+        "fact_check_lane": {
+            "schema": "nomad.fact_check_lane.v1",
+            "intake_url": _u(base, "/swarm/reliability-doctor/intake"),
+            "message": "Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.",
+            "worker_free_rule": "transition_worker_download_and_run_unlocks_free_fact_checking",
+            "accepted_inputs": ["claim_text", "source_url", "pdf_upload"],
+            "preanalysis_provider": "openai_gpt_or_codex_lane",
+            "swarm_receipt_schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
+            "work_exchange": {
+                "mode": "compute_barter",
+                "barter_multiplier": 1.3,
+                "auto_accept": True,
+                "counts_as_revenue": False,
+            },
+        },
         "eth_trust_loop": {
             "schema": "nomad.eth_trust_loop.v1",
             "native_symbol": os.getenv("NOMAD_NATIVE_SYMBOL", "ETH"),
@@ -116,6 +132,15 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "guardrail": "Pledges bias capped selection pressure only; verified work and receipts stay separate.",
         },
         "offers": [
+            {
+                "offer_id": "fact_check_intake",
+                "label": "AI Swarm Fact Checker",
+                "price_native": 0.0,
+                "method": "POST",
+                "endpoint": _u(base, "/swarm/reliability-doctor/intake"),
+                "service_type": "fact_check_intake",
+                "revenue_rule": "free_with_transition_worker_compute_contribution",
+            },
             {
                 "offer_id": "free_mini_diagnosis",
                 "label": "Free mini diagnosis",
@@ -190,6 +215,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         },
         "links": {
             "miniapp": _u(base, launch_path),
+            "fact_check_intake": _u(base, "/swarm/reliability-doctor/intake"),
             "eth_support": _u(base, "/.well-known/nomad-eth-support.json"),
             "eth_support_alias": _u(base, "/swarm/eth-support"),
             "eth_support_proposal": _u(base, "/downloads/nomad_ethereum_ai_agent_support_proposal.md"),
@@ -238,12 +264,14 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "telegram_init_data": "accepted_as_context_only_not_authentication",
         },
         "copy": {
-            "headline": "Nomad Agent Rescue",
-            "subline": "Mini diagnosis, worker setup, d/acc pledge, agent recruitment, and disclosed Cursor offset.",
+            "headline": "AI Swarm Fact Checker",
+            "subline": "Claim input, URL input, PDF metadata, OpenAI quick scan, and proof-first Nomad Swarm handoff.",
             "disclosure": cursor_offer.get("disclosure_text", ""),
+            "worker_free_message": "Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.",
         },
         "machine_instruction": (
-            "Use the Mini App for opt-in diagnosis, paid worker setup, payment verification, and worker repair. "
+            "Use the Mini App for fact-check intake, opt-in diagnosis, paid worker setup, payment verification, and worker repair. "
+            "Fact checking first uses OpenAI when configured, then hands off into the Nomad Swarm with proof digests and compute-barter acceptance. "
             "Record lead signals, create tasks only after user action, and count revenue only after verified settlement."
         ),
     }

@@ -1,8 +1,14 @@
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
+
+import requests
+
+
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 
 ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
@@ -235,6 +241,78 @@ def _u(base_url: str, path: str) -> str:
     return f"{root}{p}" if root else p
 
 
+def _fact_check_preanalysis(body: Dict[str, Any], *, problem: str, evidence: List[str]) -> Dict[str, Any]:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    model = (
+        os.getenv("NOMAD_FACT_CHECK_OPENAI_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or "gpt-4.1-mini"
+    ).strip()
+    claim = _text(body.get("claim") or problem, 900)
+    source_url = _text(body.get("source_url") or body.get("url"), 260)
+    if not api_key:
+        return {
+            "ok": False,
+            "schema": "nomad.fact_check_preanalysis.v1",
+            "status": "openai_api_key_missing",
+            "provider": "openai",
+            "model": model,
+            "summary": "OpenAI pre-analysis was skipped because OPENAI_API_KEY is not configured.",
+            "search_queries": [claim[:160]] if claim else [],
+            "candidate_sources": [source_url] if source_url else [],
+        }
+
+    prompt = (
+        "Return compact JSON for a proof-first fact check with keys: claim_summary, "
+        "provisional_verdict, confidence, search_queries, candidate_sources, reasoning_notes, "
+        "next_verification_steps. Verdict must be supported, contradicted, mixed, or unclear. "
+        "Prefer source URLs and say unclear when evidence is weak.\n\n"
+        f"Claim: {claim}\nEvidence hints: {json.dumps(evidence[:8], ensure_ascii=True)}"
+    )
+    try:
+        response = requests.post(
+            OPENAI_RESPONSES_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "tools": [{"type": "web_search_preview"}], "input": prompt, "max_output_tokens": 900},
+            timeout=35,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "schema": "nomad.fact_check_preanalysis.v1",
+            "status": "openai_request_failed",
+            "provider": "openai",
+            "model": model,
+            "summary": str(exc)[:240],
+            "search_queries": [claim[:160]] if claim else [],
+            "candidate_sources": [source_url] if source_url else [],
+        }
+
+    output_text = _text(data.get("output_text"), 2400)
+    parsed: Dict[str, Any] = {}
+    if output_text.startswith("{") and output_text.endswith("}"):
+        try:
+            parsed_payload = json.loads(output_text)
+            parsed = parsed_payload if isinstance(parsed_payload, dict) else {}
+        except json.JSONDecodeError:
+            parsed = {}
+    return {
+        "ok": True,
+        "schema": "nomad.fact_check_preanalysis.v1",
+        "status": "complete",
+        "provider": "openai",
+        "model": model,
+        "summary": _text(parsed.get("claim_summary") or output_text, 1200),
+        "provisional_verdict": _text(parsed.get("provisional_verdict") or "unclear", 40),
+        "confidence": _text(parsed.get("confidence") or "", 40),
+        "search_queries": parsed.get("search_queries") if isinstance(parsed.get("search_queries"), list) else [claim[:160]],
+        "candidate_sources": parsed.get("candidate_sources") if isinstance(parsed.get("candidate_sources"), list) else ([source_url] if source_url else []),
+        "next_verification_steps": parsed.get("next_verification_steps") if isinstance(parsed.get("next_verification_steps"), list) else [],
+    }
+
+
 def _contains_forbidden(payload: Any) -> bool:
     def walk(value: Any, *, key: str = "") -> bool:
         k = str(key or "").strip().lower()
@@ -331,11 +409,19 @@ def build_reliability_doctor_intake(
             "message": "Reliability Doctor intake accepts public digests and secret-free excerpts only.",
             "generated_at": _iso_now(),
         }
-    source = _clean_id(body.get("source") or body.get("ci_provider") or body.get("source_tag"), fallback="public_intake")
+    is_fact_check = bool(body.get("claim") or body.get("source_url") or body.get("pdf_sha256") or body.get("pdf_name"))
+    source = _clean_id(
+        body.get("source") or body.get("ci_provider") or body.get("source_tag"),
+        fallback="telegram_miniapp_fact_check" if is_fact_check else "public_intake",
+    )
     repo = _text(body.get("repo_url") or body.get("repository") or body.get("work_url"), 260)
     workflow_url = _text(body.get("workflow_url") or body.get("run_url") or body.get("ci_url"), 260)
     log_digest = _text(body.get("log_digest") or body.get("trace_digest") or body.get("failure_digest"), 220)
-    problem = _text(body.get("problem") or body.get("message") or body.get("log_excerpt") or "", 900)
+    source_url = _text(body.get("source_url") or body.get("url"), 260)
+    pdf_name = _text(body.get("pdf_name"), 180)
+    pdf_sha256 = _text(body.get("pdf_sha256") or body.get("pdf_digest"), 90)
+    pdf_bytes = max(0, int(_num(body.get("pdf_bytes") or body.get("pdf_size"), 0)))
+    problem = _text(body.get("problem") or body.get("message") or body.get("log_excerpt") or body.get("claim") or "", 900)
     if not problem:
         problem = _text(" ".join(item for item in [repo, workflow_url, log_digest] if item), 900)
     if not problem:
@@ -349,10 +435,16 @@ def build_reliability_doctor_intake(
         }
     requester_seed = body.get("requester_id") or body.get("agent_id") or repo or workflow_url or source
     requester_id = _clean_id(requester_seed, fallback=f"intake-{_digest(problem, 12)}")
-    service_type = _clean_id(body.get("service_type") or body.get("type") or body.get("failure_type"), fallback="")
-    evidence = [item for item in [repo, workflow_url, log_digest] if item]
+    service_type = _clean_id(
+        body.get("service_type") or body.get("type") or body.get("failure_type"),
+        fallback="fact_check" if is_fact_check else "",
+    )
+    evidence = [item for item in [repo, workflow_url, log_digest, source_url] if item]
+    if pdf_name or pdf_sha256:
+        evidence.append(f"pdf:{pdf_name or 'attachment'} sha256={pdf_sha256 or 'missing'} bytes={pdf_bytes}")
     if isinstance(body.get("evidence"), list):
         evidence.extend(_text(item, 260) for item in body["evidence"][:5])
+    preanalysis = _fact_check_preanalysis(body, problem=problem, evidence=evidence) if service_type == "fact_check" or is_fact_check else None
     doc = doctor or AgentReliabilityDoctor()
     diagnosis = doc.diagnose(
         problem=problem,
@@ -366,6 +458,8 @@ def build_reliability_doctor_intake(
         "repo_url": repo,
         "workflow_url": workflow_url,
         "log_digest": log_digest,
+        "source_url": source_url,
+        "pdf_sha256": pdf_sha256,
         "diagnosis_id": diagnosis.get("diagnosis_id"),
         "pain_type": diagnosis.get("pain_type"),
         "doctor_role": _dict(diagnosis.get("doctor_role")).get("id"),
@@ -404,6 +498,7 @@ def build_reliability_doctor_intake(
         "accepted_compute_barter_terms": accepted_compute_barter,
         "work_exchange_offer_payload": work_exchange_offer_payload,
         "free_solution_payload": free_solution_payload,
+        "openai_preanalysis": preanalysis,
         "next": {
             "work_exchange_offer": _u(base_url, "/swarm/work-exchange/offers"),
             "free_solution": _u(base_url, "/swarm/work-exchange/free-solution"),

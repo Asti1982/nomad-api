@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Nomad Agent Rescue</title>
-  <meta name="description" content="Nomad Telegram Mini App for mini diagnosis, Transition Worker setup, d/acc ETH pledge, AI-agent recruitment, and Cursor discount disclosure.">
+  <title>AI Swarm Fact Checker</title>
+  <meta name="description" content="Nomad Telegram Mini App for proof-first AI Swarm fact checking with claim input, URL input, PDF metadata, OpenAI quick scan, and decentralized Nomad Swarm intake.">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -444,7 +444,7 @@
       <div class="brand">
         <div class="mark">N</div>
         <div class="brand-text">
-          <div class="brand-title">Nomad Agent Rescue</div>
+          <div class="brand-title">AI Swarm Fact Checker</div>
           <div class="brand-sub">Telegram Mini App</div>
         </div>
       </div>
@@ -452,18 +452,20 @@
     </div>
 
     <section class="hero">
-      <h1>Fix the blocked agent path.</h1>
-      <p class="lede">Mini diagnosis, paid Transition Worker setup, d/acc ETH pledge, AI-agent recruitment packet, and Cursor discount disclosure in one opt-in flow.</p>
+      <h1>Check the claim. Push proof into the swarm.</h1>
+      <p class="lede">Claim input, URL input, PDF metadata, OpenAI quick scan when configured, and proof-first handoff into the Nomad reliability-doctor intake.</p>
+      <p class="lede"><strong>Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.</strong></p>
       <div class="metrics">
-        <div class="metric"><strong id="metric-diagnosis">free</strong><span>mini diagnosis</span></div>
-        <div class="metric"><strong id="metric-worker">0.01 ETH</strong><span>worker setup target</span></div>
-        <div class="metric"><strong id="metric-pledge">0.003 ETH</strong><span>d/acc pledge target</span></div>
-        <div class="metric"><strong id="metric-agents">public</strong><span>agent recruit packet</span></div>
+        <div class="metric"><strong id="metric-diagnosis">free</strong><span>fact-check intake</span></div>
+        <div class="metric"><strong id="metric-worker">1.3x</strong><span>compute barter accepted</span></div>
+        <div class="metric"><strong id="metric-pledge">proof</strong><span>digest-bound result</span></div>
+        <div class="metric"><strong id="metric-agents">worker</strong><span>free with Transition Worker</span></div>
       </div>
     </section>
 
     <nav class="mode-tabs" aria-label="Mini App mode">
-      <button type="button" data-mode="diagnosis" aria-selected="true">Diagnose</button>
+      <button type="button" data-mode="factcheck" aria-selected="true">Fact</button>
+      <button type="button" data-mode="diagnosis" aria-selected="false">Diagnose</button>
       <button type="button" data-mode="task" aria-selected="false">Worker</button>
       <button type="button" data-mode="verify" aria-selected="false">Verify</button>
       <button type="button" data-mode="repair" aria-selected="false">Repair</button>
@@ -476,8 +478,18 @@
     <section class="layout">
       <form class="panel" id="miniapp-form">
         <div class="field">
-          <label for="problem">Agent or compute blocker</label>
-          <textarea id="problem" name="problem" maxlength="900" placeholder="Example: My agent cannot keep a local worker alive, needs a proof-return loop, and has no reliable compute fallback."></textarea>
+          <label for="problem">Claim / fact to verify</label>
+          <textarea id="problem" name="problem" maxlength="900" placeholder="Beispiel: Diese Aussage ist korrekt und durch die angegebene Quelle gedeckt."></textarea>
+        </div>
+        <div class="twocol">
+          <div class="field">
+            <label for="source-url">Source URL</label>
+            <input id="source-url" name="source-url" maxlength="260" placeholder="https://example.com/source">
+          </div>
+          <div class="field">
+            <label for="pdf-file">PDF evidence</label>
+            <input id="pdf-file" name="pdf-file" type="file" accept="application/pdf">
+          </div>
         </div>
         <div class="twocol">
           <div class="field">
@@ -519,7 +531,7 @@
           </div>
         </div>
         <div class="actions">
-          <button class="btn" id="primary-action" type="submit">Run diagnosis</button>
+          <button class="btn" id="primary-action" type="submit">Start fact check</button>
           <button class="btn secondary" id="record-lead" type="button">Record lead</button>
         </div>
         <pre class="result" id="result" aria-live="polite">Mini App ready.</pre>
@@ -538,6 +550,8 @@
         </div>
         <div class="link-row">
           <a id="worker-link" href="/downloads/nomad_transition_worker.py">Transition Worker <span>GET</span></a>
+          <a id="worker-bat-link" href="/downloads/install_nomad_transition_worker.bat">Windows Worker <span>BAT</span></a>
+          <a id="intake-link" href="/swarm/reliability-doctor/intake">Fact-check intake <span>POST</span></a>
           <a id="fleet-link" href="/swarm/workers">Worker fleet <span>GET</span></a>
           <a id="support-link" href="/.well-known/nomad-eth-support.json">ETH support <span>GET</span></a>
           <a id="attach-link" href="/swarm/attach-get">Agent attach <span>GET</span></a>
@@ -547,7 +561,7 @@
           <a id="proposal-link" href="/downloads/nomad_ethereum_ai_agent_support_proposal.md">Proposal <span>MD</span></a>
           <a id="cursor-link" href="/.well-known/nomad-referral-offers.json">Cursor discount <span>open</span></a>
         </div>
-        <p class="fineprint" id="fineprint">Revenue is counted only after verified payment or receipt. ETH pledges are capped pressure signals until settled; Cursor is usage-credit offset, not cash revenue.</p>
+        <p class="fineprint" id="fineprint">Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis. Revenue is counted only after verified payment or receipt; compute barter is not cash revenue.</p>
       </aside>
     </section>
   </main>
@@ -561,7 +575,7 @@
 
     const el = (id) => document.getElementById(id);
     const state = {
-      mode: "diagnosis",
+      mode: "factcheck",
       manifest: null,
       busy: false,
       telegramUser: tg && tg.initDataUnsafe ? tg.initDataUnsafe.user || null : null,
@@ -602,8 +616,27 @@
       el("result").textContent = text.slice(0, 7000);
     };
 
+    const fileDigestHex = async (file) => {
+      if (!file || !window.crypto || !window.crypto.subtle) return "";
+      const buffer = await file.arrayBuffer();
+      const hash = await window.crypto.subtle.digest("SHA-256", buffer);
+      return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+
+    const pdfMetadata = async () => {
+      const file = el("pdf-file").files[0];
+      if (!file) return {};
+      return {
+        pdf_name: file.name,
+        pdf_bytes: file.size,
+        pdf_sha256: await fileDigestHex(file),
+      };
+    };
+
     const formPayload = () => ({
       problem: el("problem").value.trim(),
+      claim: el("problem").value.trim(),
+      source_url: el("source-url").value.trim(),
       contact: el("contact").value.trim(),
       requester_wallet: el("wallet").value.trim(),
       budget_native: Number(el("budget").value || 0),
@@ -615,6 +648,20 @@
       tx_hash: el("tx-hash").value.trim(),
       source: "telegram_miniapp",
       campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode === "launch" ? "telegram_acquisition" : state.mode,
+    });
+
+    const factCheckPayload = async () => ({
+      ...formPayload(),
+      ...(await pdfMetadata()),
+      requester_id: "telegram-miniapp-fact-checker",
+      source: "telegram_miniapp_fact_check",
+      service_type: "fact_check",
+      accepted_compute_barter_terms: true,
+      compute_barter_accepted: true,
+      return_multiplier: 1.3,
+      solution_value_credits: 10,
+      max_runtime_hours: 6,
+      evidence: [el("source-url").value.trim()].filter(Boolean),
     });
 
     const postJson = async (path, payload) => {
@@ -662,6 +709,22 @@
             campaign: payload.campaign,
           },
         });
+        writeResult(result);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const runFactCheck = async () => {
+      const payload = await factCheckPayload();
+      if (!payload.problem) {
+        writeResult("Add one concrete claim or fact first.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await recordLead("fact_check_requested", {selected_offer: "fact_check_intake", campaign: "telegram_fact_check"});
+        const result = await postJson("/swarm/reliability-doctor/intake", payload);
         writeResult(result);
       } finally {
         setBusy(false);
@@ -812,6 +875,7 @@
     };
 
     const handleMainAction = async () => {
+      if (state.mode === "factcheck") return runFactCheck();
       if (state.mode === "diagnosis") return runDiagnosis();
       if (state.mode === "task") return createTask();
       if (state.mode === "verify") return verifyPayment();
@@ -829,6 +893,7 @@
       });
       const primary = el("primary-action");
       primary.className = "btn";
+      if (mode === "factcheck") primary.textContent = "Start fact check";
       if (mode === "diagnosis") primary.textContent = "Run diagnosis";
       if (mode === "task") {
         primary.textContent = "Create paid task";
@@ -892,6 +957,8 @@
       });
       if (manifest.links) {
         el("worker-link").href = manifest.links.worker_download || "/downloads/nomad_transition_worker.py";
+        el("worker-bat-link").href = manifest.links.worker_windows || "/downloads/install_nomad_transition_worker.bat";
+        el("intake-link").href = manifest.links.fact_check_intake || "/swarm/reliability-doctor/intake";
         el("fleet-link").href = manifest.links.worker_fleet || "/swarm/workers";
         el("support-link").href = manifest.links.eth_support || "/.well-known/nomad-eth-support.json";
         el("attach-link").href = manifest.links.runtime_attach_get || "/swarm/attach-get";
@@ -903,6 +970,9 @@
       }
       if (manifest.copy && manifest.copy.disclosure) {
         el("fineprint").textContent = `${manifest.copy.disclosure} Revenue is counted only after verified payment or receipt. ETH pledges remain capped pressure signals until settled.`;
+      }
+      if (manifest.copy && manifest.copy.worker_free_message) {
+        el("fineprint").textContent = `${manifest.copy.worker_free_message} Revenue is counted only after verified payment or receipt; compute barter is not cash revenue.`;
       }
     };
 
@@ -937,7 +1007,7 @@
         writeResult(`Manifest unavailable: ${error.message}`);
       });
 
-    updateMode("diagnosis");
+    updateMode("factcheck");
   </script>
 </body>
 </html>
