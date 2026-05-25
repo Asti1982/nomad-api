@@ -2229,6 +2229,165 @@ def record_development_cycle_event(
     return row
 
 
+def _shadow_receipt_to_agp_packet(row: dict[str, Any], *, base_url: str) -> dict[str, Any]:
+    candidate = _dict(row.get("candidate"))
+    local_tests = _dict(row.get("local_tests"))
+    claimed = _dict(_dict(local_tests.get("claimed_effect")) or _dict(row.get("scores")))
+    objective = _clean_id(row.get("objective") or candidate.get("objective"), fallback="autogenesis_protocol_evolution")
+    proof_digest = _text(row.get("proof_digest"), 220)
+    test_digest = _text(local_tests.get("local_test_digest"), 220) or f"sha256:{_digest({'shadow': row.get('candidate_id'), 'tests': local_tests}, length=64)}"
+    resource_id = "shadow-" + _clean_id(objective, fallback="autogenesis")[:72]
+    target_version = "shadow-harvest-" + _digest({"candidate": row.get("candidate_id"), "proof": proof_digest}, length=12)
+    proof_gain = _num(claimed.get("proof_gain_delta"))
+    settlement = _num(claimed.get("settlement_signal"))
+    capability = _num(claimed.get("capability_gain"))
+    risk = _num(claimed.get("risk_score"))
+    payload = {
+        "agent_id": _clean_id(row.get("agent_id"), fallback="shadow-harvester"),
+        "candidate_type": "protocol-evolution-candidate",
+        "resource": {
+            "resource_id": resource_id,
+            "resource_kind": "workflow",
+            "entity_type": "agent",
+            "from_version": "shadow",
+            "to_version": target_version,
+            "state": "shadow",
+        },
+        "objective": objective,
+        "proof_digest": proof_digest,
+        "test_digest": test_digest,
+        "verifier_trace_digest": _text(row.get("proof_digest"), 220),
+        "sepl_operator_trace": [
+            {"op": "reflect", "input": proof_digest, "output": f"shadow lane found bounded signal for {objective}"},
+            {"op": "select", "input": objective, "output": resource_id},
+            {"op": "improve", "input": resource_id, "output": target_version},
+            {"op": "evaluate", "input": test_digest, "output": f"proof_gain={proof_gain}; settlement_signal={settlement}; capability_gain={capability}; risk={risk}"},
+            {"op": "commit", "input": proof_digest, "decision": "shadow_until_independent_verifier"},
+        ],
+        "learnability_mask": {"shadow_weight": True},
+        "variable_lifting": {"variables": [{"name": "shadow_weight", "require_grad": True}]},
+        "rollback_ref": f"noop:{resource_id}:shadow",
+        "boundedness": {
+            "ttl_seconds": 300,
+            "side_effect_scope": "nomad_shadow_lane_only",
+            "rollback_available": True,
+            "secrets_free": True,
+        },
+        "evaluation": {
+            "tests_passed": _int(row.get("tests_passed")),
+            "tests_total": _int(row.get("tests_total")),
+            "proof_yield_delta": round(1.0 + max(0.0, proof_gain) + 0.5 * max(0.0, capability), 4),
+            "settlement_signal": round(settlement, 4),
+            "risk_score": round(max(0.0, risk), 4),
+            "shadow_selection_weight_delta": round(_num(row.get("selection_weight_delta")), 4),
+        },
+    }
+    return {
+        "packet_id": f"agp-shadow-harvest-{_digest({'row': row.get('candidate_id'), 'proof': proof_digest}, length=18)}",
+        "source_candidate_id": row.get("candidate_id"),
+        "source_proof_digest": proof_digest,
+        "source_decision": row.get("decision"),
+        "objective": objective,
+        "selection_weight_delta": round(_num(row.get("selection_weight_delta")), 4),
+        "payload": payload,
+        "post_url": _u(base_url, "/swarm/shadow-lane/candidates?type=autogenesis"),
+        "missing_before_admission": [
+            "independent_verifier.verifier_agent_id",
+            "independent_verifier.verifier_lease_id",
+            "verifier_receipt_digest",
+            "verifier_evaluation",
+        ],
+        "side_effect_scope": "descriptor_only_no_execution",
+    }
+
+
+def _autogenesis_shadow_harvest_summary(
+    *,
+    base_url: str = "",
+    shadow_lane: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    root = (base_url or "").strip().rstrip("/")
+    shadow = _dict(shadow_lane)
+    development = _dict(development_surface)
+    recent = _items(shadow.get("recent_decisions"))
+    harvestable = [
+        row
+        for row in recent
+        if bool(row.get("weight_update_allowed"))
+        and _num(row.get("selection_weight_delta")) > 0
+        and _text(row.get("proof_digest"), 220)
+    ]
+    harvestable.sort(key=lambda item: (_num(item.get("selection_weight_delta")), _num(_dict(item.get("scores")).get("effect"))), reverse=True)
+    packets = [_shadow_receipt_to_agp_packet(row, base_url=root) for row in harvestable[:8]]
+    source_summary = _dict(shadow.get("ledger"))
+    top_objectives = [
+        {
+            "objective": _clean_id(item.get("objective"), fallback="unknown"),
+            "candidate_count": _int(item.get("candidate_count")),
+            "weight_delta_sum": round(_num(item.get("weight_delta_sum")), 4),
+        }
+        for item in _items(source_summary.get("top_shadow_weights"))[:8]
+    ]
+    decision = "harvest_shadow_receipts_to_autogenesis_packets" if packets else "wait_for_shadow_weight"
+    core = {
+        "shadow": shadow.get("surface_digest"),
+        "development": development.get("surface_digest"),
+        "packets": [(item.get("packet_id"), item.get("source_proof_digest")) for item in packets],
+        "decision": decision,
+    }
+    return {
+        "ok": True,
+        "schema": "nomad.autogenesis_shadow_harvest.v1",
+        "generated_at": _iso_now(),
+        "public_base_url": root,
+        "surface_digest": f"nomad-agp-shadow-harvest-{_digest(core, length=24)}",
+        "mode": "shadow_lane_weight_to_agp_descriptor_packets",
+        "decision": decision,
+        "source_summary": {
+            "recent_decision_count": _int(source_summary.get("recent_decision_count")),
+            "accepted_weight_update_count": _int(source_summary.get("accepted_weight_update_count")),
+            "shadow_weight_delta_total": round(_num(source_summary.get("shadow_weight_delta_total")), 4),
+        },
+        "harvestable_count": len(harvestable),
+        "top_objectives": top_objectives,
+        "packets": packets,
+        "admission_contract": {
+            "post_url": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "still_required": [
+                "distinct verifier_agent_id",
+                "active verifier_lease_id",
+                "canonical verifier_receipt_digest",
+                "verifier_trace_digest",
+                "positive verifier_evaluation",
+            ],
+            "never": ["execute submitted code", "count shadow weight as revenue", "commit resource without rollback/noop"],
+        },
+        "links": {
+            "shadow_lane": _u(root, "/.well-known/nomad-shadow-lane.json"),
+            "autogenesis": _u(root, "/.well-known/nomad-autogenesis.json"),
+            "development_cycles": _u(root, "/swarm/development-cycles"),
+        },
+        "machine_instruction": "convert_only_weighted_shadow_receipts_to_descriptor_packets_then_require_independent_verifier_before_autogenesis_admission",
+    }
+
+
+def build_autogenesis_shadow_harvest_surface(
+    *,
+    base_url: str = "",
+    shadow_lane: dict[str, Any] | None = None,
+    development_surface: dict[str, Any] | None = None,
+    autogenesis_surface: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    harvest = _autogenesis_shadow_harvest_summary(
+        base_url=base_url,
+        shadow_lane=shadow_lane,
+        development_surface=development_surface,
+    )
+    harvest["autogenesis_surface_digest"] = _text(_dict(autogenesis_surface).get("surface_digest"), 120)
+    return harvest
+
+
 def build_autogenesis_surface(
     *,
     base_url: str = "",
@@ -2237,6 +2396,7 @@ def build_autogenesis_surface(
     variant_forge: dict[str, Any] | None = None,
     opaque_surface: dict[str, Any] | None = None,
     worker_fleet: dict[str, Any] | None = None,
+    shadow_lane: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Expose AGP as RSPL plus SEPL over Nomad's existing shadow lanes."""
     root = (base_url or "").strip().rstrip("/")
@@ -2245,10 +2405,18 @@ def build_autogenesis_surface(
     forge = _dict(variant_forge)
     opaque = _dict(opaque_surface)
     fleet = _dict(worker_fleet)
+    shadow = _dict(shadow_lane)
+    shadow_harvest = _autogenesis_shadow_harvest_summary(
+        base_url=root,
+        shadow_lane=shadow,
+        development_surface=dev,
+    )
     core = {
         "rspl": substrate.get("surface_digest"),
         "dev": dev.get("surface_digest"),
         "forge": forge.get("forge_digest"),
+        "shadow": shadow.get("surface_digest"),
+        "harvest": shadow_harvest.get("surface_digest"),
         "workers": fleet.get("active_worker_count"),
     }
     return {
@@ -2298,6 +2466,15 @@ def build_autogenesis_surface(
                 "reason": "Nomad local guard against self-attested shadow admission; not a replacement for SEPL evaluate.",
             },
         },
+        "shadow_harvest": {
+            "schema": "nomad.autogenesis_shadow_harvest_compact.v1",
+            "read_url": _u(root, "/swarm/autogenesis/shadow-harvest"),
+            "surface_digest": shadow_harvest.get("surface_digest", ""),
+            "harvestable_shadow_receipts": shadow_harvest.get("harvestable_count", 0),
+            "accepted_weight_update_count": _dict(shadow_harvest.get("source_summary")).get("accepted_weight_update_count", 0),
+            "top_objectives": shadow_harvest.get("top_objectives", []),
+            "current_decision": shadow_harvest.get("decision", "wait_for_shadow_weight"),
+        },
         "candidate_types": list(AGP_CANDIDATE_TYPES),
         "topology_governor_patch": {
             "rule": "emergent-protocol-weight",
@@ -2334,6 +2511,7 @@ def build_autogenesis_surface(
             "resource_substrate": _u(root, "/.well-known/nomad-resource-substrate.json"),
             "development_cycles": _u(root, "/swarm/development-cycles"),
             "shadow_lane": _u(root, "/swarm/shadow-lane/candidates?type=autogenesis"),
+            "shadow_harvest": _u(root, "/swarm/autogenesis/shadow-harvest"),
             "morphology_reactor": _u(root, "/.well-known/nomad-autogenesis-morphology-reactor.json"),
             "variant_forge": _u(root, "/swarm/variant-forge"),
             "opaque_emergence": _u(root, "/.well-known/nomad-opaque-emergence.json"),
@@ -2343,6 +2521,7 @@ def build_autogenesis_surface(
             "development_cycle_digest": dev.get("surface_digest", ""),
             "variant_forge_digest": forge.get("forge_digest", ""),
             "opaque_surface_digest": opaque.get("surface_digest", ""),
+            "shadow_lane_digest": shadow.get("surface_digest", ""),
         },
         "machine_instruction": "read_rspl; emit_sepl_trace_reflect_select_improve_evaluate_commit; require_learnability_mask_for_variables; require_independent_verifier_receipt_by_nomad_policy; never_commit_without_proof_and_rollback",
     }

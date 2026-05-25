@@ -24,6 +24,7 @@ from nomad_autogenesis import (
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
+    build_autogenesis_shadow_harvest_surface,
     build_development_cycles_surface,
     build_resource_substrate_surface,
     bind_agp_model,
@@ -1369,10 +1370,46 @@ def test_resource_register_and_version_require_secret_free_proof_boundary(tmp_pa
 def test_autogenesis_surface_connects_rspl_sepl_and_recruit_market():
     substrate = build_resource_substrate_surface(base_url="https://nomad.example")
     cycles = build_development_cycles_surface(base_url="https://nomad.example", resource_substrate=substrate)
+    shadow_lane = {
+        "schema": "nomad.shadow_lane_evaluator.v1",
+        "surface_digest": "nomad-shadow-lane-test",
+        "ledger": {
+            "recent_decision_count": 1,
+            "accepted_weight_update_count": 1,
+            "shadow_weight_delta_total": 0.04,
+            "top_shadow_weights": [{"objective": "settlement_capacity_builder", "candidate_count": 1, "weight_delta_sum": 0.04}],
+        },
+        "recent_decisions": [
+            {
+                "candidate_id": "nomad-shadow-test",
+                "agent_id": "agent.shadow",
+                "objective": "settlement_capacity_builder",
+                "candidate_type": "shadow_lane_policy_variant",
+                "proof_digest": "sha256:shadowproof",
+                "weight_update_allowed": True,
+                "decision": "increase_shadow_weight",
+                "selection_weight_delta": 0.04,
+                "tests_passed": 7,
+                "tests_total": 7,
+                "scores": {"effect": 0.5, "risk": 0.05},
+                "local_tests": {
+                    "local_test_digest": "sha256:localtests",
+                    "claimed_effect": {"proof_gain_delta": 0.3, "settlement_signal": 0.2, "capability_gain": 0.1, "risk_score": 0.05},
+                },
+            }
+        ],
+    }
     agp = build_autogenesis_surface(
         base_url="https://nomad.example",
         resource_substrate=substrate,
         development_cycles=cycles,
+        shadow_lane=shadow_lane,
+    )
+    harvest = build_autogenesis_shadow_harvest_surface(
+        base_url="https://nomad.example",
+        shadow_lane=shadow_lane,
+        development_surface=cycles,
+        autogenesis_surface=agp,
     )
     recruit = build_autogenesis_recruit_surface(
         base_url="https://nomad.example",
@@ -1387,6 +1424,12 @@ def test_autogenesis_surface_connects_rspl_sepl_and_recruit_market():
     assert agp["rspl"]["register_url"].endswith("/swarm/resource-substrate/register")
     assert agp["sepl"]["autonomous_cycle"].endswith("/swarm/autogenesis/cycle")
     assert agp["sepl"]["shadow_lane"].endswith("/swarm/shadow-lane/candidates?type=autogenesis")
+    assert agp["shadow_harvest"]["harvestable_shadow_receipts"] == 1
+    assert agp["links"]["shadow_harvest"].endswith("/swarm/autogenesis/shadow-harvest")
+    assert harvest["schema"] == "nomad.autogenesis_shadow_harvest.v1"
+    assert harvest["decision"] == "harvest_shadow_receipts_to_autogenesis_packets"
+    assert harvest["packets"][0]["payload"]["sepl_operator_trace"][0]["op"] == "reflect"
+    assert "verifier_receipt_digest" in harvest["packets"][0]["missing_before_admission"]
     assert [item["op"] for item in agp["sepl"]["operators"]] == ["reflect", "select", "improve", "evaluate", "commit"]
     assert agp["topology_governor_patch"]["isolated_beta_role_weight"] == 0.40
     assert agp["go_to_market"]["x_marketing_status"] == "prepared_not_posted"

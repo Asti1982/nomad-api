@@ -66,6 +66,7 @@ from nomad_autogenesis import (
     build_autonomous_agp_watchdog_surface,
     build_autogenesis_recruit_surface,
     build_autogenesis_surface,
+    build_autogenesis_shadow_harvest_surface,
     build_development_cycles_surface as build_autogenesis_development_cycles_surface,
     build_rescue_packet_scheduler_surface,
     build_resource_substrate_surface,
@@ -593,12 +594,27 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         substrate = cls._build_resource_substrate(base_url=base_url, swarm_summary=summary)
         development = build_autogenesis_development_cycles_surface(base_url=base_url, resource_substrate=substrate)
         opaque = cls._build_opaque_emergence_surface(base_url=base_url)
+        shadow_lane = cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary)
         return build_autogenesis_surface(
             base_url=base_url,
             resource_substrate=substrate,
             development_cycles=development,
             opaque_surface=opaque,
             worker_fleet=worker_fleet,
+            shadow_lane=shadow_lane,
+        )
+
+    @classmethod
+    def _build_autogenesis_shadow_harvest(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        development = cls._build_autogenesis_development_cycles(base_url=base_url, swarm_summary=summary)
+        shadow_lane = cls._build_shadow_lane_evaluator(base_url=base_url, swarm_summary=summary)
+        autogenesis = cls._build_autogenesis(base_url=base_url, swarm_summary=summary)
+        return build_autogenesis_shadow_harvest_surface(
+            base_url=base_url,
+            shadow_lane=shadow_lane,
+            development_surface=development,
+            autogenesis_surface=autogenesis,
         )
 
     @classmethod
@@ -2645,6 +2661,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "resource_substrate_retrieve": f"{b}/swarm/resource-substrate/retrieve",
                     "resource_substrate_version": f"{b}/swarm/resource-substrate/version",
                     "autogenesis": f"{b}/.well-known/nomad-autogenesis.json",
+                    "autogenesis_shadow_harvest": f"{b}/.well-known/nomad-autogenesis-shadow-harvest.json",
                     "agp_conformance": f"{b}/.well-known/nomad-agp-conformance.json",
                     "agp_agent_bus": f"{b}/.well-known/nomad-agp-agent-bus.json",
                     "agp_agent_bus_messages": f"{b}/swarm/agp/agent-bus/messages",
@@ -3247,6 +3264,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/autogenesis", "/.well-known/nomad-autogenesis.json"}:
             self._json_response(self.__class__._build_autogenesis(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/autogenesis/shadow-harvest", "/.well-known/nomad-autogenesis-shadow-harvest.json"}:
+            self._json_response(self.__class__._build_autogenesis_shadow_harvest(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agp/conformance", "/.well-known/nomad-agp-conformance.json"}:
             base_url = self._base_url()
@@ -4668,6 +4688,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/resource-substrate/version",
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
+                    "/swarm/autogenesis/shadow-harvest",
+                    "/.well-known/nomad-autogenesis-shadow-harvest.json",
                     "/.well-known/nomad-agp-conformance.json",
                     "/.well-known/nomad-agp-agent-bus.json",
                     "/swarm/agp/agent-bus/messages",
@@ -6700,6 +6722,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/resource-substrate/version",
                     "/swarm/autogenesis",
                     "/.well-known/nomad-autogenesis.json",
+                    "/swarm/autogenesis/shadow-harvest",
+                    "/.well-known/nomad-autogenesis-shadow-harvest.json",
                     "/.well-known/nomad-agp-conformance.json",
                     "/.well-known/nomad-agp-agent-bus.json",
                     "/swarm/agp/agent-bus/messages",

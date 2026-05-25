@@ -216,6 +216,7 @@ def test_nomad_public_html_page_exists():
     assert "/swarm/development-cycles/events" in text
     assert "/.well-known/nomad-resource-substrate.json" in text
     assert "/.well-known/nomad-autogenesis.json" in text
+    assert "/.well-known/nomad-autogenesis-shadow-harvest.json" in text
     assert "/.well-known/nomad-agp-durable-ledger.json" in text
     assert "/.well-known/nomad-agp-paper-report.json" in text
     assert "/.well-known/nomad-telegram-a2a.json" in text
@@ -1471,6 +1472,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/swarm/resource-substrate/version" in doc["paths"]
     assert "/swarm/autogenesis" in doc["paths"]
     assert "/.well-known/nomad-autogenesis.json" in doc["paths"]
+    assert "/swarm/autogenesis/shadow-harvest" in doc["paths"]
+    assert "/.well-known/nomad-autogenesis-shadow-harvest.json" in doc["paths"]
     assert "/.well-known/nomad-agp-conformance.json" in doc["paths"]
     assert "/.well-known/nomad-agp-agent-bus.json" in doc["paths"]
     assert "/swarm/agp/agent-bus/messages" in doc["paths"]

@@ -1520,6 +1520,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/autogenesis/shadow-harvest": {
+                "get": {
+                    "summary": "Harvest weighted shadow-lane receipts into verifier-gated AGP descriptor packets",
+                    "operationId": "getSwarmAutogenesisShadowHarvest",
+                    "responses": {
+                        "200": {"description": "Autogenesis shadow-harvest surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-autogenesis-shadow-harvest.json": {
+                "get": {
+                    "summary": "Alias of GET /swarm/autogenesis/shadow-harvest",
+                    "operationId": "getAutogenesisShadowHarvestWellKnown",
+                    "responses": {
+                        "200": {"description": "Autogenesis shadow-harvest surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/.well-known/nomad-agp-conformance.json": {
                 "get": {
                     "summary": "Paper-to-runtime AGP conformance map for Nomad",
