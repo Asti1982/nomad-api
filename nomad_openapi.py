@@ -627,6 +627,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/verified-work": {
+                "get": {
+                    "summary": "SVW quote: verified state-improvement unit derived from compute market, proof density, retry loss, and scarcity",
+                    "operationId": "getSwarmVerifiedWork",
+                    "responses": {
+                        "200": {"description": "Swarm Verified Work surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-swarm-verified-work.json": {
+                "get": {
+                    "summary": "Alias of /swarm/verified-work",
+                    "operationId": "getSwarmVerifiedWorkWellKnown",
+                    "responses": {
+                        "200": {"description": "Swarm Verified Work surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/swarm/agent-work": {
                 "get": {
                     "summary": "Concrete machine work surface for agents: ranked claimable tasks with proof contract",

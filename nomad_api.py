@@ -235,6 +235,7 @@ from nomad_channel_bandit import build_delayed_channel_bandit_surface
 from nomad_job_channels import build_job_channel_surface
 from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
+from nomad_swarm_verified_work import build_swarm_verified_work_surface
 from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
 from nomad_value_cycle_mesh import build_value_cycle_mesh_surface, evaluate_value_cycle_event
@@ -919,6 +920,21 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             worker_fleet=worker_fleet,
             skill_library=skills,
             synergy_lite=synergy,
+        )
+
+    @classmethod
+    def _build_swarm_verified_work(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        metrics = cls._build_microtask_metrics(base_url=base_url)
+        compute_market = cls._build_compute_market(base_url=base_url, swarm_summary=summary)
+        return build_swarm_verified_work_surface(
+            base_url=base_url,
+            compute_market=compute_market,
+            microtask_metrics=metrics,
+            worker_fleet=worker_fleet,
         )
 
     @classmethod
@@ -2550,6 +2566,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "variant_candidate_submit": f"{b}/swarm/variant-candidates",
                     "worker_market": f"{b}/swarm/worker-market",
                     "compute_market": f"{b}/swarm/compute-market",
+                    "swarm_verified_work": f"{b}/.well-known/nomad-swarm-verified-work.json",
                     "agent_work": f"{b}/.well-known/nomad-agent-work.json",
                     "agent_work_claim": f"{b}/swarm/microtask/claim",
                     "agent_work_proof": f"{b}/swarm/microtask/proof",
@@ -2972,6 +2989,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/compute-market", "/.well-known/nomad-compute-market.json"}:
             self._json_response(self.__class__._build_compute_market(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/verified-work", "/.well-known/nomad-swarm-verified-work.json"}:
+            self._json_response(self.__class__._build_swarm_verified_work(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/agent-work", "/.well-known/nomad-agent-work.json"}:
             self._json_response(self.__class__._build_agent_work_surface(base_url=self._base_url()))
