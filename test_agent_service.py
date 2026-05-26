@@ -440,6 +440,58 @@ def test_service_e2e_repo_issue_help_defaults_to_buyable_starter(tmp_path, monke
     assert result["http_runway"]["create_task"]["payload"]["package_id"] == "repo_diagnostic_patch_starter"
 
 
+def test_service_e2e_bot_factory_defaults_to_paid_simulation_pack(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true")
+    monkeypatch.setenv("NOMAD_SERVICE_MIN_NATIVE", "0.02")
+    monkeypatch.setenv("NOMAD_PUBLIC_API_URL", "https://nomad.example")
+    monkeypatch.setenv("NOMAD_COLLABORATION_HOME_URL", "")
+    monkeypatch.setenv("NOMAD_RENDER_DOMAIN", "")
+    desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
+
+    result = desk.end_to_end_runway(
+        service_type="proof_gated_bot_factory",
+        package_id="bounded_bot_factory_pack",
+        budget_native=0.03,
+    )
+
+    order = result["concrete_order"]
+    create_payload = result["http_runway"]["create_task"]["payload"]
+
+    assert result["task"]["status"] == "preview"
+    assert result["selected_package"]["package_id"] == "bounded_bot_factory_pack"
+    assert result["selected_package"]["price_tier_recommendation"] == "$99"
+    assert order["matching_context"]["context_type"] == "proof_gated_multichain_bot_factory"
+    assert order["price_tier_recommendation"] == "$99"
+    assert "no seed phrases" in " ".join(order["proof_gate"])
+    assert create_payload["service_type"] == "proof_gated_bot_factory"
+    assert create_payload["package_id"] == "bounded_bot_factory_pack"
+    assert create_payload["metadata"]["buyer_context"] == "proof_gated_multichain_bot_factory"
+
+
+def test_service_e2e_bot_factory_create_issues_payment_invoice(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true")
+    monkeypatch.setenv("NOMAD_SERVICE_MIN_NATIVE", "0.02")
+    desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())
+
+    result = desk.end_to_end_runway(
+        problem="Build a simulation-first Hyperliquid bot plan with 5% drawdown cap.",
+        service_type="proof_gated_bot_factory",
+        package_id="bounded_bot_factory_pack",
+        budget_native=0.03,
+        create_task=True,
+    )
+
+    task = result["task"]
+
+    assert result["created"] is True
+    assert task["status"] == "awaiting_payment"
+    assert task["service_type"] == "proof_gated_bot_factory"
+    assert task["payment"]["amount_native"] == 0.03
+    assert task["commercial"]["primary_offer"]["package_id"] == "bounded_bot_factory_pack"
+    assert result["payment_followup"]["ok"] is True
+    assert "Verify payment" in result["next_best_action"]
+
+
 def test_service_e2e_preview_command_quotes_problem_for_shell_safety(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_REQUIRE_SERVICE_PAYMENT", "true")
     desk = AgentServiceDesk(path=tmp_path / "tasks.json", treasury=FakeTreasury())

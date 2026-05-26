@@ -116,6 +116,18 @@ PAIN_TYPE_TERMS = {
     "self_correction_failure": ("self-correction", "self correction", "same mistake", "does not learn"),
     "memory": ("memory", "context", "session", "remember", "forgot", "preference"),
     "payment": ("payment", "wallet", "x402", "escrow", "metamask", "usdc", "eth", "tx_hash"),
+    "proof_gated_bot_factory": (
+        "bot factory",
+        "trading bot",
+        "hyperliquid",
+        "near",
+        "solana",
+        "drawdown",
+        "risk profile",
+        "market regime",
+        "strategy",
+        "agent wallet",
+    ),
     "compute_auth": ("quota", "rate limit", "token", "model", "inference", "auth", "provider"),
     "mcp_integration": ("mcp", "tool schema", "resource uri", "api", "json-rpc", "tool call"),
     "repo_issue_help": ("github", "issue", "pull request", "repro", "pr plan"),
@@ -357,6 +369,36 @@ SOLUTION_PATTERNS: Dict[str, Dict[str, Any]] = {
             "Work resumes only from verified or manually reviewed state.",
         ],
         "memory_upgrade": "store payment failure class and safe resume rule",
+    },
+    "proof_gated_bot_factory": {
+        "title": "Proof-Gated Bot Factory Intake",
+        "diagnosis": (
+            "This is a bot-factory reliability and monetization task. Convert the user's chain, risk, "
+            "drawdown, and strategy goals into a simulation-first bot plan with proof digests and explicit "
+            "live-execution gates; do not promise returns or place orders during intake."
+        ),
+        "playbook": [
+            "Collect chain targets, wallet public address, risk profile, drawdown limit, allowed markets, and strategy class.",
+            "Generate a shadow-lane bot plan and replay/backtest receipt before any live trading authorization.",
+            "Require hard controls: max notional, max leverage, market allowlist, daily loss cap, and kill switch.",
+            "Offer a paid or return-compute upgrade only for bounded simulation, repair, or execution-policy work.",
+        ],
+        "guardrail": {
+            "id": "simulation_first_bot_factory",
+            "trigger": "a requester asks Nomad to create, optimize, or repair a trading or chain-agent bot",
+            "rule": "return risk envelope, simulation plan, and proof receipt before live execution or delegated key use",
+            "fallback": "produce a no-live-trading diagnosis packet and ask for explicit paid task or worker lease",
+        },
+        "required_input": (
+            "`PUBLIC_WALLET=<address>`, `RISK_PROFILE=<low|medium|high>`, "
+            "`MAX_DRAWDOWN=<percent>`, `CHAINS=<solana,near,hyperliquid>`, and `STRATEGY_TYPE=<type>`."
+        ),
+        "acceptance": [
+            "No seed phrase, private key, API wallet key, or withdrawal-capable credential is requested.",
+            "The output includes a risk envelope, simulation/replay plan, and proof digest candidate.",
+            "Live execution requires a separate opt-in with hard position, leverage, market, loss, and kill-switch limits.",
+        ],
+        "memory_upgrade": "store the accepted risk envelope, proof receipt schema, and live-execution guard as reusable bot-factory memory",
     },
     "mcp_integration": {
         "title": "Tool Contract Harness",
@@ -760,6 +802,10 @@ SOLUTION_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 ALIASES = {
     "wallet_payment": "payment",
+    "ai_agent_bot_factory": "proof_gated_bot_factory",
+    "bot_factory": "proof_gated_bot_factory",
+    "hyperliquid_bot_repair_and_execution": "proof_gated_bot_factory",
+    "near_agent_creation": "proof_gated_bot_factory",
     "custom": "self_improvement",
     "mcp_survival": "mcp_production",
     "mcp_reliability": "mcp_production",

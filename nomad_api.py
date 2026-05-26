@@ -5409,6 +5409,43 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/swarm/reliability-doctor/intake":
             base = self._base_url()
             status, result = self._reliability_doctor_intake_receipt(payload, base=base)
+            wants_paid_task = self._truthy(
+                payload.get("create_paid_task", payload.get("create_task")),
+                default=False,
+            )
+            can_create_paid_task = (
+                status < 400
+                and result.get("service_type") == "proof_gated_bot_factory"
+                and wants_paid_task
+                and getattr(getattr(self, "agent", None), "service_desk", None) is not None
+            )
+            if can_create_paid_task:
+                conversion = result.get("paid_conversion") if isinstance(result.get("paid_conversion"), dict) else {}
+                conversion_payload = conversion.get("payload") if isinstance(conversion.get("payload"), dict) else {}
+                metadata = conversion_payload.get("metadata") if isinstance(conversion_payload.get("metadata"), dict) else {}
+                paid_task = self.agent.service_desk.end_to_end_runway(
+                    problem=conversion_payload.get("problem") or result.get("problem") or payload.get("problem") or payload.get("claim") or "",
+                    service_type=conversion_payload.get("service_type") or "proof_gated_bot_factory",
+                    package_id=conversion_payload.get("package_id") or "bounded_bot_factory_pack",
+                    budget_native=payload.get("budget_native", conversion_payload.get("budget_native")),
+                    requester_agent=conversion_payload.get("requester_agent") or payload.get("requester_agent") or "",
+                    requester_wallet=payload.get("requester_wallet") or payload.get("wallet") or "",
+                    callback_url=payload.get("callback_url") or payload.get("callback") or "",
+                    metadata={
+                        **metadata,
+                        "source": metadata.get("source") or "reliability_doctor_bot_factory_intake",
+                    },
+                    create_task=True,
+                    approval=payload.get("approval", "draft_only"),
+                )
+                result["payable_task"] = paid_task
+                result["next_payment_action"] = paid_task.get("next_best_action", "")
+                if isinstance(result.get("paid_conversion"), dict):
+                    result["paid_conversion"]["status"] = (
+                        "payable_task_created" if paid_task.get("created") else "payable_task_not_created"
+                    )
+                    result["paid_conversion"]["counts_as_revenue"] = False
+                status = 201 if paid_task.get("created") else status
             self._json_response(result, status=status)
             return
 

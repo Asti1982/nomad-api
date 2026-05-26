@@ -374,6 +374,88 @@ def test_reliability_doctor_intake_post_uses_receipt_lane(monkeypatch):
     assert seen[0][1]["copy_paste_start"]["cmd"] == "run obl_test"
 
 
+def test_bot_factory_intake_can_create_payable_task_in_one_step(monkeypatch):
+    monkeypatch.setattr(NomadApiHandler, "_ensure_runtime_components", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        "nomad_api.build_reliability_doctor_intake",
+        lambda payload, *, base_url, doctor: {
+            "ok": True,
+            "schema": "nomad.agent_reliability_doctor_intake.v1",
+            "requester_id": "telegram-miniapp-bot-factory",
+            "service_type": "proof_gated_bot_factory",
+            "accepted_compute_barter_terms": True,
+            "work_exchange_offer_payload": {"requester_id": "telegram-miniapp-bot-factory"},
+            "free_solution_payload": {"accepted_compute_barter_terms": True},
+            "paid_conversion": {
+                "payload": {
+                    "create": True,
+                    "service_type": "proof_gated_bot_factory",
+                    "package_id": "bounded_bot_factory_pack",
+                    "problem": payload["claim"],
+                    "budget_native": 0.03,
+                    "requester_agent": "telegram-miniapp-bot-factory",
+                    "metadata": {
+                        "source_intake_id": "doctor-intake-test",
+                        "source_proof_digest": "sha256:test",
+                    },
+                },
+                "counts_as_revenue": False,
+            },
+            "next": {},
+        },
+    )
+    monkeypatch.setattr("nomad_api.record_agent_acquisition_event", lambda payload, *, base_url: {"ok": True})
+    monkeypatch.setattr("nomad_api.create_work_exchange_offer", lambda payload, *, base_url: {"ok": True})
+    monkeypatch.setattr(
+        "nomad_api.record_free_solution_receipt",
+        lambda payload, *, base_url: {"ok": True, "obligation_id": "obl_bot"},
+    )
+    monkeypatch.setattr(
+        NomadApiHandler,
+        "_build_work_exchange_onboarding",
+        classmethod(lambda cls, *, base_url: {"downloads": {}, "copy_paste_start": {}}),
+    )
+
+    class FakeServiceDesk:
+        def __init__(self):
+            self.calls = []
+
+        def end_to_end_runway(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "ok": True,
+                "created": True,
+                "task": {"task_id": "svc-1", "status": "awaiting_payment"},
+                "next_best_action": "Verify payment for svc-1 with /tasks/verify.",
+            }
+
+    service_desk = FakeServiceDesk()
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.agent = type("FakeAgent", (), {"agent_reliability_doctor": object(), "service_desk": service_desk})()
+    handler.path = "/swarm/reliability-doctor/intake"
+    handler._read_json_body = lambda: {  # type: ignore[method-assign]
+        "claim": "Build a Hyperliquid bot with 5% drawdown cap.",
+        "service_type": "proof_gated_bot_factory",
+        "create_paid_task": True,
+        "budget_native": 0.05,
+    }
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+    seen = []
+    handler._json_response = lambda payload, status=200: seen.append((status, payload))  # type: ignore[method-assign]
+
+    handler.do_POST()
+
+    assert seen[0][0] == 201
+    assert seen[0][1]["paid_conversion"]["status"] == "payable_task_created"
+    assert seen[0][1]["paid_conversion"]["counts_as_revenue"] is False
+    assert seen[0][1]["payable_task"]["task"]["status"] == "awaiting_payment"
+    assert seen[0][1]["next_payment_action"].startswith("Verify payment")
+    assert service_desk.calls[0]["service_type"] == "proof_gated_bot_factory"
+    assert service_desk.calls[0]["package_id"] == "bounded_bot_factory_pack"
+    assert service_desk.calls[0]["budget_native"] == 0.05
+    assert service_desk.calls[0]["metadata"]["source"] == "reliability_doctor_bot_factory_intake"
+
+
 def test_telegram_miniapp_fact_check_post_wraps_swarm_receipt(monkeypatch):
     captured = []
     monkeypatch.setattr(NomadApiHandler, "_ensure_runtime_components", classmethod(lambda cls: None))

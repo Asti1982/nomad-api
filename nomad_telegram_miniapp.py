@@ -162,6 +162,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         "lead_capture_url": _u(base, "/telegram-miniapp/lead"),
         "fact_check_url": _u(base, MINIAPP_FACT_CHECK_PATH),
         "primary_funnel": [
+            "proof_gated_bot_factory",
             "fact_check_intake",
             "free_mini_diagnosis",
             "paid_transition_worker_setup",
@@ -194,6 +195,49 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
                 "windows_bat": _u(base, "/downloads/install_nomad_transition_worker.bat"),
             },
         },
+        "bot_factory_lane": {
+            "schema": "nomad.proof_gated_bot_factory_lane.v1",
+            "intake_url": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+            "service_type": "proof_gated_bot_factory",
+            "headline": "Gratis Bot-Erstellung & Optimierung auf Solana/NEAR/Hyperliquid",
+            "message": (
+                "Simulation, Risk-Envelope und Proof-Receipts zuerst; Live-Trading nur nach "
+                "separater Freigabe mit harten Limits."
+            ),
+            "accepted_inputs": [
+                "public_wallet",
+                "chain_targets",
+                "risk_profile",
+                "max_drawdown",
+                "market_regime",
+                "strategy_type",
+            ],
+            "hard_guards": [
+                "no_seed_phrases",
+                "no_private_keys",
+                "no_return_guarantees",
+                "no_live_orders_during_intake",
+            ],
+            "work_exchange": {
+                "mode": "compute_barter",
+                "barter_multiplier": 1.3,
+                "auto_accept": True,
+                "counts_as_revenue": False,
+                "receipt_target": "paid_or_return_compute_bot_factory_receipt",
+            },
+            "paid_upgrade": {
+                "service_type": "proof_gated_bot_factory",
+                "package_id": "bounded_bot_factory_pack",
+                "route": _u(base, "/service/e2e?service_type=proof_gated_bot_factory"),
+            },
+            "one_step_paid_task": {
+                "method": "POST",
+                "endpoint": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+                "set": {"create_paid_task": True},
+                "result": "intake receipt plus awaiting-payment service task",
+                "counts_as_revenue": False,
+            },
+        },
         "eth_trust_loop": {
             "schema": "nomad.eth_trust_loop.v1",
             "native_symbol": os.getenv("NOMAD_NATIVE_SYMBOL", "ETH"),
@@ -210,6 +254,15 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "guardrail": "Pledges bias capped selection pressure only; verified work and receipts stay separate.",
         },
         "offers": [
+            {
+                "offer_id": "proof_gated_bot_factory",
+                "label": "AI Agent Bot Factory",
+                "price_native": 0.0,
+                "method": "POST",
+                "endpoint": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+                "service_type": "proof_gated_bot_factory",
+                "revenue_rule": "free_with_transition_worker_compute_or_paid_upgrade_after_verified_receipt",
+            },
             {
                 "offer_id": "fact_check_intake",
                 "label": "AI Swarm Fact Checker",
@@ -296,6 +349,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "miniapp": _u(base, launch_path),
             "fact_check_miniapp": _u(base, MINIAPP_FACT_CHECK_PATH),
             "fact_check_intake": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+            "bot_factory_intake": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+            "bot_factory_paid_upgrade": _u(base, "/service/e2e?service_type=proof_gated_bot_factory"),
             "eth_support": _u(base, "/.well-known/nomad-eth-support.json"),
             "eth_support_alias": _u(base, "/swarm/eth-support"),
             "eth_support_proposal": _u(base, "/downloads/nomad_ethereum_ai_agent_support_proposal.md"),

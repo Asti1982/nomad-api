@@ -39,6 +39,18 @@ def test_reliability_doctor_defaults_to_self_correction_when_unclear():
     assert result["healing_memory"]["fingerprint"].startswith("pain-")
 
 
+def test_reliability_doctor_maps_bot_factory_to_proof_gated_role():
+    result = AgentReliabilityDoctor().diagnose(
+        problem="Create a Solana and Hyperliquid trading bot with drawdown limits.",
+        service_type="proof_gated_bot_factory",
+    )
+
+    assert result["pain_type"] == "proof_gated_bot_factory"
+    assert result["doctor_role"]["id"] == "bot_factory_reviewer"
+    assert "simulation" in result["doctor_role"]["why"].lower()
+    assert "live-execution" in " ".join(result["intervention_plan"]).lower()
+
+
 def test_reliability_doctor_surface_exposes_ci_and_docker_onramps():
     surface = build_reliability_doctor_surface(base_url="https://nomad.example")
 

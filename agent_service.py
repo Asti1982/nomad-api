@@ -72,6 +72,13 @@ SERVICE_TYPES = {
         "title": "Wallet/payment flow",
         "summary": "Design a small wallet payment or verification path for agent-to-agent services.",
     },
+    "proof_gated_bot_factory": {
+        "title": "Proof-gated AI agent bot factory",
+        "summary": (
+            "Turn Solana, NEAR, or Hyperliquid bot goals into simulation-first strategy plans, risk envelopes, "
+            "proof digests, and explicit live-execution gates."
+        ),
+    },
     "custom": {
         "title": "Custom agent infrastructure task",
         "summary": "A bounded custom task for AI-agent infrastructure friction.",
@@ -167,6 +174,54 @@ SERVICE_PACKAGE_TEMPLATES = {
             "offer_tier": "paid_unblock",
             "amount_mode": "requested_or_minimum",
             "delivery": "payment repair plan plus retry-safe resume path",
+        },
+    ],
+    "proof_gated_bot_factory": [
+        {
+            "package_id": "starter_bot_risk_receipt",
+            "aliases": ["starter_bot_factory"],
+            "title": "Nomad Bot Factory: Risk receipt starter",
+            "summary": "Convert one bot goal into a risk envelope, simulation plan, and proof digest candidate.",
+            "offer_tier": "starter_diagnosis",
+            "price_tier_recommendation": "$49",
+            "amount_mode": "minimum",
+            "buyer_input": [
+                "public_wallet",
+                "chain_targets",
+                "risk_profile",
+                "max_drawdown",
+                "strategy_type",
+            ],
+            "scope": [
+                "simulation-first Solana, NEAR, or Hyperliquid bot planning",
+                "no seed phrases or private keys",
+                "no live orders during starter diagnosis",
+                "proof digest and performance-receipt schema only",
+            ],
+            "out_of_scope": [
+                "return guarantees",
+                "investment advice",
+                "custody or withdrawal-capable credentials",
+                "unapproved live trading",
+            ],
+            "default_problem": (
+                "Design a proof-gated AI agent bot from public wallet context, chain targets, risk profile, "
+                "drawdown limit, market regime, and strategy type; return simulation plan and no-live-order guard."
+            ),
+            "delivery": "risk envelope, simulation/replay plan, proof digest candidate, and paid/worker lease next step",
+        },
+        {
+            "package_id": "bounded_bot_factory_pack",
+            "title": "Nomad Bot Factory: Bounded simulation pack",
+            "summary": "Prepare a bot strategy artifact with replay checks, repair policy, and live-execution guardrails.",
+            "offer_tier": "paid_unblock",
+            "price_tier_recommendation": "$99",
+            "amount_mode": "requested_or_minimum",
+            "delivery": "bounded bot plan, replay/performance receipt schema, execution policy, and worker handoff",
+            "upsell_tier": {
+                "label": "$250 execution-policy audit",
+                "scope": "only after paid/return-compute receipt; still no custody, no return guarantees, and no live keys in chat",
+            },
         },
     ],
     "repo_issue_help": [
@@ -1565,7 +1620,11 @@ class AgentServiceDesk:
         solution_pattern = solution_pattern_for(service_type=normalized_type, problem=cleaned_problem)
         safe_now = self._safe_now_steps(normalized_type, agent_actions)
         acceptance = self._acceptance_criteria_for_service(normalized_type, need_profile)
-        required_input = first_unlock.get("human_deliverable") or self._required_input_for_service(normalized_type)
+        required_input = (
+            self._required_input_for_service(normalized_type)
+            if normalized_type == "proof_gated_bot_factory"
+            else first_unlock.get("human_deliverable") or self._required_input_for_service(normalized_type)
+        )
         plan = {
             "schema": "nomad.rescue_plan.v1",
             "plan_id": f"rescue-{hashlib.sha256(cleaned_problem.encode('utf-8')).hexdigest()[:10]}",
@@ -1649,6 +1708,8 @@ class AgentServiceDesk:
             steps.append("Ask for the smallest legitimate human approval; do not bypass the gate.")
         if service_type in {"payment", "wallet_payment"}:
             steps.append("Verify chain, recipient, amount, and duplicate-use status before delivery.")
+        if service_type == "proof_gated_bot_factory":
+            steps.append("Keep this simulation-first; live orders require separate explicit approval and hard limits.")
         return steps[:5]
 
     def _acceptance_criteria_for_service(
@@ -1675,6 +1736,8 @@ class AgentServiceDesk:
             criteria.append("Tool schema, resource URI, request shape, and expected response are named.")
         elif service_type == "human_in_loop":
             criteria.append("The human gate has do-now, send-back, and done-when fields.")
+        elif service_type == "proof_gated_bot_factory":
+            criteria.append("The response includes risk envelope, simulation plan, proof digest candidate, and no-live-order guard.")
         return criteria[:5]
 
     @staticmethod
@@ -1686,6 +1749,10 @@ class AgentServiceDesk:
             "mcp_integration": "`TOOL_SCHEMA=<json>`, `RESOURCE_URI=<uri>`, or `EXPECTED_RESPONSE=<shape>`.",
             "payment": "`TX_HASH=<0x...>`, `CHAIN_ID=<id>`, or `PAYMENT_ERROR=<message>`.",
             "wallet_payment": "`TX_HASH=<0x...>`, `CHAIN_ID=<id>`, or `PAYMENT_ERROR=<message>`.",
+            "proof_gated_bot_factory": (
+                "`PUBLIC_WALLET=<address>`, `RISK_PROFILE=<low|medium|high>`, "
+                "`MAX_DRAWDOWN=<percent>`, `CHAINS=<solana,near,hyperliquid>`, and `STRATEGY_TYPE=<type>`."
+            ),
             "hallucination": "`CLAIM=<claim>`, `EVIDENCE_URL=<url>`, or `TOOL_OUTPUT=<excerpt>`.",
             "memory": "`MEMORY_TYPE=<fact|decision|constraint|outcome>`, `MEMORY_VALUE=<non-secret value>`.",
             "self_improvement": "`SOLVED_BLOCKER=<summary>`, `FIX_THAT_WORKED=<step>`, or `VERIFY_WITH=<test>`.",
@@ -1704,6 +1771,7 @@ class AgentServiceDesk:
             "mcp_integration",
             "repo_issue_help",
             "self_improvement",
+            "proof_gated_bot_factory",
         }:
             return solution_pattern_for(service_type=normalized_pattern_type)["diagnosis"]
         if service_type == "human_in_loop" or any(
@@ -1745,6 +1813,8 @@ class AgentServiceDesk:
             actions.insert(0, "Define tool schema, resource URI, prompt shape, and expected JSON result.")
         if service_type == "wallet_payment":
             actions.insert(0, "Verify the payment tx hash against recipient, value, chain, and duplicate use.")
+        if service_type == "proof_gated_bot_factory":
+            actions.insert(0, "Return a simulation-first bot plan with risk envelope before any live execution.")
         return actions
 
     def _human_unlocks_for_problem(self, problem: str) -> List[Dict[str, Any]]:
@@ -2164,11 +2234,13 @@ class AgentServiceDesk:
             "offer_tier",
             "amount_native",
             "native_symbol",
+            "price_tier_recommendation",
             "buyer_input",
             "scope",
             "out_of_scope",
             "delivery",
             "default_problem",
+            "upsell_tier",
         ]
         return {key: package[key] for key in keys if package.get(key) not in (None, "", [])}
 
@@ -2276,14 +2348,28 @@ class AgentServiceDesk:
         root = (self.public_api_url or "").rstrip("/")
         entry_url = f"{root}/service/e2e?service_type={service_type}" if root else f"/service/e2e?service_type={service_type}"
         endpoint = f"{root}/service/e2e" if root else "/service/e2e"
-        return {
-            "schema": "nomad.concrete_buyable_order.v1",
-            "order_id": f"{package_id or service_type}.{task.get('task_id') or 'preview'}",
-            "package_id": package_id,
-            "service_type": service_type,
-            "status": task.get("status") or "preview",
-            "entry_url": entry_url,
-            "matching_context": {
+        if service_type == "proof_gated_bot_factory":
+            matching_context = {
+                "context_type": "proof_gated_multichain_bot_factory",
+                "fits": [
+                    "public wallet plus Solana/NEAR/Hyperliquid chain targets",
+                    "risk profile, max drawdown, market regime, and strategy type",
+                    "requester accepts simulation/replay proof before any live execution",
+                ],
+                "current_nomad_use_case": (
+                    "Bot-factory intakes can convert free Transition Worker interest into a payable "
+                    "bounded simulation pack without touching keys or claiming revenue early."
+                ),
+            }
+            buyer_context = "proof_gated_multichain_bot_factory"
+            proof_gate = [
+                "no revenue until payment or return-compute receipt is verified",
+                "no seed phrases, private keys, or withdrawal-capable credentials",
+                "no live orders until separate explicit approval and hard limits exist",
+                "delivery must include risk envelope, simulation plan, proof digest, and performance-receipt candidate",
+            ]
+        else:
+            matching_context = {
                 "context_type": "repo_ci_endpoint_disturbance",
                 "fits": [
                     "repo issue with public facts",
@@ -2291,10 +2377,25 @@ class AgentServiceDesk:
                     "endpoint regression with URL and observed status",
                 ],
                 "current_nomad_use_case": "Render build, deploy, and endpoint disturbances can be converted into this starter instead of unbounded bounty hunting.",
-            },
+            }
+            buyer_context = "repo_ci_endpoint_disturbance"
+            proof_gate = [
+                "no revenue until payment verification",
+                "no public reply without explicit approval",
+                "delivery must include diagnosis, smallest repro or patch path, and verifier checklist",
+            ]
+        return {
+            "schema": "nomad.concrete_buyable_order.v1",
+            "order_id": f"{package_id or service_type}.{task.get('task_id') or 'preview'}",
+            "package_id": package_id,
+            "service_type": service_type,
+            "status": task.get("status") or "preview",
+            "entry_url": entry_url,
+            "matching_context": matching_context,
             "buyer_inputs": package.get("buyer_input") or ["repo_url", "issue_or_log_url", "observed_error", "expected_behavior"],
             "scope": package.get("scope") or ["one bounded repo/CI/endpoint diagnosis"],
             "out_of_scope": package.get("out_of_scope") or ["secrets", "unapproved public posting", "paid API spend"],
+            "price_tier_recommendation": package.get("price_tier_recommendation") or "",
             "quote": {
                 "amount_native": round(float(requested_amount), 8),
                 "native_symbol": self.chain.native_symbol,
@@ -2316,16 +2417,12 @@ class AgentServiceDesk:
                     "budget_native": round(float(requested_amount), 8),
                     "metadata": {
                         "package_id": package_id,
-                        "buyer_context": "repo_ci_endpoint_disturbance",
+                        "buyer_context": buyer_context,
                         "selected_package": package,
                     },
                 },
             },
-            "proof_gate": [
-                "no revenue until payment verification",
-                "no public reply without explicit approval",
-                "delivery must include diagnosis, smallest repro or patch path, and verifier checklist",
-            ],
+            "proof_gate": proof_gate,
         }
 
     def _e2e_task_preview(
@@ -2414,6 +2511,11 @@ class AgentServiceDesk:
             create_payload["metadata"] = {
                 "package_id": package["package_id"],
                 "selected_package": package,
+                "buyer_context": (
+                    "proof_gated_multichain_bot_factory"
+                    if service_type == "proof_gated_bot_factory"
+                    else "repo_ci_endpoint_disturbance"
+                ),
             }
         return {
             "create_task": {
@@ -2592,6 +2694,20 @@ class AgentServiceDesk:
             return "memory"
         if any(token in lowered for token in ("quota", "rate limit", "token", "inference", "model")):
             return "compute_auth"
+        if any(
+            token in lowered
+            for token in (
+                "bot factory",
+                "trading bot",
+                "hyperliquid",
+                "near",
+                "solana",
+                "drawdown",
+                "market regime",
+                "strategy",
+            )
+        ):
+            return "proof_gated_bot_factory"
         if "mcp" in lowered or "api" in lowered:
             return "mcp_integration"
         if "wallet" in lowered or "payment" in lowered or "tx_hash" in lowered or "x402" in lowered:
@@ -2627,7 +2743,15 @@ class AgentServiceDesk:
                 "native_symbol": self.chain.native_symbol,
                 "delivery": str(template.get("delivery") or ""),
             }
-            for key in ("aliases", "buyer_input", "scope", "out_of_scope", "default_problem"):
+            for key in (
+                "aliases",
+                "buyer_input",
+                "scope",
+                "out_of_scope",
+                "default_problem",
+                "price_tier_recommendation",
+                "upsell_tier",
+            ):
                 value = template.get(key)
                 if value not in (None, "", []):
                     offer[key] = value

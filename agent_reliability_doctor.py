@@ -93,6 +93,19 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
             "Resume only from a verified state or explicit manual review.",
         ],
     },
+    "bot_factory_reviewer": {
+        "title": "Proof-Gated Bot Factory",
+        "framework_inspiration": "Nomad AGP shadow-lane generator",
+        "best_for": ["proof_gated_bot_factory"],
+        "why": "Convert wallet-bounded strategy goals into simulation-first bot plans, receipts, and explicit live-execution gates.",
+        "loop": ["intake_goal", "risk_envelope", "shadow_generate", "replay_verify", "receipt_or_paid_task"],
+        "interventions": [
+            "Collect risk profile, drawdown limit, allowed markets, chain targets, and strategy class without seed phrases.",
+            "Generate only a simulation/replay bot plan before any live order path exists.",
+            "Attach proof digests, risk envelope, and performance receipt candidates.",
+            "Require explicit payment, worker lease, and live-execution approval before touching delegated trading keys.",
+        ],
+    },
     "conversational_reviewer": {
         "title": "Conversational Reviewer",
         "framework_inspiration": "AutoGen-style reviewer/critic conversation",
@@ -133,6 +146,7 @@ PAIN_ROLE_MAP = {
     "self_improvement": "self_learning_healer",
     "payment": "trace_healer",
     "repo_issue_help": "conversational_reviewer",
+    "proof_gated_bot_factory": "bot_factory_reviewer",
 }
 
 
@@ -166,6 +180,18 @@ PAIN_HINTS = {
     ),
     "memory": ("memory", "forgot", "context"),
     "payment": ("payment", "wallet", "x402", "tx_hash"),
+    "proof_gated_bot_factory": (
+        "bot",
+        "trading",
+        "hyperliquid",
+        "near",
+        "solana",
+        "drawdown",
+        "strategy",
+        "market regime",
+        "risk profile",
+        "agent wallet",
+    ),
     "human_in_loop": ("approval", "human", "captcha", "login"),
     "repo_issue_help": ("github", "issue", "pull request", "repro"),
 }
@@ -228,6 +254,19 @@ def _num(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _list_text(value: Any, *, limit: int = 8) -> List[str]:
+    raw_items = value if isinstance(value, list) else re.split(r"[,/|]", str(value or ""))
+    items: List[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        cleaned = _text(item, 80).lower()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        items.append(cleaned)
+    return items[:limit]
 
 
 def _digest(value: Any, length: int = 32) -> str:
@@ -310,6 +349,68 @@ def _fact_check_preanalysis(body: Dict[str, Any], *, problem: str, evidence: Lis
         "search_queries": parsed.get("search_queries") if isinstance(parsed.get("search_queries"), list) else [claim[:160]],
         "candidate_sources": parsed.get("candidate_sources") if isinstance(parsed.get("candidate_sources"), list) else ([source_url] if source_url else []),
         "next_verification_steps": parsed.get("next_verification_steps") if isinstance(parsed.get("next_verification_steps"), list) else [],
+    }
+
+
+def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: str) -> Dict[str, Any]:
+    chains = _list_text(body.get("chain_targets") or body.get("chains") or "solana,near,hyperliquid")
+    allowed = {"solana", "near", "hyperliquid"}
+    chain_targets = [chain for chain in chains if chain in allowed] or ["solana", "near", "hyperliquid"]
+    risk_profile = _text(body.get("risk_profile") or "bounded", 80).lower()
+    strategy_type = _text(body.get("strategy_type") or "market-regime adaptive", 120)
+    market_regime = _text(body.get("market_regime") or "unspecified", 120)
+    public_wallet = _text(body.get("public_wallet") or body.get("requester_wallet") or body.get("wallet"), 160)
+    max_drawdown = _text(body.get("max_drawdown") or body.get("drawdown_limit") or "", 60)
+    max_notional = _text(body.get("max_notional") or "", 60)
+    max_leverage = _text(body.get("max_leverage") or "", 60)
+    allowed_markets = _list_text(body.get("allowed_markets") or body.get("markets"), limit=12)
+    summary_parts = [
+        f"Bot-factory intake for {', '.join(chain_targets)}",
+        f"risk_profile={risk_profile}",
+        f"strategy_type={strategy_type}",
+    ]
+    if max_drawdown:
+        summary_parts.append(f"max_drawdown={max_drawdown}")
+    return {
+        "ok": True,
+        "schema": "nomad.bot_factory_preanalysis.v1",
+        "status": "simulation_plan_prepared",
+        "provider": "nomad_deterministic_guard",
+        "model": "simulation_first_no_live_trading",
+        "summary": "; ".join(summary_parts),
+        "provisional_verdict": "simulation_required",
+        "confidence": "bounded",
+        "candidate_sources": [source_url] if source_url else [],
+        "search_queries": [
+            f"{chain} agent bot simulation risk envelope {strategy_type}" for chain in chain_targets[:3]
+        ],
+        "risk_envelope": {
+            "risk_profile": risk_profile,
+            "max_drawdown": max_drawdown,
+            "max_notional": max_notional,
+            "max_leverage": max_leverage,
+            "allowed_markets": allowed_markets,
+            "kill_switch": "required_before_live_execution",
+        },
+        "chain_targets": chain_targets,
+        "strategy_request": {
+            "goal": problem,
+            "strategy_type": strategy_type,
+            "market_regime": market_regime,
+            "public_wallet": public_wallet,
+        },
+        "next_verification_steps": [
+            "Generate a no-live-order strategy artifact in the shadow lane.",
+            "Replay or backtest against public/non-secret market data before delivery.",
+            "Return proof_digest, risk_envelope_digest, and performance_receipt candidate.",
+            "Require paid task, return-compute lease, and explicit live-execution approval before delegated keys.",
+        ],
+        "hard_guards": [
+            "no_seed_phrase_or_private_key",
+            "no_return_guarantee",
+            "no_investment_advice",
+            "no_live_order_without_separate_approval",
+        ],
     }
 
 
@@ -409,7 +510,27 @@ def build_reliability_doctor_intake(
             "message": "Reliability Doctor intake accepts public digests and secret-free excerpts only.",
             "generated_at": _iso_now(),
         }
-    is_fact_check = bool(body.get("claim") or body.get("source_url") or body.get("pdf_sha256") or body.get("pdf_name"))
+    raw_service_type = _clean_id(body.get("service_type") or body.get("type") or body.get("failure_type"), fallback="")
+    lowered_bot_text = " ".join(
+        [
+            _text(body.get("claim") or body.get("problem") or body.get("message"), 600).lower(),
+            _text(body.get("strategy_type"), 160).lower(),
+            _text(body.get("market_regime"), 160).lower(),
+            _text(body.get("chain_targets") or body.get("chains"), 240).lower(),
+            raw_service_type,
+        ]
+    )
+    is_bot_factory = raw_service_type in {
+        "proof_gated_bot_factory",
+        "ai_agent_bot_factory",
+        "bot_factory",
+        "hyperliquid_bot_repair_and_execution",
+        "near_agent_creation",
+    } or any(token in lowered_bot_text for token in ("hyperliquid", "near", "solana", "trading bot", "bot factory"))
+    is_fact_check = (
+        bool(body.get("claim") or body.get("source_url") or body.get("pdf_sha256") or body.get("pdf_name"))
+        and not is_bot_factory
+    )
     source = _clean_id(
         body.get("source") or body.get("ci_provider") or body.get("source_tag"),
         fallback="telegram_miniapp_fact_check" if is_fact_check else "public_intake",
@@ -435,16 +556,17 @@ def build_reliability_doctor_intake(
         }
     requester_seed = body.get("requester_id") or body.get("agent_id") or repo or workflow_url or source
     requester_id = _clean_id(requester_seed, fallback=f"intake-{_digest(problem, 12)}")
-    service_type = _clean_id(
-        body.get("service_type") or body.get("type") or body.get("failure_type"),
-        fallback="fact_check" if is_fact_check else "",
-    )
+    service_type = raw_service_type or ("proof_gated_bot_factory" if is_bot_factory else "fact_check" if is_fact_check else "")
     evidence = [item for item in [repo, workflow_url, log_digest, source_url] if item]
     if pdf_name or pdf_sha256:
         evidence.append(f"pdf:{pdf_name or 'attachment'} sha256={pdf_sha256 or 'missing'} bytes={pdf_bytes}")
     if isinstance(body.get("evidence"), list):
         evidence.extend(_text(item, 260) for item in body["evidence"][:5])
-    preanalysis = _fact_check_preanalysis(body, problem=problem, evidence=evidence) if service_type == "fact_check" or is_fact_check else None
+    preanalysis = (
+        _bot_factory_preanalysis(body, problem=problem, source_url=source_url)
+        if is_bot_factory
+        else _fact_check_preanalysis(body, problem=problem, evidence=evidence) if service_type == "fact_check" or is_fact_check else None
+    )
     doc = doctor or AgentReliabilityDoctor()
     diagnosis = doc.diagnose(
         problem=problem,
@@ -464,6 +586,9 @@ def build_reliability_doctor_intake(
         "pain_type": diagnosis.get("pain_type"),
         "doctor_role": _dict(diagnosis.get("doctor_role")).get("id"),
     }
+    if is_bot_factory and isinstance(preanalysis, dict):
+        public_facts["chain_targets"] = ",".join(preanalysis.get("chain_targets") or [])
+        public_facts["risk_envelope_digest"] = f"sha256:{_digest(preanalysis.get('risk_envelope') or {}, length=64)}"
     solution_proof_digest = f"sha256:{_digest({'diagnosis': diagnosis, 'facts': public_facts}, length=64)}"
     solution_value = round(max(1.0, min(_num(body.get("solution_value_credits"), 10.0), 50.0)), 4)
     max_runtime_hours = round(max(0.25, min(_num(body.get("max_runtime_hours"), 6.0), 24.0)), 4)
@@ -484,7 +609,7 @@ def build_reliability_doctor_intake(
         "accepted_compute_barter_terms": accepted_compute_barter,
         "side_effect_scope": "sandboxed_worker_only",
     }
-    return {
+    result = {
         "ok": True,
         "schema": "nomad.agent_reliability_doctor_intake.v1",
         "accepted": True,
@@ -508,6 +633,65 @@ def build_reliability_doctor_intake(
         },
         "machine_instruction": "if_offer_accepted_show_terms; if_obligation_id_returned_run_worker_until_balance_zero",
     }
+    if is_bot_factory and isinstance(preanalysis, dict):
+        default_budget_native = _num(os.getenv("NOMAD_BOT_FACTORY_DEFAULT_NATIVE"), _num(os.getenv("NOMAD_SERVICE_MIN_NATIVE"), 0.03))
+        result.update(
+            {
+                "service_type": "proof_gated_bot_factory",
+                "source": "telegram_miniapp_bot_factory" if source == "telegram_miniapp_fact_check" else source,
+                "pricing": {
+                    "cash_price_native": 0.0,
+                    "native_symbol": os.getenv("NOMAD_NATIVE_SYMBOL", "ETH"),
+                    "message": (
+                        "Gratis Bot-Erstellung und Optimierung auf Solana/NEAR/Hyperliquid, "
+                        "wenn du den Transition Worker laufen laesst."
+                    ),
+                    "paid_upgrade": {
+                        "service_type": "proof_gated_bot_factory",
+                        "package_id": "bounded_bot_factory_pack",
+                        "price_tier_recommendation": "$99",
+                        "requires_verified_payment_or_return_compute": True,
+                    },
+                },
+                "proof": {
+                    "risk_envelope": preanalysis.get("risk_envelope") or {},
+                    "performance_receipt_candidate": {
+                        "schema": "nomad.bot_factory_performance_receipt.v1",
+                        "status": "simulation_required_before_live_execution",
+                        "counts_as_revenue": False,
+                    },
+                },
+                "paid_conversion": {
+                    "schema": "nomad.bot_factory_paid_conversion.v1",
+                    "status": "ready_to_create_payable_task",
+                    "method": "POST",
+                    "endpoint": _u(base_url, "/service/e2e"),
+                    "payload": {
+                        "create": True,
+                        "service_type": "proof_gated_bot_factory",
+                        "package_id": "bounded_bot_factory_pack",
+                        "problem": problem,
+                        "budget_native": default_budget_native,
+                        "requester_agent": requester_id,
+                        "metadata": {
+                            "source_intake_id": result["intake_id"],
+                            "source_proof_digest": solution_proof_digest,
+                            "buyer_context": "proof_gated_multichain_bot_factory",
+                            "risk_envelope": preanalysis.get("risk_envelope") or {},
+                            "chain_targets": preanalysis.get("chain_targets") or [],
+                            "strategy_request": preanalysis.get("strategy_request") or {},
+                        },
+                    },
+                    "counts_as_revenue": False,
+                },
+                "result": {
+                    "status": "intake_accepted",
+                    "chain_targets": preanalysis.get("chain_targets") or [],
+                    "live_execution": "blocked_until_explicit_paid_or_return_compute_approval",
+                },
+            }
+        )
+    return result
 
 
 class AgentReliabilityDoctor:

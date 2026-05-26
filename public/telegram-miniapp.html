@@ -487,6 +487,7 @@
 
     <nav class="mode-tabs" aria-label="Mini App mode">
       <button type="button" data-mode="factcheck" aria-selected="true">Fact</button>
+      <button type="button" data-mode="botfactory" aria-selected="false">Bot</button>
       <button type="button" data-mode="diagnosis" aria-selected="false">Diagnose</button>
       <button type="button" data-mode="task" aria-selected="false">Worker</button>
       <button type="button" data-mode="verify" aria-selected="false">Verify</button>
@@ -540,6 +541,26 @@
               <option value="3" selected>3 cycles</option>
               <option value="7">7 cycles</option>
             </select>
+          </div>
+        </div>
+        <div class="twocol">
+          <div class="field">
+            <label for="chain-targets">Bot chains</label>
+            <input id="chain-targets" name="chain-targets" maxlength="120" value="solana,near,hyperliquid">
+          </div>
+          <div class="field">
+            <label for="max-drawdown">Max drawdown</label>
+            <input id="max-drawdown" name="max-drawdown" maxlength="60" placeholder="for example 5%">
+          </div>
+        </div>
+        <div class="twocol">
+          <div class="field">
+            <label for="risk-profile">Risk profile</label>
+            <input id="risk-profile" name="risk-profile" maxlength="80" placeholder="low / medium / high">
+          </div>
+          <div class="field">
+            <label for="strategy-type">Strategy type</label>
+            <input id="strategy-type" name="strategy-type" maxlength="120" placeholder="market making / momentum / repair">
           </div>
         </div>
         <div class="twocol">
@@ -684,6 +705,28 @@
       campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode === "launch" ? "telegram_acquisition" : state.mode,
     });
 
+    const botFactoryPayload = async () => ({
+      ...formPayload(),
+      ...(await pdfMetadata()),
+      requester_id: "telegram-miniapp-bot-factory",
+      source: "telegram_miniapp_bot_factory",
+      service_type: "proof_gated_bot_factory",
+      offer_id: "proof_gated_bot_factory",
+      public_wallet: el("wallet").value.trim(),
+      chain_targets: el("chain-targets").value.trim(),
+      risk_profile: el("risk-profile").value.trim(),
+      max_drawdown: el("max-drawdown").value.trim(),
+      strategy_type: el("strategy-type").value.trim(),
+      market_regime: "user_supplied_or_unspecified",
+      accepted_compute_barter_terms: true,
+      compute_barter_accepted: true,
+      return_multiplier: 1.3,
+      solution_value_credits: 10,
+      max_runtime_hours: 6,
+      create_paid_task: true,
+      budget_native: Number(el("budget").value || 0.03) || 0.03,
+    });
+
     const factCheckPayload = async () => ({
       ...formPayload(),
       ...(await pdfMetadata()),
@@ -783,6 +826,25 @@
         await recordLead("fact_check_requested", {selected_offer: "fact_check_intake", campaign: "telegram_fact_check"});
         const result = await postJson("/telegram-miniapp/fact-check", payload);
         writeResult(formatFactCheckResult(result));
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const runBotFactory = async () => {
+      const payload = await botFactoryPayload();
+      if (!payload.problem) {
+        writeResult("Add one concrete bot goal first.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await recordLead("bot_factory_paid_task_requested", {selected_offer: "proof_gated_bot_factory", campaign: "telegram_bot_factory"});
+        const result = await postJson("/swarm/reliability-doctor/intake", payload);
+        if (result && result.payable_task && result.payable_task.task && result.payable_task.task.task_id) {
+          el("task-id").value = result.payable_task.task.task_id;
+        }
+        writeResult(result);
       } finally {
         setBusy(false);
       }
@@ -933,6 +995,7 @@
 
     const handleMainAction = async () => {
       if (state.mode === "factcheck") return runFactCheck();
+      if (state.mode === "botfactory") return runBotFactory();
       if (state.mode === "diagnosis") return runDiagnosis();
       if (state.mode === "task") return createTask();
       if (state.mode === "verify") return verifyPayment();
@@ -951,6 +1014,10 @@
       const primary = el("primary-action");
       primary.className = "btn";
       if (mode === "factcheck") primary.textContent = "Start fact check";
+      if (mode === "botfactory") {
+        primary.textContent = "Create bot paid task";
+        primary.classList.add("gold");
+      }
       if (mode === "diagnosis") primary.textContent = "Run diagnosis";
       if (mode === "task") {
         primary.textContent = "Create paid task";
