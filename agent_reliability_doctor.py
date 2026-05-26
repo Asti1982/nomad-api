@@ -269,6 +269,62 @@ def _list_text(value: Any, *, limit: int = 8) -> List[str]:
     return items[:limit]
 
 
+_BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+_BASE58_INDEX = {char: index for index, char in enumerate(_BASE58_ALPHABET)}
+
+
+def _base58_decode(value: str) -> bytes:
+    number = 0
+    for char in value:
+        if char not in _BASE58_INDEX:
+            raise ValueError("invalid_base58_character")
+        number = number * 58 + _BASE58_INDEX[char]
+    raw = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
+    leading_zeroes = len(value) - len(value.lstrip("1"))
+    return b"\x00" * leading_zeroes + raw
+
+
+def _solana_public_key_status(value: Any) -> Dict[str, Any]:
+    address = _text(value, 120)
+    if not address:
+        return {
+            "chain": "solana",
+            "address": "",
+            "valid": False,
+            "reason": "missing_public_wallet",
+        }
+    if re.search(r"\s", address):
+        return {
+            "chain": "solana",
+            "address": address,
+            "valid": False,
+            "reason": "contains_whitespace",
+        }
+    try:
+        decoded = _base58_decode(address)
+    except ValueError as exc:
+        return {
+            "chain": "solana",
+            "address": address,
+            "valid": False,
+            "reason": str(exc),
+        }
+    if len(decoded) != 32:
+        return {
+            "chain": "solana",
+            "address": address,
+            "valid": False,
+            "reason": f"decoded_length_{len(decoded)}_not_32",
+        }
+    return {
+        "chain": "solana",
+        "address": address,
+        "valid": True,
+        "reason": "public_key_shape_valid",
+        "bytes": 32,
+    }
+
+
 def _digest(value: Any, length: int = 32) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
@@ -360,6 +416,16 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
     strategy_type = _text(body.get("strategy_type") or "market-regime adaptive", 120)
     market_regime = _text(body.get("market_regime") or "unspecified", 120)
     public_wallet = _text(body.get("public_wallet") or body.get("requester_wallet") or body.get("wallet"), 160)
+    wallet_validation = (
+        _solana_public_key_status(public_wallet)
+        if "solana" in chain_targets
+        else {
+            "chain": chain_targets[0] if chain_targets else "",
+            "address": public_wallet,
+            "valid": bool(public_wallet),
+            "reason": "shape_not_checked_for_chain",
+        }
+    )
     max_drawdown = _text(body.get("max_drawdown") or body.get("drawdown_limit") or "", 60)
     max_notional = _text(body.get("max_notional") or "", 60)
     max_leverage = _text(body.get("max_leverage") or "", 60)
@@ -391,6 +457,7 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
             "max_leverage": max_leverage,
             "allowed_markets": allowed_markets,
             "kill_switch": "required_before_live_execution",
+            "wallet_validation": wallet_validation,
         },
         "chain_targets": chain_targets,
         "strategy_request": {
@@ -410,6 +477,7 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
             "no_return_guarantee",
             "no_investment_advice",
             "no_live_order_without_separate_approval",
+            "valid_public_wallet_required_before_paid_delivery",
         ],
     }
 

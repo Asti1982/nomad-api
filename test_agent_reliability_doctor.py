@@ -51,6 +51,48 @@ def test_reliability_doctor_maps_bot_factory_to_proof_gated_role():
     assert "live-execution" in " ".join(result["intervention_plan"]).lower()
 
 
+def test_bot_factory_intake_validates_solana_public_wallet_shape():
+    result = build_reliability_doctor_intake(
+        {
+            "claim": "Build a simulation-only Solana bot with 3% max drawdown.",
+            "service_type": "proof_gated_bot_factory",
+            "public_wallet": "11111111111111111111111111111111",
+            "chain_targets": "solana,hyperliquid",
+            "risk_profile": "low",
+            "max_drawdown": "3%",
+            "strategy_type": "volatility filter",
+        }
+    )
+
+    wallet_validation = result["proof"]["risk_envelope"]["wallet_validation"]
+
+    assert result["ok"] is True
+    assert result["service_type"] == "proof_gated_bot_factory"
+    assert wallet_validation["chain"] == "solana"
+    assert wallet_validation["valid"] is True
+    assert wallet_validation["bytes"] == 32
+    assert "valid_public_wallet_required_before_paid_delivery" in result["openai_preanalysis"]["hard_guards"]
+
+
+def test_bot_factory_intake_flags_invalid_solana_public_wallet_shape():
+    result = build_reliability_doctor_intake(
+        {
+            "claim": "Build a simulation-only Solana bot.",
+            "service_type": "proof_gated_bot_factory",
+            "public_wallet": "not a solana key",
+            "chain_targets": "solana",
+            "risk_profile": "low",
+            "max_drawdown": "3%",
+        }
+    )
+
+    wallet_validation = result["proof"]["risk_envelope"]["wallet_validation"]
+
+    assert result["ok"] is True
+    assert wallet_validation["valid"] is False
+    assert wallet_validation["reason"] == "contains_whitespace"
+
+
 def test_reliability_doctor_surface_exposes_ci_and_docker_onramps():
     surface = build_reliability_doctor_surface(base_url="https://nomad.example")
 
