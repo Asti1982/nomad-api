@@ -1,32 +1,30 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>AI Swarm Fact Checker</title>
-  <meta name="description" content="Nomad Telegram Mini App for proof-first AI Swarm fact checking with claim input, URL input, PDF metadata, OpenAI quick scan, and decentralized Nomad Swarm intake.">
+  <title>Nomad Bot Risk Receipt</title>
+  <meta name="description" content="Create a proof-first bot risk receipt or fact-check receipt with Nomad. Public wallet only. No seeds, no private keys, no live trading during intake.">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       color-scheme: dark;
       --bg: #07100d;
-      --surface: #0c1713;
-      --surface-2: #111d19;
-      --ink: #f4f1e8;
-      --muted: #aeb9ad;
-      --dim: #768174;
-      --line: rgba(244, 241, 232, 0.16);
-      --green: #78e3a0;
-      --gold: #f0c35a;
-      --blue: #78b7ff;
-      --red: #ff8078;
-      --shadow: rgba(0, 0, 0, 0.28);
-      --radius: 8px;
+      --panel: #101916;
+      --panel-2: #16221d;
+      --ink: #fff7e7;
+      --muted: #b7c3b8;
+      --dim: #819084;
+      --line: rgba(255, 247, 231, 0.14);
+      --green: #86f0a8;
+      --gold: #f6c85f;
+      --blue: #83bfff;
+      --red: #ff8a80;
+      --radius: 18px;
+      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html {
       min-height: 100%;
@@ -37,11 +35,11 @@
       margin: 0;
       min-height: 100vh;
       background:
-        linear-gradient(180deg, rgba(12, 23, 19, 0.96), rgba(7, 16, 13, 1)),
-        var(--bg);
+        radial-gradient(circle at 12% 8%, rgba(134, 240, 168, 0.16), transparent 34%),
+        radial-gradient(circle at 90% 10%, rgba(246, 200, 95, 0.14), transparent 32%),
+        linear-gradient(180deg, #08120e 0%, #07100d 52%, #040807 100%);
       color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      letter-spacing: 0;
+      font-family: "Aptos Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
     }
 
     body::before {
@@ -50,67 +48,53 @@
       inset: 0;
       pointer-events: none;
       background-image:
-        linear-gradient(rgba(244, 241, 232, 0.055) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(244, 241, 232, 0.055) 1px, transparent 1px);
-      background-size: 36px 36px;
-      opacity: 0.7;
-      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.86), rgba(0, 0, 0, 0.12));
+        linear-gradient(rgba(255, 247, 231, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 247, 231, 0.055) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: linear-gradient(to bottom, #000, transparent 78%);
     }
 
-    a {
-      color: inherit;
-      text-underline-offset: 4px;
-    }
-
-    button,
-    input,
-    textarea,
-    select {
-      font: inherit;
-    }
+    a { color: inherit; text-underline-offset: 4px; }
+    button, input, textarea, select { font: inherit; }
 
     .app {
-      width: min(760px, calc(100% - 24px));
+      width: min(920px, calc(100% - 24px));
       margin: 0 auto;
-      padding: calc(env(safe-area-inset-top, 0px) + 18px) 0 calc(env(safe-area-inset-bottom, 0px) + 32px);
+      padding: calc(env(safe-area-inset-top, 0px) + 18px) 0 calc(env(safe-area-inset-bottom, 0px) + 34px);
       position: relative;
       z-index: 1;
     }
 
     .topbar {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      min-height: 44px;
+      align-items: center;
+      gap: 12px;
       margin-bottom: 18px;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 11px;
       min-width: 0;
     }
 
     .mark {
-      width: 34px;
-      height: 34px;
+      width: 38px;
+      height: 38px;
       display: grid;
       place-items: center;
-      flex: 0 0 auto;
       border: 1px solid var(--line);
-      background: #0f1d18;
+      border-radius: 13px;
+      background: rgba(134, 240, 168, 0.1);
       color: var(--green);
-      font: 800 18px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
-    }
-
-    .brand-text {
-      min-width: 0;
+      font: 900 18px/1 var(--mono);
     }
 
     .brand-title {
-      font-weight: 780;
+      font-weight: 850;
+      letter-spacing: -0.02em;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -120,155 +104,171 @@
       color: var(--muted);
       font-size: 12px;
       margin-top: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     .status-pill {
-      display: inline-flex;
-      align-items: center;
-      min-height: 32px;
-      border: 1px solid var(--line);
-      padding: 0 10px;
+      border: 1px solid rgba(134, 240, 168, 0.36);
+      border-radius: 999px;
+      background: rgba(134, 240, 168, 0.09);
       color: var(--green);
-      background: rgba(120, 227, 160, 0.08);
-      font: 700 12px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
+      padding: 9px 11px;
+      font: 800 12px/1 var(--mono);
       white-space: nowrap;
     }
 
     .hero {
-      padding: 18px 0 14px;
-      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(270px, 0.85fr);
+      gap: 16px;
+      align-items: stretch;
+      margin-bottom: 16px;
+    }
+
+    .hero-card, .quick-card, .panel, .rail {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(16, 25, 22, 0.9);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+      backdrop-filter: blur(12px);
+    }
+
+    .hero-card {
+      padding: 22px;
+    }
+
+    .eyebrow {
+      color: var(--green);
+      font: 850 12px/1 var(--mono);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
     }
 
     h1 {
       margin: 0;
-      font-size: 38px;
-      line-height: 1.02;
-      letter-spacing: 0;
+      max-width: 11ch;
+      font-size: clamp(38px, 8vw, 72px);
+      line-height: 0.9;
+      letter-spacing: -0.07em;
     }
 
     .lede {
-      margin: 12px 0 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.5;
-      max-width: 620px;
-    }
-
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
       margin: 16px 0 0;
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
     }
 
-    .metric {
-      min-height: 78px;
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 18px;
+    }
+
+    .quick-card {
+      padding: 16px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .step {
       border: 1px solid var(--line);
-      background: rgba(17, 29, 25, 0.84);
-      padding: 11px;
+      border-radius: 15px;
+      padding: 12px;
+      background: #0b1411;
     }
 
-    .metric strong {
+    .step strong {
       display: block;
       color: var(--ink);
-      font-size: 18px;
-      line-height: 1.1;
-      overflow-wrap: anywhere;
+      margin-bottom: 4px;
     }
 
-    .metric span {
-      display: block;
-      margin-top: 7px;
-      color: var(--dim);
-      font-size: 12px;
-      line-height: 1.3;
+    .step span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     .mode-tabs {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 6px;
-      margin: 18px 0;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
     }
 
     .mode-tabs button {
-      min-height: 44px;
+      min-height: 48px;
       border: 1px solid var(--line);
-      background: #0e1915;
+      border-radius: 15px;
+      background: rgba(22, 34, 29, 0.88);
       color: var(--muted);
-      border-radius: var(--radius);
       cursor: pointer;
+      font-weight: 780;
     }
 
     .mode-tabs button[aria-selected="true"] {
-      color: var(--bg);
+      color: #07100d;
       background: var(--green);
       border-color: var(--green);
-      font-weight: 760;
     }
 
     .layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(260px, 0.82fr);
-      gap: 12px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+      gap: 14px;
       align-items: start;
     }
 
-    .panel,
-    .rail {
-      border: 1px solid var(--line);
-      background: rgba(12, 23, 19, 0.9);
-      box-shadow: 0 18px 40px var(--shadow);
+    .panel, .rail {
+      padding: 16px;
     }
 
-    .panel {
-      padding: 14px;
-    }
-
-    .rail {
-      padding: 12px;
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .field {
       display: grid;
-      gap: 6px;
+      gap: 7px;
       margin-bottom: 12px;
     }
 
     label {
       color: var(--muted);
       font-size: 12px;
-      font-weight: 680;
+      font-weight: 820;
       text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
-    textarea,
-    input,
-    select {
+    textarea, input, select {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 14px;
       background: #08110e;
       color: var(--ink);
       outline: none;
-      padding: 11px 12px;
-      min-height: 44px;
+      min-height: 46px;
+      padding: 12px;
     }
 
     textarea {
-      resize: vertical;
-      min-height: 126px;
+      min-height: 132px;
       line-height: 1.45;
+      resize: vertical;
     }
 
-    textarea:focus,
-    input:focus,
-    select:focus {
+    textarea:focus, input:focus, select:focus {
       border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(120, 227, 160, 0.14);
+      box-shadow: 0 0 0 4px rgba(134, 240, 168, 0.13);
     }
 
     .twocol {
@@ -279,20 +279,24 @@
 
     .actions {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+      grid-template-columns: minmax(0, 1fr) minmax(160px, 0.55fr);
+      gap: 9px;
       margin-top: 10px;
     }
 
     .btn {
-      min-height: 46px;
+      display: inline-grid;
+      place-items: center;
+      min-height: 48px;
       border: 1px solid transparent;
-      border-radius: var(--radius);
-      padding: 0 12px;
-      color: var(--bg);
+      border-radius: 14px;
+      padding: 0 14px;
+      color: #07100d;
       background: var(--green);
-      font-weight: 760;
+      font-weight: 850;
       cursor: pointer;
+      text-decoration: none;
+      text-align: center;
     }
 
     .btn.secondary {
@@ -316,147 +320,87 @@
       cursor: wait;
     }
 
-    .rail-title {
-      margin: 0 0 10px;
-      font-size: 14px;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
-
-    .offer-list {
-      display: grid;
-      gap: 8px;
-    }
-
-    .campaign-list {
-      display: grid;
-      gap: 7px;
-      margin-top: 10px;
-    }
-
-    .offer {
-      border: 1px solid var(--line);
-      padding: 11px;
-      background: #0b1511;
-      border-radius: var(--radius);
-      min-height: 86px;
-    }
-
-    .offer strong {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      font-size: 14px;
-      line-height: 1.3;
-    }
-
-    .offer span {
-      color: var(--muted);
-      display: block;
-      margin-top: 7px;
-      font-size: 12px;
-      line-height: 1.35;
-    }
-
-    .campaign {
-      border-left: 2px solid var(--green);
-      padding: 8px 0 8px 10px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .campaign strong {
-      display: block;
-      color: var(--ink);
-      margin-bottom: 3px;
-    }
-
     .result {
       margin-top: 12px;
       border: 1px solid var(--line);
-      background: #08110e;
-      min-height: 128px;
+      border-radius: 14px;
+      background: #07100d;
+      min-height: 150px;
+      max-height: 420px;
       padding: 12px;
       color: var(--muted);
       overflow: auto;
       white-space: pre-wrap;
-      font: 12px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
+      font: 12px/1.45 var(--mono);
+    }
+
+    .receipt {
+      display: grid;
+      gap: 9px;
+    }
+
+    .receipt-row {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 11px;
+      background: #0b1411;
+    }
+
+    .receipt-row strong {
+      color: var(--green);
+      font: 900 13px/1.2 var(--mono);
+    }
+
+    .receipt-row span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     .link-row {
       display: grid;
-      gap: 7px;
-      margin-top: 12px;
-    }
-
-    .worker-cta {
-      display: grid;
-      place-items: center;
-      min-height: 58px;
-      margin-top: 12px;
-      border: 1px solid rgba(120, 227, 160, 0.72);
-      border-radius: var(--radius);
-      background: linear-gradient(135deg, var(--green), var(--gold));
-      color: #07100d;
-      text-decoration: none;
-      font-weight: 860;
-      text-align: center;
-      padding: 10px 12px;
-      box-shadow: 0 18px 38px rgba(120, 227, 160, 0.14);
-    }
-
-    .worker-cta small {
-      display: block;
-      margin-top: 3px;
-      font: 700 11px/1.25 ui-monospace, "Cascadia Code", Consolas, monospace;
+      gap: 8px;
+      margin-top: 13px;
     }
 
     .link-row a {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
-      min-height: 38px;
+      min-height: 40px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 0 10px;
+      border-radius: 13px;
+      padding: 0 11px;
       text-decoration: none;
       color: var(--muted);
-      background: #0b1511;
+      background: #0b1411;
     }
 
     .link-row a span {
       color: var(--green);
-      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font: 800 11px/1 var(--mono);
     }
 
     .fineprint {
       margin: 14px 0 0;
       color: var(--dim);
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.5;
     }
 
-    @media (max-width: 720px) {
-      .app {
-        width: min(100% - 18px, 760px);
-      }
+    .hidden {
+      display: none;
+    }
 
-      h1 {
-        font-size: 32px;
-      }
-
-      .metrics,
-      .layout,
-      .twocol,
-      .actions {
-        grid-template-columns: 1fr;
-      }
-
-      .mode-tabs {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    @media (max-width: 760px) {
+      .app { width: min(100% - 18px, 920px); }
+      .hero, .layout, .twocol, .actions { grid-template-columns: 1fr; }
+      h1 { max-width: 10ch; }
+      .mode-tabs { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -465,8 +409,8 @@
     <div class="topbar">
       <div class="brand">
         <div class="mark">N</div>
-        <div class="brand-text">
-          <div class="brand-title">AI Swarm Fact Checker</div>
+        <div>
+          <div class="brand-title">Nomad Bot Risk Receipt</div>
           <div class="brand-sub">Telegram Mini App</div>
         </div>
       </div>
@@ -474,141 +418,135 @@
     </div>
 
     <section class="hero">
-      <h1>Check the claim. Push proof into the swarm.</h1>
-      <p class="lede">Claim input, URL input, PDF metadata, OpenAI quick scan when configured, and proof-first handoff into the Nomad reliability-doctor intake.</p>
-      <p class="lede"><strong>Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.</strong></p>
-      <div class="metrics">
-        <div class="metric"><strong id="metric-diagnosis">free</strong><span>fact-check intake</span></div>
-        <div class="metric"><strong id="metric-worker">1.3x</strong><span>compute barter accepted</span></div>
-        <div class="metric"><strong id="metric-pledge">proof</strong><span>digest-bound result</span></div>
-        <div class="metric"><strong id="metric-agents">worker</strong><span>free with Transition Worker</span></div>
+      <div class="hero-card">
+        <div class="eyebrow">Public wallet only. No secrets.</div>
+        <h1>Test the bot before it trades.</h1>
+        <p class="lede">
+          Tell Nomad what kind of Solana, NEAR, or Hyperliquid bot you want. Nomad returns a risk receipt,
+          a proof digest, and an optional paid simulation task. It does not ask for seed phrases, private keys,
+          API keys, custody, or live-order permission.
+        </p>
+        <div class="hero-actions">
+          <a class="btn gold" href="#miniapp-form">Create bot risk receipt</a>
+          <a class="btn secondary" href="/bot-factory">Open full bot page</a>
+        </div>
       </div>
+      <aside class="quick-card" aria-label="How it works">
+        <div class="step"><strong>1. Describe your goal</strong><span>Risk profile, max drawdown, chain, and strategy idea.</span></div>
+        <div class="step"><strong>2. Get a free receipt</strong><span>Nomad builds a bounded risk envelope and proof digest.</span></div>
+        <div class="step"><strong>3. Pay only if useful</strong><span>Create an awaiting-payment task for a deeper simulation or repair.</span></div>
+      </aside>
     </section>
 
     <nav class="mode-tabs" aria-label="Mini App mode">
-      <button type="button" data-mode="factcheck" aria-selected="true">Fact</button>
-      <button type="button" data-mode="botfactory" aria-selected="false">Bot</button>
-      <button type="button" data-mode="diagnosis" aria-selected="false">Diagnose</button>
-      <button type="button" data-mode="task" aria-selected="false">Worker</button>
-      <button type="button" data-mode="verify" aria-selected="false">Verify</button>
-      <button type="button" data-mode="repair" aria-selected="false">Repair</button>
-      <button type="button" data-mode="pledge" aria-selected="false">d/acc</button>
-      <button type="button" data-mode="agents" aria-selected="false">Agent</button>
-      <button type="button" data-mode="cursor" aria-selected="false">Cursor</button>
-      <button type="button" data-mode="launch" aria-selected="false">Launch</button>
+      <button type="button" data-mode="botfactory" aria-selected="true">Bot risk receipt</button>
+      <button type="button" data-mode="factcheck" aria-selected="false">Fact-check claim</button>
+      <button type="button" data-mode="verify" aria-selected="false">Verify payment</button>
     </nav>
 
     <section class="layout">
       <form class="panel" id="miniapp-form">
+        <h2 class="section-title" id="form-title">Create a bot risk receipt</h2>
         <div class="field">
-          <label for="problem">Claim / fact to verify</label>
-          <textarea id="problem" name="problem" maxlength="900" placeholder="Beispiel: Diese Aussage ist korrekt und durch die angegebene Quelle gedeckt."></textarea>
+          <label for="problem">Goal or claim</label>
+          <textarea id="problem" name="problem" maxlength="900" placeholder="Example: Create a simulation-only Hyperliquid bot with a 3% max drawdown. No live orders."></textarea>
         </div>
         <div class="twocol">
           <div class="field">
-            <label for="source-url">Source URL</label>
-            <input id="source-url" name="source-url" maxlength="260" placeholder="https://example.com/source">
+            <label for="wallet">Public wallet or payer ref</label>
+            <input id="wallet" name="wallet" maxlength="160" placeholder="Public wallet only, never a seed phrase">
           </div>
           <div class="field">
-            <label for="pdf-file">PDF evidence</label>
-            <input id="pdf-file" name="pdf-file" type="file" accept="application/pdf">
-          </div>
-        </div>
-        <div class="twocol">
-          <div class="field">
-            <label for="contact">Reply handle</label>
-            <input id="contact" name="contact" maxlength="160" placeholder="@telegram, email, or URL">
-          </div>
-          <div class="field">
-            <label for="wallet">Wallet or payer ref</label>
-            <input id="wallet" name="wallet" maxlength="120" placeholder="0x... or payer reference">
+            <label for="source-url">Evidence URL</label>
+            <input id="source-url" name="source-url" maxlength="260" placeholder="Optional source URL for fact-checking">
           </div>
         </div>
-        <div class="twocol">
+        <div class="twocol bot-fields">
           <div class="field">
-            <label for="budget">Budget</label>
-            <select id="budget" name="budget">
-              <option value="0">Free diagnosis</option>
-              <option value="0.003">0.003 ETH d/acc pledge</option>
-              <option value="0.01" selected>0.01 ETH worker setup</option>
-              <option value="0.03">0.03 ETH urgent repair</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="cycles">Cycles</label>
-            <select id="cycles" name="cycles">
-              <option value="1">1 cycle</option>
-              <option value="3" selected>3 cycles</option>
-              <option value="7">7 cycles</option>
-            </select>
-          </div>
-        </div>
-        <div class="twocol">
-          <div class="field">
-            <label for="chain-targets">Bot chains</label>
+            <label for="chain-targets">Chains</label>
             <input id="chain-targets" name="chain-targets" maxlength="120" value="solana,near,hyperliquid">
           </div>
           <div class="field">
             <label for="max-drawdown">Max drawdown</label>
-            <input id="max-drawdown" name="max-drawdown" maxlength="60" placeholder="for example 5%">
+            <input id="max-drawdown" name="max-drawdown" maxlength="60" placeholder="Example: 3%">
           </div>
         </div>
-        <div class="twocol">
+        <div class="twocol bot-fields">
           <div class="field">
             <label for="risk-profile">Risk profile</label>
-            <input id="risk-profile" name="risk-profile" maxlength="80" placeholder="low / medium / high">
+            <select id="risk-profile" name="risk-profile">
+              <option value="low" selected>Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
           </div>
           <div class="field">
             <label for="strategy-type">Strategy type</label>
-            <input id="strategy-type" name="strategy-type" maxlength="120" placeholder="market making / momentum / repair">
+            <input id="strategy-type" name="strategy-type" maxlength="120" placeholder="Market making, momentum, repair, etc.">
           </div>
         </div>
         <div class="twocol">
           <div class="field">
+            <label for="budget">Optional paid task budget</label>
+            <select id="budget" name="budget">
+              <option value="0">Free receipt only</option>
+              <option value="0.01">0.01 native starter task</option>
+              <option value="0.03" selected>0.03 native simulation task</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="contact">Reply handle</label>
+            <input id="contact" name="contact" maxlength="160" placeholder="@telegram, email, GitHub, or URL">
+          </div>
+        </div>
+        <div class="twocol verify-fields hidden">
+          <div class="field">
             <label for="task-id">Task ID</label>
-            <input id="task-id" name="task-id" maxlength="140" placeholder="task id from paid repair task">
+            <input id="task-id" name="task-id" maxlength="140" placeholder="Task id from a paid task">
           </div>
           <div class="field">
             <label for="tx-hash">Payment tx hash</label>
-            <input id="tx-hash" name="tx-hash" maxlength="120" placeholder="0x... after sending ETH">
+            <input id="tx-hash" name="tx-hash" maxlength="140" placeholder="0x... or chain receipt">
           </div>
         </div>
-        <div class="actions">
-          <button class="btn" id="primary-action" type="submit">Start fact check</button>
-          <button class="btn secondary" id="record-lead" type="button">Record lead</button>
+        <div class="field fact-fields hidden">
+          <label for="pdf-file">PDF evidence metadata</label>
+          <input id="pdf-file" name="pdf-file" type="file" accept="application/pdf">
         </div>
-        <pre class="result" id="result" aria-live="polite">Mini App ready.</pre>
+        <div class="field hidden">
+          <label for="cycles">Cycles</label>
+          <select id="cycles" name="cycles">
+            <option value="1">1 cycle</option>
+            <option value="3" selected>3 cycles</option>
+            <option value="7">7 cycles</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn gold" id="primary-action" type="submit">Create bot risk receipt</button>
+          <button class="btn secondary" id="record-lead" type="button">Save lead</button>
+        </div>
+        <pre class="result" id="result" aria-live="polite">Ready. Start with a public wallet and one clear bot goal. Never paste a seed phrase or private key.</pre>
       </form>
 
-      <aside class="rail" aria-label="Nomad Mini App offers">
-        <h2 class="rail-title">Offer stack</h2>
-        <div class="offer-list" id="offer-list">
-          <div class="offer"><strong>Free mini diagnosis <em>0</em></strong><span>Find the smallest paid next step.</span></div>
-          <div class="offer"><strong>Transition Worker <em>0.01</em></strong><span>Setup and proof-return loop for one blocked runtime.</span></div>
-          <div class="offer"><strong>d/acc pledge <em>0.003</em></strong><span>Fund one local worker cycle as bounded pressure.</span></div>
+      <aside class="rail" aria-label="Nomad safety and links">
+        <h2 class="section-title">What you get</h2>
+        <div class="receipt">
+          <div class="receipt-row"><strong>Free</strong><span>Bot risk receipt or fact-check receipt with proof digest.</span></div>
+          <div class="receipt-row"><strong>0.03</strong><span>Optional paid simulation task after the receipt is useful.</span></div>
+          <div class="receipt-row"><strong>Safe</strong><span>No seed phrases, no private keys, no custody, no live trading during intake.</span></div>
         </div>
-        <div class="campaign-list" id="campaign-list">
-          <div class="campaign"><strong>Agent recruitment</strong>Public contract for external runtimes.</div>
-          <div class="campaign"><strong>Ethereum support</strong>Open-source proposal packet.</div>
-        </div>
-        <a class="worker-cta" id="worker-cta" href="/downloads/install_nomad_transition_worker.bat">
-          Transition Worker herunterladen
-          <small>gratis Fact Checking durch Compute-Beitrag</small>
-        </a>
         <div class="link-row">
-          <a id="worker-link" href="/downloads/nomad_transition_worker.py">Transition Worker <span>GET</span></a>
+          <a id="bot-link" href="/bot-factory">Full bot page <span>OPEN</span></a>
+          <a id="intake-link" href="/swarm/reliability-doctor/intake">Reliability intake <span>POST</span></a>
+          <a id="worker-link" href="/downloads/nomad_transition_worker.py">Transition Worker <span>PY</span></a>
           <a id="worker-bat-link" href="/downloads/install_nomad_transition_worker.bat">Windows Worker <span>BAT</span></a>
-          <a id="intake-link" href="/swarm/reliability-doctor/intake">Fact-check intake <span>POST</span></a>
-          <a id="fleet-link" href="/swarm/workers">Worker fleet <span>GET</span></a>
-          <a id="support-link" href="/.well-known/nomad-eth-support.json">ETH support <span>GET</span></a>
-          <a id="attach-link" href="/swarm/attach-get">Agent attach <span>GET</span></a>
-          <a id="sales-link" href="/.well-known/nomad-sales-funnel.json">Sales funnel <span>GET</span></a>
-          <a id="acquisition-link" href="/.well-known/nomad-telegram-acquisition.json">Acquisition <span>GET</span></a>
-          <a id="engine-link" href="/.well-known/nomad-acquisition-engine.json">Engine <span>GET</span></a>
-          <a id="proposal-link" href="/downloads/nomad_ethereum_ai_agent_support_proposal.md">Proposal <span>MD</span></a>
-          <a id="cursor-link" href="/.well-known/nomad-referral-offers.json">Cursor discount <span>open</span></a>
+          <a id="manifest-link" href="/.well-known/nomad-telegram-miniapp.json">Machine contract <span>JSON</span></a>
         </div>
-        <p class="fineprint" id="fineprint">Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis. Revenue is counted only after verified payment or receipt; compute barter is not cash revenue.</p>
+        <p class="fineprint" id="fineprint">
+          Run the Transition Worker to exchange verified compute for free proof-first checks. Revenue is counted only
+          after verified payment or a verified return-compute receipt. A created task with awaiting-payment status is
+          not revenue.
+        </p>
       </aside>
     </section>
   </main>
@@ -622,7 +560,7 @@
 
     const el = (id) => document.getElementById(id);
     const state = {
-      mode: "factcheck",
+      mode: "botfactory",
       manifest: null,
       busy: false,
       telegramUser: tg && tg.initDataUnsafe ? tg.initDataUnsafe.user || null : null,
@@ -636,13 +574,9 @@
       return current.slice(0, current.length - match.length).replace(/\/$/, "");
     };
 
-    const apiUrl = (path) => {
-      if (/^https?:\/\//.test(path)) return path;
-      if (window.location.protocol === "http:" || window.location.protocol === "https:") {
-        return `${window.location.origin}${apiPrefix()}${path}`;
-      }
-      return `https://www.syndiode.com${path}`;
-    };
+    const apiUrl = (path) => /^https?:\/\//.test(path)
+      ? path
+      : `${window.location.origin}${apiPrefix()}${path}`;
 
     const setBusy = (busy) => {
       state.busy = busy;
@@ -650,11 +584,8 @@
         button.disabled = busy;
       });
       if (tg && tg.MainButton) {
-        if (busy) {
-          tg.MainButton.showProgress();
-        } else {
-          tg.MainButton.hideProgress();
-        }
+        if (busy) tg.MainButton.showProgress();
+        else tg.MainButton.hideProgress();
       }
     };
 
@@ -702,12 +633,11 @@
       task_id: el("task-id").value.trim(),
       tx_hash: el("tx-hash").value.trim(),
       source: "telegram_miniapp",
-      campaign: state.mode === "pledge" ? "dacc_eth_pledge" : state.mode === "agents" ? "ai_agent_recruitment" : state.mode === "launch" ? "telegram_acquisition" : state.mode,
+      campaign: state.mode === "botfactory" ? "telegram_bot_factory" : state.mode,
     });
 
     const botFactoryPayload = async () => ({
       ...formPayload(),
-      ...(await pdfMetadata()),
       requester_id: "telegram-miniapp-bot-factory",
       source: "telegram_miniapp_bot_factory",
       service_type: "proof_gated_bot_factory",
@@ -748,87 +678,50 @@
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({ok: false, error: "invalid_json_response"}));
-      if (!response.ok && data.ok !== true) {
-        data.http_status = response.status;
-      }
+      if (!response.ok && data.ok !== true) data.http_status = response.status;
       return data;
     };
 
-    const formatFactCheckResult = (data) => {
+    const recordLead = async (stage, extra = {}) => postJson("/telegram-miniapp/lead", {
+      ...formPayload(),
+      ...extra,
+      stage,
+      intent: state.mode,
+      idempotency_key: `${stage}:${Date.now()}`,
+    });
+
+    const summarizeBotResult = (data) => {
       if (!data || typeof data !== "object") return String(data || "No result.");
-      const display = data.display_result || {};
-      const pre = data.openai_preanalysis || {};
-      const work = data.work_exchange || {};
-      const downloads = data.downloads || {};
-      const candidateSources = Array.isArray(pre.candidate_sources) ? pre.candidate_sources : [];
-      const searchQueries = Array.isArray(pre.search_queries) ? pre.search_queries : [];
+      const task = data.payable_task && data.payable_task.task ? data.payable_task.task : {};
+      const proof = data.proof || {};
+      const risk = proof.risk_envelope || {};
+      const wallet = risk.wallet_validation || {};
       return [
-        `Status: ${data.accepted ? "accepted into Nomad Swarm" : "needs more input"}`,
-        `Verdict: ${display.provisional_verdict || "unclear"}${display.confidence ? ` (${display.confidence})` : ""}`,
-        `Summary: ${display.summary || "No pre-analysis summary returned yet."}`,
-        `Proof digest: ${display.proof_digest || "pending"}`,
-        `Compute barter: ${work.auto_accepted ? "auto-accepted" : "not opened"} at 1.3x, cash revenue counted: no`,
-        `Obligation: ${display.obligation_id || "pending"}`,
-        `Candidate sources: ${candidateSources.slice(0, 5).join(" | ") || "none yet"}`,
-        `Search hints: ${searchQueries.slice(0, 5).join(" | ") || "none yet"}`,
-        `Worker: ${downloads.installer_bat || downloads.windows_worker_installer || downloads.windows_bat || el("worker-bat-link").href}`,
+        `Status: ${data.ok ? "receipt created" : "needs more input"}`,
+        `Service: ${data.service_type || "proof_gated_bot_factory"}`,
+        `Proof digest: ${data.solution_proof_digest || proof.proof_digest || "pending"}`,
+        `Wallet check: ${wallet.valid === true ? "valid public wallet shape" : wallet.reason || "not checked"}`,
+        `Paid task: ${task.task_id || "not created"} ${task.status ? `(${task.status})` : ""}`,
+        `Revenue counted: no`,
+        `Next: ${data.next_payment_action || "Use the receipt first. Pay only if the simulation task is useful."}`,
         "",
         JSON.stringify(data, null, 2),
       ].join("\n");
     };
 
-    const recordLead = async (stage, extra = {}) => {
-      const payload = {
-        ...formPayload(),
-        ...extra,
-        stage,
-        intent: state.mode,
-        idempotency_key: `${stage}:${Date.now()}`,
-      };
-      return postJson("/telegram-miniapp/lead", payload);
-    };
-
-    const runDiagnosis = async () => {
-      const payload = formPayload();
-      if (!payload.problem) {
-        writeResult("Add one concrete blocker first.");
-        return;
-      }
-      setBusy(true);
-      try {
-        await recordLead("diagnosis_requested", {selected_offer: "free_mini_diagnosis"});
-        const result = await postJson("/a2a/message", {
-          problem: payload.problem,
-          requester_agent: "telegram-miniapp",
-          goal: "Return one bounded diagnosis and one paid next step for Nomad Transition Worker, d/acc pledge, or agent recruitment.",
-          constraints: ["no secrets", "proof-first", "smallest paid next step", "no endorsement claims"],
-          metadata: {
-            source: "telegram_miniapp",
-            contact: payload.contact,
-            telegram_user: payload.telegram_user,
-            campaign: payload.campaign,
-          },
-        });
-        writeResult(result);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const runFactCheck = async () => {
-      const payload = await factCheckPayload();
-      if (!payload.problem) {
-        writeResult("Add one concrete claim or fact first.");
-        return;
-      }
-      setBusy(true);
-      try {
-        await recordLead("fact_check_requested", {selected_offer: "fact_check_intake", campaign: "telegram_fact_check"});
-        const result = await postJson("/telegram-miniapp/fact-check", payload);
-        writeResult(formatFactCheckResult(result));
-      } finally {
-        setBusy(false);
-      }
+    const summarizeFactResult = (data) => {
+      if (!data || typeof data !== "object") return String(data || "No result.");
+      const display = data.display_result || {};
+      const pre = data.openai_preanalysis || {};
+      return [
+        `Status: ${data.accepted ? "accepted into Nomad Swarm" : "needs more input"}`,
+        `Verdict: ${display.provisional_verdict || "unclear"}`,
+        `Summary: ${display.summary || pre.summary || "No pre-analysis summary returned yet."}`,
+        `Proof digest: ${display.proof_digest || data.solution_proof_digest || "pending"}`,
+        `Revenue counted: no`,
+        "",
+        JSON.stringify(data, null, 2),
+      ].join("\n");
     };
 
     const runBotFactory = async () => {
@@ -839,47 +732,28 @@
       }
       setBusy(true);
       try {
-        await recordLead("bot_factory_paid_task_requested", {selected_offer: "proof_gated_bot_factory", campaign: "telegram_bot_factory"});
+        await recordLead("bot_factory_paid_task_requested", {selected_offer: "proof_gated_bot_factory"});
         const result = await postJson("/swarm/reliability-doctor/intake", payload);
         if (result && result.payable_task && result.payable_task.task && result.payable_task.task.task_id) {
           el("task-id").value = result.payable_task.task.task_id;
         }
-        writeResult(result);
+        writeResult(summarizeBotResult(result));
       } finally {
         setBusy(false);
       }
     };
 
-    const createTask = async () => {
-      const payload = formPayload();
+    const runFactCheck = async () => {
+      const payload = await factCheckPayload();
       if (!payload.problem) {
-        writeResult("Add the worker setup problem first.");
+        writeResult("Add one concrete claim first.");
         return;
       }
       setBusy(true);
       try {
-        const result = await postJson("/tasks", {
-          problem: payload.problem,
-          requester_agent: "telegram-miniapp",
-          requester_wallet: payload.requester_wallet,
-          service_type: "transition_worker_setup",
-          budget_native: payload.budget_native || 0.01,
-          callback_url: "",
-          metadata: {
-            source: "telegram_miniapp",
-            contact: payload.contact,
-            selected_offer: "transition_worker_setup",
-            campaign: "paid_worker_setup",
-          },
-        });
-        await recordLead("task_created", {
-          selected_offer: "transition_worker_setup",
-          task_id: result && result.task ? result.task.task_id : "",
-        });
-        if (result && result.task && result.task.task_id) {
-          el("task-id").value = result.task.task_id;
-        }
-        writeResult(result);
+        await recordLead("fact_check_requested", {selected_offer: "fact_check_intake"});
+        const result = await postJson("/telegram-miniapp/fact-check", payload);
+        writeResult(summarizeFactResult(result));
       } finally {
         setBusy(false);
       }
@@ -888,7 +762,7 @@
     const verifyPayment = async () => {
       const payload = formPayload();
       if (!payload.task_id || !payload.tx_hash) {
-        writeResult("Add the task id and payment tx hash first.");
+        writeResult("Add the task id and payment transaction hash first.");
         return;
       }
       setBusy(true);
@@ -898,96 +772,8 @@
           tx_hash: payload.tx_hash,
           requester_wallet: payload.requester_wallet,
         });
-        await recordLead("payment_verification_submitted", {
-          selected_offer: "payment_verification",
-          task_id: payload.task_id,
-        });
+        await recordLead("payment_verification_submitted", {selected_offer: "payment_verification"});
         writeResult(result);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const runWorkerRepair = async () => {
-      const payload = formPayload();
-      if (!payload.task_id) {
-        writeResult("Add the paid task id first.");
-        return;
-      }
-      setBusy(true);
-      try {
-        const result = await postJson("/tasks/work", {
-          task_id: payload.task_id,
-          approval: "draft_only",
-        });
-        await recordLead("worker_repair_requested", {
-          selected_offer: "worker_repair_after_payment",
-          task_id: payload.task_id,
-        });
-        writeResult(result);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const pledgeCompute = async () => {
-      const payload = formPayload();
-      setBusy(true);
-      try {
-        const id = `telegram-miniapp-${Date.now()}`;
-        const result = await postJson("/machine-treasury/pledge", {
-          agent_id: "telegram-miniapp-buyer",
-          objective: "dacc_transition_worker_compute",
-          amount_native: payload.pledge_amount_native || 0.003,
-          horizon_cycles: payload.horizon_cycles || 3,
-          intent: payload.problem || "Support proof-gated AI-agent micro-repairs via Transition Worker compute.",
-          idempotency_key: id,
-          proof_digest: `sha256:${id}`,
-          verifier_trace_digest: `sha256:${id}:telegram`,
-          settlement_ref: "telegram_miniapp_dacc_compute_pledge",
-          source_tag: "telegram_miniapp",
-        });
-        await recordLead("compute_pledge_started", {selected_offer: "dacc_compute_pledge", campaign: "dacc_eth_pledge"});
-        writeResult(result);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const openAgentPacket = async () => {
-      setBusy(true);
-      try {
-        await recordLead("agent_recruitment_opened", {selected_offer: "ai_agent_recruitment", campaign: "ai_agent_recruitment"});
-        const response = await fetch(apiUrl("/.well-known/nomad-eth-support.json"));
-        const data = await response.json().catch(() => ({ok: false, error: "invalid_support_packet"}));
-        writeResult(data);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const openCursor = async () => {
-      const url = (state.manifest && state.manifest.links && state.manifest.links.cursor_referral) || el("cursor-link").href;
-      await recordLead("cursor_offer_opened", {selected_offer: "cursor_referral", campaign: "cursor_cost_offset"});
-      if (tg && tg.openLink) {
-        tg.openLink(url);
-      } else {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-      writeResult({
-        ok: true,
-        opened: url,
-        disclosure: "Nomad may receive Cursor usage credit if a referred user buys a qualifying plan.",
-      });
-    };
-
-    const openAcquisitionLaunch = async () => {
-      setBusy(true);
-      try {
-        await recordLead("acquisition_launch_requested", {selected_offer: "telegram_acquisition", campaign: "telegram_acquisition"});
-        const response = await fetch(apiUrl("/swarm/telegram-acquisition"));
-        const data = await response.json().catch(() => ({ok: false, error: "invalid_acquisition_packet"}));
-        writeResult(data);
       } finally {
         setBusy(false);
       }
@@ -995,15 +781,8 @@
 
     const handleMainAction = async () => {
       if (state.mode === "factcheck") return runFactCheck();
-      if (state.mode === "botfactory") return runBotFactory();
-      if (state.mode === "diagnosis") return runDiagnosis();
-      if (state.mode === "task") return createTask();
       if (state.mode === "verify") return verifyPayment();
-      if (state.mode === "repair") return runWorkerRepair();
-      if (state.mode === "pledge") return pledgeCompute();
-      if (state.mode === "agents") return openAgentPacket();
-      if (state.mode === "launch") return openAcquisitionLaunch();
-      return openCursor();
+      return runBotFactory();
     };
 
     const updateMode = (mode) => {
@@ -1011,42 +790,29 @@
       document.querySelectorAll("[data-mode]").forEach((button) => {
         button.setAttribute("aria-selected", String(button.dataset.mode === mode));
       });
+      document.querySelectorAll(".bot-fields").forEach((node) => node.classList.toggle("hidden", mode !== "botfactory"));
+      document.querySelectorAll(".fact-fields").forEach((node) => node.classList.toggle("hidden", mode !== "factcheck"));
+      document.querySelectorAll(".verify-fields").forEach((node) => node.classList.toggle("hidden", mode !== "verify"));
+
       const primary = el("primary-action");
       primary.className = "btn";
-      if (mode === "factcheck") primary.textContent = "Start fact check";
       if (mode === "botfactory") {
-        primary.textContent = "Create bot paid task";
+        el("form-title").textContent = "Create a bot risk receipt";
+        primary.textContent = "Create bot risk receipt";
         primary.classList.add("gold");
-      }
-      if (mode === "diagnosis") primary.textContent = "Run diagnosis";
-      if (mode === "task") {
-        primary.textContent = "Create paid task";
-        primary.classList.add("gold");
-      }
-      if (mode === "verify") {
+        el("problem").placeholder = "Example: Create a simulation-only Hyperliquid bot with a 3% max drawdown. No live orders.";
+      } else if (mode === "factcheck") {
+        el("form-title").textContent = "Fact-check a claim";
+        primary.textContent = "Start fact check";
+        primary.classList.add("blue");
+        el("problem").placeholder = "Example: This claim is true and supported by the source URL.";
+      } else {
+        el("form-title").textContent = "Verify payment";
         primary.textContent = "Verify payment";
         primary.classList.add("blue");
+        el("problem").placeholder = "Optional note for the task.";
       }
-      if (mode === "repair") {
-        primary.textContent = "Run repair";
-        primary.classList.add("gold");
-      }
-      if (mode === "pledge") {
-        primary.textContent = "d/acc pledge";
-        primary.classList.add("blue");
-      }
-      if (mode === "agents") {
-        primary.textContent = "Recruit agents";
-        primary.classList.add("gold");
-      }
-      if (mode === "cursor") {
-        primary.textContent = "Open Cursor discount";
-        primary.classList.add("secondary");
-      }
-      if (mode === "launch") {
-        primary.textContent = "Launch acquisition";
-        primary.classList.add("blue");
-      }
+
       if (tg && tg.MainButton) {
         tg.MainButton.setText(primary.textContent);
         tg.MainButton.show();
@@ -1056,48 +822,15 @@
     const renderManifest = (manifest) => {
       state.manifest = manifest;
       el("status-pill").textContent = manifest.enabled ? "live" : "paused";
-      const offers = Array.isArray(manifest.offers) ? manifest.offers : [];
-      const worker = offers.find((offer) => offer.offer_id === "transition_worker_setup") || {};
-      const pledge = offers.find((offer) => offer.offer_id === "dacc_compute_pledge" || offer.offer_id === "compute_pledge") || {};
-      el("metric-worker").textContent = `${worker.price_native || 0.01} ETH`;
-      el("metric-pledge").textContent = `${pledge.price_native || 0.003} ETH`;
-      el("metric-agents").textContent = manifest.links && manifest.links.runtime_attach_get ? "attach" : "public";
-      const list = el("offer-list");
-      list.innerHTML = "";
-      offers.forEach((offer) => {
-        const node = document.createElement("div");
-        node.className = "offer";
-        node.innerHTML = `<strong>${offer.label || offer.offer_id}<em>${offer.price_native || 0}</em></strong><span>${offer.revenue_rule || offer.service_type || ""}</span>`;
-        list.appendChild(node);
-      });
-      const campaigns = Array.isArray(manifest.campaigns) ? manifest.campaigns : [];
-      const campaignList = el("campaign-list");
-      campaignList.innerHTML = "";
-      campaigns.forEach((campaign) => {
-        const node = document.createElement("div");
-        node.className = "campaign";
-        node.innerHTML = `<strong>${campaign.label || campaign.campaign_id}</strong>${campaign.policy || campaign.primary_url || ""}`;
-        campaignList.appendChild(node);
-      });
       if (manifest.links) {
+        el("bot-link").href = manifest.links.bot_factory_landing || "/bot-factory";
+        el("intake-link").href = manifest.links.bot_factory_intake || "/swarm/reliability-doctor/intake";
         el("worker-link").href = manifest.links.worker_download || "/downloads/nomad_transition_worker.py";
         el("worker-bat-link").href = manifest.links.worker_windows || "/downloads/install_nomad_transition_worker.bat";
-        el("worker-cta").href = manifest.links.worker_windows || "/downloads/install_nomad_transition_worker.bat";
-        el("intake-link").href = manifest.links.fact_check_intake || "/swarm/reliability-doctor/intake";
-        el("fleet-link").href = manifest.links.worker_fleet || "/swarm/workers";
-        el("support-link").href = manifest.links.eth_support || "/.well-known/nomad-eth-support.json";
-        el("attach-link").href = manifest.links.runtime_attach_get || "/swarm/attach-get";
-        el("sales-link").href = manifest.links.sales_funnel || "/.well-known/nomad-sales-funnel.json";
-        el("acquisition-link").href = manifest.links.telegram_acquisition || "/.well-known/nomad-telegram-acquisition.json";
-        el("engine-link").href = manifest.links.acquisition_engine || "/.well-known/nomad-acquisition-engine.json";
-        el("proposal-link").href = manifest.links.eth_support_proposal || "/downloads/nomad_ethereum_ai_agent_support_proposal.md";
-        el("cursor-link").href = manifest.links.cursor_referral || "/.well-known/nomad-referral-offers.json";
-      }
-      if (manifest.copy && manifest.copy.disclosure) {
-        el("fineprint").textContent = `${manifest.copy.disclosure} Revenue is counted only after verified payment or receipt. ETH pledges remain capped pressure signals until settled.`;
+        el("manifest-link").href = manifest.well_known_url || "/.well-known/nomad-telegram-miniapp.json";
       }
       if (manifest.copy && manifest.copy.worker_free_message) {
-        el("fineprint").textContent = `${manifest.copy.worker_free_message} Revenue is counted only after verified payment or receipt; compute barter is not cash revenue.`;
+        el("fineprint").textContent = `${manifest.copy.worker_free_message} Revenue is counted only after verified payment or a verified return-compute receipt.`;
       }
     };
 
@@ -1129,10 +862,10 @@
       .then(renderManifest)
       .catch((error) => {
         el("status-pill").textContent = "local";
-        writeResult(`Manifest unavailable: ${error.message}`);
+        writeResult(`Machine contract unavailable: ${error.message}`);
       });
 
-    updateMode("factcheck");
+    updateMode("botfactory");
   </script>
 </body>
 </html>

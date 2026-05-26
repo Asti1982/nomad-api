@@ -292,16 +292,19 @@ def test_telegram_miniapp_public_html_is_fact_check_surface():
     html = Path(__file__).resolve().parent / "public" / "telegram-miniapp.html"
     text = html.read_text(encoding="utf-8")
 
-    assert "AI Swarm Fact Checker" in text
-    assert "Claim / fact to verify" in text
+    assert "Nomad Bot Risk Receipt" in text
+    assert "Test the bot before it trades." in text
+    assert "Create bot risk receipt" in text
+    assert "Fact-check claim" in text
+    assert "Public wallet only" in text
     assert "source-url" in text
     assert "pdf-file" in text
     assert "/telegram-miniapp/fact-check" in text
     assert "/swarm/reliability-doctor/intake" in text
     assert "/downloads/install_nomad_transition_worker.bat" in text
     assert "/downloads/nomad_transition_worker.py" in text
-    assert "Transition Worker herunterladen" in text
-    assert "Jeder, der den Transition Worker" in text
+    assert "Run the Transition Worker" in text
+    assert "No seed phrases" in text
     assert "accepted_compute_barter_terms" in text
 
 

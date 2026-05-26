@@ -19,8 +19,8 @@ LEDGER_ENV = "NOMAD_TELEGRAM_MINIAPP_LEDGER_PATH"
 MINIAPP_FACT_CHECK_PATH = "/telegram-miniapp/fact-check"
 SWARM_RELIABILITY_DOCTOR_INTAKE_PATH = "/swarm/reliability-doctor/intake"
 WORKER_FREE_MESSAGE = (
-    "Jeder, der den Transition Worker herunterlädt und laufen lässt, "
-    "erhält AI Swarm Fact Checking komplett gratis."
+    "Run the Transition Worker and Nomad can give you free proof-first checks or bot-risk receipts "
+    "in exchange for verified return compute."
 )
 
 
@@ -199,10 +199,10 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "schema": "nomad.proof_gated_bot_factory_lane.v1",
             "intake_url": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
             "service_type": "proof_gated_bot_factory",
-            "headline": "Gratis Bot-Erstellung & Optimierung auf Solana/NEAR/Hyperliquid",
+            "headline": "Free bot risk receipt for Solana, NEAR, and Hyperliquid",
             "message": (
-                "Simulation, Risk-Envelope und Proof-Receipts zuerst; Live-Trading nur nach "
-                "separater Freigabe mit harten Limits."
+                "Simulation, risk envelope, and proof receipts first. Live trading requires a separate approval path "
+                "with hard limits."
             ),
             "accepted_inputs": [
                 "public_wallet",
@@ -401,8 +401,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "telegram_init_data": "accepted_as_context_only_not_authentication",
         },
         "copy": {
-            "headline": "AI Swarm Fact Checker",
-            "subline": "Claim input, URL input, PDF metadata, OpenAI quick scan, and proof-first Nomad Swarm handoff.",
+            "headline": "Nomad Bot Risk Receipt",
+            "subline": "Describe a bot goal or claim, get a proof-first receipt, then create a paid task only if it is useful.",
             "disclosure": cursor_offer.get("disclosure_text", ""),
             "worker_free_message": WORKER_FREE_MESSAGE,
         },

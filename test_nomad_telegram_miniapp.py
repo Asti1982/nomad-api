@@ -28,7 +28,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["fact_check_lane"]["intake_url"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["fact_check_lane"]["handoff_url"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["fact_check_lane"]["work_exchange"]["auto_accept"] is True
-    assert out["fact_check_lane"]["message"].startswith("Jeder, der den Transition Worker")
+    assert out["fact_check_lane"]["message"].startswith("Run the Transition Worker")
     assert out["bot_factory_lane"]["schema"] == "nomad.proof_gated_bot_factory_lane.v1"
     assert out["bot_factory_lane"]["service_type"] == "proof_gated_bot_factory"
     assert out["bot_factory_lane"]["work_exchange"]["counts_as_revenue"] is False
@@ -63,8 +63,8 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"
     assert any(item["campaign_id"] == "ethereum_support" for item in out["campaigns"])
     assert out["guardrails"]["no_unsolicited_dm"] is True
-    assert out["copy"]["headline"] == "AI Swarm Fact Checker"
-    assert out["copy"]["worker_free_message"].startswith("Jeder, der den Transition Worker")
+    assert out["copy"]["headline"] == "Nomad Bot Risk Receipt"
+    assert out["copy"]["worker_free_message"].startswith("Run the Transition Worker")
 
 
 def test_telegram_miniapp_surface_uses_public_nomad_prefix_for_syndiode():
