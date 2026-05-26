@@ -194,6 +194,35 @@ def test_current_stage_for_external_reads_tail(tmp_path, monkeypatch):
     assert current_stage_for_external(events, "id3") == "found"
 
 
+def test_external_value_projection_compacts_when_max_lines_is_set(tmp_path, monkeypatch):
+    ledger = tmp_path / "ev-compact.jsonl"
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_MAX_LINES", "3")
+
+    for idx in range(5):
+        assert append_external_value_event(
+            {
+                "agent_id": "nomad.test",
+                "external_id": f"gh_issue:test/repo#{idx}",
+                "stage": "found",
+                "work_url": "",
+                "proof_digest": "",
+                "verifier_trace_digest": "",
+            }
+        )["ok"]
+
+    lines = ledger.read_text(encoding="utf-8").splitlines()
+    summary = summarize_external_value_ledger()
+
+    assert len(lines) == 3
+    assert summary["event_tail_count"] == 3
+    assert {row["external_id"] for row in summary["latest_by_external"]} == {
+        "gh_issue:test/repo#2",
+        "gh_issue:test/repo#3",
+        "gh_issue:test/repo#4",
+    }
+
+
 def test_summary_latest_limit_can_keep_older_merged_settlement_candidates(tmp_path, monkeypatch):
     monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(tmp_path / "ev4.jsonl"))
     merged_id = "gh_pr:test/repo#old-merged"

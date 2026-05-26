@@ -3181,7 +3181,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/external-value", "/.well-known/nomad-external-value.json"}:
             if query.get("summary"):
-                self._json_response(summarize_external_value_ledger())
+                def _qint(name: str, default: int, cap: int) -> int:
+                    raw = (query.get(name) or [str(default)])[0]
+                    try:
+                        value = int(raw)
+                    except (TypeError, ValueError):
+                        value = default
+                    return max(1, min(cap, value))
+
+                self._json_response(
+                    summarize_external_value_ledger(
+                        limit=_qint("limit", 200, 1000),
+                        latest_limit=_qint("latest_limit", 40, 500),
+                    )
+                )
             else:
                 self._json_response(self.__class__._build_external_value_surface(base_url=self._base_url()))
             return

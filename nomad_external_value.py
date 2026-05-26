@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ TERMINAL_OUTCOMES = ("closed_duplicate", "closed_informative", "closed_invalid",
 STAGE_INDEX = {s: i for i, s in enumerate(STAGES_ORDER)}
 TERMINAL_INDEX = {s: i for i, s in enumerate(TERMINAL_OUTCOMES)}
 RECEIPT_ONLY_REVENUE_RULE = "paid_stage_requires_positive_amount_and_public_settlement_ref"
+PUBLIC_PROJECTION_DEFAULT_MAX_LINES = 260
 
 
 def _iso_now() -> str:
@@ -44,6 +46,37 @@ def _ledger_path(path: Path | str | None = None) -> Path:
 def _digest(payload: dict[str, Any], length: int = 32) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def _int_env(name: str, default: int, *, minimum: int = 0, maximum: int = 10000) -> int:
+    try:
+        raw = int(str(os.getenv(name) or "").strip() or default)
+    except (TypeError, ValueError):
+        raw = default
+    return max(minimum, min(maximum, raw))
+
+
+def _running_on_render() -> bool:
+    return any(os.getenv(name) for name in ("RENDER", "RENDER_SERVICE_ID", "RENDER_EXTERNAL_URL", "RENDER_INSTANCE_ID"))
+
+
+def _projection_max_lines() -> int:
+    explicit = str(os.getenv("NOMAD_EXTERNAL_VALUE_LEDGER_MAX_LINES") or "").strip()
+    if explicit:
+        return _int_env("NOMAD_EXTERNAL_VALUE_LEDGER_MAX_LINES", 0, minimum=0, maximum=8000)
+    if _running_on_render() or os.getenv("NOMAD_EXTERNAL_VALUE_PUBLIC_PROJECTION"):
+        return PUBLIC_PROJECTION_DEFAULT_MAX_LINES
+    return 0
+
+
+def _compact_ledger_tail(path: Path, *, max_lines: int | None = None) -> None:
+    cap = _projection_max_lines() if max_lines is None else max(0, int(max_lines))
+    if cap <= 0 or not path.exists():
+        return
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if len(lines) <= cap:
+        return
+    path.write_text("\n".join(lines[-cap:]) + "\n", encoding="utf-8")
 
 
 def _settlement_ref_from_body(body: dict[str, Any]) -> str:
@@ -256,6 +289,7 @@ def append_external_value_event(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+    _compact_ledger_tail(path)
     row["ledger_path"] = str(path)
     return row
 

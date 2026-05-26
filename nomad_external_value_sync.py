@@ -8,6 +8,7 @@ restart without storing payout secrets in Render or source control.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -27,6 +28,7 @@ from nomad_state_paths import state_root
 
 JsonFetcher = Callable[[str, float], dict[str, Any]]
 JsonPoster = Callable[[str, dict[str, Any], float], dict[str, Any]]
+DEFAULT_PUBLIC_SYNC_POST_LIMIT = 25
 
 
 def _iso_now() -> str:
@@ -39,6 +41,14 @@ def _safe_stamp() -> str:
 
 def _base(base_url: str) -> str:
     return (base_url or "https://www.syndiode.com").strip().rstrip("/")
+
+
+def _int_env(name: str, default: int, *, minimum: int = 1, maximum: int = 500) -> int:
+    try:
+        raw = int(str(os.getenv(name) or "").strip() or default)
+    except (TypeError, ValueError):
+        raw = default
+    return max(minimum, min(maximum, raw))
 
 
 def _snapshot_dir(path: Path | str | None = None) -> Path:
@@ -227,6 +237,7 @@ def sync_external_value_to_public(
     snapshot: bool = True,
     snapshot_dir: Path | str | None = None,
     timeout: float = 20.0,
+    apply_batch_limit: int | None = None,
     fetch_json: JsonFetcher = http_get_json,
     post_json: JsonPoster = http_post_json,
 ) -> dict[str, Any]:
@@ -235,7 +246,7 @@ def sync_external_value_to_public(
     path = _ledger_path(ledger_path)
     local_events = _read_events(path)
     local_summary = summarize_external_value_ledger(ledger_path=path)
-    public_url = f"{root}/swarm/external-value?summary=1"
+    public_url = f"{root}/swarm/external-value?summary=1&limit=1000&latest_limit=500"
     public_read = fetch_json(public_url, timeout)
     public_summary = public_read.get("json") if public_read.get("ok") and isinstance(public_read.get("json"), dict) else {}
     plan = plan_external_value_public_sync(local_events, public_summary)
@@ -250,9 +261,16 @@ def sync_external_value_to_public(
         )
 
     post_results: list[dict[str, Any]] = []
+    post_limit = (
+        _int_env("NOMAD_EXTERNAL_VALUE_SYNC_POST_LIMIT", DEFAULT_PUBLIC_SYNC_POST_LIMIT, minimum=1, maximum=200)
+        if apply_batch_limit is None
+        else max(1, min(200, int(apply_batch_limit)))
+    )
+    replay_candidates = plan["candidates"]
+    selected_candidates = replay_candidates[:post_limit]
     if apply and public_read.get("ok"):
         post_url = f"{root}/swarm/external-value"
-        for item in plan["candidates"]:
+        for item in selected_candidates:
             response = post_json(post_url, item["payload"], timeout)
             body = response.get("json") if isinstance(response.get("json"), dict) else {}
             accepted = bool(response.get("ok") and body.get("ok"))
@@ -305,14 +323,26 @@ def sync_external_value_to_public(
         ),
         "public_projection_lag_after": max(0, int(local_summary.get("event_tail_count") or 0) - final_public_events),
         "replay_candidate_count": int(plan.get("replay_candidate_count") or 0),
+        "post_batch_limit": post_limit,
         "posted_count": accepted_count,
+        "remaining_replay_candidate_count": max(0, int(plan.get("replay_candidate_count") or 0) - len(selected_candidates)),
         "failed_post_count": len(failed_posts),
         "skipped_count": int(plan.get("skipped_count") or 0),
         "blocked_count": int(plan.get("blocked_count") or 0),
         "snapshot": snapshot_result,
         "post_results": post_results,
-        "plan": plan,
+        "plan_preview": {
+            "schema": plan.get("schema"),
+            "local_event_count": plan.get("local_event_count"),
+            "public_distinct_externals": plan.get("public_distinct_externals"),
+            "replay_candidate_count": plan.get("replay_candidate_count"),
+            "skipped_count": plan.get("skipped_count"),
+            "blocked_count": plan.get("blocked_count"),
+            "candidates": replay_candidates[: min(10, len(replay_candidates))],
+            "skipped": plan.get("skipped", []),
+            "blocked": plan.get("blocked", []),
+        },
         "machine_instruction": (
-            "run_dry_first_then_apply_after_render_restart_or_when_public_projection_lags_local_durable_ledger"
+            "run_dry_first_then_apply_in_small_batches_after_render_restart_or_when_public_projection_lags_local_durable_ledger"
         ),
     }

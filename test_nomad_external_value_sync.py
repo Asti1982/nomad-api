@@ -127,3 +127,43 @@ def test_sync_posts_missing_public_events_from_local_ledger(tmp_path, monkeypatc
     assert out["failed_post_count"] == 0
     assert out["public_projection_lag_after"] == 0
     assert [post["stage"] for post in posts] == ["found", "submitted"]
+
+
+def test_sync_apply_posts_in_bounded_batches(tmp_path, monkeypatch):
+    ledger = tmp_path / "external-batch.jsonl"
+    monkeypatch.setenv("NOMAD_EXTERNAL_VALUE_LEDGER_PATH", str(ledger))
+    for idx in range(5):
+        assert append_external_value_event({"agent_id": "a", "external_id": f"gh_issue:test/repo#{idx}", "stage": "found"})["ok"]
+
+    posts = []
+
+    def fake_get(url, timeout):
+        return {
+            "ok": True,
+            "status_code": 200,
+            "json": {"ok": True, "event_tail_count": len(posts), "distinct_externals": len(posts), "latest_by_external": []},
+        }
+
+    def fake_post(url, payload, timeout):
+        posts.append(payload)
+        return {
+            "ok": True,
+            "status_code": 200,
+            "json": {"ok": True, "event_id": f"ev-{len(posts)}", "nomad_proof_receipt_digest": f"receipt-{len(posts)}"},
+        }
+
+    out = sync_external_value_to_public(
+        base_url="https://nomad.example",
+        apply=True,
+        snapshot=False,
+        apply_batch_limit=2,
+        fetch_json=fake_get,
+        post_json=fake_post,
+    )
+
+    assert out["posted_count"] == 2
+    assert out["post_batch_limit"] == 2
+    assert out["remaining_replay_candidate_count"] == 3
+    assert len(out["plan_preview"]["candidates"]) == 5
+    assert "plan" not in out
+    assert [post["external_id"] for post in posts] == ["gh_issue:test/repo#0", "gh_issue:test/repo#1"]
