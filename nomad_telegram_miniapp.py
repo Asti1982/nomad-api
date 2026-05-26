@@ -230,6 +230,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
                 "package_id": "bounded_bot_factory_pack",
                 "route": _u(base, "/service/e2e?service_type=proof_gated_bot_factory"),
             },
+            "landing_page": _u(base, "/bot-factory"),
             "one_step_paid_task": {
                 "method": "POST",
                 "endpoint": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
@@ -351,6 +352,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "fact_check_intake": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
             "bot_factory_intake": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
             "bot_factory_paid_upgrade": _u(base, "/service/e2e?service_type=proof_gated_bot_factory"),
+            "bot_factory_landing": _u(base, "/bot-factory"),
             "eth_support": _u(base, "/.well-known/nomad-eth-support.json"),
             "eth_support_alias": _u(base, "/swarm/eth-support"),
             "eth_support_proposal": _u(base, "/downloads/nomad_ethereum_ai_agent_support_proposal.md"),

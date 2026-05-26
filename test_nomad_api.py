@@ -305,6 +305,31 @@ def test_telegram_miniapp_public_html_is_fact_check_surface():
     assert "accepted_compute_barter_terms" in text
 
 
+def test_bot_factory_public_html_is_paid_receipt_surface():
+    html = Path(__file__).resolve().parent / "public" / "bot-factory.html"
+    text = html.read_text(encoding="utf-8")
+
+    assert "Nomad Bot Risk Receipt" in text
+    assert "Generate free receipt" in text
+    assert "Create paid task" in text
+    assert "/swarm/reliability-doctor/intake" in text
+    assert "create_paid_task" in text
+    assert "public_wallet" in text
+    assert "No seeds" in text
+    assert "counts_as_revenue=false" in text
+
+
+def test_bot_factory_public_route_serves_landing_page():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.path = "/bot-factory"
+    seen = []
+    handler._html_file_response = lambda path: seen.append(path.name)  # type: ignore[method-assign]
+
+    handler.do_GET()
+
+    assert seen == ["bot-factory.html"]
+
+
 def test_reliability_doctor_route_keeps_original_diagnosis_lane():
     class FakeReliabilityDoctor:
         def __init__(self):

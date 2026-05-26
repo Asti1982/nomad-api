@@ -2470,6 +2470,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._html_file_response(PUBLIC_DIR / "telegram-miniapp.html")
             return
 
+        if parsed.path in {"/bot-factory", "/bot-factory.html", "/bot-risk-receipt"}:
+            self._html_file_response(PUBLIC_DIR / "bot-factory.html")
+            return
+
         if parsed.path in {"/llms.txt", "/robots.txt"}:
             self._public_asset_file_response(PUBLIC_DIR / parsed.path.lstrip("/"))
             return

@@ -32,6 +32,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["bot_factory_lane"]["schema"] == "nomad.proof_gated_bot_factory_lane.v1"
     assert out["bot_factory_lane"]["service_type"] == "proof_gated_bot_factory"
     assert out["bot_factory_lane"]["work_exchange"]["counts_as_revenue"] is False
+    assert out["bot_factory_lane"]["landing_page"] == "https://nomad.example/bot-factory"
     assert out["bot_factory_lane"]["one_step_paid_task"]["set"] == {"create_paid_task": True}
     assert out["bot_factory_lane"]["one_step_paid_task"]["counts_as_revenue"] is False
     assert "no_seed_phrases" in out["bot_factory_lane"]["hard_guards"]
@@ -57,6 +58,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["links"]["fact_check_intake"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["links"]["bot_factory_intake"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["links"]["bot_factory_paid_upgrade"] == "https://nomad.example/service/e2e?service_type=proof_gated_bot_factory"
+    assert out["links"]["bot_factory_landing"] == "https://nomad.example/bot-factory"
     assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"
     assert any(item["campaign_id"] == "ethereum_support" for item in out["campaigns"])
