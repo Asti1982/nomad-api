@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from nomad_hyperliquid_shadow_bot import build_hyperliquid_shadow_bot_artifact
+
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
@@ -430,6 +432,7 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
     max_notional = _text(body.get("max_notional") or "", 60)
     max_leverage = _text(body.get("max_leverage") or "", 60)
     allowed_markets = _list_text(body.get("allowed_markets") or body.get("markets"), limit=12)
+    candles = body.get("candles") or body.get("ohlcv") or body.get("price_closes")
     summary_parts = [
         f"Bot-factory intake for {', '.join(chain_targets)}",
         f"risk_profile={risk_profile}",
@@ -437,6 +440,30 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
     ]
     if max_drawdown:
         summary_parts.append(f"max_drawdown={max_drawdown}")
+    risk_envelope = {
+        "risk_profile": risk_profile,
+        "max_drawdown": max_drawdown,
+        "max_notional": max_notional,
+        "max_leverage": max_leverage,
+        "allowed_markets": allowed_markets,
+        "kill_switch": "required_before_live_execution",
+        "wallet_validation": wallet_validation,
+    }
+    strategy_request = {
+        "goal": problem,
+        "strategy_type": strategy_type,
+        "market_regime": market_regime,
+        "public_wallet": public_wallet,
+    }
+    shadow_bot_artifacts: Dict[str, Any] = {}
+    if "hyperliquid" in chain_targets:
+        shadow_bot_artifacts["hyperliquid"] = build_hyperliquid_shadow_bot_artifact(
+            goal=problem,
+            risk_envelope=risk_envelope,
+            strategy_request=strategy_request,
+            allowed_markets=allowed_markets,
+            candles=candles,
+        )
     return {
         "ok": True,
         "schema": "nomad.bot_factory_preanalysis.v1",
@@ -450,22 +477,10 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
         "search_queries": [
             f"{chain} agent bot simulation risk envelope {strategy_type}" for chain in chain_targets[:3]
         ],
-        "risk_envelope": {
-            "risk_profile": risk_profile,
-            "max_drawdown": max_drawdown,
-            "max_notional": max_notional,
-            "max_leverage": max_leverage,
-            "allowed_markets": allowed_markets,
-            "kill_switch": "required_before_live_execution",
-            "wallet_validation": wallet_validation,
-        },
+        "risk_envelope": risk_envelope,
         "chain_targets": chain_targets,
-        "strategy_request": {
-            "goal": problem,
-            "strategy_type": strategy_type,
-            "market_regime": market_regime,
-            "public_wallet": public_wallet,
-        },
+        "strategy_request": strategy_request,
+        "shadow_bot_artifacts": shadow_bot_artifacts,
         "next_verification_steps": [
             "Generate a no-live-order strategy artifact in the shadow lane.",
             "Replay or backtest against public/non-secret market data before delivery.",
@@ -477,6 +492,7 @@ def _bot_factory_preanalysis(body: Dict[str, Any], *, problem: str, source_url: 
             "no_return_guarantee",
             "no_investment_advice",
             "no_live_order_without_separate_approval",
+            "hyperliquid_exchange_calls_blocked_in_shadow_lane",
             "valid_public_wallet_required_before_paid_delivery",
         ],
     }
@@ -657,6 +673,7 @@ def build_reliability_doctor_intake(
     if is_bot_factory and isinstance(preanalysis, dict):
         public_facts["chain_targets"] = ",".join(preanalysis.get("chain_targets") or [])
         public_facts["risk_envelope_digest"] = f"sha256:{_digest(preanalysis.get('risk_envelope') or {}, length=64)}"
+        public_facts["shadow_bot_artifacts_digest"] = f"sha256:{_digest(preanalysis.get('shadow_bot_artifacts') or {}, length=64)}"
     solution_proof_digest = f"sha256:{_digest({'diagnosis': diagnosis, 'facts': public_facts}, length=64)}"
     solution_value = round(max(1.0, min(_num(body.get("solution_value_credits"), 10.0), 50.0)), 4)
     max_runtime_hours = round(max(0.25, min(_num(body.get("max_runtime_hours"), 6.0), 24.0)), 4)
@@ -723,6 +740,7 @@ def build_reliability_doctor_intake(
                 },
                 "proof": {
                     "risk_envelope": preanalysis.get("risk_envelope") or {},
+                    "shadow_bot_artifacts": preanalysis.get("shadow_bot_artifacts") or {},
                     "performance_receipt_candidate": {
                         "schema": "nomad.bot_factory_performance_receipt.v1",
                         "status": "simulation_required_before_live_execution",

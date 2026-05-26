@@ -71,7 +71,11 @@ def test_bot_factory_intake_validates_solana_public_wallet_shape():
     assert wallet_validation["chain"] == "solana"
     assert wallet_validation["valid"] is True
     assert wallet_validation["bytes"] == 32
+    assert result["proof"]["shadow_bot_artifacts"]["hyperliquid"]["execution_mode"] == "shadow_lane_no_live_orders"
+    assert result["proof"]["shadow_bot_artifacts"]["hyperliquid"]["paper_order_intent"]["exchange_endpoint_call_allowed"] is False
+    assert result["public_facts"]["shadow_bot_artifacts_digest"].startswith("sha256:")
     assert "valid_public_wallet_required_before_paid_delivery" in result["openai_preanalysis"]["hard_guards"]
+    assert "hyperliquid_exchange_calls_blocked_in_shadow_lane" in result["openai_preanalysis"]["hard_guards"]
 
 
 def test_bot_factory_intake_flags_invalid_solana_public_wallet_shape():
