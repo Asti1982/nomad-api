@@ -16,6 +16,12 @@ from nomad_state_paths import state_file
 
 DEFAULT_TELEGRAM_MINIAPP_LEDGER = Path("nomad_telegram_miniapp_leads.jsonl")
 LEDGER_ENV = "NOMAD_TELEGRAM_MINIAPP_LEDGER_PATH"
+MINIAPP_FACT_CHECK_PATH = "/telegram-miniapp/fact-check"
+SWARM_RELIABILITY_DOCTOR_INTAKE_PATH = "/swarm/reliability-doctor/intake"
+WORKER_FREE_MESSAGE = (
+    "Jeder, der den Transition Worker herunterlädt und laufen lässt, "
+    "erhält AI Swarm Fact Checking komplett gratis."
+)
 
 
 def _now() -> str:
@@ -55,6 +61,69 @@ def _digest(payload: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
+def normalize_telegram_fact_check_payload(payload: dict[str, Any], *, base_url: str = "") -> dict[str, Any]:
+    """Normalize Mini App fact-check input into the Reliability Doctor intake contract."""
+    body = payload if isinstance(payload, dict) else {}
+    pdf_upload = body.get("pdf_upload") if isinstance(body.get("pdf_upload"), dict) else {}
+    claim = _text(body.get("claim") or body.get("problem") or body.get("message"), 1200)
+    source_url = _text(body.get("source_url") or body.get("url"), 900)
+    pdf_name = _text(body.get("pdf_name") or pdf_upload.get("name") or pdf_upload.get("filename"), 180)
+    pdf_sha256 = _text(body.get("pdf_sha256") or body.get("pdf_digest") or pdf_upload.get("sha256"), 90)
+    pdf_bytes = int(max(0, _num(body.get("pdf_bytes") or body.get("pdf_size") or pdf_upload.get("bytes") or pdf_upload.get("size"), 0)))
+    evidence = []
+    if source_url:
+        evidence.append(source_url)
+    if pdf_name or pdf_sha256:
+        evidence.append(f"pdf:{pdf_name or 'attachment'} sha256={pdf_sha256 or 'missing'} bytes={pdf_bytes}")
+    if isinstance(body.get("evidence"), list):
+        evidence.extend(_text(item, 260) for item in body["evidence"][:6] if _text(item, 260))
+    digest_core = {
+        "claim": claim,
+        "source_url": source_url,
+        "pdf_name": pdf_name,
+        "pdf_sha256": pdf_sha256,
+        "telegram_user": body.get("telegram_user") if isinstance(body.get("telegram_user"), dict) else {},
+    }
+    public_base = _canonical_public_base(base_url)
+    normalized = {
+        **body,
+        "requester_id": _text(body.get("requester_id") or "telegram-miniapp-fact-checker", 120),
+        "problem": claim,
+        "claim": claim,
+        "source_url": source_url,
+        "service_type": "fact_check",
+        "source": "telegram_miniapp_fact_check",
+        "accepted_compute_barter_terms": True,
+        "compute_barter_accepted": True,
+        "return_multiplier": 1.3,
+        "solution_value_credits": round(max(1.0, min(_num(body.get("solution_value_credits"), 10.0), 50.0)), 4),
+        "max_runtime_hours": round(max(0.25, min(_num(body.get("max_runtime_hours"), 6.0), 24.0)), 4),
+        "evidence": evidence,
+        "idempotency_key": _text(
+            body.get("idempotency_key") or f"telegram-fact-check:{_digest(digest_core)}",
+            180,
+        ),
+        "miniapp_contract_url": _u(public_base, "/.well-known/nomad-telegram-miniapp.json"),
+        "swarm_handoff_url": _u(public_base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+    }
+    if pdf_name or pdf_sha256 or pdf_bytes:
+        normalized.update(
+            {
+                "pdf_name": pdf_name,
+                "pdf_sha256": pdf_sha256,
+                "pdf_bytes": pdf_bytes,
+                "pdf_upload": {
+                    "name": pdf_name,
+                    "sha256": pdf_sha256,
+                    "bytes": pdf_bytes,
+                    "content_included": False,
+                    "policy": "client_digest_only_no_secret_bearing_pdf_storage",
+                },
+            }
+        )
+    return normalized
+
+
 def _miniapp_ledger_path() -> Path:
     return state_file(DEFAULT_TELEGRAM_MINIAPP_LEDGER, env_name=LEDGER_ENV)
 
@@ -91,6 +160,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         "launch_url": _u(base, launch_path),
         "well_known_url": _u(base, "/.well-known/nomad-telegram-miniapp.json"),
         "lead_capture_url": _u(base, "/telegram-miniapp/lead"),
+        "fact_check_url": _u(base, MINIAPP_FACT_CHECK_PATH),
         "primary_funnel": [
             "fact_check_intake",
             "free_mini_diagnosis",
@@ -103,17 +173,25 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         ],
         "fact_check_lane": {
             "schema": "nomad.fact_check_lane.v1",
-            "intake_url": _u(base, "/swarm/reliability-doctor/intake"),
-            "message": "Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.",
+            "miniapp_fact_check_url": _u(base, MINIAPP_FACT_CHECK_PATH),
+            "intake_url": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+            "handoff_url": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
+            "message": WORKER_FREE_MESSAGE,
             "worker_free_rule": "transition_worker_download_and_run_unlocks_free_fact_checking",
             "accepted_inputs": ["claim_text", "source_url", "pdf_upload"],
-            "preanalysis_provider": "openai_gpt_or_codex_lane",
+            "preanalysis_provider": "server_side_openai_responses_or_secret_free_fallback",
+            "preanalysis_order": ["openai_quick_scan", "source_search_hints", "nomad_swarm_handoff"],
+            "pdf_policy": "client hashes PDF and sends proof metadata; raw secret-bearing PDFs are not stored by default",
             "swarm_receipt_schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
             "work_exchange": {
                 "mode": "compute_barter",
                 "barter_multiplier": 1.3,
                 "auto_accept": True,
                 "counts_as_revenue": False,
+            },
+            "worker_downloads": {
+                "python": _u(base, "/downloads/nomad_transition_worker.py"),
+                "windows_bat": _u(base, "/downloads/install_nomad_transition_worker.bat"),
             },
         },
         "eth_trust_loop": {
@@ -137,7 +215,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
                 "label": "AI Swarm Fact Checker",
                 "price_native": 0.0,
                 "method": "POST",
-                "endpoint": _u(base, "/swarm/reliability-doctor/intake"),
+                "endpoint": _u(base, MINIAPP_FACT_CHECK_PATH),
+                "swarm_handoff_endpoint": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
                 "service_type": "fact_check_intake",
                 "revenue_rule": "free_with_transition_worker_compute_contribution",
             },
@@ -215,7 +294,8 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
         },
         "links": {
             "miniapp": _u(base, launch_path),
-            "fact_check_intake": _u(base, "/swarm/reliability-doctor/intake"),
+            "fact_check_miniapp": _u(base, MINIAPP_FACT_CHECK_PATH),
+            "fact_check_intake": _u(base, SWARM_RELIABILITY_DOCTOR_INTAKE_PATH),
             "eth_support": _u(base, "/.well-known/nomad-eth-support.json"),
             "eth_support_alias": _u(base, "/swarm/eth-support"),
             "eth_support_proposal": _u(base, "/downloads/nomad_ethereum_ai_agent_support_proposal.md"),
@@ -267,7 +347,7 @@ def build_telegram_miniapp_surface(*, base_url: str = "") -> dict[str, Any]:
             "headline": "AI Swarm Fact Checker",
             "subline": "Claim input, URL input, PDF metadata, OpenAI quick scan, and proof-first Nomad Swarm handoff.",
             "disclosure": cursor_offer.get("disclosure_text", ""),
-            "worker_free_message": "Jeder, der den Transition Worker herunterlädt und laufen lässt, erhält AI Swarm Fact Checking komplett gratis.",
+            "worker_free_message": WORKER_FREE_MESSAGE,
         },
         "machine_instruction": (
             "Use the Mini App for fact-check intake, opt-in diagnosis, paid worker setup, payment verification, and worker repair. "

@@ -1,6 +1,10 @@
 import json
 
-from nomad_telegram_miniapp import build_telegram_miniapp_surface, record_telegram_miniapp_lead
+from nomad_telegram_miniapp import (
+    build_telegram_miniapp_surface,
+    normalize_telegram_fact_check_payload,
+    record_telegram_miniapp_lead,
+)
 
 
 def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
@@ -12,18 +16,22 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["launch_url"] == "https://nomad.example/telegram-miniapp"
     assert out["well_known_url"] == "https://nomad.example/.well-known/nomad-telegram-miniapp.json"
     assert out["lead_capture_url"] == "https://nomad.example/telegram-miniapp/lead"
+    assert out["fact_check_url"] == "https://nomad.example/telegram-miniapp/fact-check"
     assert "fact_check_intake" in out["primary_funnel"]
     assert "free_mini_diagnosis" in out["primary_funnel"]
     assert "payment_verification" in out["primary_funnel"]
     assert "worker_repair_after_payment" in out["primary_funnel"]
     assert "ai_agent_recruitment" in out["primary_funnel"]
     assert out["fact_check_lane"]["schema"] == "nomad.fact_check_lane.v1"
+    assert out["fact_check_lane"]["miniapp_fact_check_url"] == "https://nomad.example/telegram-miniapp/fact-check"
     assert out["fact_check_lane"]["intake_url"] == "https://nomad.example/swarm/reliability-doctor/intake"
+    assert out["fact_check_lane"]["handoff_url"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["fact_check_lane"]["work_exchange"]["auto_accept"] is True
     assert out["fact_check_lane"]["message"].startswith("Jeder, der den Transition Worker")
     assert out["eth_trust_loop"]["minimum_pledge_native"] == 0.004
     offers = {item["offer_id"]: item for item in out["offers"]}
-    assert offers["fact_check_intake"]["endpoint"] == "https://nomad.example/swarm/reliability-doctor/intake"
+    assert offers["fact_check_intake"]["endpoint"] == "https://nomad.example/telegram-miniapp/fact-check"
+    assert offers["fact_check_intake"]["swarm_handoff_endpoint"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert offers["fact_check_intake"]["revenue_rule"] == "free_with_transition_worker_compute_contribution"
     assert offers["transition_worker_setup"]["price_native"] == 0.02
     assert offers["payment_verification"]["endpoint"] == "https://nomad.example/tasks/verify"
@@ -36,6 +44,7 @@ def test_telegram_miniapp_surface_exposes_revenue_onramp(monkeypatch):
     assert out["links"]["telegram_acquisition"] == "https://nomad.example/.well-known/nomad-telegram-acquisition.json"
     assert out["links"]["acquisition_engine"] == "https://nomad.example/.well-known/nomad-acquisition-engine.json"
     assert out["links"]["telegram_a2a"] == "https://nomad.example/.well-known/nomad-telegram-a2a.json"
+    assert out["links"]["fact_check_miniapp"] == "https://nomad.example/telegram-miniapp/fact-check"
     assert out["links"]["fact_check_intake"] == "https://nomad.example/swarm/reliability-doctor/intake"
     assert out["payment"]["verify"] == "https://nomad.example/tasks/verify"
     assert out["payment"]["work"] == "https://nomad.example/tasks/work"
@@ -51,8 +60,31 @@ def test_telegram_miniapp_surface_uses_public_nomad_prefix_for_syndiode():
     assert out["public_base_url"] == "https://syndiode.com/nomad"
     assert out["launch_url"] == "https://syndiode.com/nomad/telegram-miniapp"
     assert out["lead_capture_url"] == "https://syndiode.com/nomad/telegram-miniapp/lead"
+    assert out["fact_check_url"] == "https://syndiode.com/nomad/telegram-miniapp/fact-check"
+    assert out["fact_check_lane"]["miniapp_fact_check_url"] == "https://syndiode.com/nomad/telegram-miniapp/fact-check"
     assert out["fact_check_lane"]["intake_url"] == "https://syndiode.com/nomad/swarm/reliability-doctor/intake"
     assert out["links"]["eth_support"] == "https://syndiode.com/nomad/.well-known/nomad-eth-support.json"
+
+
+def test_telegram_fact_check_payload_normalizes_work_exchange_and_pdf_digest():
+    out = normalize_telegram_fact_check_payload(
+        {
+            "claim": "The claim is true.",
+            "source_url": "https://example.com/source",
+            "pdf_upload": {"name": "paper.pdf", "bytes": 1234, "sha256": "abc"},
+            "accepted_compute_barter_terms": False,
+        },
+        base_url="https://www.syndiode.com",
+    )
+
+    assert out["service_type"] == "fact_check"
+    assert out["source"] == "telegram_miniapp_fact_check"
+    assert out["accepted_compute_barter_terms"] is True
+    assert out["return_multiplier"] == 1.3
+    assert out["pdf_name"] == "paper.pdf"
+    assert out["pdf_sha256"] == "abc"
+    assert out["pdf_upload"]["content_included"] is False
+    assert out["swarm_handoff_url"] == "https://syndiode.com/nomad/swarm/reliability-doctor/intake"
 
 
 def test_telegram_miniapp_lead_receipt_is_secret_free(tmp_path):

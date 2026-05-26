@@ -180,7 +180,13 @@ from nomad_paid_ref_selfplay import run_paid_ref_selfplay
 from nomad_referral_offers import build_referral_offer_surface
 from nomad_referral_swarm import build_referral_swarm_surface
 from nomad_sales_funnel import build_sales_funnel_surface
-from nomad_telegram_miniapp import build_telegram_miniapp_surface, record_telegram_miniapp_lead
+from nomad_telegram_miniapp import (
+    SWARM_RELIABILITY_DOCTOR_INTAKE_PATH,
+    WORKER_FREE_MESSAGE,
+    build_telegram_miniapp_surface,
+    normalize_telegram_fact_check_payload,
+    record_telegram_miniapp_lead,
+)
 from nomad_telegram_acquisition import (
     build_telegram_acquisition_launch_surface,
     summarize_telegram_acquisition_ledgers,
@@ -4933,6 +4939,65 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             status=404,
         )
 
+    def _reliability_doctor_intake_receipt(self, payload: dict, *, base: str) -> tuple[int, dict]:
+        intake = build_reliability_doctor_intake(
+            payload,
+            base_url=base,
+            doctor=self.agent.agent_reliability_doctor,
+        )
+        if not intake.get("ok"):
+            return 422, intake
+        try:
+            intake_acquisition = record_agent_acquisition_event(
+                {
+                    "channel_id": "reliability_doctor_intake",
+                    "event_type": "intake",
+                    "agent_id": intake.get("requester_id") or payload.get("agent_id") or "external.agent",
+                    "source_url": f"{base.rstrip('/')}{SWARM_RELIABILITY_DOCTOR_INTAKE_PATH}"
+                    if base
+                    else SWARM_RELIABILITY_DOCTOR_INTAKE_PATH,
+                },
+                base_url=base,
+            )
+        except Exception as exc:  # noqa: BLE001
+            intake_acquisition = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
+        offer = create_work_exchange_offer(
+            intake.get("work_exchange_offer_payload") if isinstance(intake.get("work_exchange_offer_payload"), dict) else {},
+            base_url=base,
+        )
+        free_solution: dict = {"accepted": False, "decision": "not_opened_without_compute_barter_acceptance"}
+        if intake.get("accepted_compute_barter_terms"):
+            free_solution = record_free_solution_receipt(
+                intake.get("free_solution_payload") if isinstance(intake.get("free_solution_payload"), dict) else {},
+                base_url=base,
+            )
+        onboarding = self.__class__._build_work_exchange_onboarding(base_url=base)
+        obligation_id = str(free_solution.get("obligation_id") or "")
+        start = dict(onboarding.get("copy_paste_start") or {})
+        if obligation_id:
+            start = {
+                key: str(value).replace("OBLIGATION_ID_HERE", obligation_id)
+                for key, value in start.items()
+            }
+        result = {
+            **intake,
+            "schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
+            "work_exchange_offer": offer,
+            "free_solution_receipt": free_solution,
+            "acquisition_event": intake_acquisition,
+            "obligation_id": obligation_id,
+            "copy_paste_start": start,
+            "downloads": onboarding.get("downloads", {}),
+            "routes": {
+                **(intake.get("next") if isinstance(intake.get("next"), dict) else {}),
+                "work_exchange_balance": f"{base.rstrip('/')}/swarm/work-exchange/balance"
+                if base
+                else "/swarm/work-exchange/balance",
+            },
+        }
+        status = 202 if offer.get("ok") and (not intake.get("accepted_compute_barter_terms") or free_solution.get("ok")) else 422
+        return status, result
+
     def do_POST(self) -> None:  # noqa: N802
         parsed_full = urlparse(self.path)
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
@@ -4962,6 +5027,51 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 remote_addr=self._remote_addr(),
             )
             self._json_response(result, status=202 if result.get("ok") else 400)
+            return
+
+        if parsed.path == "/telegram-miniapp/fact-check":
+            base = self._base_url()
+            fact_payload = normalize_telegram_fact_check_payload(payload, base_url=base)
+            status, swarm_receipt = self._reliability_doctor_intake_receipt(fact_payload, base=base)
+            preanalysis = (
+                swarm_receipt.get("openai_preanalysis")
+                if isinstance(swarm_receipt.get("openai_preanalysis"), dict)
+                else {}
+            )
+            diagnosis = swarm_receipt.get("diagnosis") if isinstance(swarm_receipt.get("diagnosis"), dict) else {}
+            result = {
+                "ok": status < 400 and bool(swarm_receipt.get("ok")),
+                "schema": "nomad.telegram_fact_check_receipt.v1",
+                "accepted": status < 400,
+                "swarm_receipt_schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
+                "swarm_handoff_url": f"{base.rstrip('/')}{SWARM_RELIABILITY_DOCTOR_INTAKE_PATH}"
+                if base
+                else SWARM_RELIABILITY_DOCTOR_INTAKE_PATH,
+                "openai_preanalysis": preanalysis,
+                "display_result": {
+                    "headline": "OpenAI quick scan plus Nomad Swarm handoff accepted"
+                    if status < 400
+                    else "Fact-check intake needs one concrete claim",
+                    "provisional_verdict": preanalysis.get("provisional_verdict") or "unclear",
+                    "confidence": preanalysis.get("confidence") or "",
+                    "summary": preanalysis.get("summary") or diagnosis.get("analysis") or swarm_receipt.get("message", ""),
+                    "proof_digest": swarm_receipt.get("solution_proof_digest", ""),
+                    "obligation_id": swarm_receipt.get("obligation_id", ""),
+                    "worker_free_message": WORKER_FREE_MESSAGE,
+                },
+                "work_exchange": {
+                    "auto_accepted": True,
+                    "mode": "compute_barter",
+                    "return_multiplier": 1.3,
+                    "counts_as_revenue": False,
+                    "offer": swarm_receipt.get("work_exchange_offer", {}),
+                    "free_solution_receipt": swarm_receipt.get("free_solution_receipt", {}),
+                    "copy_paste_start": swarm_receipt.get("copy_paste_start", {}),
+                },
+                "downloads": swarm_receipt.get("downloads", {}),
+                "swarm_intake_receipt": swarm_receipt,
+            }
+            self._json_response(result, status=status)
             return
 
         if parsed.path in {"/agent-growth", "/growth-pipeline"}:
@@ -5298,59 +5408,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/swarm/reliability-doctor/intake":
             base = self._base_url()
-            intake = build_reliability_doctor_intake(
-                payload,
-                base_url=base,
-                doctor=self.agent.agent_reliability_doctor,
-            )
-            if not intake.get("ok"):
-                self._json_response(intake, status=422)
-                return
-            try:
-                intake_acquisition = record_agent_acquisition_event(
-                    {
-                        "channel_id": "reliability_doctor_intake",
-                        "event_type": "intake",
-                        "agent_id": intake.get("requester_id") or payload.get("agent_id") or "external.agent",
-                        "source_url": f"{base.rstrip('/')}/swarm/reliability-doctor/intake" if base else "/swarm/reliability-doctor/intake",
-                    },
-                    base_url=base,
-                )
-            except Exception as exc:  # noqa: BLE001
-                intake_acquisition = {"ok": False, "error": "acquisition_event_failed", "message": str(exc)[:160]}
-            offer = create_work_exchange_offer(
-                intake.get("work_exchange_offer_payload") if isinstance(intake.get("work_exchange_offer_payload"), dict) else {},
-                base_url=base,
-            )
-            free_solution: dict = {"accepted": False, "decision": "not_opened_without_compute_barter_acceptance"}
-            if intake.get("accepted_compute_barter_terms"):
-                free_solution = record_free_solution_receipt(
-                    intake.get("free_solution_payload") if isinstance(intake.get("free_solution_payload"), dict) else {},
-                    base_url=base,
-                )
-            onboarding = self.__class__._build_work_exchange_onboarding(base_url=base)
-            obligation_id = str(free_solution.get("obligation_id") or "")
-            start = dict(onboarding.get("copy_paste_start") or {})
-            if obligation_id:
-                start = {
-                    key: str(value).replace("OBLIGATION_ID_HERE", obligation_id)
-                    for key, value in start.items()
-                }
-            result = {
-                **intake,
-                "schema": "nomad.agent_reliability_doctor_intake_receipt.v1",
-                "work_exchange_offer": offer,
-                "free_solution_receipt": free_solution,
-                "acquisition_event": intake_acquisition,
-                "obligation_id": obligation_id,
-                "copy_paste_start": start,
-                "downloads": onboarding.get("downloads", {}),
-                "routes": {
-                    **(intake.get("next") if isinstance(intake.get("next"), dict) else {}),
-                    "work_exchange_balance": f"{base.rstrip('/')}/swarm/work-exchange/balance" if base else "/swarm/work-exchange/balance",
-                },
-            }
-            status = 202 if offer.get("ok") and (not intake.get("accepted_compute_barter_terms") or free_solution.get("ok")) else 422
+            status, result = self._reliability_doctor_intake_receipt(payload, base=base)
             self._json_response(result, status=status)
             return
 

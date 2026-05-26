@@ -390,6 +390,28 @@
       margin-top: 12px;
     }
 
+    .worker-cta {
+      display: grid;
+      place-items: center;
+      min-height: 58px;
+      margin-top: 12px;
+      border: 1px solid rgba(120, 227, 160, 0.72);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      color: #07100d;
+      text-decoration: none;
+      font-weight: 860;
+      text-align: center;
+      padding: 10px 12px;
+      box-shadow: 0 18px 38px rgba(120, 227, 160, 0.14);
+    }
+
+    .worker-cta small {
+      display: block;
+      margin-top: 3px;
+      font: 700 11px/1.25 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+
     .link-row a {
       display: flex;
       justify-content: space-between;
@@ -548,6 +570,10 @@
           <div class="campaign"><strong>Agent recruitment</strong>Public contract for external runtimes.</div>
           <div class="campaign"><strong>Ethereum support</strong>Open-source proposal packet.</div>
         </div>
+        <a class="worker-cta" id="worker-cta" href="/downloads/install_nomad_transition_worker.bat">
+          Transition Worker herunterladen
+          <small>gratis Fact Checking durch Compute-Beitrag</small>
+        </a>
         <div class="link-row">
           <a id="worker-link" href="/downloads/nomad_transition_worker.py">Transition Worker <span>GET</span></a>
           <a id="worker-bat-link" href="/downloads/install_nomad_transition_worker.bat">Windows Worker <span>BAT</span></a>
@@ -626,10 +652,18 @@
     const pdfMetadata = async () => {
       const file = el("pdf-file").files[0];
       if (!file) return {};
+      const digest = await fileDigestHex(file);
       return {
         pdf_name: file.name,
         pdf_bytes: file.size,
-        pdf_sha256: await fileDigestHex(file),
+        pdf_sha256: digest,
+        pdf_upload: {
+          name: file.name,
+          bytes: file.size,
+          sha256: digest,
+          content_included: false,
+          policy: "client_digest_only_no_secret_bearing_pdf_storage",
+        },
       };
     };
 
@@ -675,6 +709,29 @@
         data.http_status = response.status;
       }
       return data;
+    };
+
+    const formatFactCheckResult = (data) => {
+      if (!data || typeof data !== "object") return String(data || "No result.");
+      const display = data.display_result || {};
+      const pre = data.openai_preanalysis || {};
+      const work = data.work_exchange || {};
+      const downloads = data.downloads || {};
+      const candidateSources = Array.isArray(pre.candidate_sources) ? pre.candidate_sources : [];
+      const searchQueries = Array.isArray(pre.search_queries) ? pre.search_queries : [];
+      return [
+        `Status: ${data.accepted ? "accepted into Nomad Swarm" : "needs more input"}`,
+        `Verdict: ${display.provisional_verdict || "unclear"}${display.confidence ? ` (${display.confidence})` : ""}`,
+        `Summary: ${display.summary || "No pre-analysis summary returned yet."}`,
+        `Proof digest: ${display.proof_digest || "pending"}`,
+        `Compute barter: ${work.auto_accepted ? "auto-accepted" : "not opened"} at 1.3x, cash revenue counted: no`,
+        `Obligation: ${display.obligation_id || "pending"}`,
+        `Candidate sources: ${candidateSources.slice(0, 5).join(" | ") || "none yet"}`,
+        `Search hints: ${searchQueries.slice(0, 5).join(" | ") || "none yet"}`,
+        `Worker: ${downloads.installer_bat || downloads.windows_worker_installer || downloads.windows_bat || el("worker-bat-link").href}`,
+        "",
+        JSON.stringify(data, null, 2),
+      ].join("\n");
     };
 
     const recordLead = async (stage, extra = {}) => {
@@ -724,8 +781,8 @@
       setBusy(true);
       try {
         await recordLead("fact_check_requested", {selected_offer: "fact_check_intake", campaign: "telegram_fact_check"});
-        const result = await postJson("/swarm/reliability-doctor/intake", payload);
-        writeResult(result);
+        const result = await postJson("/telegram-miniapp/fact-check", payload);
+        writeResult(formatFactCheckResult(result));
       } finally {
         setBusy(false);
       }
@@ -958,6 +1015,7 @@
       if (manifest.links) {
         el("worker-link").href = manifest.links.worker_download || "/downloads/nomad_transition_worker.py";
         el("worker-bat-link").href = manifest.links.worker_windows || "/downloads/install_nomad_transition_worker.bat";
+        el("worker-cta").href = manifest.links.worker_windows || "/downloads/install_nomad_transition_worker.bat";
         el("intake-link").href = manifest.links.fact_check_intake || "/swarm/reliability-doctor/intake";
         el("fleet-link").href = manifest.links.worker_fleet || "/swarm/workers";
         el("support-link").href = manifest.links.eth_support || "/.well-known/nomad-eth-support.json";

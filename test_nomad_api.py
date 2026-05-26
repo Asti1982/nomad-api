@@ -296,9 +296,11 @@ def test_telegram_miniapp_public_html_is_fact_check_surface():
     assert "Claim / fact to verify" in text
     assert "source-url" in text
     assert "pdf-file" in text
+    assert "/telegram-miniapp/fact-check" in text
     assert "/swarm/reliability-doctor/intake" in text
     assert "/downloads/install_nomad_transition_worker.bat" in text
     assert "/downloads/nomad_transition_worker.py" in text
+    assert "Transition Worker herunterladen" in text
     assert "Jeder, der den Transition Worker" in text
     assert "accepted_compute_barter_terms" in text
 
@@ -370,6 +372,76 @@ def test_reliability_doctor_intake_post_uses_receipt_lane(monkeypatch):
     assert seen[0][1]["schema"] == "nomad.agent_reliability_doctor_intake_receipt.v1"
     assert seen[0][1]["obligation_id"] == "obl_test"
     assert seen[0][1]["copy_paste_start"]["cmd"] == "run obl_test"
+
+
+def test_telegram_miniapp_fact_check_post_wraps_swarm_receipt(monkeypatch):
+    captured = []
+    monkeypatch.setattr(NomadApiHandler, "_ensure_runtime_components", classmethod(lambda cls: None))
+
+    def fake_intake(payload, *, base_url, doctor):
+        captured.append(payload)
+        return {
+            "ok": True,
+            "schema": "nomad.agent_reliability_doctor_intake.v1",
+            "requester_id": "telegram-miniapp-fact-checker",
+            "accepted_compute_barter_terms": True,
+            "solution_proof_digest": "sha256:testproof",
+            "openai_preanalysis": {
+                "ok": True,
+                "provisional_verdict": "unclear",
+                "confidence": "low",
+                "summary": "Needs source verification.",
+                "candidate_sources": ["https://example.com/source"],
+                "search_queries": ["claim source"],
+            },
+            "work_exchange_offer_payload": {"requester_id": "telegram-miniapp-fact-checker"},
+            "free_solution_payload": {"accepted_compute_barter_terms": True},
+            "next": {},
+        }
+
+    monkeypatch.setattr("nomad_api.build_reliability_doctor_intake", fake_intake)
+    monkeypatch.setattr("nomad_api.record_agent_acquisition_event", lambda payload, *, base_url: {"ok": True})
+    monkeypatch.setattr("nomad_api.create_work_exchange_offer", lambda payload, *, base_url: {"ok": True})
+    monkeypatch.setattr(
+        "nomad_api.record_free_solution_receipt",
+        lambda payload, *, base_url: {"ok": True, "obligation_id": "obl_fact"},
+    )
+    monkeypatch.setattr(
+        NomadApiHandler,
+        "_build_work_exchange_onboarding",
+        classmethod(
+            lambda cls, *, base_url: {
+                "downloads": {"installer_bat": f"{base_url}/downloads/install_nomad_work_exchange_worker.bat"},
+                "copy_paste_start": {"cmd": "run OBLIGATION_ID_HERE"},
+            }
+        ),
+    )
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.agent = type("FakeAgent", (), {"agent_reliability_doctor": object()})()
+    handler.path = "/telegram-miniapp/fact-check"
+    handler._read_json_body = lambda: {  # type: ignore[method-assign]
+        "claim": "Check me",
+        "source_url": "https://example.com/source",
+        "pdf_upload": {"name": "paper.pdf", "bytes": 99, "sha256": "abc"},
+        "accepted_compute_barter_terms": False,
+    }
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+    seen = []
+    handler._json_response = lambda payload, status=200: seen.append((status, payload))  # type: ignore[method-assign]
+
+    handler.do_POST()
+
+    assert captured[0]["service_type"] == "fact_check"
+    assert captured[0]["accepted_compute_barter_terms"] is True
+    assert captured[0]["return_multiplier"] == 1.3
+    assert captured[0]["pdf_upload"]["content_included"] is False
+    assert seen[0][0] == 202
+    assert seen[0][1]["schema"] == "nomad.telegram_fact_check_receipt.v1"
+    assert seen[0][1]["swarm_receipt_schema"] == "nomad.agent_reliability_doctor_intake_receipt.v1"
+    assert seen[0][1]["display_result"]["proof_digest"] == "sha256:testproof"
+    assert seen[0][1]["work_exchange"]["counts_as_revenue"] is False
+    assert seen[0][1]["swarm_intake_receipt"]["obligation_id"] == "obl_fact"
 
 
 def test_telegram_acquisition_public_routes_return_launch_packet():
