@@ -23,6 +23,32 @@ def test_swarm_registry_uses_configured_state_dir(monkeypatch, tmp_path: Path):
     assert registry.path.exists()
 
 
+def test_swarm_registry_save_retries_concurrent_mutation_and_compacts(tmp_path: Path, monkeypatch):
+    registry = SwarmJoinRegistry(path=tmp_path / "swarm-save.json")
+    registry._payload["join_events"] = [
+        {"agent_id": f"agent-{index}", "joined_at": f"2026-05-27T00:{index % 60:02d}:00+00:00"}
+        for index in range(700)
+    ]
+    original_dump = nomad_swarm_registry.json.dump
+    calls = {"count": 0}
+
+    def flaky_dump(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("dictionary changed size during iteration")
+        return original_dump(*args, **kwargs)
+
+    monkeypatch.setattr(nomad_swarm_registry.json, "dump", flaky_dump)
+
+    registry._save()
+    text = registry.path.read_text(encoding="utf-8")
+    saved = json.loads(text)
+
+    assert calls["count"] == 2
+    assert len(saved["join_events"]) == nomad_swarm_registry.DEFAULT_JOIN_EVENT_RECORD_LIMIT
+    assert "\n  " not in text
+
+
 def test_swarm_join_idempotency_replays_same_receipt(tmp_path: Path):
     registry = SwarmJoinRegistry(path=tmp_path / "swarm-idem.json")
     payload = {

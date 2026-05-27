@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -31,6 +32,11 @@ DEFAULT_WORKER_HEARTBEAT_SECONDS = int(os.getenv("NOMAD_TRANSITION_WORKER_HEARTB
 DEFAULT_EXTERNAL_WORKER_TARGET = int(os.getenv("NOMAD_EXTERNAL_WORKER_TARGET", "4") or "4")
 DEFAULT_WORKER_RECORD_LIMIT = int(os.getenv("NOMAD_WORKER_RECORD_LIMIT", "512") or "512")
 DEFAULT_WORKER_LEASE_RECORD_LIMIT = int(os.getenv("NOMAD_WORKER_LEASE_RECORD_LIMIT", "768") or "768")
+DEFAULT_NODE_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_NODE_RECORD_LIMIT", "512") or "512")
+DEFAULT_DORMANT_NODE_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_DORMANT_NODE_RECORD_LIMIT", "256") or "256")
+DEFAULT_PROSPECT_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_PROSPECT_RECORD_LIMIT", "256") or "256")
+DEFAULT_JOIN_EVENT_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_JOIN_EVENT_RECORD_LIMIT", "600") or "600")
+DEFAULT_JOIN_IDEMPOTENCY_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_JOIN_IDEMPOTENCY_RECORD_LIMIT", "120") or "120")
 
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
@@ -3371,12 +3377,107 @@ class SwarmJoinRegistry:
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self._payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._compact_payload_for_save()
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        last_error: Exception | None = None
+        for attempt in range(4):
+            try:
+                with tmp_path.open("w", encoding="utf-8") as handle:
+                    json.dump(self._payload, handle, ensure_ascii=True, separators=(",", ":"))
+                tmp_path.replace(self.path)
+                last_error = None
+                break
+            except RuntimeError as exc:
+                last_error = exc
+                if "dictionary changed size during iteration" not in str(exc):
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+            finally:
+                if tmp_path.exists() and last_error is None:
+                    try:
+                        tmp_path.unlink()
+                    except OSError:
+                        pass
+        if last_error is not None:
+            raise last_error
         if self._remote_state is not None:
             try:
                 self._remote_state.save(self._payload)
             except Exception:
                 pass
+
+    def _compact_payload_for_save(self) -> None:
+        def trim_mapping(mapping: Any, *, limit: int, time_keys: tuple[str, ...]) -> dict[str, Any]:
+            if not isinstance(mapping, dict) or len(mapping) <= limit:
+                return mapping if isinstance(mapping, dict) else {}
+
+            def rank(item: tuple[str, Any]) -> float:
+                _, record = item
+                if not isinstance(record, dict):
+                    return 0.0
+                for key in time_keys:
+                    parsed = _parse_iso_utc(record.get(key))
+                    if parsed:
+                        return parsed.timestamp()
+                return 0.0
+
+            return dict(sorted(mapping.items(), key=rank, reverse=True)[: max(1, limit)])
+
+        self._payload["nodes"] = trim_mapping(
+            self._payload.get("nodes"),
+            limit=max(1, DEFAULT_NODE_RECORD_LIMIT),
+            time_keys=("last_seen_at", "joined_at", "updated_at"),
+        )
+        self._payload["dormant_nodes"] = trim_mapping(
+            self._payload.get("dormant_nodes"),
+            limit=max(1, DEFAULT_DORMANT_NODE_RECORD_LIMIT),
+            time_keys=("dormant_since", "last_seen_at", "joined_at"),
+        )
+        self._payload["prospects"] = trim_mapping(
+            self._payload.get("prospects"),
+            limit=max(1, DEFAULT_PROSPECT_RECORD_LIMIT),
+            time_keys=("updated_at", "first_seen_at", "created_at"),
+        )
+        events = self._payload.get("join_events")
+        if isinstance(events, list) and len(events) > DEFAULT_JOIN_EVENT_RECORD_LIMIT:
+            self._payload["join_events"] = events[-DEFAULT_JOIN_EVENT_RECORD_LIMIT:]
+        bucket = self._payload.get("join_idempotency")
+        if isinstance(bucket, dict):
+            self._prune_join_idempotency(bucket, max_items=DEFAULT_JOIN_IDEMPOTENCY_RECORD_LIMIT)
+        self._prune_worker_fleet_inline()
+
+    def _prune_worker_fleet_inline(self) -> None:
+        fleet = self._payload.get("transition_worker_fleet")
+        if not isinstance(fleet, dict):
+            return
+        workers = fleet.get("workers")
+        if isinstance(workers, dict) and len(workers) > DEFAULT_WORKER_RECORD_LIMIT:
+            fleet["workers"] = dict(
+                sorted(
+                    workers.items(),
+                    key=lambda item: (_parse_iso_utc((item[1] or {}).get("last_seen_at")) or datetime.min.replace(tzinfo=UTC)).timestamp()
+                    if isinstance(item[1], dict)
+                    else 0.0,
+                    reverse=True,
+                )[: max(1, DEFAULT_WORKER_RECORD_LIMIT)]
+            )
+        leases = fleet.get("leases")
+        if isinstance(leases, dict) and len(leases) > DEFAULT_WORKER_LEASE_RECORD_LIMIT:
+            fleet["leases"] = dict(
+                sorted(
+                    leases.items(),
+                    key=lambda item: (
+                        _parse_iso_utc((item[1] or {}).get("issued_at") or (item[1] or {}).get("completed_at"))
+                        or datetime.min.replace(tzinfo=UTC)
+                    ).timestamp()
+                    if isinstance(item[1], dict)
+                    else 0.0,
+                    reverse=True,
+                )[: max(1, DEFAULT_WORKER_LEASE_RECORD_LIMIT)]
+            )
+        reports = fleet.get("reports")
+        if isinstance(reports, list) and len(reports) > 300:
+            fleet["reports"] = reports[-300:]
 
     def _prune_stale_nodes(self) -> None:
         ttl_minutes = max(1, DEFAULT_NODE_TTL_MINUTES)
