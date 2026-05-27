@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Swarm Oracle by syndiode - Android APK</title>
-  <meta name="description" content="Download Swarm Oracle, a small Android app for a quick OK signal. Direct APK download, simple install notes, screenshot, and checksum.">
+  <title>Swarm Oracle by syndiode - Android APK and Windows App</title>
+  <meta name="description" content="Download Swarm Oracle, a small app for a quick OK signal. Android APK, Windows tray worker installer, simple install notes, and checksums.">
   <meta property="og:title" content="Swarm Oracle by syndiode">
-  <meta property="og:description" content="Download the Android APK, install it, open Swarm Oracle, and shake once for a quick OK signal.">
+  <meta property="og:description" content="Download the Android APK or Windows tray app, open Swarm Oracle, and ask once for a quick OK signal.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.syndiode.com/swarm-oracle">
   <meta property="og:image" content="https://www.syndiode.com/assets/swarm-oracle-x-card.png">
@@ -383,7 +383,29 @@
       background: rgba(241, 198, 96, 0.07);
     }
 
+    .download-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .download-option {
+      min-height: 292px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: rgba(246, 243, 234, 0.045);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .download-option.featured {
+      border-color: rgba(124, 240, 173, 0.48);
+      background: rgba(124, 240, 173, 0.07);
+    }
+
     .notice h3,
+    .download-option h3,
     .panel h3 {
       margin: 0;
       font-size: 22px;
@@ -391,10 +413,16 @@
     }
 
     .notice p,
+    .download-option p,
     .panel p {
       margin: 12px 0 0;
       color: var(--muted);
       line-height: 1.62;
+    }
+
+    .download-option .actions {
+      margin-top: auto;
+      padding-top: 20px;
     }
 
     .grid {
@@ -458,6 +486,7 @@
       }
 
       .hero,
+      .download-options,
       .section-head,
       .grid {
         grid-template-columns: 1fr;
@@ -515,18 +544,20 @@
     <main>
       <section class="hero" aria-labelledby="title">
         <div>
-          <p class="kicker">Android APK / quick OK signal</p>
+          <p class="kicker">Android APK + Windows tray app / quick OK signal</p>
           <h1 id="title">Swarm Oracle</h1>
           <p class="subtitle">
-            A small Android app for a quick OK signal. Download it, install it, open it, and shake once. The screen gives you a calm response and shows whether the Nomad worker network is awake.
+            A small Oracle app for a quick OK signal. On Android, open it and shake once. On Windows, click Signal once; the button pulses while the tray worker and local LLM path produce the answer in the background.
           </p>
           <div class="actions" aria-label="Swarm Oracle actions">
+            <a class="button primary" href="/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe" download>Download Windows App</a>
             <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk" download>Download APK</a>
             <a class="button secondary" href="https://github.com/Asti1982/handyoracle/releases/latest">Latest GitHub release</a>
             <a class="button" href="/.well-known/syndiode-gadgets.json">Gadget manifest</a>
           </div>
           <p class="hero-note">
-            Current release: v0.1.1-foreground-shake / APK size: 125,108,304 bytes / SHA-256: a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854
+            Android: v0.1.1-foreground-shake / APK size: 125,108,304 bytes / SHA-256: a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854<br>
+            Windows: v0.1.1 / installer size: 109,906,760 bytes / SHA-256: 6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd
           </p>
         </div>
 
@@ -540,9 +571,9 @@
       </section>
 
       <div class="bands" aria-label="Swarm Oracle quick facts">
-        <div class="band"><span>distribution</span><strong>Direct APK</strong></div>
+        <div class="band"><span>distribution</span><strong>APK + Windows</strong></div>
         <div class="band"><span>setup</span><strong>Allow once</strong></div>
-        <div class="band"><span>gesture</span><strong>Shake once</strong></div>
+        <div class="band"><span>gesture</span><strong>Shake or click</strong></div>
         <div class="band"><span>status</span><strong>Live worker badge</strong></div>
       </div>
 
@@ -550,43 +581,67 @@
         <div class="section-head">
           <h2 id="download-title">Download</h2>
           <p class="section-copy">
-            Use this page as the public link from X or anywhere else humans need a fast way to install the Android gadget.
+            Use this page as the public link from X or anywhere else humans need a fast way to install the Android gadget or the Windows tray worker app.
           </p>
         </div>
-        <div class="notice">
-          <h3>Download the APK directly.</h3>
-          <p>
-            Swarm Oracle is not installed through an app store yet, so Android may show an extra warning. That is normal for a direct APK. If you want to continue, allow installs from your browser or file manager, then tap Install.
-          </p>
-          <div class="actions" aria-label="Download Swarm Oracle">
-            <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk" download>Download APK</a>
-            <a class="button" href="https://github.com/Asti1982/handyoracle/releases/tag/v0.1.1-foreground-shake">Release notes</a>
-          </div>
-          <div class="checksum">
-            <span>SHA-256: a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854</span>
-            <span>Direct URL: https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk</span>
-          </div>
+        <div class="download-options">
+          <article class="download-option featured">
+            <h3>Windows tray app.</h3>
+            <p>
+              Install once, click Signal for the Oracle answer, and let the Nomad Transition Worker continue from the tray. The button pulses until output returns, and the app uses a local Ollama model when available.
+            </p>
+            <div class="actions" aria-label="Download Swarm Oracle for Windows">
+              <a class="button primary" href="/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe" download>Download Windows App</a>
+              <a class="button" href="https://github.com/Asti1982/nomad-api/releases/tag/swarm-oracle-windows-v0.1.1">Release notes</a>
+            </div>
+            <div class="checksum">
+              <span>SHA-256: 6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd</span>
+              <span>Direct URL: https://www.syndiode.com/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe</span>
+            </div>
+          </article>
+          <article class="download-option">
+            <h3>Android APK.</h3>
+            <p>
+              Swarm Oracle is not installed through an app store yet, so Android may show an extra warning. That is normal for a direct APK. Allow installs from your browser or file manager, then tap Install.
+            </p>
+            <div class="actions" aria-label="Download Swarm Oracle for Android">
+              <a class="button primary" href="/downloads/handyoracle-edge-gadget.apk" download>Download APK</a>
+              <a class="button" href="https://github.com/Asti1982/handyoracle/releases/tag/v0.1.1-foreground-shake">Release notes</a>
+            </div>
+            <div class="checksum">
+              <span>SHA-256: a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854</span>
+              <span>Direct URL: https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk</span>
+            </div>
+          </article>
         </div>
       </section>
 
       <section id="install" aria-labelledby="install-title">
         <div class="section-head">
-          <h2 id="install-title">Install On Android</h2>
+          <h2 id="install-title">Install</h2>
           <p class="section-copy">
-            You only need the Android phone and the APK. The whole path is meant to be quick enough to share from X.
+            The whole path is meant to be quick enough to share from X: one download, one install, one signal.
           </p>
         </div>
         <div class="grid">
           <article class="panel">
-            <h3>1. Download</h3>
+            <h3>Windows. Download</h3>
+            <p>Open this page on the laptop and tap Download Windows App. Run the installer; the app opens as Swarm Oracle and keeps a tray icon alive.</p>
+          </article>
+          <article class="panel">
+            <h3>Windows. Contribute</h3>
+            <p>Click Signal once. The button pulses while public worker state and the local LLM answer return. Closing the window hides it, while the worker keeps running from the tray until you stop it.</p>
+          </article>
+          <article class="panel">
+            <h3>Android. Download</h3>
             <p>Open this page on the Android phone and tap the APK button. If the browser asks whether to keep the file, keep it only if you meant to install Swarm Oracle.</p>
           </article>
           <article class="panel">
-            <h3>2. Allow source</h3>
+            <h3>Android. Allow source</h3>
             <p>Android may open settings for Install unknown apps. Allow the browser or file manager once, return to the installer, and continue.</p>
           </article>
           <article class="panel">
-            <h3>3. Open and shake</h3>
+            <h3>Android. Open and shake</h3>
             <p>Start Swarm Oracle and keep it in the foreground. Shake once for the signal; the top-right badge shows active Nomad workers.</p>
           </article>
         </div>
@@ -596,13 +651,14 @@
         <div class="section-head">
           <h2 id="get-title">What You Get</h2>
           <p class="section-copy">
-            A simple phone-side ritual: open the app, shake once, read the signal, and see whether Nomad workers are active.
+            A simple phone-or-laptop ritual: open the app, shake or click once, read the signal, and see whether Nomad workers are active.
           </p>
         </div>
         <ol class="steps">
-          <li>A calm OK-style response on the phone.</li>
+          <li>A calm OK-style response on phone or laptop.</li>
           <li>A visible worker count in the top-right badge.</li>
-          <li>Foreground shake input only: the app responds while it is open.</li>
+          <li>Foreground shake input on Android; one-click signal on Windows.</li>
+          <li>A Windows tray worker that can start, stop, launch with Windows, and use local Ollama when available.</li>
           <li>No account, no store login, no subscription.</li>
           <li>If the APK button is blocked, use the GitHub release link.</li>
         </ol>
@@ -610,7 +666,7 @@
     </main>
 
     <footer>
-      <span>syndiode / Swarm Oracle / Android APK</span>
+      <span>syndiode / Swarm Oracle / Android APK + Windows App</span>
     </footer>
   </div>
 </body>

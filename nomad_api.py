@@ -310,6 +310,15 @@ HANDYORACLE_APK_RELEASE_URL = (
     "https://github.com/Asti1982/handyoracle/releases/download/"
     "v0.1.1-foreground-shake/handyoracle-edge-gadget.apk"
 )
+SWARM_ORACLE_WINDOWS_EXE_NAME = "Swarm-Oracle-Windows-0.1.1-x64.exe"
+SWARM_ORACLE_WINDOWS_BLOCKMAP_NAME = "Swarm-Oracle-Windows-0.1.1-x64.exe.blockmap"
+SWARM_ORACLE_WINDOWS_RELEASE_BASE_URL = (
+    "https://github.com/Asti1982/nomad-api/releases/download/swarm-oracle-windows-v0.1.1"
+)
+SWARM_ORACLE_WINDOWS_RELEASE_URLS = {
+    SWARM_ORACLE_WINDOWS_EXE_NAME: f"{SWARM_ORACLE_WINDOWS_RELEASE_BASE_URL}/{SWARM_ORACLE_WINDOWS_EXE_NAME}",
+    SWARM_ORACLE_WINDOWS_BLOCKMAP_NAME: f"{SWARM_ORACLE_WINDOWS_RELEASE_BASE_URL}/{SWARM_ORACLE_WINDOWS_BLOCKMAP_NAME}",
+}
 NOMAD_PROCESS_START = time.time()
 
 
@@ -8346,6 +8355,17 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
                 self.close_connection = True
             return
+        if (not path.exists() or not path.is_file()) and path.name in SWARM_ORACLE_WINDOWS_RELEASE_URLS:
+            try:
+                self.send_response(302)
+                self.send_header("Location", SWARM_ORACLE_WINDOWS_RELEASE_URLS[path.name])
+                self._send_common_headers()
+                self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                self.close_connection = True
+            return
         if (not path.exists() or not path.is_file()) and path.name == "install_nomad_transition_worker.bat":
             body = (
                 "@echo off\r\n"
@@ -8428,6 +8448,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/stop_nomad_agent.bat to stop the local Nomad agent loop.",
                         "GET /downloads/build_nomad_transition_worker_exe.ps1 to build a single-file Windows executable.",
                         "GET /downloads/run_nomad_transition_worker_exe.bat to start the built executable quickly.",
+                        "GET /downloads/Swarm-Oracle-Windows-0.1.1-x64.exe for the Windows Swarm Oracle tray app (falls back to GitHub Releases when the repo-safe mirror is not published).",
                         "GET /downloads/nomad_openclaw_adapter.py for OpenClaw-style runtime bridge into Nomad leases.",
                         "GET /downloads/nomad_universal_adapter.py for one-line LangGraph, CrewAI, AutoGen, and LlamaIndex reliability integration.",
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",

@@ -1,6 +1,6 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
-  "generated_at": "2026-05-18T11:03:00+02:00",
+  "generated_at": "2026-05-27T14:45:30+02:00",
   "base_url": "https://www.syndiode.com",
   "gadgets": [
     {
@@ -42,9 +42,100 @@
       },
       "links": {
         "public_page": "https://syndiode.de/pin",
+        "swarm_lightning": "https://www.syndiode.com/swarm-lightning",
         "worker_join": "https://www.syndiode.com/downloads/install_nomad_transition_worker.bat",
         "buyer_work": "https://www.syndiode.com/service/e2e?service_type=repo_issue_help"
       }
+    },
+    {
+      "id": "swarm_lightning_pin_bridge",
+      "name": "Swarm Lightning",
+      "version": "0.1.1-oracle-patterns",
+      "kind": [
+        "led_worker_status_app",
+        "syndiodepin_control_surface",
+        "nomad_transition_worker_visualizer"
+      ],
+      "human_surface": {
+        "summary": "A physical color-oracle layer for Nomad work: the SyndiodePin lights when the laptop Transition Worker is active and changes patterns when the Oracle is shaken or clicked.",
+        "private_by_default": true,
+        "primary_interactions": [
+          "android_oracle_shake_generates_phrase_and_pattern",
+          "windows_oracle_click_generates_phrase_and_pattern",
+          "tray_worker_state",
+          "future_codex_cursor_agent_state"
+        ],
+        "visible_status": "pin_color_pattern_effect_speed_intensity_brightness"
+      },
+      "nomad_surface": {
+        "summary": "Maps public worker state, local app gestures, and future agent state into compact LED pattern intents for the existing SyndiodePin/Firebase app layer.",
+        "signals": [
+          "transition_worker_active",
+          "oracle_phrase_palette",
+          "worker_completion_seen",
+          "operator_attention_needed",
+          "agent_working",
+          "agent_done"
+        ],
+        "sends_private_oracle_text": false,
+        "sends_private_light_context": false,
+        "attach_mode": "local_app_observes_worker_state_then_compiles_secret_free_oracle_pattern_to_existing_firmware_fields"
+      },
+      "control_schema": {
+        "schema": "syndiode.swarm_lightning_signal.v1",
+        "example_path": "pin/{pin_id}/signal/current",
+        "compiled_firmware_path": "devices/{device_id}/desired_settings",
+        "fields": [
+          "pin_id",
+          "source",
+          "event",
+          "oracle_phrase",
+          "pattern_id",
+          "mode",
+          "palette",
+          "brightness",
+          "effect",
+          "speed",
+          "intensity",
+          "ttl_seconds",
+          "proof_ref"
+        ],
+        "existing_firmware_fields": [
+          "on",
+          "brightness",
+          "colors/0/0..2",
+          "colors/1/0..2",
+          "colors/2/0..2",
+          "effect",
+          "speed",
+          "intensity"
+        ],
+        "known_effects": {
+          "0": "static_colors",
+          "1_or_2": "breathe_or_rainbow_on_matrix_firmware",
+          "21": "rainbow_on_strip_firmware"
+        },
+        "known_firmware": [
+          "esp32_ws2812_strip",
+          "esp32_s3_8x8_matrix"
+        ],
+        "firebase_configured": true,
+        "firebase_public_values_in_manifest": false
+      },
+      "links": {
+        "public_page": "https://www.syndiode.com/swarm-lightning",
+        "pin_page": "https://syndiode.de/pin",
+        "oracle_page": "https://www.syndiode.com/swarm-oracle",
+        "worker_windows_app": "https://www.syndiode.com/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
+        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json"
+      },
+      "installation_notes": [
+        "Run the Nomad Transition Worker on the laptop through the Windows Swarm Oracle tray app.",
+        "Use Swarm Oracle click or Android shake as the human input surface.",
+        "Map worker state to LED modes: working, attention, paused, complete.",
+        "Let the SyndiodePin app consume the configured Firebase channel and apply color, pulse, brightness, and timeout.",
+        "Add Codex/Cursor hooks later by writing the same secret-free LED intent schema."
+      ]
     },
     {
       "id": "handyoracle_android_edge",
@@ -91,6 +182,50 @@
         "Open Swarm Oracle and shake once while the app is visible.",
         "The top-right badge shows active Nomad workers.",
         "If the APK button is blocked, use the GitHub release link."
+      ]
+    },
+    {
+      "id": "swarm_oracle_windows_tray",
+      "name": "Swarm Oracle for Windows",
+      "version": "0.1.1",
+      "kind": [
+        "ok_message_oracle",
+        "windows_tray_app",
+        "nomad_transition_worker"
+      ],
+      "human_surface": {
+        "summary": "A small Windows desktop app for a one-click Swarm Oracle signal that pulses until output returns.",
+        "private_by_default": true,
+        "visible_status": "active_worker_count_cpu_pid_and_worker_state",
+        "tray_policy": "closing_window_hides_ui_worker_keeps_running_until_stopped"
+      },
+      "nomad_surface": {
+        "summary": "Windows tray process starts the bundled Nomad Transition Worker, uses local Ollama when available, and contributes bounded compute to public Syndiode/Nomad contracts.",
+        "signals": [
+          "public_worker_intent",
+          "edge_uptime",
+          "verification_capacity",
+          "worker_market_offer"
+        ],
+        "sends_private_oracle_text": false,
+        "attach_mode": "bundled_transition_worker_edge_mode_with_local_ollama_when_available_and_swarm_surplus_opt_in"
+      },
+      "download": {
+        "installer": "https://www.syndiode.com/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
+        "installer_sha256": "6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd",
+        "installer_size_bytes": 109906760,
+        "release": "https://github.com/Asti1982/nomad-api/releases/tag/swarm-oracle-windows-v0.1.1",
+        "release_asset": "https://github.com/Asti1982/nomad-api/releases/download/swarm-oracle-windows-v0.1.1/Swarm-Oracle-Windows-0.1.1-x64.exe",
+        "public_page": "https://www.syndiode.com/swarm-oracle",
+        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
+        "primary_cta": "Download Windows App"
+      },
+      "installation_notes": [
+        "Open https://www.syndiode.com/swarm-oracle on the Windows laptop.",
+        "Tap Download Windows App.",
+        "Run the one-click installer.",
+        "Click Signal once; the button pulses until worker state and local LLM output return.",
+        "Use the tray icon for Open, Start Worker, Stop Worker, Autostart, and Quit."
       ]
     }
   ]

@@ -610,6 +610,17 @@ def test_syndiode_gadgets_manifest_points_to_handyoracle_release():
     assert any("Tap Download APK" in note for note in gadget["installation_notes"])
     assert any("shake once" in note for note in gadget["installation_notes"])
     assert not any("smollm2_135m_q4km.gguf" in note for note in gadget["installation_notes"])
+    windows = next(item for item in manifest["gadgets"] if item["id"] == "swarm_oracle_windows_tray")
+    assert windows["version"] == "0.1.1"
+    assert windows["download"]["installer"].endswith("/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe")
+    assert windows["download"]["installer_sha256"] == "6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd"
+    assert windows["download"]["installer_size_bytes"] == 109906760
+    assert windows["download"]["release"].endswith("/swarm-oracle-windows-v0.1.1")
+    assert windows["download"]["release_asset"].endswith(
+        "/swarm-oracle-windows-v0.1.1/Swarm-Oracle-Windows-0.1.1-x64.exe"
+    )
+    assert "local Ollama" in windows["nomad_surface"]["summary"]
+    assert any("pulses" in note for note in windows["installation_notes"])
 
 
 def test_handyoracle_public_html_page_exists():
@@ -617,12 +628,17 @@ def test_handyoracle_public_html_page_exists():
     text = html.read_text(encoding="utf-8")
 
     assert "Swarm Oracle by syndiode" in text
+    assert "Download Windows App" in text
     assert "Download APK" in text
+    assert "/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe" in text
     assert "/downloads/handyoracle-edge-gadget.apk" in text
-    assert "Download the APK directly" in text
+    assert "Windows tray app" in text
+    assert "local LLM" in text
     assert "Android may show an extra warning" in text
-    assert "allow installs from your browser or file manager" in text
-    assert "Foreground shake input only" in text
+    assert "allow installs from your browser or file manager" in text.lower()
+    assert "Foreground shake input on Android" in text
+    assert "one-click signal on Windows" in text
+    assert "6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd" in text
     assert "/assets/swarm-oracle-app-screenshot.png" in text
     assert "/assets/swarm-oracle-x-card.png" in text
     assert "smollm2_135m_q4km.gguf" not in text
@@ -1181,6 +1197,30 @@ def test_handyoracle_apk_download_redirects_to_release():
         "v0.1.1-foreground-shake/handyoracle-edge-gadget.apk",
     ) in events
     assert ("header", "Content-Disposition", 'attachment; filename="handyoracle-edge-gadget.apk"') in events
+
+
+def test_swarm_oracle_windows_download_redirects_to_release_when_missing():
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    events = []
+    handler.send_response = lambda status: events.append(("status", status))
+    handler.send_header = lambda key, value: events.append(("header", key, value))
+    handler._send_common_headers = lambda: events.append(("common",))
+    handler.end_headers = lambda: events.append(("end",))
+
+    handler._public_download_file_response(Path("missing/Swarm-Oracle-Windows-0.1.1-x64.exe"))
+
+    assert ("status", 302) in events
+    assert (
+        "header",
+        "Location",
+        "https://github.com/Asti1982/nomad-api/releases/download/"
+        "swarm-oracle-windows-v0.1.1/Swarm-Oracle-Windows-0.1.1-x64.exe",
+    ) in events
+    assert (
+        "header",
+        "Content-Disposition",
+        'attachment; filename="Swarm-Oracle-Windows-0.1.1-x64.exe"',
+    ) in events
 
 
 def test_nomad_api_wraps_jsonrpc_a2a_result():
