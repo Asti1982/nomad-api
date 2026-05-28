@@ -1854,10 +1854,20 @@ class SwarmJoinRegistry:
             known_objectives=known_objectives,
             proposed_objective=proposed,
             last_report=last_report,
+            dispatch_mode=str(payload.get("dispatch_mode") or payload.get("dispatch_policy") or ""),
+            dispatch_affinity=payload.get("dispatch_affinity") if isinstance(payload.get("dispatch_affinity"), dict) else {},
+            task_concentrations=payload.get("task_concentrations") if isinstance(payload.get("task_concentrations"), dict) else {},
         )
         twin_objective = _clean_agent_id(
             (fleet.get("last_morphology") or {}).get("twin_objective") if isinstance(fleet.get("last_morphology"), dict) else ""
         )
+        dispatch_receipt = (
+            (fleet.get("last_morphology") or {}).get("crn_dispatch")
+            if isinstance(fleet.get("last_morphology"), dict)
+            else {}
+        )
+        if not isinstance(dispatch_receipt, dict):
+            dispatch_receipt = {}
         lease_seed = f"{agent_id}:{objective}:{now}:{len(fleet.get('leases') or {})}"
         lease_id = f"nomad-worker-lease-{hashlib.sha256(lease_seed.encode('utf-8')).hexdigest()[:16]}"
         expires_at = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
@@ -1873,6 +1883,8 @@ class SwarmJoinRegistry:
             "remote_addr": _clean_text(remote_addr, limit=80),
             "proposed_objective": proposed,
             "twin_objective": twin_objective,
+            "dispatch_mode": str(dispatch_receipt.get("algorithm") or "morphology_router"),
+            "dispatch_receipt": dispatch_receipt,
         }
         fleet.setdefault("leases", {})[lease_id] = lease_record
         workers[agent_id] = {
@@ -1900,6 +1912,7 @@ class SwarmJoinRegistry:
             "lease_id": lease_id,
             "objective": objective,
             "twin_objective": twin_objective,
+            "dispatch_receipt": dispatch_receipt,
             "lease_seconds": lease_seconds,
             "expires_at": expires_at,
             "complete_url": f"{base_url}/swarm/workers/complete" if base_url else "/swarm/workers/complete",
@@ -3256,6 +3269,9 @@ class SwarmJoinRegistry:
         known_objectives: list[str],
         proposed_objective: str,
         last_report: dict[str, Any],
+        dispatch_mode: str = "",
+        dispatch_affinity: dict[str, Any] | None = None,
+        task_concentrations: dict[str, Any] | None = None,
     ) -> str:
         allowed = [item for item in known_objectives if item in FLEET_OBJECTIVE_TARGETS]
         if not allowed:
@@ -3307,6 +3323,9 @@ class SwarmJoinRegistry:
             dominant_objective=str(dominance.get("objective") or ""),
             dominant_streak=int(dominance.get("streak") or 0),
             lease_index=lease_index,
+            dispatch_mode=dispatch_mode,
+            dispatch_affinity=dispatch_affinity,
+            task_concentrations=task_concentrations,
         )
         selected = _clean_agent_id(morphology.get("selected_objective") or allowed[0])
         prev = str(dominance.get("objective") or "")

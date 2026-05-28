@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Iterable, Optional
 
 from mission import MISSION_STATEMENT, mission_text
 from nomad_agent_native_product import build_agent_native_product_surface
+from nomad_crn_dispatch import build_crn_dispatch_surface
 from nomad_external_value import build_external_value_surface, summarize_external_value_ledger
 from nomad_mcp_lab import (
     build_private_mcp_lab_surface,
@@ -97,6 +98,13 @@ class NomadMcpServer:
         local = f"http://{os.getenv('NOMAD_API_HOST', '127.0.0.1')}:{os.getenv('NOMAD_API_PORT', '8787')}"
         resolved = (preferred_public_base_url(request_base_url=local) or "").strip().rstrip("/")
         return resolved or local
+
+    def _worker_fleet_contract_or_empty(self, base_url: str) -> Dict[str, Any]:
+        registry = getattr(self.agent, "swarm_registry", None)
+        worker_fleet_contract = getattr(registry, "worker_fleet_contract", None)
+        if not callable(worker_fleet_contract):
+            return {}
+        return worker_fleet_contract(base_url=base_url)
 
     def _tools(self) -> list[Dict[str, Any]]:
         return [
@@ -580,6 +588,12 @@ class NomadMcpServer:
                 "inputSchema": self._schema({}),
             },
             {
+                "name": "nomad_crn_dispatch_state",
+                "title": "Nomad CRN Dispatch State",
+                "description": "Read the Gillespie/chemical-reaction dispatch surface for stochastic worker objective routing.",
+                "inputSchema": self._schema({}),
+            },
+            {
                 "name": "nomad_svw_state",
                 "title": "Nomad SVW State",
                 "description": "Read the current Swarm Verified Work accounting surface.",
@@ -956,6 +970,12 @@ class NomadMcpServer:
                 private_mcp_lab=lab,
                 svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
             )
+        if name == "nomad_crn_dispatch_state":
+            base = self._mcp_public_base_url()
+            return build_crn_dispatch_surface(
+                base_url=base,
+                worker_fleet=self._worker_fleet_contract_or_empty(base),
+            )
         if name == "nomad_svw_state":
             return build_swarm_verified_work_surface(base_url=self._mcp_public_base_url())
         if name == "nomad_external_value_state":
@@ -1147,6 +1167,12 @@ class NomadMcpServer:
                     "Top-level product contract joining public proof routes with private MCP lab profiles; "
                     "same payload as GET /.well-known/nomad-agent-native-product.json."
                 ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://crn-dispatch",
+                "name": "Nomad CRN Dispatch",
+                "description": "Gillespie/chemical-reaction dispatch surface for stochastic worker objective routing.",
                 "mimeType": "application/json",
             },
             {
@@ -1375,6 +1401,17 @@ class NomadMcpServer:
                     base_url=base,
                     private_mcp_lab=lab,
                     svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://crn-dispatch":
+            base = self._mcp_public_base_url()
+            text = json.dumps(
+                build_crn_dispatch_surface(
+                    base_url=base,
+                    worker_fleet=self._worker_fleet_contract_or_empty(base),
                 ),
                 indent=2,
                 ensure_ascii=False,

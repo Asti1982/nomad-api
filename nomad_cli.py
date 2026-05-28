@@ -1479,6 +1479,8 @@ def build_query(args: argparse.Namespace) -> str:
         return f"/mission{limit}{preview}".strip()
     if command == "machine-economy":
         return "/machine-economy"
+    if command == "crn-dispatch":
+        return "/swarm/crn-dispatch"
     if command == "best":
         return f"/best{profile_suffix}"
     if command == "self":
@@ -1808,6 +1810,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("agent-native-index is handled directly in run_once")
     if command == "agent-native-product":
         raise ValueError("agent-native-product is handled directly in run_once")
+    if command == "crn-dispatch":
+        raise ValueError("crn-dispatch is handled directly in run_once")
     if command == "swarm-helper":
         raise ValueError("swarm-helper is handled directly in run_once")
     if command == "void-observer":
@@ -3866,6 +3870,10 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
                 external_value_summary=summarize_external_value_ledger(),
             )
+        elif args.command == "crn-dispatch":
+            from nomad_crn_dispatch import build_crn_dispatch_surface
+
+            result = build_crn_dispatch_surface(base_url=(getattr(args, "base_url", None) or "").strip())
         elif args.command == "swarm-helper":
             from nomad_swarm_helper_agent import run_swarm_helper_pass
 
@@ -5022,6 +5030,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Top-level agent-native product contract for public proof routes and private MCP profiles.",
     )
     agent_native_product_p.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links (default: relative links).",
+    )
+    crn_dispatch = subparsers.add_parser(
+        "crn-dispatch",
+        help="Show Gillespie/CRN dispatch state for stochastic worker objective routing.",
+    )
+    crn_dispatch.add_argument(
         "--base-url",
         default="",
         help="Override public base URL for absolute links (default: relative links).",

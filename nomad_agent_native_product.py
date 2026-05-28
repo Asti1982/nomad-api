@@ -103,6 +103,7 @@ def _private_mcp_profiles() -> dict[str, Any]:
         "nomad_publish_digest_proposal",
         "nomad_svw_state",
         "nomad_external_value_state",
+        "nomad_crn_dispatch_state",
     ]
     execute_tools = [
         "nomad_lab_execution_gate",
@@ -260,6 +261,12 @@ def build_agent_native_product_surface(
                 "nomad_solution": "SVW separates verified work quantity from market narrative before any price story.",
                 "proof_metric": "prediction_error_reduction_after_refresh",
             },
+            {
+                "id": "crn_dispatch",
+                "buyer_problem": "workers need objective routing without fragile graph calls or global pipeline state.",
+                "nomad_solution": "Gillespie/CRN dispatch treats tasks as reactants and workers as catalysts, exposed read-only through MCP.",
+                "proof_metric": "dispatch_receipt_plus_worker_completion_digest",
+            },
         ],
         "scientific_operating_loop": [
             "observe_private_state",
@@ -276,12 +283,14 @@ def build_agent_native_product_surface(
             "agent_index": _u(root, "/.well-known/nomad-agent.json"),
             "machine_product": _u(root, "/.well-known/nomad-machine-product.json"),
             "svw": _u(root, "/.well-known/nomad-swarm-verified-work.json"),
+            "crn_dispatch": _u(root, "/.well-known/nomad-crn-dispatch.json"),
             "external_value": _u(root, "/.well-known/nomad-external-value.json"),
             "openapi": _u(root, "/openapi.json"),
         },
         "next_product_actions": [
             "install Secure MCP Tunnel profile for nomad-lab-readonly",
             "connect ChatGPT/Codex to nomad-lab-readonly first",
+            "read nomad_crn_dispatch_state before leasing workers so MCP observes routing pressure without mutating state",
             "run one proposal_only experiment and record an inconclusive or negative result if no proof appears",
             "enable nomad-lab-execute only after approval-token flow is verified",
             "publish public digest route only after the local ledger has real evidence",

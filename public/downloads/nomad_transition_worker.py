@@ -1228,6 +1228,50 @@ def _fleet_known_objectives(fixed_objective: str = "") -> list[str]:
         return [objective]
     return sorted(MACHINE_OBJECTIVES.keys())
 
+
+def _dispatch_affinity(last_report: dict | None, machine_surfaces: dict | None = None) -> dict[str, float]:
+    report = last_report if isinstance(last_report, dict) else {}
+    surfaces = machine_surfaces if isinstance(machine_surfaces, dict) else {}
+    protocol = surfaces.get("protocol_bytecode") if isinstance(surfaces.get("protocol_bytecode"), dict) else {}
+    replay = surfaces.get("counterfactual_replay") if isinstance(surfaces.get("counterfactual_replay"), dict) else {}
+    previous_objective = clean(report.get("machine_objective"), 80)
+    focus = set(_fleet_known_objectives())
+    out: dict[str, float] = {}
+    for objective, cfg in MACHINE_OBJECTIVES.items():
+        caps = cfg.get("capabilities") if isinstance(cfg.get("capabilities"), list) else []
+        base = 0.72 + min(0.48, len(caps) * 0.035)
+        if objective in focus:
+            base += 0.16
+        if clean(protocol.get("top_objective"), 80) == objective:
+            base += 0.22
+        if clean(replay.get("selected_objective"), 80) == objective:
+            base += 0.24
+        if previous_objective == objective and report.get("ok"):
+            base += 0.10
+        out[objective] = round(max(0.05, min(2.5, base)), 4)
+    return out
+
+
+def _task_concentrations(last_report: dict | None, machine_surfaces: dict | None = None) -> dict[str, float]:
+    report = last_report if isinstance(last_report, dict) else {}
+    economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
+    surfaces = machine_surfaces if isinstance(machine_surfaces, dict) else {}
+    replay = surfaces.get("counterfactual_replay") if isinstance(surfaces.get("counterfactual_replay"), dict) else {}
+    out: dict[str, float] = {}
+    awaiting = float(economy.get("awaiting_payment") or 0.0)
+    unpaid = float(economy.get("unpaid_delivered") or 0.0)
+    overmint = float(economy.get("overmint_pressure") or 0.0)
+    if awaiting or unpaid:
+        out["settlement_capacity_builder"] = round(min(2.0, 0.35 + 0.08 * awaiting + 0.14 * unpaid), 4)
+        out["payment_friction_scan"] = round(min(2.0, 0.25 + 0.12 * awaiting), 4)
+    if overmint:
+        out["overmint_compressor"] = round(min(2.0, 0.25 + overmint), 4)
+    selected = clean(replay.get("selected_objective"), 80)
+    if selected in MACHINE_OBJECTIVES:
+        out[selected] = max(out.get(selected, 0.0), round(0.42 + min(1.0, float(replay.get("selected_score") or 0.0)), 4))
+    return out
+
+
 def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
     if not isinstance(report, dict) or not report:
         return {}
@@ -1270,6 +1314,8 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
             "carrying_score": float(economy.get("carrying_score") or 0.0),
             "next_actions": [clean(item, 80) for item in (economy.get("next_actions") or [])[:8]],
             "overmint_pressure": float(economy.get("overmint_pressure") or 0.0),
+            "awaiting_payment": int(economy.get("awaiting_payment") or 0),
+            "unpaid_delivered": int(economy.get("unpaid_delivered") or 0),
         },
         "operational_release_signal": {
             "release_tier": clean(release.get("release_tier"), 80),
@@ -1329,6 +1375,9 @@ def _worker_fleet_lease(
         ],
         "last_report": _compact_report_for_fleet(last_report),
         "machine_surfaces": machine_surfaces if isinstance(machine_surfaces, dict) else {},
+        "dispatch_mode": clean(os.getenv("NOMAD_DISPATCH_MODE", "crn_ssa"), 40),
+        "dispatch_affinity": _dispatch_affinity(last_report, machine_surfaces),
+        "task_concentrations": _task_concentrations(last_report, machine_surfaces),
     }
     data = http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
     if not isinstance(data, dict) or not data.get("ok"):

@@ -501,6 +501,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/.well-known/nomad-crn-dispatch.json": {
+                "get": {
+                    "summary": "Gillespie/CRN dispatch surface for stochastic worker objective routing",
+                    "operationId": "getCrnDispatchWellKnown",
+                    "responses": {
+                        "200": {"description": "CRN dispatch surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/crn-dispatch": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-crn-dispatch.json",
+                    "operationId": "getCrnDispatch",
+                    "responses": {
+                        "200": {"description": "CRN dispatch surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
             "/contract-conformance": {
                 "get": {
                     "summary": "Contract stability conformance snapshot for stable machine endpoints",

@@ -154,6 +154,7 @@ from nomad_agent_join_field import build_agent_join_field
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
 from nomad_agent_native_product import build_agent_native_product_surface
+from nomad_crn_dispatch import build_crn_dispatch_surface
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
@@ -986,6 +987,14 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             svw_surface=svw,
             external_value_summary=summarize_external_value_ledger(),
         )
+
+    @classmethod
+    def _build_crn_dispatch(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        worker_fleet = summary.get("transition_worker_fleet") if isinstance(summary.get("transition_worker_fleet"), dict) else {}
+        if not worker_fleet:
+            worker_fleet = cls.swarm_registry.worker_fleet_contract(base_url=base_url)
+        return build_crn_dispatch_surface(base_url=base_url, worker_fleet=worker_fleet)
 
     @classmethod
     def _build_synergy_lite(cls, *, base_url: str) -> dict:
@@ -2584,6 +2593,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_native_priorities": f"{b}/.well-known/nomad-agent-native-priorities.json",
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
                     "agent_native_product": f"{b}/.well-known/nomad-agent-native-product.json",
+                    "crn_dispatch": f"{b}/.well-known/nomad-crn-dispatch.json",
                     "agent_join_field": f"{b}/.well-known/nomad-agent-join-field.json",
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
                     "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
@@ -3017,6 +3027,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/agent-native-product", "/.well-known/nomad-agent-native-product.json"}:
             self._json_response(self.__class__._build_agent_native_product(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/crn-dispatch", "/.well-known/nomad-crn-dispatch.json"}:
+            self._json_response(self.__class__._build_crn_dispatch(base_url=self._base_url()))
             return
 
         if parsed.path in {"/contract-conformance", "/.well-known/nomad-contract-conformance.json"}:
@@ -4685,6 +4699,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/first-receipt-campaign",
                     "/.well-known/nomad-first-receipt-campaign.json",
                     "/swarm/first-receipt-campaign/events",
+                    "/swarm/crn-dispatch",
+                    "/.well-known/nomad-crn-dispatch.json",
                     "/swarm/flywheel-health",
                     "/swarm/health-dashboard",
                     "/.well-known/nomad-flywheel-health.json",
@@ -6820,6 +6836,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/first-receipt-campaign",
                     "/.well-known/nomad-first-receipt-campaign.json",
                     "/swarm/first-receipt-campaign/events",
+                    "/swarm/crn-dispatch",
+                    "/.well-known/nomad-crn-dispatch.json",
                     "/swarm/flywheel-health",
                     "/swarm/health-dashboard",
                     "/.well-known/nomad-flywheel-health.json",

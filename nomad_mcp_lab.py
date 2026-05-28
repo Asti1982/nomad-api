@@ -163,6 +163,7 @@ def build_private_mcp_lab_surface(
             "nomad_generate_experiment",
             "nomad_counterfactual_experiment_replay",
             "nomad_publish_digest_proposal",
+            "nomad_crn_dispatch_state",
         ],
         "nomad-lab-execute": [
             "nomad_lab_execution_gate",

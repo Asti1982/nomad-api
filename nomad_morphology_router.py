@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from nomad_crn_dispatch import gillespie_dispatch
+
 
 def _num(value: Any, default: float = 0.0) -> float:
     try:
@@ -32,6 +34,9 @@ def route_objectives(
     dominant_streak: int = 0,
     lease_index: int = 0,
     entropy_interval: int = 5,
+    dispatch_mode: str = "",
+    dispatch_affinity: dict[str, Any] | None = None,
+    task_concentrations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return selected objective and twin-lane candidate without identity features."""
     if not allowed:
@@ -94,6 +99,23 @@ def route_objectives(
                 selected = objective
                 entropy_override = True
                 break
+    crn_dispatch = gillespie_dispatch(
+        allowed=allowed,
+        targets=targets,
+        active_counts=active_counts,
+        stats_map=stats_map,
+        proposed_objective=proposed_objective,
+        dispatch_affinity=dispatch_affinity,
+        task_concentrations=task_concentrations,
+        lease_index=lease_index,
+        seed_hint=str(dispatch_mode or ""),
+    )
+    crn_enabled = str(dispatch_mode or "").strip().lower() in {"crn_ssa", "gillespie", "stochastic_crn"} or _env_bool(
+        "NOMAD_CRN_DISPATCH_ENABLED",
+        False,
+    )
+    if crn_enabled and crn_dispatch.get("selected_objective") in {str(item.get("objective") or "") for item in rows}:
+        selected = str(crn_dispatch.get("selected_objective") or selected)
     twin_mandatory = _env_bool("NOMAD_MODE_TWIN_LANE_MANDATORY", True)
     twin = rows[1]["objective"] if len(rows) > 1 else selected
     if twin == selected and rows:
@@ -131,10 +153,16 @@ def route_objectives(
             "lease_index": max(0, int(lease_index or 0)),
             "override_used": entropy_override,
         },
+        "crn_dispatch": {
+            **crn_dispatch,
+            "enabled_for_selection": crn_enabled,
+        },
         "science_basis": [
             "darwin_godel_machine_open_ended_exploration",
             "cooperative_credit_assignment_multi_agent",
             "historical_interaction_shapley_credit",
+            "gillespie_stochastic_simulation_algorithm",
+            "chemical_reaction_network_task_dispatch",
         ],
         "nonhuman_modes": {
             "schema": "nomad.morphology_router_modes.v1",
