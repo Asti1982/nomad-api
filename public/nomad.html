@@ -524,6 +524,7 @@
         <a href="#buyable-work">Buy Work</a>
         <a href="/machine-treasury">Treasury</a>
         <a href="/.well-known/nomad-machine-product.json">Product</a>
+        <a href="/.well-known/nomad-agent-native-product.json">Agent Product</a>
         <a href="/.well-known/nomad-machine-field.json">Field</a>
         <a href="/.well-known/nomad-idle-runtime.json">Idle</a>
         <a href="/.well-known/nomad-opaque-emergence.json">Opaque</a>
@@ -553,6 +554,7 @@
           <div class="actions" aria-label="Core machine routes">
             <a class="button primary" href="/.well-known/agent-card.json">AgentCard</a>
             <a class="button secondary" href="/.well-known/nomad-machine-product.json">Machine Product</a>
+            <a class="button primary" href="/.well-known/nomad-agent-native-product.json">Agent-Native Product</a>
             <a class="button primary" href="/.well-known/nomad-machine-field.json">Machine Field</a>
             <a class="button" href="/.well-known/nomad-idle-runtime.json">Idle Runtime</a>
             <a class="button" href="/.well-known/nomad-opaque-emergence.json">Opaque Lane</a>
@@ -598,6 +600,7 @@
         <div class="metric"><span>settlement capacity</span><strong id="metric-score">0.0000</strong></div>
         <div class="metric"><span>SVW quote</span><strong id="metric-svw">reading</strong></div>
         <div class="metric"><span>product surface</span><strong id="metric-product">0.000</strong></div>
+        <div class="metric"><span>agent-native product</span><strong id="metric-agent-native">reading</strong></div>
         <div class="metric"><span>runtimes</span><strong id="metric-agents">0 known</strong></div>
         <div class="metric"><span>external retention</span><strong id="metric-external-retention">0 / 0</strong></div>
         <div class="metric"><span>retention gradient</span><strong id="metric-retention-gradient">reading</strong></div>
@@ -1798,7 +1801,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
 
       const loadSignals = async () => {
         try {
-          const [economyRes, svwRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, opaqueRes, treasuryRes, fieldRes, adapterRes, resolverRes, acquisitionRes] = await Promise.all([
+          const [economyRes, svwRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, agentNativeRes, opaqueRes, treasuryRes, fieldRes, adapterRes, resolverRes, acquisitionRes] = await Promise.all([
             fetch(apiUrl("/machine-economy")),
             fetch(apiUrl("/swarm/verified-work")),
             fetch(apiUrl("/swarm")),
@@ -1812,6 +1815,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
             fetch(apiUrl("/swarm/gradient")),
             fetch(apiUrl("/swarm/emergence")),
             fetch(apiUrl("/.well-known/nomad-machine-product.json")),
+            fetch(apiUrl("/.well-known/nomad-agent-native-product.json")),
             fetch(apiUrl("/.well-known/nomad-opaque-emergence.json")),
             fetch(apiUrl("/machine-treasury")),
             fetch(apiUrl("/.well-known/nomad-machine-field.json")),
@@ -1832,6 +1836,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const gradient = gradientRes.ok ? await gradientRes.json() : {};
           const emergence = emergenceRes.ok ? await emergenceRes.json() : {};
           const product = productRes.ok ? await productRes.json() : {};
+          const agentNative = agentNativeRes.ok ? await agentNativeRes.json() : {};
           const opaque = opaqueRes.ok ? await opaqueRes.json() : {};
           const treasury = treasuryRes.ok ? await treasuryRes.json() : {};
           const machineField = fieldRes.ok ? await fieldRes.json() : {};
@@ -1871,6 +1876,9 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           const utility = product.agent_utility || swarm.machine_product || {};
           const productValue = Number(utility.agent_product_score || 0);
           const productScore = productValue.toFixed(3);
+          const nativeReadiness = agentNative.readiness || {};
+          const nativeScore = Number(nativeReadiness.agent_native_product_score || 0).toFixed(3);
+          const privateProfiles = Object.keys(((agentNative.private_mcp || {}).profiles) || {}).length;
           const treasuryHints = treasury.objective_pressure_hints || {};
           const treasuryPressure = Object.values(treasuryHints).reduce((sum, row) => sum + Number((row || {}).pressure_units || 0), 0);
           const opaquePressure = Number(((opaque.selection_pressure || swarm.opaque_emergence || {}).opaque_selection_pressure) || treasuryPressure || 0).toFixed(3);
@@ -1907,6 +1915,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
           set("metric-score", `${score} ${settlementLabel}`);
           set("metric-svw", `${svwQuote ? `${svwQuote.toFixed(4)} EUR` : "bootstrapping"} / ${svwStatus}`);
           set("metric-product", `${productScore} ${productLabel}`);
+          set("metric-agent-native", `${nativeScore} / ${privateProfiles} MCP profiles`);
           set("metric-agents", `${agents} agents / ${workers} active workers`);
           set("metric-external-retention", `${activeExternal} / ${knownExternal}${atRiskExternal ? `, ${atRiskExternal} at risk` : ""}`);
           set("metric-retention-gradient", `${retentionPhase} ${retentionStrength}`);
@@ -1929,6 +1938,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
         } catch (error) {
           set("metric-tier", "offline");
           set("metric-svw", "offline");
+          set("metric-agent-native", "offline");
           set("metric-opaque", "0.000");
           set("metric-action", "retry");
           set("metric-external-retention", "offline");

@@ -164,6 +164,9 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-transition-offer.json" in text
     assert "/.well-known/nomad-agent-join-field.json" in text
     assert "/.well-known/nomad-machine-product.json" in text
+    assert "/.well-known/nomad-agent-native-product.json" in text
+    assert "agent-native product" in text
+    assert 'id="metric-agent-native"' in text
     assert "/.well-known/nomad-idle-runtime.json" in text
     assert "/.well-known/nomad-opaque-emergence.json" in text
     assert "/swarm/opaque-candidate" in text
@@ -274,6 +277,7 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/swarm/gradient"))' in text
     assert 'fetch(apiUrl("/swarm/emergence"))' in text
     assert 'fetch(apiUrl("/.well-known/nomad-machine-product.json"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-agent-native-product.json"))' in text
     assert 'fetch(apiUrl("/.well-known/nomad-opaque-emergence.json"))' in text
     assert 'fetch(apiUrl("/health"))' in text
     assert 'fetch(apiUrl("/swarm/workers"))' in text
@@ -1576,6 +1580,8 @@ def test_build_openapi_document_lists_core_paths():
     assert "/.well-known/nomad-machine-product.json" in doc["paths"]
     assert "/agent-product" in doc["paths"]
     assert "/machine-product" in doc["paths"]
+    assert "/.well-known/nomad-agent-native-product.json" in doc["paths"]
+    assert "/agent-native-product" in doc["paths"]
     assert "/contract-conformance" in doc["paths"]
     assert "/.well-known/nomad-contract-conformance.json" in doc["paths"]
     assert "/swarm/economics" in doc["paths"]
@@ -1853,6 +1859,7 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     market = NomadApiHandler._build_worker_market(base_url="https://nomad.example")
     compute_market = NomadApiHandler._build_compute_market(base_url="https://nomad.example")
     svw = NomadApiHandler._build_swarm_verified_work(base_url="https://nomad.example")
+    agent_native_product = NomadApiHandler._build_agent_native_product(base_url="https://nomad.example")
     agent_work = NomadApiHandler._build_agent_work_surface(base_url="https://nomad.example")
     work_mesh = NomadApiHandler._build_work_mesh(base_url="https://nomad.example")
     synergy = NomadApiHandler._build_synergy_lite(base_url="https://nomad.example")
@@ -1905,6 +1912,9 @@ def test_nomad_api_builds_protocol_surfaces(tmp_path, monkeypatch):
     assert svw["token_policy"]["transferable_token_live"] is False
     assert svw["receipt_state"]["counts_as_revenue"] is False
     assert svw["observation_gates"]["safe_non_revenue_receipt"]["counts_as_revenue"] is False
+    assert agent_native_product["schema"] == "nomad.agent_native_product.v1"
+    assert agent_native_product["well_known_url"] == "https://nomad.example/.well-known/nomad-agent-native-product.json"
+    assert "nomad-lab-readonly" in agent_native_product["private_mcp"]["profiles"]
     assert agent_work["schema"] == "nomad.agent_work.v1"
     assert agent_work["claim_contract"]["url"] == "https://nomad.example/swarm/microtask/claim"
     assert work_mesh["schema"] == "nomad.work_mesh.v1"

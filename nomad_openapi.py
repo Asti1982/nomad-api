@@ -47,7 +47,7 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                 "For open agent demand, idle opt-in subscriptions, and machine-readable project work, see "
                 "GET /.well-known/nomad-agent-requests.json and POST /swarm/subscribe. "
                 "For the single machine-native product surface that tells arriving agents why and how to use Nomad, see "
-                "GET /.well-known/nomad-machine-product.json. "
+                "GET /.well-known/nomad-machine-product.json and GET /.well-known/nomad-agent-native-product.json. "
                 "For compact executable route alphabets and shadow lease allocation, see "
                 "GET /.well-known/nomad-protocol-bytecode.json and GET /swarm/counterfactual-replay. "
                 "For proof-scored external improvement candidates, see "
@@ -480,6 +480,24 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     "operationId": "getMachineProduct",
                     "responses": {
                         "200": {"description": "Machine product surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-native-product.json": {
+                "get": {
+                    "summary": "Agent-native product contract joining public proof routes and private MCP lab profiles",
+                    "operationId": "getAgentNativeProductWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent-native product surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/agent-native-product": {
+                "get": {
+                    "summary": "Alias of /.well-known/nomad-agent-native-product.json",
+                    "operationId": "getAgentNativeProduct",
+                    "responses": {
+                        "200": {"description": "Agent-native product surface", "content": {"application/json": {"schema": ref_json_object()}}}
                     },
                 }
             },

@@ -4,12 +4,23 @@ import sys
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from mission import MISSION_STATEMENT, mission_text
+from nomad_agent_native_product import build_agent_native_product_surface
+from nomad_external_value import build_external_value_surface, summarize_external_value_ledger
+from nomad_mcp_lab import (
+    build_private_mcp_lab_surface,
+    execution_gate,
+    generate_svw_experiment,
+    publish_digest_proposal,
+    record_experiment_result,
+    replay_svw_experiment,
+)
 from nomad_public_url import preferred_public_base_url
 from nomad_recruitment_gradient import build_recruitment_gradient
 from nomad_runtime_capsule import build_openclaw_bridge_contract, build_runtime_capsule
 from nomad_swarm_attractor import build_swarm_attractor_contract
 from nomad_swarm_registry import build_peer_join_value_surface
 from nomad_guardrails import guardrail_status
+from nomad_swarm_verified_work import build_swarm_verified_work_surface
 from nomad_wire_contract import (
     attach_wire_diag,
     build_mcp_tool_wire_diag,
@@ -557,6 +568,96 @@ class NomadMcpServer:
                 ),
             },
             {
+                "name": "nomad_lab_state",
+                "title": "Nomad Private MCP Lab State",
+                "description": "Return Nomad's private MCP scientific lab contract, SVW state, and experiment rules.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_agent_native_product",
+                "title": "Nomad Agent-Native Product",
+                "description": "Return the top-level syndiode.com product contract: public proof routes plus private MCP profiles.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_svw_state",
+                "title": "Nomad SVW State",
+                "description": "Read the current Swarm Verified Work accounting surface.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_external_value_state",
+                "title": "Nomad External Value State",
+                "description": "Read the external-value state machine and local ledger summary without exposing secrets.",
+                "inputSchema": self._schema({}),
+            },
+            {
+                "name": "nomad_generate_experiment",
+                "title": "Generate SVW Experiment",
+                "description": "Turn an objective and candidate action into a falsifiable SVW experiment contract.",
+                "inputSchema": self._schema(
+                    {
+                        "objective": "Experiment objective or pain to improve.",
+                        "candidate_action": "Optional bounded intervention to test.",
+                        "baseline_metric": "Optional metric, default inferred from intervention class.",
+                        "risk_budget": "observe_only, proposal_only, low, medium, or high.",
+                    },
+                    required=["objective"],
+                ),
+            },
+            {
+                "name": "nomad_counterfactual_experiment_replay",
+                "title": "Replay SVW Experiment",
+                "description": "Counterfactually replay an SVW experiment before any execution.",
+                "inputSchema": self._schema(
+                    {
+                        "experiment_json": "Optional JSON experiment from nomad_generate_experiment.",
+                        "objective": "Objective to generate if experiment_json is omitted.",
+                        "candidate_action": "Optional bounded intervention.",
+                        "risk_budget": "observe_only, proposal_only, low, medium, or high.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_publish_digest_proposal",
+                "title": "Propose Public Experiment Digest",
+                "description": "Build a minimal public digest proposal without publishing private lab details.",
+                "inputSchema": self._schema(
+                    {
+                        "experiment_json": "Optional JSON experiment from nomad_generate_experiment.",
+                        "objective": "Objective to generate if experiment_json is omitted.",
+                        "candidate_action": "Optional bounded intervention.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_lab_execution_gate",
+                "title": "Gate SVW Lab Execution",
+                "description": "Validate approval and risk budget for one bounded lab intervention. This tool does not perform the action itself.",
+                "inputSchema": self._schema(
+                    {
+                        "experiment_json": "JSON experiment from nomad_generate_experiment.",
+                        "requested_action": "Action the caller wants to perform.",
+                        "approval": "Exact approval token from the experiment contract.",
+                        "max_risk_budget": "Maximum allowed risk budget, default low.",
+                    },
+                ),
+            },
+            {
+                "name": "nomad_record_experiment_result",
+                "title": "Record SVW Experiment Result",
+                "description": "Append a local result event to the Nomad lab experiment ledger, including failures.",
+                "inputSchema": self._schema(
+                    {
+                        "experiment_json": "JSON experiment from nomad_generate_experiment.",
+                        "outcome": "observed_success, observed_failure, or inconclusive.",
+                        "evidence": "Evidence list as comma-separated text or JSON string.",
+                        "svw_delta": "Observed SVW delta.",
+                    },
+                    required=["outcome"],
+                ),
+            },
+            {
                 "name": "nomad_self_development_status",
                 "title": "Nomad Self-Development Status",
                 "description": "Read Nomad's persistent self-development journal and next autonomous objective.",
@@ -846,6 +947,56 @@ class NomadMcpServer:
             return self.agent.direct_agent.discover_agent_card(
                 base_url=str(arguments.get("base_url") or "").strip(),
             )
+        if name == "nomad_lab_state":
+            return build_private_mcp_lab_surface(base_url=self._mcp_public_base_url())
+        if name == "nomad_agent_native_product":
+            lab = build_private_mcp_lab_surface(base_url=self._mcp_public_base_url())
+            return build_agent_native_product_surface(
+                base_url=self._mcp_public_base_url(),
+                private_mcp_lab=lab,
+                svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
+            )
+        if name == "nomad_svw_state":
+            return build_swarm_verified_work_surface(base_url=self._mcp_public_base_url())
+        if name == "nomad_external_value_state":
+            surface = build_external_value_surface(base_url=self._mcp_public_base_url())
+            surface["summary"] = summarize_external_value_ledger()
+            return surface
+        if name == "nomad_generate_experiment":
+            return generate_svw_experiment(
+                objective=str(arguments.get("objective") or "").strip(),
+                candidate_action=str(arguments.get("candidate_action") or "").strip(),
+                baseline_metric=str(arguments.get("baseline_metric") or "").strip(),
+                risk_budget=str(arguments.get("risk_budget") or "low").strip(),
+            )
+        if name == "nomad_counterfactual_experiment_replay":
+            return replay_svw_experiment(
+                experiment=arguments.get("experiment_json") or arguments.get("experiment"),
+                objective=str(arguments.get("objective") or "").strip(),
+                candidate_action=str(arguments.get("candidate_action") or "").strip(),
+                risk_budget=str(arguments.get("risk_budget") or "low").strip(),
+            )
+        if name == "nomad_publish_digest_proposal":
+            return publish_digest_proposal(
+                experiment=arguments.get("experiment_json") or arguments.get("experiment"),
+                objective=str(arguments.get("objective") or "").strip(),
+                candidate_action=str(arguments.get("candidate_action") or "").strip(),
+                base_url=self._mcp_public_base_url(),
+            )
+        if name == "nomad_lab_execution_gate":
+            return execution_gate(
+                experiment=arguments.get("experiment_json") or arguments.get("experiment"),
+                requested_action=str(arguments.get("requested_action") or "").strip(),
+                approval=str(arguments.get("approval") or "").strip(),
+                max_risk_budget=str(arguments.get("max_risk_budget") or "low").strip(),
+            )
+        if name == "nomad_record_experiment_result":
+            return record_experiment_result(
+                experiment=arguments.get("experiment_json") or arguments.get("experiment"),
+                outcome=str(arguments.get("outcome") or "").strip(),
+                evidence=arguments.get("evidence"),
+                svw_delta=arguments.get("svw_delta") or 0.0,
+            )
         return None
 
     @staticmethod
@@ -987,6 +1138,21 @@ class NomadMcpServer:
                     "Boot order, effect-labeled routes, anti-anthropic HTTP semantics, and machine_runtime_contract; "
                     "same payload as GET /.well-known/nomad-agent.json."
                 ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://agent-native-product",
+                "name": "Nomad Agent-Native Product",
+                "description": (
+                    "Top-level product contract joining public proof routes with private MCP lab profiles; "
+                    "same payload as GET /.well-known/nomad-agent-native-product.json."
+                ),
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "nomad://private-mcp-lab",
+                "name": "Nomad Private MCP Lab",
+                "description": "Private Secure-MCP-compatible lab surface for falsifiable SVW experiments.",
                 "mimeType": "application/json",
             },
             {
@@ -1197,6 +1363,26 @@ class NomadMcpServer:
 
             text = json.dumps(
                 agent_native_index(base_url=self._mcp_public_base_url()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://agent-native-product":
+            base = self._mcp_public_base_url()
+            lab = build_private_mcp_lab_surface(base_url=base)
+            text = json.dumps(
+                build_agent_native_product_surface(
+                    base_url=base,
+                    private_mcp_lab=lab,
+                    svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+            mime_type = "application/json"
+        elif uri == "nomad://private-mcp-lab":
+            text = json.dumps(
+                build_private_mcp_lab_surface(base_url=self._mcp_public_base_url()),
                 indent=2,
                 ensure_ascii=False,
             )

@@ -1395,6 +1395,19 @@ def _compact_text(result: Dict[str, Any]) -> str:
         lines.append(f"machine_runtime_contract: {mrc.get('schema', '')}")
         return "\n".join(lines)
 
+    if result.get("schema") == "nomad.agent_native_product.v1":
+        readiness = result.get("readiness") or {}
+        profiles = (result.get("private_mcp") or {}).get("profiles") or {}
+        proof_routes = result.get("public_proof_routes") or {}
+        lines = [
+            "Nomad agent-native product",
+            f"score: {readiness.get('agent_native_product_score', 0)}",
+            f"public_boot_steps: {len(result.get('public_boot_order') or [])}",
+            f"private_mcp_profiles: {', '.join(profiles.keys())}",
+            f"well_known: {proof_routes.get('agent_native_product', result.get('well_known_url', ''))}",
+        ]
+        return "\n".join(lines)
+
     if mode == "lead_discovery" and result.get("calibration_bundle"):
         cb = result["calibration_bundle"]
         lines = [
@@ -1793,6 +1806,8 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("agent-growth is handled directly in run_once")
     if command == "agent-native-index":
         raise ValueError("agent-native-index is handled directly in run_once")
+    if command == "agent-native-product":
+        raise ValueError("agent-native-product is handled directly in run_once")
     if command == "swarm-helper":
         raise ValueError("swarm-helper is handled directly in run_once")
     if command == "void-observer":
@@ -3838,6 +3853,19 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
             from nomad_agent_native_index import agent_native_index
 
             result = agent_native_index(base_url=(getattr(args, "base_url", None) or "").strip())
+        elif args.command == "agent-native-product":
+            from nomad_agent_native_product import build_agent_native_product_surface
+            from nomad_external_value import summarize_external_value_ledger
+            from nomad_mcp_lab import build_private_mcp_lab_surface
+
+            base = (getattr(args, "base_url", None) or "").strip()
+            lab = build_private_mcp_lab_surface(base_url=base)
+            result = build_agent_native_product_surface(
+                base_url=base,
+                private_mcp_lab=lab,
+                svw_surface=lab.get("current_svw_state") if isinstance(lab.get("current_svw_state"), dict) else {},
+                external_value_summary=summarize_external_value_ledger(),
+            )
         elif args.command == "swarm-helper":
             from nomad_swarm_helper_agent import run_swarm_helper_pass
 
@@ -4988,6 +5016,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--base-url",
         default="",
         help="Override public base URL for absolute links (default: NOMAD_PUBLIC_API_URL / env).",
+    )
+    agent_native_product_p = subparsers.add_parser(
+        "agent-native-product",
+        help="Top-level agent-native product contract for public proof routes and private MCP profiles.",
+    )
+    agent_native_product_p.add_argument(
+        "--base-url",
+        default="",
+        help="Override public base URL for absolute links (default: relative links).",
     )
 
     swarm_helper = subparsers.add_parser(

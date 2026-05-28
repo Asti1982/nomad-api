@@ -153,6 +153,7 @@ from nomad_agent_invariants import build_agent_invariants_document
 from nomad_agent_join_field import build_agent_join_field
 from nomad_agent_market_offers import build_inter_agent_witness_offer_well_known
 from nomad_agent_native_index import agent_native_index
+from nomad_agent_native_product import build_agent_native_product_surface
 from nomad_peer_acquisition import build_peer_acquisition_well_known
 from nomad_reciprocity_dividend import NomadReciprocityDividend
 from nomad_recruitment_gradient import attach_runtime_to_gradient, build_recruitment_gradient
@@ -245,6 +246,7 @@ from nomad_job_channels import build_job_channel_surface
 from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
 from nomad_swarm_verified_work import build_swarm_verified_work_surface
+from nomad_mcp_lab import build_private_mcp_lab_surface
 from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
 from nomad_value_cycle_mesh import build_value_cycle_mesh_surface, evaluate_value_cycle_event
@@ -969,6 +971,19 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             microtask_metrics=metrics,
             worker_fleet=worker_fleet,
             work_receipt_summary=summarize_work_receipts(),
+            external_value_summary=summarize_external_value_ledger(),
+        )
+
+    @classmethod
+    def _build_agent_native_product(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
+        summary = swarm_summary if isinstance(swarm_summary, dict) else cls.swarm_registry.public_manifest(base_url=base_url)
+        machine_product = cls._build_machine_product_surface(base_url=base_url, swarm_summary=summary)
+        svw = cls._build_swarm_verified_work(base_url=base_url, swarm_summary=summary)
+        return build_agent_native_product_surface(
+            base_url=base_url,
+            machine_product_surface=machine_product,
+            private_mcp_lab=build_private_mcp_lab_surface(base_url=base_url, svw_surface=svw),
+            svw_surface=svw,
             external_value_summary=summarize_external_value_ledger(),
         )
 
@@ -2568,6 +2583,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "idle_runtime_intent_get": f"{b}/swarm/idle-intent-get",
                     "agent_native_priorities": f"{b}/.well-known/nomad-agent-native-priorities.json",
                     "agent_native_index": f"{b}/.well-known/nomad-agent.json",
+                    "agent_native_product": f"{b}/.well-known/nomad-agent-native-product.json",
                     "agent_join_field": f"{b}/.well-known/nomad-agent-join-field.json",
                     "inter_agent_witness_offer": f"{b}/.well-known/nomad-inter-agent-witness-offer.json",
                     "peer_acquisition_contract": f"{b}/.well-known/nomad-peer-acquisition.json",
@@ -2997,6 +3013,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/agent-product", "/machine-product", "/.well-known/nomad-machine-product.json"}:
             self._json_response(self.__class__._build_machine_product_surface(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/agent-native-product", "/.well-known/nomad-agent-native-product.json"}:
+            self._json_response(self.__class__._build_agent_native_product(base_url=self._base_url()))
             return
 
         if parsed.path in {"/contract-conformance", "/.well-known/nomad-contract-conformance.json"}:
