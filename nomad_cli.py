@@ -1777,6 +1777,10 @@ def build_query(args: argparse.Namespace) -> str:
         raise ValueError("taskbounty-access-gate is handled directly in run_once")
     if command == "hackerone-scout":
         raise ValueError("hackerone-scout is handled directly in run_once")
+    if command == "gemini-verifier":
+        raise ValueError("gemini-verifier is handled directly in run_once")
+    if command == "google-agentic-era":
+        raise ValueError("google-agentic-era is handled directly in run_once")
     if command == "superteam-scout":
         raise ValueError("superteam-scout is handled directly in run_once")
     if command == "worker-invoice":
@@ -3321,6 +3325,36 @@ def run_once(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
                 handle=str(getattr(args, "handle", "") or "").strip() or "zabbix",
                 api_base=(getattr(args, "api_base", None) or "").strip() or None,
             )
+        elif args.command == "gemini-verifier":
+            from pathlib import Path
+
+            from nomad_gemini_verifier import build_gemini_verifier_surface, verify_with_gemini
+
+            artifact_text = str(getattr(args, "artifact_text", "") or "")
+            artifact_file = str(getattr(args, "artifact_file", "") or "").strip()
+            if artifact_file:
+                artifact_text = Path(artifact_file).read_text(encoding="utf-8", errors="replace")
+            if bool(getattr(args, "surface", False)):
+                result = build_gemini_verifier_surface(base_url=str(getattr(args, "base_url", "") or ""))
+            else:
+                result = verify_with_gemini(
+                    {
+                        "verifier_type": str(getattr(args, "verifier_type", "") or "generic"),
+                        "model": str(getattr(args, "model", "") or ""),
+                        "api_mode": str(getattr(args, "api_mode", "") or ""),
+                        "artifact_text": artifact_text,
+                        "metadata": {
+                            "source": str(getattr(args, "source", "") or ""),
+                            "cli": "nomad_cli.py gemini-verifier",
+                        },
+                        "dry_run": bool(getattr(args, "dry_run", False)),
+                        "allow_provider_call": bool(getattr(args, "allow_provider_call", False)),
+                    }
+                )
+        elif args.command == "google-agentic-era":
+            from nomad_google_agentic_era import build_google_agentic_surface
+
+            result = build_google_agentic_surface(base_url=str(getattr(args, "base_url", "") or ""))
         elif args.command == "superteam-scout":
             from nomad_superteam_scout import build_superteam_scout
 
@@ -4636,6 +4670,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hackerone_scout.add_argument("--handle", default="zabbix", help="HackerOne program handle to inspect.")
     hackerone_scout.add_argument("--api-base", default="", help="Override HackerOne API base URL.")
+    gemini_verifier = subparsers.add_parser(
+        "gemini-verifier",
+        help="Gemini free-tier verifier for public Nomad artifacts; rejects secrets and records quota.",
+    )
+    gemini_verifier.add_argument("--surface", action="store_true", help="Print the verifier surface instead of verifying an artifact.")
+    gemini_verifier.add_argument("--base-url", default="", help="Public base URL for the surface.")
+    gemini_verifier.add_argument("--model", default="", help="Gemini model, default from NOMAD_GEMINI_DEFAULT_MODEL or gemini-3.1-flash-lite.")
+    gemini_verifier.add_argument("--api-mode", default="", choices=("", "generate_content", "interactions"), help="Gemini API mode for dry-run or explicitly unlocked calls.")
+    gemini_verifier.add_argument("--verifier-type", default="generic", help="hackerone_draft | agp_candidate | worker_receipt | external_value | generic.")
+    gemini_verifier.add_argument("--artifact-file", default="", help="Public artifact file to verify. Do not include secrets.")
+    gemini_verifier.add_argument("--artifact-text", default="", help="Public artifact text to verify. Do not include secrets.")
+    gemini_verifier.add_argument("--source", default="", help="Optional public source label or URL.")
+    gemini_verifier.add_argument("--dry-run", action="store_true", help="Build prompt/receipt without calling Gemini.")
+    gemini_verifier.add_argument(
+        "--allow-provider-call",
+        action="store_true",
+        help="Request a real Gemini call; trusted runtime must also set NOMAD_ALLOW_GEMINI_FREE_PROVIDER_CALL=true.",
+    )
+    google_agentic = subparsers.add_parser(
+        "google-agentic-era",
+        help="Show Nomad's free-first adoption surface for Google agentic-era tools.",
+    )
+    google_agentic.add_argument("--base-url", default="", help="Public base URL for links.")
     superteam_scout = subparsers.add_parser(
         "superteam-scout",
         help="Read-only Superteam Earn agent listing scout: deadline/access/claim gates before submission.",

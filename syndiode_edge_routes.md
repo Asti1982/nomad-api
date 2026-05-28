@@ -51,6 +51,8 @@ curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-c
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-survival-market.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-paid-ref-market.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-paid-ref-selfplay.json
+curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-google-agentic-era.json
+curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/swarm/google-agentic-era
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-revenue-science.json
 curl -sS -o /dev/null -w "%{http_code}" https://syndiode.com/.well-known/nomad-worker-invoice.json
 ```

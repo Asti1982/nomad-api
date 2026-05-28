@@ -194,6 +194,8 @@ from nomad_telegram_acquisition import (
 from nomad_acquisition_engine import build_acquisition_engine_surface, summarize_agent_outreach_state
 from nomad_eth_support import build_eth_ai_agent_support_surface
 from nomad_spend_guard import build_spend_guard_surface
+from nomad_gemini_verifier import build_gemini_verifier_surface, verify_with_gemini
+from nomad_google_agentic_era import build_google_agentic_surface
 from nomad_bounty_hunter import build_bounty_hunter_surface
 from nomad_buyer_funded_work import build_buyer_funded_work_surface
 from nomad_sales_department_swarm import (
@@ -2622,6 +2624,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "referral_offers": f"{b}/.well-known/nomad-referral-offers.json",
                     "referral_swarm": f"{b}/.well-known/nomad-referral-swarm.json",
                     "spend_guard": f"{b}/.well-known/nomad-spend-guard.json",
+                    "gemini_verifier": f"{b}/.well-known/nomad-gemini-verifier.json",
+                    "gemini_verifier_post": f"{b}/swarm/gemini-verifier/verify",
+                    "google_agentic_era": f"{b}/.well-known/nomad-google-agentic-era.json",
                     "bounty_hunter": f"{b}/.well-known/nomad-bounty-hunter.json",
                     "buyer_funded_work": f"{b}/.well-known/nomad-buyer-funded-work.json",
                     "sales_department": f"{b}/.well-known/nomad-sales-department.json",
@@ -3100,6 +3105,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/spend-guard", "/.well-known/nomad-spend-guard.json"}:
             self._json_response(self.__class__._build_spend_guard(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/gemini-verifier", "/.well-known/nomad-gemini-verifier.json"}:
+            self._json_response(build_gemini_verifier_surface(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/google-agentic-era", "/.well-known/nomad-google-agentic-era.json"}:
+            self._json_response(build_google_agentic_surface(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/bounty-hunter", "/.well-known/nomad-bounty-hunter.json"}:
             self._json_response(self.__class__._build_bounty_hunter(base_url=self._base_url()))
@@ -4671,6 +4682,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/gemini-verifier",
+                    "/swarm/gemini-verifier/verify",
+                    "/.well-known/nomad-gemini-verifier.json",
+                    "/swarm/google-agentic-era",
+                    "/.well-known/nomad-google-agentic-era.json",
                     "/swarm/signals",
                     "/swarm/signal-layer",
                     "/.well-known/nomad-signal-layer.json",
@@ -6284,6 +6300,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=200 if result.get("ok") else 400)
             return
 
+        if parsed.path == "/swarm/gemini-verifier/verify":
+            result = verify_with_gemini(payload)
+            self._json_response(result, status=200 if result.get("ok") else 400)
+            return
+
         if parsed.path == "/swarm/server-failure/events":
             result = record_server_failure_event(payload, base_url=self._base_url())
             if result.get("ok"):
@@ -6796,6 +6817,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-acquisition-ignition.json",
                     "/swarm/external-value",
                     "/.well-known/nomad-external-value.json",
+                    "/swarm/gemini-verifier",
+                    "/swarm/gemini-verifier/verify",
+                    "/.well-known/nomad-gemini-verifier.json",
+                    "/swarm/google-agentic-era",
+                    "/.well-known/nomad-google-agentic-era.json",
                     "/swarm/signals",
                     "/swarm/signal-layer",
                     "/.well-known/nomad-signal-layer.json",
@@ -6976,6 +7002,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/swarm/microtask/settle",
                     "/swarm/ecology/tick",
                     "/swarm/external-value",
+                    "/swarm/gemini-verifier/verify",
                     "/swarm/experience",
                     "/swarm/tool-gap",
                     "/swarm/topology-plan",
