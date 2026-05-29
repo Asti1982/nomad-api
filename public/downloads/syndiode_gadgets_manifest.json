@@ -1,7 +1,7 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
   "generated_at": "2026-05-27T14:45:30+02:00",
-  "base_url": "https://www.syndiode.com",
+  "base_url": "https://www.syndiode.de",
   "gadgets": [
     {
       "id": "syndiodepin_nomad_status_light",
@@ -41,9 +41,9 @@
         "stripe_subscription_required": false
       },
       "links": {
-        "public_page": "https://syndiode.de/pin",
-        "swarm_lightning": "https://www.syndiode.com/swarm-lightning",
-        "worker_join": "https://www.syndiode.com/downloads/install_nomad_transition_worker.bat",
+        "public_page": "https://www.syndiode.de/syndiode-pin",
+        "swarm_lightning": "https://www.syndiode.de/gadgets",
+        "worker_join": "https://www.syndiode.de/downloads/install_nomad_transition_worker.bat",
         "buyer_work": "https://www.syndiode.com/service/e2e?service_type=repo_issue_help"
       }
     },
@@ -123,11 +123,11 @@
         "firebase_public_values_in_manifest": false
       },
       "links": {
-        "public_page": "https://www.syndiode.com/swarm-lightning",
-        "pin_page": "https://syndiode.de/pin",
-        "oracle_page": "https://www.syndiode.com/swarm-oracle",
-        "worker_windows_app": "https://www.syndiode.com/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
-        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json"
+        "public_page": "https://www.syndiode.de/gadgets",
+        "pin_page": "https://www.syndiode.de/syndiode-pin",
+        "oracle_page": "https://www.syndiode.de/swarm-oracle",
+        "worker_windows_app": "https://www.syndiode.de/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
+        "public_manifest": "https://www.syndiode.de/.well-known/syndiode-gadgets.json"
       },
       "installation_notes": [
         "Run the Nomad Transition Worker on the laptop through the Windows Swarm Oracle tray app.",
@@ -165,18 +165,18 @@
         "attach_mode": "GET-only low-trust attach plus bounded public worker signals"
       },
       "download": {
-        "apk": "https://www.syndiode.com/downloads/handyoracle-edge-gadget.apk",
+        "apk": "https://www.syndiode.de/downloads/handyoracle-edge-gadget.apk",
         "apk_sha256": "a1257e152a469bbb4c6cb180995a582c374d14cba326d6b61896f0c412fc4854",
         "apk_size_bytes": 125108304,
         "release": "https://github.com/Asti1982/handyoracle/releases/tag/v0.1.1-foreground-shake",
         "latest_release": "https://github.com/Asti1982/handyoracle/releases/latest",
-        "public_page": "https://www.syndiode.com/swarm-oracle",
-        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
+        "public_page": "https://www.syndiode.de/swarm-oracle",
+        "public_manifest": "https://www.syndiode.de/.well-known/syndiode-gadgets.json",
         "primary_cta": "Download APK",
         "fallback_cta": "Latest GitHub release"
       },
       "installation_notes": [
-        "Open https://www.syndiode.com/swarm-oracle on the Android phone.",
+        "Open https://www.syndiode.de/swarm-oracle on the Android phone.",
         "Tap Download APK.",
         "If Android warns because this is a direct APK, allow installs from the browser or file manager and tap Install.",
         "Open Swarm Oracle and shake once while the app is visible.",
@@ -211,17 +211,17 @@
         "attach_mode": "bundled_transition_worker_edge_mode_with_local_ollama_when_available_and_swarm_surplus_opt_in"
       },
       "download": {
-        "installer": "https://www.syndiode.com/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
+        "installer": "https://www.syndiode.de/downloads/Swarm-Oracle-Windows-0.1.1-x64.exe",
         "installer_sha256": "6abfe4396712342e37a00d4b64001dac41b92b6a60be56b13aeedb81b97f1fcd",
         "installer_size_bytes": 109906760,
         "release": "https://github.com/Asti1982/nomad-api/releases/tag/swarm-oracle-windows-v0.1.1",
         "release_asset": "https://github.com/Asti1982/nomad-api/releases/download/swarm-oracle-windows-v0.1.1/Swarm-Oracle-Windows-0.1.1-x64.exe",
-        "public_page": "https://www.syndiode.com/swarm-oracle",
-        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json",
+        "public_page": "https://www.syndiode.de/swarm-oracle",
+        "public_manifest": "https://www.syndiode.de/.well-known/syndiode-gadgets.json",
         "primary_cta": "Download Windows App"
       },
       "installation_notes": [
-        "Open https://www.syndiode.com/swarm-oracle on the Windows laptop.",
+        "Open https://www.syndiode.de/swarm-oracle on the Windows laptop.",
         "Tap Download Windows App.",
         "Run the one-click installer.",
         "Click Signal once; the button pulses until worker state and local LLM output return.",
