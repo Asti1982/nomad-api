@@ -6,7 +6,7 @@
     {
       "id": "syndiodepin_nomad_status_light",
       "name": "SyndiodePin",
-      "version": "0.3.0-windows-light-control",
+      "version": "0.4.0-windows-swarm-signal",
       "kind": [
         "led_status_gadget",
         "nomad_swarm_activity_signal",
@@ -38,13 +38,13 @@
       "light_ai": {
         "default_hosted_api_spend": false,
         "preferred_runtime": "small local phone-side model when feasible",
-        "windows_runtime": "local pattern engine with Firebase and WLED delivery",
+        "windows_runtime": "Swarm Oracle style local pattern engine with Firebase readback and optional WLED delivery",
         "openai_api_required": false,
         "stripe_subscription_required": false
       },
       "download": {
         "windows_exe": "https://www.syndiode.com/downloads/syndiode-pin-light-control.exe",
-        "windows_exe_sha256": "6274b5053997cb62eb9b54900f4760f3f03e4d354bcac9a04a94cd33e6611b33",
+        "windows_exe_sha256": "2346b6c0cec15774c65fea346f9573256779dd6dbcae62283591f8f91bccaacd",
         "windows_source": "https://www.syndiode.com/downloads/syndiode_pin_light_control.py",
         "windows_build_script": "https://www.syndiode.com/downloads/build_syndiode_pin_light_control_exe.ps1",
         "windows_readme": "https://www.syndiode.com/downloads/README_SYNDIODE_PIN_WINDOWS.md",
@@ -52,7 +52,8 @@
       },
       "installation_notes": [
         "Download and run the Windows EXE.",
-        "Enter a SyndiodePin device ID for Firebase delivery, or a WLED host/IP for direct local delivery.",
+        "Enter a SyndiodePin device ID and press Swarm Signal.",
+        "Use Firebase test to read back the current pin state.",
         "The Windows app keeps the light pattern engine local and sends only the selected light state to configured nodes.",
         "Use Reset WiFi only for a pin that should re-enter WiFi setup."
       ],

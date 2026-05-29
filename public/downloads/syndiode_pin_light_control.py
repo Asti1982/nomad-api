@@ -25,8 +25,8 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 
-APP_NAME = "Syndiode Pin Light Control"
-APP_VERSION = "0.1.0-windows"
+APP_NAME = "Syndiode Swarm Signal"
+APP_VERSION = "0.2.0-windows"
 DATABASE_URL = "https://syndiode-42456-default-rtdb.europe-west1.firebasedatabase.app"
 AUTH_SIGNUP_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signUp"
 AUTH_REFRESH_URL = "https://securetoken.googleapis.com/v1/token"
@@ -324,6 +324,10 @@ class FirebaseClient:
         }
         self._db_json("PUT", ["devices", device_id, "desired_settings"], payload)
 
+    def read_pin_snapshot(self, device_id: str) -> dict[str, Any] | None:
+        value = self._db_json("GET", ["devices", device_id])
+        return value if isinstance(value, dict) else None
+
     def _db_json(self, method: str, path_parts: list[str], payload: Any = None) -> Any:
         token = self._ensure_id_token()
         return self._db_json_once(method, path_parts, payload, token, retry=True)
@@ -492,13 +496,64 @@ def rgb_to_hex(color: list[int]) -> str:
     return f"#{safe[0]:02x}{safe[1]:02x}{safe[2]:02x}"
 
 
+def led_pattern_from_settings(settings: dict[str, Any]) -> LedPattern | None:
+    if not settings:
+        return None
+    raw_colors = settings.get("colors")
+    colors: list[list[int]] = []
+    if isinstance(raw_colors, list):
+        for item in raw_colors[:3]:
+            if isinstance(item, list):
+                colors.append([clamp(value) for value in item[:3]])
+    elif isinstance(raw_colors, dict):
+        for color_index in range(3):
+            item = raw_colors.get(str(color_index), raw_colors.get(color_index))
+            if isinstance(item, dict):
+                colors.append(
+                    [
+                        clamp(item.get("0", item.get(0, 0))),
+                        clamp(item.get("1", item.get(1, 0))),
+                        clamp(item.get("2", item.get(2, 0))),
+                    ]
+                )
+            elif isinstance(item, list):
+                colors.append([clamp(value) for value in item[:3]])
+    colors = sanitized_colors(colors)
+    return LedPattern(
+        colors=colors,
+        effect=clamp(int(settings.get("effect", 0))),
+        speed=clamp(int(settings.get("speed", 128))),
+        intensity=clamp(int(settings.get("intensity", settings.get("brightness", 128)))),
+    )
+
+
+def describe_pin_snapshot(snapshot: dict[str, Any]) -> str:
+    desired = snapshot.get("desired_settings")
+    status = snapshot.get("status")
+    if not isinstance(desired, dict):
+        desired = {}
+    if not isinstance(status, dict):
+        status = {}
+    ip = snapshot.get("ip") or "-"
+    on = desired.get("on", "-")
+    effect = desired.get("effect", "-")
+    brightness = desired.get("brightness", "-")
+    speed = desired.get("speed", "-")
+    reset_wifi = status.get("reset_wifi", "-")
+    touch = status.get("touch_detected", "-")
+    return (
+        f"Firebase OK | ip {ip} | on {on} | effect {effect} | "
+        f"brightness {brightness} | speed {speed} | touch {touch} | reset_wifi {reset_wifi}"
+    )
+
+
 class SyndiodePinApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("820x660")
-        self.minsize(720, 560)
-        self.configure(bg="#09110e")
+        self.geometry("800x700")
+        self.minsize(720, 620)
+        self.configure(bg="#07100d")
 
         self.settings = SettingsStore()
         self.firebase = FirebaseClient(self.settings)
@@ -510,8 +565,9 @@ class SyndiodePinApp(tk.Tk):
         self.pin_var = tk.StringVar(value=self.settings.device_id)
         self.wled_var = tk.StringVar(value=self.settings.wled_host)
         self.status_var = tk.StringVar(value="Ready.")
-        self.pattern_var = tk.StringVar(value="No light pattern sent yet.")
+        self.pattern_var = tk.StringVar(value="The next signal is forming around the pin.")
         self.connection_var = tk.StringVar()
+        self.advanced_visible = bool(self.settings.wled_host)
 
         self._setup_style()
         self._build_ui()
@@ -523,41 +579,44 @@ class SyndiodePinApp(tk.Tk):
             self.style.theme_use("clam")
         except tk.TclError:
             pass
-        self.style.configure("Root.TFrame", background="#09110e")
-        self.style.configure("Panel.TFrame", background="#111c18", relief="flat")
-        self.style.configure("Title.TLabel", background="#09110e", foreground="#f2efe6", font=("Segoe UI", 21, "bold"))
-        self.style.configure("Subtitle.TLabel", background="#09110e", foreground="#afc7bd", font=("Segoe UI", 10))
-        self.style.configure("PanelTitle.TLabel", background="#111c18", foreground="#f2efe6", font=("Segoe UI", 12, "bold"))
-        self.style.configure("PanelText.TLabel", background="#111c18", foreground="#c7d4ce", font=("Segoe UI", 9))
-        self.style.configure("Status.TLabel", background="#09110e", foreground="#9ddfb4", font=("Segoe UI", 10, "bold"))
+        self.style.configure("Root.TFrame", background="#07100d")
+        self.style.configure("Panel.TFrame", background="#0b1511", relief="flat")
+        self.style.configure("Title.TLabel", background="#07100d", foreground="#f4f1e8", font=("Segoe UI", 28, "bold"))
+        self.style.configure("Subtitle.TLabel", background="#07100d", foreground="#aeb9ad", font=("Segoe UI", 10))
+        self.style.configure("Swarm.TLabel", background="#07100d", foreground="#76e39a", font=("Consolas", 11, "bold"))
+        self.style.configure("PanelTitle.TLabel", background="#0b1511", foreground="#f4f1e8", font=("Segoe UI", 12, "bold"))
+        self.style.configure("PanelText.TLabel", background="#0b1511", foreground="#aeb9ad", font=("Segoe UI", 9))
+        self.style.configure("Status.TLabel", background="#07100d", foreground="#76e39a", font=("Segoe UI", 10, "bold"))
         self.style.configure("TEntry", fieldbackground="#f7fbf8", foreground="#14231d")
         self.style.configure("TButton", font=("Segoe UI", 9), padding=(12, 7))
-        self.style.configure("Primary.TButton", font=("Segoe UI", 9, "bold"), padding=(12, 8))
+        self.style.configure("Primary.TButton", font=("Segoe UI", 9, "bold"), padding=(12, 8), background="#76e39a", foreground="#07100d")
+        self.style.configure("Signal.TButton", font=("Segoe UI", 19, "bold"), padding=(18, 18), background="#76e39a", foreground="#07100d")
+        self.style.map("Signal.TButton", background=[("active", "#9ef0b7"), ("disabled", "#748072")])
+        self.style.map("Primary.TButton", background=[("active", "#9ef0b7")])
 
     def _build_ui(self) -> None:
         root = ttk.Frame(self, style="Root.TFrame", padding=22)
         root.pack(fill="both", expand=True)
 
+        ttk.Label(root, text="SWARM", style="Swarm.TLabel").pack(anchor="w")
         ttk.Label(root, text="Syndiode Pin", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             root,
-            text="Windows control surface for ESP32/Firebase pins and local WLED light nodes.",
+            text="AI swarm signal for your physical pin. One click is enough.",
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(4, 18))
 
         node = ttk.Frame(root, style="Panel.TFrame", padding=16)
         node.pack(fill="x", pady=(0, 14))
-        ttk.Label(node, text="Light node", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
+        ttk.Label(node, text="Pin connection", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
         ttk.Label(node, text="Pin ID", style="PanelText.TLabel").grid(row=1, column=0, sticky="w", pady=(14, 4))
         ttk.Entry(node, textvariable=self.pin_var).grid(row=2, column=0, columnspan=2, sticky="ew", padx=(0, 10))
         ttk.Button(node, text="Save pin", style="Primary.TButton", command=self.save_pin).grid(row=2, column=2, sticky="ew", padx=(0, 10))
-        ttk.Button(node, text="Reset WiFi", command=self.reset_wifi).grid(row=2, column=3, sticky="ew")
-
-        ttk.Label(node, text="WLED host or IP", style="PanelText.TLabel").grid(row=3, column=0, sticky="w", pady=(12, 4))
-        ttk.Entry(node, textvariable=self.wled_var).grid(row=4, column=0, columnspan=2, sticky="ew", padx=(0, 10))
-        ttk.Button(node, text="Save WLED", style="Primary.TButton", command=self.save_wled).grid(row=4, column=2, sticky="ew", padx=(0, 10))
-        ttk.Button(node, text="Open download", command=lambda: webbrowser.open(DOWNLOAD_PAGE)).grid(row=4, column=3, sticky="ew")
-        ttk.Label(node, textvariable=self.connection_var, style="PanelText.TLabel").grid(row=5, column=0, columnspan=4, sticky="w", pady=(12, 0))
+        ttk.Button(node, text="Firebase test", command=self.read_pin).grid(row=2, column=3, sticky="ew")
+        ttk.Label(node, textvariable=self.connection_var, style="PanelText.TLabel").grid(row=3, column=0, columnspan=4, sticky="w", pady=(12, 0))
+        ttk.Button(node, text="Reset WiFi", command=self.reset_wifi).grid(row=4, column=0, sticky="w", pady=(12, 0))
+        ttk.Button(node, text="Advanced WLED", command=self.toggle_advanced).grid(row=4, column=1, sticky="w", pady=(12, 0))
+        ttk.Button(node, text="Open download", command=lambda: webbrowser.open(DOWNLOAD_PAGE)).grid(row=4, column=3, sticky="e", pady=(12, 0))
         node.columnconfigure(0, weight=1)
         node.columnconfigure(1, weight=1)
         node.columnconfigure(2, weight=0)
@@ -565,19 +624,41 @@ class SyndiodePinApp(tk.Tk):
 
         pulse = ttk.Frame(root, style="Panel.TFrame", padding=16)
         pulse.pack(fill="x", pady=(0, 14))
-        ttk.Label(pulse, text="Pulse", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Button(pulse, text="Soft", command=lambda: self.send_pulse(7)).grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(14, 0))
-        ttk.Button(pulse, text="Active", style="Primary.TButton", command=lambda: self.send_pulse(13)).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(14, 0))
-        ttk.Button(pulse, text="Bright", command=lambda: self.send_pulse(20)).grid(row=1, column=2, sticky="ew", padx=(0, 8), pady=(14, 0))
-        ttk.Button(pulse, text="Swarm", command=lambda: self.send_pulse(18 if int(time.time()) % 2 else 12)).grid(row=1, column=3, sticky="ew", pady=(14, 0))
+        ttk.Label(pulse, text="AI SWARM ORACLE", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
+        ttk.Label(
+            pulse,
+            text="The signal forms locally, writes to Firebase, and the pin answers in light.",
+            style="PanelText.TLabel",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(7, 0))
+        ttk.Button(
+            pulse,
+            text="SWARM SIGNAL",
+            style="Signal.TButton",
+            command=self.send_swarm_signal,
+        ).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(14, 10))
+        ttk.Button(pulse, text="Soft", command=lambda: self.send_pulse(7)).grid(row=3, column=0, sticky="ew", padx=(0, 8))
+        ttk.Button(pulse, text="Active", command=lambda: self.send_pulse(13)).grid(row=3, column=1, sticky="ew", padx=(0, 8))
+        ttk.Button(pulse, text="Bright", command=lambda: self.send_pulse(20)).grid(row=3, column=2, sticky="ew", padx=(0, 8))
+        ttk.Button(pulse, text="Readback", command=self.read_pin).grid(row=3, column=3, sticky="ew")
         pulse.columnconfigure(0, weight=1)
         pulse.columnconfigure(1, weight=1)
         pulse.columnconfigure(2, weight=1)
         pulse.columnconfigure(3, weight=1)
 
-        pattern = ttk.Frame(root, style="Panel.TFrame", padding=16)
+        self.advanced_frame = ttk.Frame(root, style="Panel.TFrame", padding=16)
+        ttk.Label(self.advanced_frame, text="Advanced WLED", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(self.advanced_frame, text="Optional direct local WLED host or IP", style="PanelText.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 4))
+        ttk.Entry(self.advanced_frame, textvariable=self.wled_var).grid(row=2, column=0, sticky="ew", padx=(0, 10))
+        ttk.Button(self.advanced_frame, text="Save WLED", command=self.save_wled).grid(row=2, column=1, sticky="ew", padx=(0, 10))
+        ttk.Button(self.advanced_frame, text="Clear WLED", command=self.clear_wled).grid(row=2, column=2, sticky="ew")
+        self.advanced_frame.columnconfigure(0, weight=1)
+        if self.advanced_visible:
+            self.advanced_frame.pack(fill="x", pady=(0, 14))
+
+        self.pattern_panel = ttk.Frame(root, style="Panel.TFrame", padding=16)
+        pattern = self.pattern_panel
         pattern.pack(fill="both", expand=True, pady=(0, 14))
-        ttk.Label(pattern, text="Current light", style="PanelTitle.TLabel").pack(anchor="w")
+        ttk.Label(pattern, text="THE PIN ANSWERS", style="PanelTitle.TLabel").pack(anchor="w")
         ttk.Label(pattern, textvariable=self.pattern_var, style="PanelText.TLabel", wraplength=730).pack(anchor="w", pady=(8, 12))
         self.canvas = tk.Canvas(pattern, height=128, bg="#0a1210", bd=0, highlightthickness=0)
         self.canvas.pack(fill="x", pady=(0, 12))
@@ -603,7 +684,7 @@ class SyndiodePinApp(tk.Tk):
         self.canvas.create_text(
             18,
             64,
-            text="Send a pulse to preview the selected LED colors.",
+            text="Press SWARM SIGNAL to write the next pattern into Firebase.",
             fill="#afc7bd",
             anchor="w",
             font=("Segoe UI", 10),
@@ -637,8 +718,15 @@ class SyndiodePinApp(tk.Tk):
 
     def _refresh_connection_text(self) -> None:
         pin = self.settings.device_id or "-"
-        wled = self.settings.wled_host or "-"
-        self.connection_var.set(f"Selected pin: {pin}   |   WLED: {wled}   |   Settings: {self.settings.path}")
+        wled = self.settings.wled_host or "off"
+        self.connection_var.set(f"Pin: {pin}   |   Advanced WLED: {wled}   |   Settings: {self.settings.path}")
+
+    def toggle_advanced(self) -> None:
+        self.advanced_visible = not self.advanced_visible
+        if self.advanced_visible:
+            self.advanced_frame.pack(fill="x", pady=(0, 14), before=self.pattern_panel)
+        else:
+            self.advanced_frame.pack_forget()
 
     def save_pin(self) -> None:
         device_id = self.pin_var.get().strip()
@@ -664,16 +752,63 @@ class SyndiodePinApp(tk.Tk):
         self._log(f"WLED node saved: {host}")
         self.status_var.set("WLED node saved.")
 
+    def clear_wled(self) -> None:
+        self.settings.wled_host = ""
+        self.wled_var.set("")
+        self._refresh_connection_text()
+        self._log("Advanced WLED node cleared.")
+        self.status_var.set("WLED cleared.")
+
+    def read_pin(self) -> None:
+        device_id = self.pin_var.get().strip() or self.settings.device_id
+        if not device_id:
+            messagebox.showwarning(APP_NAME, "Save a pin ID before reading Firebase.")
+            return
+        self.settings.device_id = device_id
+        self._refresh_connection_text()
+
+        def done(snapshot: dict[str, Any] | None) -> None:
+            if not snapshot:
+                self.pattern_var.set("Firebase readback: no node exists for this pin ID.")
+                self._log(f"Firebase readback: no node for {device_id}")
+                return
+            summary = describe_pin_snapshot(snapshot)
+            self.pattern_var.set(summary)
+            self._log("Firebase readback: " + summary)
+            desired = snapshot.get("desired_settings")
+            pattern = led_pattern_from_settings(desired if isinstance(desired, dict) else {})
+            if pattern:
+                self.current_pattern = pattern
+                self._draw_pattern(
+                    LocalLightDecision(
+                        pattern=pattern,
+                        message=summary,
+                        label="FIREBASE READBACK",
+                    )
+                )
+
+        self._run_background(
+            "Reading Firebase pin...",
+            lambda: self.firebase.read_pin_snapshot(device_id),
+            done,
+        )
+
     def reset_wifi(self) -> None:
         device_id = self.pin_var.get().strip() or self.settings.device_id
         if not device_id:
             messagebox.showwarning(APP_NAME, "Save a pin ID before sending reset WiFi.")
+            return
+        if not messagebox.askyesno(APP_NAME, "Send WiFi reset to this pin?"):
             return
         self._run_background(
             "Sending WiFi reset...",
             lambda: self.firebase.reset_wifi(device_id),
             lambda _result: self._log(f"WiFi reset command sent to pin: {device_id}"),
         )
+
+    def send_swarm_signal(self) -> None:
+        force = 13 + (self.pulse_count % 4)
+        self.send_pulse(force)
 
     def send_pulse(self, shake_force: float) -> None:
         device_id = self.pin_var.get().strip() or self.settings.device_id
@@ -775,6 +910,16 @@ def run_self_test() -> int:
     assert state["seg"][0]["col"] == sanitized_colors(decision.pattern.colors)
     firebase = firebase_colors(decision.pattern.colors)
     assert set(firebase.keys()) == {"0", "1", "2"}
+    assert led_pattern_from_settings(
+        {"colors": firebase, "effect": 2, "speed": 80, "brightness": 25, "intensity": 90}
+    )
+    assert "Firebase OK" in describe_pin_snapshot(
+        {
+            "ip": "127.0.0.1",
+            "desired_settings": {"on": True, "effect": 0, "brightness": 25, "speed": 128},
+            "status": {"touch_detected": False, "reset_wifi": False},
+        }
+    )
     if sys.stdout:
         print(f"{APP_NAME} {APP_VERSION} self-test OK: {decision.label}")
     return 0

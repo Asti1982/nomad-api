@@ -1,12 +1,14 @@
-# Syndiode Pin Light Control for Windows
+# Syndiode Swarm Signal for Windows
 
 Download:
 
 https://www.syndiode.com/downloads/syndiode-pin-light-control.exe
 
 This is the Windows companion app for the SyndiodePin light firmware. It uses
-the same local light pattern logic as the Android app and sends the selected
-pattern to:
+the Swarm Oracle style: one large **Swarm Signal** button, a Firebase readback
+test, and the same local light pattern logic as the Android app.
+
+It sends the selected pattern to:
 
 - a Syndiode ESP32 pin through Firebase Realtime Database
 - a local WLED-compatible node through `http://<host>/json/state`
@@ -16,8 +18,10 @@ The app stores its settings under `%APPDATA%\SyndiodePin\settings.json`.
 ## Controls
 
 - Save pin: stores the ESP32 pin device id and checks/creates its Firebase node.
-- Save WLED: stores a local WLED host or IP address.
-- Soft, Active, Bright, Swarm: generate and send light pulses.
+- Swarm Signal: generates and sends one local light pattern.
+- Firebase test: reads back the current pin state from Firebase.
+- Soft, Active, Bright: manual signal intensity variants.
+- Advanced WLED: optional local WLED host/IP support.
 - Reset WiFi: sends `devices/<pin_id>/status/reset_wifi = true`.
 
 ## Build locally

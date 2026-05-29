@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "Building Syndiode Pin Light Control EXE..." -ForegroundColor Cyan
+Write-Host "Building Syndiode Swarm Signal EXE..." -ForegroundColor Cyan
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
