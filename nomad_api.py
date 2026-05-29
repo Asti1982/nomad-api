@@ -2487,6 +2487,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
         self._agent_request_path = parsed.path
 
+        if parsed.path in {"/favicon.ico", "/favicon.svg"}:
+            self._public_asset_file_response(PUBLIC_DIR / "favicon.svg")
+            return
+
         if parsed.path == "/a2a/get":
             self._json_response(self._a2a_get_relay_contract())
             return
