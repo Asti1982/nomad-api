@@ -1,16 +1,17 @@
 {
   "schema": "syndiode.gadgets_manifest.v1",
-  "generated_at": "2026-05-27T14:45:30+02:00",
+  "generated_at": "2026-05-29T19:45:00+02:00",
   "base_url": "https://www.syndiode.de",
   "gadgets": [
     {
       "id": "syndiodepin_nomad_status_light",
       "name": "SyndiodePin",
-      "version": "0.2.0-node-incentive",
+      "version": "0.3.0-windows-light-control",
       "kind": [
         "led_status_gadget",
         "nomad_swarm_activity_signal",
-        "local_light_control_experiment"
+        "local_light_control_experiment",
+        "windows_light_control_app"
       ],
       "human_surface": {
         "summary": "A small LED pin for light moods and visible Nomad swarm activity.",
@@ -37,12 +38,28 @@
       "light_ai": {
         "default_hosted_api_spend": false,
         "preferred_runtime": "small local phone-side model when feasible",
+        "windows_runtime": "local pattern engine with Firebase and WLED delivery",
         "openai_api_required": false,
         "stripe_subscription_required": false
       },
+      "download": {
+        "windows_exe": "https://www.syndiode.com/downloads/syndiode-pin-light-control.exe",
+        "windows_exe_sha256": "6274b5053997cb62eb9b54900f4760f3f03e4d354bcac9a04a94cd33e6611b33",
+        "windows_source": "https://www.syndiode.com/downloads/syndiode_pin_light_control.py",
+        "windows_build_script": "https://www.syndiode.com/downloads/build_syndiode_pin_light_control_exe.ps1",
+        "windows_readme": "https://www.syndiode.com/downloads/README_SYNDIODE_PIN_WINDOWS.md",
+        "public_manifest": "https://www.syndiode.com/.well-known/syndiode-gadgets.json"
+      },
+      "installation_notes": [
+        "Download and run the Windows EXE.",
+        "Enter a SyndiodePin device ID for Firebase delivery, or a WLED host/IP for direct local delivery.",
+        "The Windows app keeps the light pattern engine local and sends only the selected light state to configured nodes.",
+        "Use Reset WiFi only for a pin that should re-enter WiFi setup."
+      ],
       "links": {
         "public_page": "https://www.syndiode.de/syndiode-pin",
         "swarm_lightning": "https://www.syndiode.de/gadgets",
+        "windows_light_control": "https://www.syndiode.com/downloads/syndiode-pin-light-control.exe",
         "worker_join": "https://www.syndiode.de/downloads/install_nomad_transition_worker.bat",
         "buyer_work": "https://www.syndiode.com/service/e2e?service_type=repo_issue_help"
       }
