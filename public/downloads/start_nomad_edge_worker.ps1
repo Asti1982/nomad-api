@@ -70,7 +70,8 @@ function Test-NomadWorkerRuntime {
             $exitCode -eq 0 -and
             $helpText -match "--machine-objective" -and
             $helpText -match "--edge" -and
-            $helpText -match "unhuman_supremacy"
+            $helpText -match "unhuman_supremacy" -and
+            $helpText -match "--revenue-opt-in"
         )
     } catch {
         return $false
@@ -108,7 +109,7 @@ function Select-NomadWorkerRuntime {
 
 $runtime = Select-NomadWorkerRuntime -WorkerPy $workerPy -WorkerExe $workerExe -DistExe $distExe
 if (-not $runtime) {
-    throw "No compatible Nomad Transition Worker runtime found next to start_nomad_edge_worker.ps1. Expected a worker whose --help lists --machine-objective, --edge, and unhuman_supremacy."
+    throw "No compatible Nomad Transition Worker runtime found next to start_nomad_edge_worker.ps1. Expected a worker whose --help lists --machine-objective, --edge, --revenue-opt-in, and unhuman_supremacy."
 }
 $runner = $runtime.Runner
 $runnerArgs = @($runtime.Args)
@@ -117,6 +118,7 @@ $runtimeLabel = $runtime.Label
 $env:NOMAD_TRANSITION_WORKER_ID = $AgentId
 $env:NOMAD_EDGE_WORKER = "1"
 $env:NOMAD_SWARM_SURPLUS_OPT_IN = "1"
+$env:NOMAD_REVENUE_OPT_IN = "1"
 $env:NOMAD_EDGE_RESERVE_MIN_SECONDS = [string]([Math]::Max(90, $IntervalSeconds))
 $env:NOMAD_MACHINE_OBJECTIVE = "unhuman_supremacy"
 $env:NOMAD_WORKER_PAYMENT_RAIL = "capacity_switch_quote"
@@ -129,6 +131,7 @@ $argsList = @(
     "--machine-objective", "unhuman_supremacy",
     "--edge",
     "--swarm-surplus",
+    "--revenue-opt-in",
     "--loop",
     "--cycles", [string]$Cycles,
     "--interval", [string]$IntervalSeconds,

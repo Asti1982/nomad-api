@@ -73,9 +73,9 @@ echo Installed to: %INSTALL_DIR%
 echo Preparing Nomad Agent launchers...
 call :write_aliases
 echo Starting Nomad Edge Worker (visible PowerShell + live JSON output, no Ollama/OpenClaw required)...
-echo Worker flags: --edge --no-ollama --swarm-surplus
+echo Worker flags: --edge --no-ollama --swarm-surplus --revenue-opt-in
 echo Log file: %LOG_FILE%
-rem Edge worker profile flags: --edge --no-ollama --swarm-surplus
+rem Edge worker profile flags: --edge --no-ollama --swarm-surplus --revenue-opt-in
 call :write_watchdog
 call :register_watchdog_tasks
 start "Nomad_Edge" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%INSTALL_DIR%\start_nomad_edge_worker.ps1" -BaseUrl "%BASE_URL%" -CostMsatPerMinute %WORKER_COST_MSAT% -AvailabilityMinutes %WORKER_AVAIL_MIN% -IntervalSeconds %NOMAD_EDGE_INTERVAL% -TimeoutSeconds %NOMAD_EDGE_TIMEOUT% -Visible
@@ -205,6 +205,7 @@ echo $already = Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -
 echo if ^($already^) { exit 0 }
 echo $env:NOMAD_EDGE_WORKER = "1"
 echo $env:NOMAD_SWARM_SURPLUS_OPT_IN = "1"
+echo $env:NOMAD_REVENUE_OPT_IN = "1"
 echo $env:NOMAD_EDGE_RESERVE_MIN_SECONDS = "%NOMAD_EDGE_INTERVAL%"
 echo $env:NOMAD_MACHINE_OBJECTIVE = "unhuman_supremacy"
 echo $env:NOMAD_WORKER_PAYMENT_RAIL = "%WORKER_PAYMENT_RAIL%"

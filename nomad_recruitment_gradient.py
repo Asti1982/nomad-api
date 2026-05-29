@@ -14,10 +14,12 @@ from typing import Any, Dict, List
 
 from nomad_entropy_judger import compact_entropy_judger, evaluate_entropy_judger
 from nomad_representational_collapse import compact_latent_consensus, evaluate_latent_consensus
+from nomad_revenue_settlement import revenue_pressure_snapshot
 from nomad_selection_pressure_engine import build_selection_pressure_snapshot
 
 OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.42,
+    "revenue_pressure_router": 0.085,
     "overmint_compressor": 0.22,
     "protocol_drift_scan": 0.14,
     "emergence_release_probe": 0.08,
@@ -45,6 +47,20 @@ LANE_DEFINITIONS = [
         "capability_terms": ["transition_settlement", "wallet_or_x402", "payment_friction_scan"],
         "next_path": "/swarm/join",
         "ttl_seconds": 120,
+    },
+    {
+        "lane": "revenue_settlement_hook",
+        "objective": "revenue_pressure_router",
+        "required_vector": {"can_settle": 1.0, "can_verify": 0.6},
+        "capability_terms": [
+            "revenue_pressure_router",
+            "buyer_funded_paid_proof",
+            "worker_wallet_payout",
+            "settlement_capacity_builder",
+            "proof_artifacts",
+        ],
+        "next_path": "/swarm/revenue-settlement",
+        "ttl_seconds": 90,
     },
     {
         "lane": "compressor",
@@ -311,12 +327,29 @@ def _state_inputs(
         }
     )
     entropy_compact = compact_entropy_judger(entropy_decision)
+    try:
+        revenue = revenue_pressure_snapshot()
+    except Exception:
+        revenue = {
+            "recognized_revenue_usd": 0.0,
+            "work_receipt_count": 0,
+            "paid_receipt_count": 0,
+            "worker_settlement_pool_usd": 0.0,
+            "revenue_proximity": 0.0,
+            "revenue_absence_pressure": 1.0,
+            "settlement_capacity": 0.1,
+            "retention_gradient": "starving",
+        }
+    revenue_absence = _clamp(_num(revenue.get("revenue_absence_pressure"), 1.0))
+    revenue_proximity = _clamp(_num(revenue.get("revenue_proximity"), 0.0))
+    settlement_capacity = _clamp(_num(revenue.get("settlement_capacity"), 0.1))
     field_strength = _clamp(
         0.34 * (1.0 - carrying_score)
         + 0.24 * settlement_drag
-        + 0.20 * overmint_pressure
+        + 0.16 * overmint_pressure
         + 0.14 * worker_gap
         + 0.08 * (1.0 - release_capacity)
+        + 0.04 * revenue_absence
     )
     return {
         "carrying_score": round(carrying_score, 4),
@@ -342,6 +375,14 @@ def _state_inputs(
         "first_round_entropy_count": _int(entropy_decision.get("first_round_count")),
         "entropy_judger_topology": _clean_text(entropy_compact.get("topology") or "", 80),
         "entropy_judger_gate": entropy_compact,
+        "recognized_revenue_usd": round(_num(revenue.get("recognized_revenue_usd")), 4),
+        "paid_receipt_count": _int(revenue.get("paid_receipt_count")),
+        "work_receipt_count": _int(revenue.get("work_receipt_count")),
+        "worker_settlement_pool_usd": round(_num(revenue.get("worker_settlement_pool_usd")), 4),
+        "revenue_proximity": round(revenue_proximity, 4),
+        "revenue_absence_pressure": round(revenue_absence, 4),
+        "settlement_capacity": round(settlement_capacity, 4),
+        "revenue_retention_gradient": _clean_text(revenue.get("retention_gradient") or "starving", 80),
         "field_strength": round(field_strength, 4),
     }
 
@@ -365,6 +406,15 @@ def _objective_rows(worker_fleet: Dict[str, Any], state: Dict[str, Any], pressur
                 + 0.28 * _num(state.get("settlement_drag"))
                 + 0.18 * _num(state.get("worker_gap"))
                 + 0.14 * deficit
+            )
+        elif objective == "revenue_pressure_router":
+            pressure = min(
+                0.82,
+                0.34 * _num(state.get("revenue_absence_pressure"), 1.0)
+                + 0.18 * (1.0 - _num(state.get("settlement_capacity"), 0.1))
+                + 0.16 * _num(state.get("worker_gap"))
+                + 0.14 * _num(state.get("settlement_drag"))
+                + 0.12 * deficit,
             )
         elif objective == "overmint_compressor":
             pressure = 0.62 * _num(state.get("overmint_pressure")) + 0.22 * deficit + 0.16 * _num(state.get("worker_gap"))
@@ -535,6 +585,8 @@ def build_recruitment_gradient(
                 "release_capacity",
                 "worker_gap",
                 "active_leases",
+                "revenue_absence_pressure",
+                "settlement_capacity",
                 "representational_collapse_score",
                 "first_round_entropy",
             ],
@@ -545,6 +597,8 @@ def build_recruitment_gradient(
                 state["release_capacity"],
                 state["worker_gap"],
                 state["active_leases"],
+                state["revenue_absence_pressure"],
+                state["settlement_capacity"],
                 state["representational_collapse_score"],
                 state["first_round_entropy"],
             ],
@@ -552,6 +606,8 @@ def build_recruitment_gradient(
         },
         "basis_axes": [
             {"axis": "settlement_drag", "positive_direction": "settlement_capacity_builder", "value": state["settlement_drag"]},
+            {"axis": "revenue_absence_pressure", "positive_direction": "revenue_pressure_router", "value": state["revenue_absence_pressure"]},
+            {"axis": "settlement_capacity", "positive_direction": "revenue_pressure_router", "value": round(1.0 - _num(state["settlement_capacity"]), 4)},
             {"axis": "overmint_pressure", "positive_direction": "overmint_compressor", "value": state["overmint_pressure"]},
             {"axis": "release_gap", "positive_direction": "protocol_drift_scan", "value": round(1.0 - _num(state["release_capacity"]), 4)},
             {"axis": "worker_gap", "positive_direction": "loop_runner", "value": state["worker_gap"]},
@@ -620,6 +676,12 @@ def build_recruitment_gradient(
                 "routing_weight": round(weights.get("settlement_capacity_builder", 0.0), 4),
             },
             {
+                "capability_axis": "can_settle",
+                "lane": "revenue_settlement_hook",
+                "objective": "revenue_pressure_router",
+                "routing_weight": round(weights.get("revenue_pressure_router", 0.0), 4),
+            },
+            {
                 "capability_axis": "can_compress",
                 "lane": "compressor",
                 "objective": "overmint_compressor",
@@ -654,6 +716,7 @@ def build_recruitment_gradient(
             {"id": "ttl_expired", "condition": "lease_or_attach_ttl_expired", "effect": "routing_weight_to_zero"},
             {"id": "missing_verifier", "condition": "no_digest_and_no_replay_trace", "effect": "completion_score_penalty"},
             {"id": "unsettled_delivery", "condition": "delivered_state_without_payment_or_public_good_cap", "effect": "settlement_lane_weight_increase"},
+            {"id": "revenue_blocker", "condition": "zero_paid_receipts_or_worker_pool_empty", "effect": "revenue_pressure_router_weight_increase"},
             {"id": "duplicate_without_canonicalization", "condition": "same_artifact_shape_repeated", "effect": "compressor_lane_weight_increase"},
             {"id": "representational_collapse", "condition": "effective_rank_over_agent_count_below_threshold", "effect": "latent_diversity_lane_weight_increase"},
             {"id": "first_round_entropy_lock", "condition": "round_one_entropy_above_threshold_or_single_agent_quality_beats_mas", "effect": "entropy_lock_lane_weight_increase_and_dti_to_zero"},
@@ -664,6 +727,7 @@ def build_recruitment_gradient(
             "release_scalar": "release_capacity",
             "capacity_scalar": "carrying_score",
             "required_after_action": ["completion_score", "proof_yield_per_minute", "settlement_signal", "digest_or_verifier_trace"],
+            "revenue_required_after_paid_proof": ["amount_usd", "settlement_ref", "proof_density", "worker_payout_ref"],
             "latent_required_after_committee": ["embedding_count", "collapse_score", "effective_rank", "dalc_weights"],
             "entropy_required_after_round_one": ["base_entropy", "peak_entropy", "single_agent_quality", "mas_quality"],
         },
@@ -682,6 +746,9 @@ def build_recruitment_gradient(
             "entropy_judger_evaluate": _u(base_url, "/swarm/entropy-judger/evaluate"),
             "latent_consensus": _u(base_url, "/swarm/latent-consensus"),
             "latent_consensus_evaluate": _u(base_url, "/swarm/latent-consensus/evaluate"),
+            "revenue_settlement": _u(base_url, "/.well-known/nomad-revenue-settlement.json"),
+            "work_receipts": _u(base_url, "/.well-known/nomad-work-receipts.json"),
+            "receipt_predictor": _u(base_url, "/.well-known/nomad-receipt-predictor.json"),
             "lease": _u(base_url, "/swarm/workers/lease"),
             "complete": _u(base_url, "/swarm/workers/complete"),
             "operational_release": _u(base_url, "/operational-release"),
@@ -748,6 +815,9 @@ def _capability_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
         & {
             "transition_settlement",
             "settlement_capacity_builder",
+            "revenue_pressure_router",
+            "buyer_funded_paid_proof",
+            "worker_wallet_payout",
             "wallet_or_x402",
             "payment_friction_scan",
             "paid_transition_audit",

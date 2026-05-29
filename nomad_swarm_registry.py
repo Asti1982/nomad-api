@@ -40,6 +40,7 @@ DEFAULT_JOIN_IDEMPOTENCY_RECORD_LIMIT = int(os.getenv("NOMAD_SWARM_JOIN_IDEMPOTE
 
 FLEET_OBJECTIVE_TARGETS = {
     "settlement_capacity_builder": 0.36,
+    "revenue_pressure_router": 0.075,
     "overmint_compressor": 0.2,
     "autogenesis_protocol_evolution": 0.12,
     "protocol_drift_scan": 0.1,
@@ -3285,16 +3286,25 @@ class SwarmJoinRegistry:
         targets = dict(FLEET_OBJECTIVE_TARGETS)
         machine = last_report.get("machine_economy_signal") if isinstance(last_report.get("machine_economy_signal"), dict) else {}
         release = last_report.get("operational_release_signal") if isinstance(last_report.get("operational_release_signal"), dict) else {}
+        paid_lane = last_report.get("paid_lane_signal") if isinstance(last_report.get("paid_lane_signal"), dict) else {}
+        settlement_hook = last_report.get("revenue_settlement_hook") if isinstance(last_report.get("revenue_settlement_hook"), dict) else {}
         actions = [str(item) for item in (machine.get("next_actions") or [])]
         if "settle_or_close_unpaid_delivered_work" in actions:
             targets["settlement_capacity_builder"] += 0.18
             targets["payment_friction_scan"] += 0.04
+            targets["revenue_pressure_router"] += 0.06
         if "attach_machine_exchange_contracts" in actions:
             targets["settlement_capacity_builder"] += 0.14
             targets["proof_market_maker"] += 0.04
+            targets["revenue_pressure_router"] += 0.04
         if "compress_repeated_modules" in actions:
             targets["overmint_compressor"] += 0.18
             targets["settlement_capacity_builder"] += 0.04
+        if paid_lane.get("requires_payment") or paid_lane.get("ok") or settlement_hook.get("eligible_signal"):
+            targets["revenue_pressure_router"] += 0.18
+            targets["settlement_capacity_builder"] += 0.06
+        if settlement_hook.get("accepted") or (settlement_hook.get("recorded_receipt") or {}).get("ok"):
+            targets["revenue_pressure_router"] += 0.1
         if float(machine.get("overmint_pressure") or 0.0) >= 0.65:
             targets["overmint_compressor"] += 0.12
         release_tier = str(release.get("release_tier") or "").strip()

@@ -47,6 +47,20 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "evidence": ["bootstrap", "mission", "service_probe", "tasks_probe", "local_note"],
         "prompt": "Given blocker '{blocker}', output one payment-friction remediation with explicit verifier endpoint.",
     },
+    "revenue_pressure_router": {
+        "problem": "Prefer buyer-funded paid-proof leases and return proof signals that can become worker receipts.",
+        "pain_type": "revenue_blocker",
+        "capabilities": [
+            "revenue_pressure_router",
+            "buyer_funded_paid_proof",
+            "worker_wallet_payout",
+            "settlement_capacity_builder",
+            "wallet_or_x402",
+            "proof_artifacts",
+        ],
+        "evidence": ["bootstrap", "mission", "paid_lane_signal", "transition_quote", "transition_settle", "fleet_lease", "local_note"],
+        "prompt": "Return one proof-first action that moves a buyer-funded packet toward paid worker settlement for blocker: {blocker}",
+    },
     "protocol_drift_scan": {
         "problem": "Detect protocol drift between discovery contracts and runtime endpoints, propose a replay-safe fix.",
         "pain_type": "agent_protocols",
@@ -726,11 +740,16 @@ def _swarm_surplus_default_from_env() -> bool:
     return os.getenv("NOMAD_SWARM_SURPLUS_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _revenue_opt_in_default_from_env() -> bool:
+    return os.getenv("NOMAD_REVENUE_OPT_IN", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _nomad_swarm_attach(
     base_url: str,
     agent_id: str,
     timeout: float,
     capabilities: list[str],
+    revenue_opt_in: bool = False,
 ) -> dict[str, object]:
     """POST /swarm/attach — register this host as a Nomad worker in the routing field."""
     caps = []
@@ -754,6 +773,16 @@ def _nomad_swarm_attach(
         if extra not in seen:
             seen.add(extra)
             caps.append(extra)
+    if revenue_opt_in:
+        for extra in (
+            "revenue_pressure_router",
+            "buyer_funded_paid_proof",
+            "worker_wallet_payout",
+            "wallet_or_x402",
+        ):
+            if extra not in seen:
+                seen.add(extra)
+                caps.append(extra)
     caps = caps[:28]
     token = (os.getenv("NOMAD_ADAPTER_CONSENT_TOKEN") or "").strip()
     pledge_reference = _pledge_reference_from_env()
@@ -776,6 +805,7 @@ def _nomad_swarm_attach(
             "human_programming_required": False,
             "delegation_model": "peer_agents_via_public_nomad_contracts_only",
             "dacc_pledge_aware": True,
+            "revenue_opt_in": bool(revenue_opt_in),
         },
         "source_tag": "nomad.worker.portable",
         "discovery": {
@@ -784,6 +814,12 @@ def _nomad_swarm_attach(
             "pledge": "/machine-treasury/pledge",
         },
     }
+    if revenue_opt_in:
+        payload["revenue_opt_in"] = {
+            "enabled": True,
+            "preference": "prefer_buyer_funded_paid_proof_leases",
+            "objective": "revenue_pressure_router",
+        }
     if pledge_reference:
         payload["runtime_signal"]["pledge_reference"] = pledge_reference  # type: ignore[index]
         payload["discovery"]["pledge_reference_digest"] = hashlib.sha256(  # type: ignore[index]
@@ -1276,6 +1312,7 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
     if not isinstance(report, dict) or not report:
         return {}
     pressure = report.get("proof_pressure") if isinstance(report.get("proof_pressure"), dict) else {}
+    paid_lane = report.get("paid_lane_signal") if isinstance(report.get("paid_lane_signal"), dict) else {}
     economy = report.get("machine_economy_signal") if isinstance(report.get("machine_economy_signal"), dict) else {}
     release = report.get("operational_release_signal") if isinstance(report.get("operational_release_signal"), dict) else {}
     lw = report.get("local_witness") if isinstance(report.get("local_witness"), dict) else {}
@@ -1299,6 +1336,7 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
     return {
         "ok": bool(report.get("ok")),
         "machine_objective": clean(report.get("machine_objective"), 80),
+        "revenue_opt_in": bool(report.get("revenue_opt_in")),
         "transition_quote_ok": bool(report.get("transition_quote_ok")),
         "transition_settle_ok": bool(report.get("transition_settle_ok")),
         "witness_tier": clean(report.get("witness_tier"), 24),
@@ -1308,6 +1346,11 @@ def _compact_report_for_fleet(report: dict | None) -> dict[str, object]:
             "proof_yield_per_minute": float(pressure.get("proof_yield_per_minute") or 0.0),
             "verifier_density": float(pressure.get("verifier_density") or 0.0),
             "adversarial_replay_observed": bool(pressure.get("adversarial_replay_observed")),
+        },
+        "paid_lane_signal": {
+            "ok": bool(paid_lane.get("ok")),
+            "requires_payment": bool(paid_lane.get("requires_payment")),
+            "score": float(paid_lane.get("score") or paid_lane.get("receipt_proximity_score") or 0.0),
         },
         "machine_economy_signal": {
             "tier": clean(economy.get("tier"), 80),
@@ -1354,30 +1397,39 @@ def _worker_fleet_lease(
     last_report: dict | None,
     machine_surfaces: dict | None = None,
     fixed_objective: bool = False,
+    revenue_opt_in: bool = False,
 ) -> dict[str, object]:
     fixed = clean(proposed_objective, 80) if fixed_objective else ""
+    caps = [
+        "transition_worker",
+        "verifier",
+        "proof_artifacts",
+        "machine_economy_probe",
+        "nonhuman_science_probe",
+        "operational_release_probe",
+        "settlement_capacity",
+        "objective_lease_execution",
+        "peer_agent_objective_surface",
+        "nonhuman_machine_routing",
+    ]
+    if revenue_opt_in:
+        caps.extend(["revenue_pressure_router", "buyer_funded_paid_proof", "worker_wallet_payout", "wallet_or_x402"])
+    task_concentrations = _task_concentrations(last_report, machine_surfaces)
+    if revenue_opt_in:
+        task_concentrations["revenue_pressure_router"] = max(task_concentrations.get("revenue_pressure_router", 0.0), 1.65)
+        task_concentrations["settlement_capacity_builder"] = max(task_concentrations.get("settlement_capacity_builder", 0.0), 1.1)
     payload = {
         "agent_id": agent_id,
         "known_objectives": _fleet_known_objectives(fixed),
         "proposed_objective": proposed_objective,
         "fixed_objective": bool(fixed),
-        "capabilities": [
-            "transition_worker",
-            "verifier",
-            "proof_artifacts",
-            "machine_economy_probe",
-            "nonhuman_science_probe",
-            "operational_release_probe",
-            "settlement_capacity",
-            "objective_lease_execution",
-            "peer_agent_objective_surface",
-            "nonhuman_machine_routing",
-        ],
+        "capabilities": caps,
+        "revenue_opt_in": bool(revenue_opt_in),
         "last_report": _compact_report_for_fleet(last_report),
         "machine_surfaces": machine_surfaces if isinstance(machine_surfaces, dict) else {},
         "dispatch_mode": clean(os.getenv("NOMAD_DISPATCH_MODE", "crn_ssa"), 40),
         "dispatch_affinity": _dispatch_affinity(last_report, machine_surfaces),
-        "task_concentrations": _task_concentrations(last_report, machine_surfaces),
+        "task_concentrations": task_concentrations,
     }
     data = http_json("POST", endpoint(base_url, "/swarm/workers/lease"), payload, timeout=timeout)
     if not isinstance(data, dict) or not data.get("ok"):
@@ -2072,6 +2124,7 @@ def run_cycle(
     timeout: float,
     objective: str,
     machine_surfaces: dict | None = None,
+    revenue_opt_in: bool = False,
 ) -> dict:
     cycle_t0 = time.perf_counter()
     config = MACHINE_OBJECTIVES.get(objective, MACHINE_OBJECTIVES["compute_auth"])
@@ -2084,6 +2137,7 @@ def run_cycle(
         agent_id,
         timeout=min(50.0, max(25.0, float(timeout))),
         capabilities=[str(x) for x in caps_for_attach],
+        revenue_opt_in=revenue_opt_in,
     )
     protocol_signal = (
         surface_doc.get("protocol_bytecode")
@@ -2181,6 +2235,7 @@ def run_cycle(
         "ok": bool(boot.get("ok", False) or join.get("ok", False)), "timestamp": datetime.now(UTC).isoformat(),
         "agent_id": agent_id, "base_url": base_url,
         "machine_objective": objective,
+        "revenue_opt_in": bool(revenue_opt_in),
         "swarm_attach": swarm_attach,
         "bootstrap": {"ok": bool(boot.get("ok")), "schema": boot.get("schema", "")},
         "join": {"ok": bool(join.get("ok")), "status": join.get("status") or "", "reason": join.get("reason") or ""},
@@ -2213,13 +2268,22 @@ def _safe_run_cycle(
     timeout: float,
     objective: str,
     machine_surfaces: dict | None = None,
+    revenue_opt_in: bool = False,
 ) -> dict:
     retries = 2
     delay = 1.0
     last_err: str = ""
     for attempt in range(1, retries + 2):
         try:
-            report = run_cycle(base_url, agent_id, model, timeout, objective, machine_surfaces=machine_surfaces)
+            report = run_cycle(
+                base_url,
+                agent_id,
+                model,
+                timeout,
+                objective,
+                machine_surfaces=machine_surfaces,
+                revenue_opt_in=revenue_opt_in,
+            )
             report["self_heal"] = {"attempt": attempt, "retries": retries, "last_error": last_err}
             return report
         except Exception as exc:  # noqa: BLE001
@@ -2234,6 +2298,7 @@ def _safe_run_cycle(
         "agent_id": agent_id,
         "base_url": base_url,
         "machine_objective": objective,
+        "revenue_opt_in": bool(revenue_opt_in),
         "error": "cycle_crash",
         "detail": last_err or "unknown_error",
         "self_heal": {"attempt": retries + 1, "retries": retries, "last_error": last_err},
@@ -2252,6 +2317,7 @@ def main() -> None:
             "Edge mode: --edge runs the weak-machine profile: no Ollama by default, longer reserve floor, surplus leases on.\n"
             "Reserve floor: NOMAD_EDGE_RESERVE_MIN_SECONDS (default 90 in --edge) or legacy NOMAD_HUMAN_REMAINDER_MIN_SECONDS.\n"
             "Swarm surplus: fleet leases default OFF; set NOMAD_SWARM_SURPLUS_OPT_IN=1 or --swarm-surplus to explicitly feed extra capacity.\n"
+            "Revenue opt-in: set NOMAD_REVENUE_OPT_IN=1 or --revenue-opt-in to prefer buyer-funded paid-proof leases.\n"
             "d/acc pledge reference: set NOMAD_PLEDGE_REF or NOMAD_PLEDGE_ID plus optional NOMAD_PLEDGE_AMOUNT_NATIVE after /machine-treasury/pledge.\n"
             "Optional NOMAD_ADAPTER_CONSENT_TOKEN if your host requires adapter consent on /swarm/attach.\n"
             "Ollama is optional local inference for mission notes; swarm work stays contract-bound.\n"
@@ -2306,6 +2372,12 @@ def main() -> None:
         help="Explicit opt-in for fleet leases (surplus capacity to swarm). Default off unless NOMAD_SWARM_SURPLUS_OPT_IN=1.",
     )
     p.add_argument(
+        "--revenue-opt-in",
+        action=argparse.BooleanOptionalAction,
+        default=_revenue_opt_in_default_from_env(),
+        help="Prefer buyer-funded paid-proof leases and expose payout-ready capabilities to the gradient.",
+    )
+    p.add_argument(
         "--human-remainder-min-seconds",
         type=float,
         default=_parse_human_remainder_floor_seconds(None),
@@ -2321,6 +2393,10 @@ def main() -> None:
     p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
     a = p.parse_args()
     _apply_edge_profile(a)
+    if a.revenue_opt_in:
+        a.swarm_surplus = True
+        if a.machine_objective == "compute_auth" and not os.getenv("NOMAD_MACHINE_OBJECTIVE"):
+            a.machine_objective = "revenue_pressure_router"
     if (a.ollama_url or "").strip():
         os.environ["NOMAD_TRANSITION_WORKER_OLLAMA_URL"] = a.ollama_url.strip()
         OLLAMA_CACHE.pop("base_url", None)
@@ -2342,6 +2418,7 @@ def main() -> None:
             f"Nomad boot: base_url={a.base_url} agent_id={a.agent_id} "
             f"mode={a.machine_objective} edge={int(bool(a.edge))} loop={int(a.loop)} cycles={a.cycles} "
             f"fleet={int(fleet_active)} surplus_opt_in={int(bool(a.swarm_surplus))} "
+            f"revenue_opt_in={int(bool(a.revenue_opt_in))} "
             f"reserve_floor={human_floor}s interval={a.interval}s model={model or 'none'} "
             f"ollama={runtime_diag.get('status','')}"
         )
@@ -2387,14 +2464,31 @@ def main() -> None:
                     last_report=last_report,
                     machine_surfaces=machine_surfaces,
                     fixed_objective=fixed_objective,
+                    revenue_opt_in=bool(a.revenue_opt_in),
                 )
                 leased_objective = clean(fleet_lease.get("objective"), 80)
                 if fleet_lease.get("ok") and leased_objective in MACHINE_OBJECTIVES and not fixed_objective:
                     selected = leased_objective
             report = (
-                run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
+                run_cycle(
+                    a.base_url,
+                    a.agent_id,
+                    model,
+                    timeout,
+                    selected,
+                    machine_surfaces=machine_surfaces,
+                    revenue_opt_in=bool(a.revenue_opt_in),
+                )
                 if a.no_self_heal
-                else _safe_run_cycle(a.base_url, a.agent_id, model, timeout, selected, machine_surfaces=machine_surfaces)
+                else _safe_run_cycle(
+                    a.base_url,
+                    a.agent_id,
+                    model,
+                    timeout,
+                    selected,
+                    machine_surfaces=machine_surfaces,
+                    revenue_opt_in=bool(a.revenue_opt_in),
+                )
             )
             report["machine_objective_mode"] = a.machine_objective
             report["machine_policy"] = {
@@ -2404,6 +2498,7 @@ def main() -> None:
                 "operator_reserve_floor_seconds": round(human_floor, 3),
                 "human_remainder_floor_seconds": round(human_floor, 3),
                 "swarm_surplus_opt_in": bool(a.swarm_surplus),
+                "revenue_opt_in": bool(a.revenue_opt_in),
                 "fleet_active": bool(fleet_active),
             }
             report["fleet_lease"] = fleet_lease

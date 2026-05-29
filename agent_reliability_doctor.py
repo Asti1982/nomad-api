@@ -85,7 +85,7 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
     "trace_healer": {
         "title": "Adaptive Trace Resumer",
         "framework_inspiration": "observability-driven trace recovery system",
-        "best_for": ["payment", "production_incident"],
+        "best_for": ["payment", "production_incident", "revenue_blocker"],
         "why": "Use traces, ledgers, state transitions, and callbacks to find the broken resume point.",
         "loop": ["trace", "state_diff", "idempotent_fix", "resume_point", "audit_log"],
         "interventions": [
@@ -147,6 +147,7 @@ PAIN_ROLE_MAP = {
     "memory": "self_learning_healer",
     "self_improvement": "self_learning_healer",
     "payment": "trace_healer",
+    "revenue_blocker": "trace_healer",
     "repo_issue_help": "conversational_reviewer",
     "proof_gated_bot_factory": "bot_factory_reviewer",
 }
@@ -182,6 +183,17 @@ PAIN_HINTS = {
     ),
     "memory": ("memory", "forgot", "context"),
     "payment": ("payment", "wallet", "x402", "tx_hash"),
+    "revenue_blocker": (
+        "revenue blocker",
+        "no paid receipts",
+        "paid receipt",
+        "settlement capacity",
+        "worker payout",
+        "retention gradient",
+        "active external workers",
+        "machine treasury",
+        "buyer funded",
+    ),
     "proof_gated_bot_factory": (
         "bot",
         "trading",

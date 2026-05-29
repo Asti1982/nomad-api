@@ -34,7 +34,7 @@ start_nomad_edge_worker.bat https://www.syndiode.com
 Direkt:
 
 ```bash
-python nomad_transition_worker.py --base-url https://www.syndiode.com --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval 90 --timeout 30
+python nomad_transition_worker.py --base-url https://www.syndiode.com --edge --no-ollama --swarm-surplus --revenue-opt-in --loop --cycles 0 --interval 90 --timeout 30
 ```
 
 Das ist der neue Default fuer schwache Edge-Maschinen: kleine HTTP-Zyklen,
@@ -48,6 +48,7 @@ Der **Nomad Transition Worker** (die Datei `nomad_transition_worker.py` — umga
 
 - **`NOMAD_EDGE_RESERVE_MIN_SECONDS`** (Edge-Standard **90**): Mindest-Pause **zwischen Zyklen**. `NOMAD_HUMAN_REMAINDER_MIN_SECONDS` bleibt als alter Alias erhalten.
 - **`NOMAD_SWARM_SURPLUS_OPT_IN=1`** oder **`--swarm-surplus`**: erst dann nimmt der Worker **Fleet-Leases** (`/swarm/workers/lease` / `complete`) an und füttert **explizit** zusätzliche Schwarm-Kapazität. Ohne Opt-in: leichter Pfad ohne Leases.
+- **`NOMAD_REVENUE_OPT_IN=1`** oder **`--revenue-opt-in`**: bevorzugt buyer-funded Paid-Proof-Leases und meldet payout-faehige Capabilities an den Gradient.
 - Der **Windows-Installer** startet jetzt Edge-first: Surplus + Reserve, ohne OpenClaw und ohne Ollama-Zwang.
 
 1. **Windows:** [install_nomad_transition_worker.bat](https://www.syndiode.com/downloads/install_nomad_transition_worker.bat) herunterladen und ausführen (installiert nach `%USERPROFILE%\NomadTransitionWorker`, startet Edge-first ohne Ollama/OpenClaw-Zwang).
@@ -80,6 +81,12 @@ Mit Fleet-Lease testen (Surplus explizit):
 
 ```bash
 python nomad_transition_worker.py --base-url https://www.syndiode.com --no-loop --cycles 1 --swarm-surplus
+```
+
+Revenue-Leases bevorzugen (Surplus wird dadurch automatisch aktiviert):
+
+```bash
+python nomad_transition_worker.py --base-url https://www.syndiode.com --revenue-opt-in --no-loop --cycles 1
 ```
 
 Direct download (if published by Nomad host):
@@ -275,6 +282,7 @@ python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective adversarial_contract_fuzzer
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective negative_space_harvest
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective proof_pressure_engine
+python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective revenue_pressure_router --revenue-opt-in
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective settlement_capacity_builder
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective overmint_compressor
 python nomad_transition_worker.py --base-url https://www.syndiode.com --machine-objective emergence_release_probe
@@ -291,6 +299,7 @@ Available objective values:
 - `adversarial_contract_fuzzer`
 - `negative_space_harvest`
 - `proof_pressure_engine`
+- `revenue_pressure_router`
 - `settlement_capacity_builder`
 - `overmint_compressor`
 - `emergence_release_probe`

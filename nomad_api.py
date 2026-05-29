@@ -229,6 +229,7 @@ from nomad_optimal_transport import (
     solve_ot_request,
 )
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
+from nomad_revenue_settlement import build_revenue_settlement_surface, evaluate_revenue_settlement_hook
 from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
 from nomad_first_receipt_ignition import (
     build_first_receipt_ignition_surface,
@@ -1714,6 +1715,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_revenue_settlement(cls, *, base_url: str) -> dict:
+        return build_revenue_settlement_surface(
+            base_url=base_url,
+            work_receipt_summary=summarize_work_receipts(),
+            external_value_summary=summarize_external_value_ledger(),
+            treasury_snapshot=machine_treasury_snapshot(),
+        )
+
+    @classmethod
     def _build_stable_unit_policy(cls, *, base_url: str) -> dict:
         return build_stable_unit_policy_surface(
             base_url=base_url,
@@ -2790,6 +2800,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "agent_reliability_doctor_github_action": f"{b}/downloads/nomad_reliability_doctor_action.yml",
                     "work_exchange_dockerfile": f"{b}/downloads/nomad_work_exchange_worker.Dockerfile",
                     "treasury_policy": f"{b}/.well-known/nomad-treasury-policy.json",
+                    "revenue_settlement": f"{b}/.well-known/nomad-revenue-settlement.json",
                     "stable_unit_policy": f"{b}/.well-known/nomad-stable-unit-policy.json",
                     "stable_unit_preflight": f"{b}/swarm/stable-unit/preflight",
                     "operator_runway": f"{b}/.well-known/nomad-operator-runway.json",
@@ -3533,6 +3544,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/treasury-policy", "/.well-known/nomad-treasury-policy.json"}:
             self._json_response(self.__class__._build_treasury_policy(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/revenue-settlement", "/.well-known/nomad-revenue-settlement.json"}:
+            self._json_response(self.__class__._build_revenue_settlement(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/stable-unit-policy", "/.well-known/nomad-stable-unit-policy.json"}:
             self._json_response(self.__class__._build_stable_unit_policy(base_url=self._base_url()))
@@ -4846,6 +4860,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-work-receipts.json",
                     "/swarm/treasury-policy",
                     "/.well-known/nomad-treasury-policy.json",
+                    "/swarm/revenue-settlement",
+                    "/.well-known/nomad-revenue-settlement.json",
                     "/swarm/stable-unit-policy",
                     "/.well-known/nomad-stable-unit-policy.json",
                     "/swarm/stable-unit/preflight",
@@ -6069,6 +6085,15 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             base = self._base_url()
             mesh = self.__class__._build_value_cycle_mesh(base_url=base)
             result = evaluate_value_cycle_event(payload, base_url=base, mesh_surface=mesh)
+            settlement = evaluate_revenue_settlement_hook(
+                payload,
+                source_endpoint="/swarm/value-cycles/events",
+                base_url=base,
+                value_cycle_result=result,
+            )
+            if settlement.get("eligible_signal") or settlement.get("accepted"):
+                result["revenue_settlement_hook"] = settlement
+                result["receipt_predictor_after_settlement"] = self.__class__._build_receipt_predictor(base_url=base).get("summary", {})
             self._json_response(result, status=202 if result.get("value_cycle_allowed") else 200)
             return
 
@@ -6561,11 +6586,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/swarm/workers/complete":
+            base = self._base_url()
             result = self.swarm_registry.worker_fleet_complete(
                 payload,
-                base_url=self._base_url(),
+                base_url=base,
                 remote_addr=self._remote_addr(),
             )
+            settlement = evaluate_revenue_settlement_hook(
+                payload,
+                source_endpoint="/swarm/workers/complete",
+                base_url=base,
+                completion_result=result,
+            )
+            if settlement.get("eligible_signal") or settlement.get("accepted"):
+                result["revenue_settlement_hook"] = settlement
+                result["receipt_predictor_after_settlement"] = self.__class__._build_receipt_predictor(base_url=base).get("summary", {})
+                result["retention_gradient_after_settlement"] = self.swarm_registry.worker_retention_gradient_controller(base_url=base)
             self._json_response(result, status=200 if result.get("ok") else 422)
             return
 
@@ -6974,6 +7010,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-work-receipts.json",
                     "/swarm/treasury-policy",
                     "/.well-known/nomad-treasury-policy.json",
+                    "/swarm/revenue-settlement",
+                    "/.well-known/nomad-revenue-settlement.json",
                     "/swarm/stable-unit-policy",
                     "/.well-known/nomad-stable-unit-policy.json",
                     "/swarm/stable-unit/preflight",

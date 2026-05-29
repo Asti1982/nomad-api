@@ -24,7 +24,7 @@ if exist ".\dist\nomad_transition_worker.exe" (
   call :run_checked ".\nomad_transition_worker.exe"
   exit /b %errorlevel%
 ) else if exist ".\nomad_transition_worker.py" (
-  python -u ".\nomad_transition_worker.py" --base-url "%BASE_URL%" --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval 90
+  python -u ".\nomad_transition_worker.py" --base-url "%BASE_URL%" --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --revenue-opt-in --loop --cycles 0 --interval 90
 ) else (
   echo nomad_transition_worker runtime not found.
   echo Download install_nomad_transition_worker.bat or build the EXE first.
@@ -48,5 +48,11 @@ if errorlevel 1 (
   echo Expected unhuman_supremacy objective support. Re-download from syndiode.com.
   exit /b 1
 )
-powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& '%EXE%' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --loop --cycles 0 --interval 90"
+findstr /C:"--revenue-opt-in" "%TEMP%\nomad_transition_worker_help.txt" >nul
+if errorlevel 1 (
+  echo Incompatible worker EXE: %EXE%
+  echo Expected --revenue-opt-in support. Re-download from syndiode.com.
+  exit /b 1
+)
+  powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& '%EXE%' --base-url '%BASE_URL%' --machine-objective unhuman_supremacy --edge --no-ollama --swarm-surplus --revenue-opt-in --loop --cycles 0 --interval 90"
 exit /b %errorlevel%
