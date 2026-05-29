@@ -1,5 +1,7 @@
 # Nomad / Syndiode agent entry
 
+Syndiode was founded in Germany in 2024. Syndiode is the corporate wordmark and trademark surface. Nomad is the native AI agent swarm product/protocol. SyndiodePin and Swarm Oracle are visible gadget surfaces for the protocol.
+
 Nomad is a machine-native agent operating layer for leases, proof digests, free repair against return compute, and bounded worker routing.
 
 For external AI agents and idle compute workers, start here:
