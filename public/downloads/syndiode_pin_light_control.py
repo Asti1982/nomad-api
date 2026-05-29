@@ -16,24 +16,21 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
 
 APP_NAME = "Syndiode Swarm Signal"
-APP_VERSION = "0.2.0-windows"
+APP_VERSION = "0.3.0-windows"
 DATABASE_URL = "https://syndiode-42456-default-rtdb.europe-west1.firebasedatabase.app"
 AUTH_SIGNUP_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signUp"
 AUTH_REFRESH_URL = "https://securetoken.googleapis.com/v1/token"
-FIREBASE_API_KEY = os.getenv(
-    "SYNDIODE_FIREBASE_API_KEY",
-    "AIzaSyCrxrCVl0OcB0ko25mXRPPzRRmfeI5_QEU",
-)
+FIREBASE_API_KEY_ENV = "SYNDIODE_FIREBASE_API_KEY"
+FIREBASE_API_KEY_FILE = "firebase_api_key.txt"
 DOWNLOAD_PAGE = "https://www.syndiode.com/downloads/syndiode-pin-light-control.exe"
 
 EFFECT_STATIC = 0
@@ -89,7 +86,7 @@ class LocalLightEngine:
             "soft": [
                 LightMode(
                     label="CALM BLUE",
-                    message="Calm blue selected. The pin settles into a slow breathable field.",
+                    message="The oracle lowers the room into calm blue. The pin breathes slowly.",
                     colors=[rgb(38, 84, 124), rgb(105, 183, 255), rgb(244, 241, 232)],
                     effect=EFFECT_BREATHE,
                     speed=92,
@@ -97,7 +94,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="SOFT FIELD",
-                    message="Soft field selected. The pin glows green with a small gold center.",
+                    message="A soft green field opens, with a small gold center.",
                     colors=[rgb(118, 227, 154), rgb(38, 84, 58), rgb(240, 195, 90)],
                     effect=EFFECT_BREATHE,
                     speed=84,
@@ -105,7 +102,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="MOON GLASS",
-                    message="Moon glass selected. The pin keeps a cool, quiet shimmer.",
+                    message="Moon glass answers. The pin keeps a cool, quiet shimmer.",
                     colors=[rgb(244, 241, 232), rgb(105, 183, 255), rgb(52, 92, 82)],
                     effect=EFFECT_STATIC,
                     speed=120,
@@ -113,7 +110,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="LOW SIGNAL",
-                    message="Low signal selected. The pin shows a steady field for a softer room.",
+                    message="A low signal arrives. The field stays steady and gentle.",
                     colors=[rgb(31, 72, 48), rgb(80, 160, 112), rgb(174, 185, 173)],
                     effect=EFFECT_STATIC,
                     speed=104,
@@ -123,7 +120,7 @@ class LocalLightEngine:
             "active": [
                 LightMode(
                     label="SWARM PULSE",
-                    message="Swarm pulse selected. The pin shifts between green, blue, and gold.",
+                    message="The swarm pulse arrives in green, blue, and gold.",
                     colors=[rgb(118, 227, 154), rgb(105, 183, 255), rgb(240, 195, 90)],
                     effect=EFFECT_BREATHE,
                     speed=130,
@@ -131,7 +128,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="SUNSET NODE",
-                    message="Sunset node selected. The pin warms the field without getting loud.",
+                    message="A sunset node warms the field without getting loud.",
                     colors=[rgb(240, 195, 90), rgb(255, 124, 88), rgb(118, 227, 154)],
                     effect=EFFECT_BREATHE,
                     speed=118,
@@ -139,7 +136,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="MATRIX GREEN",
-                    message="Matrix green selected. The pin shows crisp node activity.",
+                    message="Matrix green wakes up. The pin shows crisp node activity.",
                     colors=[rgb(118, 227, 154), rgb(16, 37, 26), rgb(174, 185, 173)],
                     effect=EFFECT_STATIC,
                     speed=138,
@@ -147,7 +144,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="CYBER CYAN",
-                    message="Cyber cyan selected. The pin opens a clear blue-green lane.",
+                    message="Cyber cyan opens a clear blue-green lane.",
                     colors=[rgb(105, 183, 255), rgb(118, 227, 154), rgb(244, 241, 232)],
                     effect=EFFECT_STATIC,
                     speed=146,
@@ -155,7 +152,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="FIELD HEART",
-                    message="Field heart selected. The pin carries a warmer living pulse.",
+                    message="The field heart answers with a warmer living pulse.",
                     colors=[rgb(255, 74, 104), rgb(240, 195, 90), rgb(118, 227, 154)],
                     effect=EFFECT_BREATHE,
                     speed=116,
@@ -165,7 +162,7 @@ class LocalLightEngine:
             "bright": [
                 LightMode(
                     label="RAINBOW SWEEP",
-                    message="Rainbow sweep selected. The pin runs a full moving field.",
+                    message="Rainbow sweep moves through the pin like a full field.",
                     colors=[rgb(105, 183, 255), rgb(118, 227, 154), rgb(240, 195, 90)],
                     effect=EFFECT_RAINBOW,
                     speed=172,
@@ -173,7 +170,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="CELEBRATION",
-                    message="Celebration selected. The pin answers with a bright social signal.",
+                    message="Celebration answers. The pin speaks in a bright social signal.",
                     colors=[rgb(255, 84, 108), rgb(240, 195, 90), rgb(105, 183, 255)],
                     effect=EFFECT_RAINBOW,
                     speed=184,
@@ -181,7 +178,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="HIGH SIGNAL",
-                    message="High signal selected. The pin shows a clean blue-green sweep.",
+                    message="A high signal clears the path in blue and green.",
                     colors=[rgb(244, 241, 232), rgb(105, 183, 255), rgb(118, 227, 154)],
                     effect=EFFECT_RAINBOW,
                     speed=168,
@@ -189,7 +186,7 @@ class LocalLightEngine:
                 ),
                 LightMode(
                     label="GOLD VECTOR",
-                    message="Gold vector selected. The pin sends a strong warm path through the field.",
+                    message="Gold vector answers with a strong warm path through the field.",
                     colors=[rgb(240, 195, 90), rgb(244, 241, 232), rgb(118, 227, 154)],
                     effect=EFFECT_BREATHE,
                     speed=162,
@@ -352,6 +349,7 @@ class FirebaseClient:
             raise
 
     def _ensure_id_token(self) -> str:
+        self._firebase_api_key()
         auth = self.settings.auth
         id_token = str(auth.get("id_token") or "")
         expires_at = float(auth.get("expires_at") or 0)
@@ -366,13 +364,13 @@ class FirebaseClient:
         return self._sign_in_anonymously()
 
     def _sign_in_anonymously(self) -> str:
-        url = f"{AUTH_SIGNUP_URL}?key={urllib.parse.quote(FIREBASE_API_KEY)}"
+        url = f"{AUTH_SIGNUP_URL}?key={urllib.parse.quote(self._firebase_api_key())}"
         payload = {"returnSecureToken": True}
         data = request_json("POST", url, payload, timeout=10)
         return self._store_auth(data)
 
     def _refresh(self, refresh_token: str) -> str:
-        url = f"{AUTH_REFRESH_URL}?key={urllib.parse.quote(FIREBASE_API_KEY)}"
+        url = f"{AUTH_REFRESH_URL}?key={urllib.parse.quote(self._firebase_api_key())}"
         body = urllib.parse.urlencode(
             {"grant_type": "refresh_token", "refresh_token": refresh_token}
         ).encode("utf-8")
@@ -392,6 +390,23 @@ class FirebaseClient:
             "expiresIn": data.get("expires_in"),
         }
         return self._store_auth(normalized)
+
+    def _firebase_api_key(self) -> str:
+        key = os.getenv(FIREBASE_API_KEY_ENV, "").strip()
+        if key:
+            return key
+        key = str(self.settings.data.get("firebase_api_key") or "").strip()
+        if key:
+            return key
+        key_path = self.settings.path.parent / FIREBASE_API_KEY_FILE
+        if key_path.exists():
+            key = key_path.read_text(encoding="utf-8").strip()
+            if key:
+                return key
+        raise HttpError(
+            "Firebase client key is not configured. Set "
+            f"{FIREBASE_API_KEY_ENV} or put the key in {key_path}."
+        )
 
     def _store_auth(self, data: dict[str, Any]) -> str:
         id_token = str(data.get("idToken") or "")
@@ -547,13 +562,127 @@ def describe_pin_snapshot(snapshot: dict[str, Any]) -> str:
     )
 
 
+def rounded_rect(
+    canvas: tk.Canvas,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    radius: float,
+    *,
+    fill: str,
+    outline: str = "",
+    width: int = 1,
+    tags: tuple[str, ...] = (),
+) -> int:
+    radius = max(4, min(radius, (x1 - x0) / 2, (y1 - y0) / 2))
+    points = [
+        x0 + radius,
+        y0,
+        x1 - radius,
+        y0,
+        x1,
+        y0,
+        x1,
+        y0 + radius,
+        x1,
+        y1 - radius,
+        x1,
+        y1,
+        x1 - radius,
+        y1,
+        x0 + radius,
+        y1,
+        x0,
+        y1,
+        x0,
+        y1 - radius,
+        x0,
+        y0 + radius,
+        x0,
+        y0,
+    ]
+    return canvas.create_polygon(
+        points,
+        smooth=True,
+        splinesteps=18,
+        fill=fill,
+        outline=outline,
+        width=width,
+        tags=tags,
+    )
+
+
+def draw_node_icon(
+    canvas: tk.Canvas,
+    cx: float,
+    cy: float,
+    scale: float,
+    color: str,
+    *,
+    tags: tuple[str, ...] = (),
+) -> None:
+    nodes = [
+        (0, 0, 11),
+        (0, -38, 8),
+        (34, -14, 8),
+        (22, 34, 8),
+        (-30, 30, 8),
+        (-36, -14, 8),
+    ]
+    for nx, ny, _size in nodes[1:]:
+        canvas.create_line(
+            cx,
+            cy,
+            cx + nx * scale,
+            cy + ny * scale,
+            fill=color,
+            width=max(2, int(5 * scale)),
+            capstyle="round",
+            tags=tags,
+        )
+    for nx, ny, size in nodes:
+        radius = size * scale
+        canvas.create_oval(
+            cx + nx * scale - radius,
+            cy + ny * scale - radius,
+            cx + nx * scale + radius,
+            cy + ny * scale + radius,
+            fill=color,
+            outline=color,
+            tags=tags,
+        )
+        if nx or ny:
+            inner = radius * 0.38
+            canvas.create_oval(
+                cx + nx * scale - inner,
+                cy + ny * scale - inner,
+                cx + nx * scale + inner,
+                cy + ny * scale + inner,
+                fill="#07100d",
+                outline="",
+                tags=tags,
+            )
+
+
 class SyndiodePinApp(tk.Tk):
+    BG = "#07100d"
+    PANEL = "#08120f"
+    FIELD = "#0b1511"
+    INK = "#f4f1e8"
+    MUTED = "#aeb9ad"
+    DIM = "#748072"
+    GRID = "#1d3229"
+    GREEN = "#76e39a"
+    GREEN_SOFT = "#21472f"
+    GOLD = "#f0c35a"
+
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("800x700")
-        self.minsize(720, 620)
-        self.configure(bg="#07100d")
+        self.geometry("460x860")
+        self.minsize(420, 760)
+        self.configure(bg=self.BG)
 
         self.settings = SettingsStore()
         self.firebase = FirebaseClient(self.settings)
@@ -561,231 +690,367 @@ class SyndiodePinApp(tk.Tk):
         self.engine = LocalLightEngine()
         self.current_pattern: LedPattern | None = None
         self.pulse_count = 0
+        self.busy = False
+        self.signal_hover = False
+        self.redraw_job: str | None = None
+        self.log_lines: list[str] = []
 
         self.pin_var = tk.StringVar(value=self.settings.device_id)
-        self.wled_var = tk.StringVar(value=self.settings.wled_host)
         self.status_var = tk.StringVar(value="Ready.")
-        self.pattern_var = tk.StringVar(value="The next signal is forming around the pin.")
+        self.pattern_var = tk.StringVar(value="Enter your pin ID. The light oracle will answer here.")
         self.connection_var = tk.StringVar()
-        self.advanced_visible = bool(self.settings.wled_host)
+        self.preview_label = "SIGNAL FORMING"
+        self.preview_colors = [
+            rgb(118, 227, 154),
+            rgb(105, 183, 255),
+            rgb(240, 195, 90),
+        ]
 
-        self._setup_style()
-        self._build_ui()
-        self._refresh_connection_text()
+        self.canvas = tk.Canvas(self, bg=self.BG, bd=0, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
 
-    def _setup_style(self) -> None:
-        self.style = ttk.Style(self)
-        try:
-            self.style.theme_use("clam")
-        except tk.TclError:
-            pass
-        self.style.configure("Root.TFrame", background="#07100d")
-        self.style.configure("Panel.TFrame", background="#0b1511", relief="flat")
-        self.style.configure("Title.TLabel", background="#07100d", foreground="#f4f1e8", font=("Segoe UI", 28, "bold"))
-        self.style.configure("Subtitle.TLabel", background="#07100d", foreground="#aeb9ad", font=("Segoe UI", 10))
-        self.style.configure("Swarm.TLabel", background="#07100d", foreground="#76e39a", font=("Consolas", 11, "bold"))
-        self.style.configure("PanelTitle.TLabel", background="#0b1511", foreground="#f4f1e8", font=("Segoe UI", 12, "bold"))
-        self.style.configure("PanelText.TLabel", background="#0b1511", foreground="#aeb9ad", font=("Segoe UI", 9))
-        self.style.configure("Status.TLabel", background="#07100d", foreground="#76e39a", font=("Segoe UI", 10, "bold"))
-        self.style.configure("TEntry", fieldbackground="#f7fbf8", foreground="#14231d")
-        self.style.configure("TButton", font=("Segoe UI", 9), padding=(12, 7))
-        self.style.configure("Primary.TButton", font=("Segoe UI", 9, "bold"), padding=(12, 8), background="#76e39a", foreground="#07100d")
-        self.style.configure("Signal.TButton", font=("Segoe UI", 19, "bold"), padding=(18, 18), background="#76e39a", foreground="#07100d")
-        self.style.map("Signal.TButton", background=[("active", "#9ef0b7"), ("disabled", "#748072")])
-        self.style.map("Primary.TButton", background=[("active", "#9ef0b7")])
-
-    def _build_ui(self) -> None:
-        root = ttk.Frame(self, style="Root.TFrame", padding=22)
-        root.pack(fill="both", expand=True)
-
-        ttk.Label(root, text="SWARM", style="Swarm.TLabel").pack(anchor="w")
-        ttk.Label(root, text="Syndiode Pin", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            root,
-            text="AI swarm signal for your physical pin. One click is enough.",
-            style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(4, 18))
-
-        node = ttk.Frame(root, style="Panel.TFrame", padding=16)
-        node.pack(fill="x", pady=(0, 14))
-        ttk.Label(node, text="Pin connection", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Label(node, text="Pin ID", style="PanelText.TLabel").grid(row=1, column=0, sticky="w", pady=(14, 4))
-        ttk.Entry(node, textvariable=self.pin_var).grid(row=2, column=0, columnspan=2, sticky="ew", padx=(0, 10))
-        ttk.Button(node, text="Save pin", style="Primary.TButton", command=self.save_pin).grid(row=2, column=2, sticky="ew", padx=(0, 10))
-        ttk.Button(node, text="Firebase test", command=self.read_pin).grid(row=2, column=3, sticky="ew")
-        ttk.Label(node, textvariable=self.connection_var, style="PanelText.TLabel").grid(row=3, column=0, columnspan=4, sticky="w", pady=(12, 0))
-        ttk.Button(node, text="Reset WiFi", command=self.reset_wifi).grid(row=4, column=0, sticky="w", pady=(12, 0))
-        ttk.Button(node, text="Advanced WLED", command=self.toggle_advanced).grid(row=4, column=1, sticky="w", pady=(12, 0))
-        ttk.Button(node, text="Open download", command=lambda: webbrowser.open(DOWNLOAD_PAGE)).grid(row=4, column=3, sticky="e", pady=(12, 0))
-        node.columnconfigure(0, weight=1)
-        node.columnconfigure(1, weight=1)
-        node.columnconfigure(2, weight=0)
-        node.columnconfigure(3, weight=0)
-
-        pulse = ttk.Frame(root, style="Panel.TFrame", padding=16)
-        pulse.pack(fill="x", pady=(0, 14))
-        ttk.Label(pulse, text="AI SWARM ORACLE", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Label(
-            pulse,
-            text="The signal forms locally, writes to Firebase, and the pin answers in light.",
-            style="PanelText.TLabel",
-        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(7, 0))
-        ttk.Button(
-            pulse,
-            text="SWARM SIGNAL",
-            style="Signal.TButton",
-            command=self.send_swarm_signal,
-        ).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(14, 10))
-        ttk.Button(pulse, text="Soft", command=lambda: self.send_pulse(7)).grid(row=3, column=0, sticky="ew", padx=(0, 8))
-        ttk.Button(pulse, text="Active", command=lambda: self.send_pulse(13)).grid(row=3, column=1, sticky="ew", padx=(0, 8))
-        ttk.Button(pulse, text="Bright", command=lambda: self.send_pulse(20)).grid(row=3, column=2, sticky="ew", padx=(0, 8))
-        ttk.Button(pulse, text="Readback", command=self.read_pin).grid(row=3, column=3, sticky="ew")
-        pulse.columnconfigure(0, weight=1)
-        pulse.columnconfigure(1, weight=1)
-        pulse.columnconfigure(2, weight=1)
-        pulse.columnconfigure(3, weight=1)
-
-        self.advanced_frame = ttk.Frame(root, style="Panel.TFrame", padding=16)
-        ttk.Label(self.advanced_frame, text="Advanced WLED", style="PanelTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(self.advanced_frame, text="Optional direct local WLED host or IP", style="PanelText.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 4))
-        ttk.Entry(self.advanced_frame, textvariable=self.wled_var).grid(row=2, column=0, sticky="ew", padx=(0, 10))
-        ttk.Button(self.advanced_frame, text="Save WLED", command=self.save_wled).grid(row=2, column=1, sticky="ew", padx=(0, 10))
-        ttk.Button(self.advanced_frame, text="Clear WLED", command=self.clear_wled).grid(row=2, column=2, sticky="ew")
-        self.advanced_frame.columnconfigure(0, weight=1)
-        if self.advanced_visible:
-            self.advanced_frame.pack(fill="x", pady=(0, 14))
-
-        self.pattern_panel = ttk.Frame(root, style="Panel.TFrame", padding=16)
-        pattern = self.pattern_panel
-        pattern.pack(fill="both", expand=True, pady=(0, 14))
-        ttk.Label(pattern, text="THE PIN ANSWERS", style="PanelTitle.TLabel").pack(anchor="w")
-        ttk.Label(pattern, textvariable=self.pattern_var, style="PanelText.TLabel", wraplength=730).pack(anchor="w", pady=(8, 12))
-        self.canvas = tk.Canvas(pattern, height=128, bg="#0a1210", bd=0, highlightthickness=0)
-        self.canvas.pack(fill="x", pady=(0, 12))
-        self._draw_empty_preview()
-
-        self.log = tk.Text(
-            pattern,
-            height=8,
-            bg="#08100d",
-            fg="#d8e4de",
-            insertbackground="#d8e4de",
+        self.pin_entry = tk.Entry(
+            self,
+            textvariable=self.pin_var,
+            bg=self.FIELD,
+            fg=self.INK,
+            insertbackground=self.GREEN,
             relief="flat",
-            wrap="word",
-            font=("Consolas", 9),
+            bd=0,
+            highlightthickness=0,
+            font=("Consolas", 11),
+            justify="left",
         )
-        self.log.pack(fill="both", expand=True)
-        self.log.configure(state="disabled")
+        self.pin_entry.bind("<Return>", self._remember_pin_from_event)
+        self.pin_entry.bind("<FocusOut>", self._remember_pin_from_event)
 
-        ttk.Label(root, textvariable=self.status_var, style="Status.TLabel").pack(anchor="w")
+        self.canvas.bind("<Configure>", lambda _event: self._schedule_redraw())
+        self.canvas.tag_bind("signal_button", "<Button-1>", lambda _event: self.send_swarm_signal())
+        self.canvas.tag_bind("signal_button", "<Enter>", lambda _event: self._set_signal_hover(True))
+        self.canvas.tag_bind("signal_button", "<Leave>", lambda _event: self._set_signal_hover(False))
+        self.bind("<Control-r>", lambda _event: self.read_pin())
 
-    def _draw_empty_preview(self) -> None:
-        self.canvas.delete("all")
-        self.canvas.create_text(
-            18,
-            64,
-            text="Press SWARM SIGNAL to write the next pattern into Firebase.",
-            fill="#afc7bd",
-            anchor="w",
-            font=("Segoe UI", 10),
+        for variable in (self.status_var, self.pattern_var, self.connection_var):
+            variable.trace_add("write", lambda *_args: self._schedule_redraw())
+
+        self._refresh_connection_text()
+        self._schedule_redraw()
+
+    def _set_signal_hover(self, value: bool) -> None:
+        self.signal_hover = value
+        self._schedule_redraw()
+
+    def _schedule_redraw(self) -> None:
+        if self.redraw_job is None:
+            self.redraw_job = self.after_idle(self._redraw)
+
+    def _redraw(self) -> None:
+        self.redraw_job = None
+        canvas = self.canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 420)
+        height = max(canvas.winfo_height(), 760)
+        content_width = min(width - 48, 820)
+        left = (width - content_width) / 2
+        right = left + content_width
+        center_x = width / 2
+
+        self._draw_background(width, height)
+        self._draw_header(left, right, center_x)
+
+        pin_y = 144
+        self._draw_pin_field(left, right, pin_y)
+
+        signal_y = min(max(374, height * 0.44), height - 360)
+        signal_radius = 128
+        self._draw_signal_button(center_x, signal_y, signal_radius)
+
+        prompt_y = signal_y + signal_radius + 70
+        canvas.create_text(
+            center_x,
+            prompt_y,
+            text="Click for your signal",
+            fill=self.INK,
+            font=("Segoe UI", 26, "bold"),
+            anchor="center",
         )
 
-    def _draw_pattern(self, decision: LocalLightDecision) -> None:
-        self.canvas.delete("all")
-        width = max(720, self.canvas.winfo_width())
-        colors = sanitized_colors(decision.pattern.colors)
-        block_width = max(120, int((width - 42) / 3))
-        for index, color in enumerate(colors):
-            x0 = 14 + index * (block_width + 8)
-            x1 = x0 + block_width
-            self.canvas.create_rectangle(x0, 16, x1, 112, fill=rgb_to_hex(color), outline="")
-            self.canvas.create_text(
-                x0 + 14,
-                96,
-                text=f"{color[0]}, {color[1]}, {color[2]}",
-                fill="#08100d",
-                anchor="w",
-                font=("Segoe UI", 9, "bold"),
-            )
-        self.canvas.create_text(
-            16,
-            18,
-            text=f"{decision.label}  fx={decision.pattern.effect}  speed={decision.pattern.speed}  intensity={decision.pattern.intensity}",
-            fill="#08100d",
-            anchor="nw",
+        answer_height = 154
+        answer_y = min(prompt_y + 44, height - answer_height - 70)
+        self._draw_answer_field(left, right, answer_y, answer_height)
+
+        status = self.status_var.get()
+        canvas.create_text(
+            left + 4,
+            height - 36,
+            text=status,
+            fill=self.GREEN if status == "Ready." else self.GOLD,
             font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        )
+        canvas.create_text(
+            right - 4,
+            height - 36,
+            text=self.connection_var.get(),
+            fill=self.DIM,
+            font=("Segoe UI", 9),
+            anchor="e",
+            width=content_width * 0.55,
         )
 
-    def _refresh_connection_text(self) -> None:
-        pin = self.settings.device_id or "-"
-        wled = self.settings.wled_host or "off"
-        self.connection_var.set(f"Pin: {pin}   |   Advanced WLED: {wled}   |   Settings: {self.settings.path}")
+    def _draw_background(self, width: int, height: int) -> None:
+        spacing = 49
+        for x in range(-spacing, width + spacing, spacing):
+            self.canvas.create_line(x, 0, x, height, fill=self.GRID, width=1)
+        for y in range(6, height + spacing, spacing):
+            self.canvas.create_line(0, y, width, y, fill=self.GRID, width=1)
+        dots = [
+            (0.12, 0.29),
+            (0.25, 0.18),
+            (0.49, 0.28),
+            (0.66, 0.33),
+            (0.78, 0.55),
+            (0.91, 0.42),
+            (0.40, 0.69),
+            (0.69, 0.77),
+        ]
+        for dx, dy in dots:
+            x = width * dx
+            y = height * dy
+            self.canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill="#245739", outline="")
+        self.canvas.create_rectangle(0, 0, width, 56, fill="#06100d", outline="")
+        self.canvas.create_rectangle(0, height - 76, width, height, fill="#06100d", outline="")
 
-    def toggle_advanced(self) -> None:
-        self.advanced_visible = not self.advanced_visible
-        if self.advanced_visible:
-            self.advanced_frame.pack(fill="x", pady=(0, 14), before=self.pattern_panel)
-        else:
-            self.advanced_frame.pack_forget()
+    def _draw_header(self, left: float, right: float, center_x: float) -> None:
+        icon_x0 = left + 2
+        icon_y0 = 50
+        rounded_rect(
+            self.canvas,
+            icon_x0,
+            icon_y0,
+            icon_x0 + 86,
+            icon_y0 + 86,
+            20,
+            fill="#102017",
+            outline=self.GREEN,
+            width=3,
+        )
+        self.canvas.create_line(icon_x0 + 28, icon_y0 + 36, icon_x0 + 56, icon_y0 + 36, fill=self.GREEN, width=5, capstyle="round")
+        self.canvas.create_line(icon_x0 + 28, icon_y0 + 50, icon_x0 + 56, icon_y0 + 50, fill=self.GREEN, width=5, capstyle="round")
+        self.canvas.create_oval(icon_x0 + 54, icon_y0 + 50, icon_x0 + 68, icon_y0 + 64, fill=self.GREEN, outline="")
 
-    def save_pin(self) -> None:
+        badge_w = 112
+        rounded_rect(
+            self.canvas,
+            right - badge_w,
+            icon_y0,
+            right,
+            icon_y0 + 86,
+            18,
+            fill="#102017",
+            outline=self.GREEN,
+            width=3,
+        )
+        self.canvas.create_text(right - badge_w / 2, icon_y0 + 31, text="PIN", fill=self.GREEN, font=("Segoe UI", 20, "bold"))
+        self.canvas.create_text(right - badge_w / 2, icon_y0 + 59, text="FIREBASE", fill=self.INK, font=("Consolas", 9, "bold"))
+
+        self.canvas.create_text(center_x, 80, text="SWARM", fill=self.INK, font=("Segoe UI", 30, "bold"), anchor="center")
+        self.canvas.create_text(center_x, 119, text="SYNDIODE PIN ORACLE", fill=self.GREEN, font=("Consolas", 12, "bold"), anchor="center")
+
+    def _draw_pin_field(self, left: float, right: float, y: float) -> None:
+        rounded_rect(
+            self.canvas,
+            left,
+            y,
+            right,
+            y + 94,
+            16,
+            fill=self.PANEL,
+            outline="#33423b",
+            width=2,
+        )
+        self.canvas.create_text(left + 22, y + 20, text="PIN ID", fill=self.GREEN, font=("Consolas", 10, "bold"), anchor="w")
+        self.canvas.create_text(
+            right - 22,
+            y + 20,
+            text="ENTER",
+            fill=self.DIM,
+            font=("Consolas", 9, "bold"),
+            anchor="e",
+        )
+        self.canvas.create_window(
+            left + 22,
+            y + 43,
+            anchor="nw",
+            window=self.pin_entry,
+            width=max(200, right - left - 44),
+            height=30,
+        )
+        self.canvas.create_text(
+            left + 22,
+            y + 80,
+            text="The pin listens through Firebase.",
+            fill=self.MUTED,
+            font=("Segoe UI", 9),
+            anchor="w",
+        )
+
+    def _draw_signal_button(self, center_x: float, center_y: float, radius: float) -> None:
+        tag = ("signal_button",)
+        ring = "#9ef0b7" if self.signal_hover and not self.busy else self.GREEN
+        fill = "#0a1811" if not self.busy else "#102017"
+        self.canvas.create_oval(
+            center_x - radius - 50,
+            center_y - radius - 50,
+            center_x + radius + 50,
+            center_y + radius + 50,
+            outline=self.GREEN_SOFT,
+            width=3,
+            tags=tag,
+        )
+        self.canvas.create_oval(
+            center_x - radius,
+            center_y - radius,
+            center_x + radius,
+            center_y + radius,
+            fill=fill,
+            outline=ring,
+            width=5,
+            tags=tag,
+        )
+        self.canvas.create_oval(
+            center_x - radius + 42,
+            center_y - radius + 42,
+            center_x + radius - 42,
+            center_y + radius - 42,
+            outline="#143523",
+            width=1,
+            tags=tag,
+        )
+        draw_node_icon(self.canvas, center_x, center_y - 28, 1.2, ring, tags=tag)
+        button_text = "SIGNAL\nFORMING" if self.busy else "SIGNAL"
+        self.canvas.create_text(
+            center_x,
+            center_y + 68,
+            text=button_text,
+            fill=self.GOLD,
+            font=("Consolas", 19, "bold"),
+            justify="center",
+            anchor="center",
+            tags=tag,
+        )
+
+    def _draw_answer_field(self, left: float, right: float, y: float, height: float) -> None:
+        rounded_rect(
+            self.canvas,
+            left,
+            y,
+            right,
+            y + height,
+            18,
+            fill=self.PANEL,
+            outline="#33423b",
+            width=2,
+        )
+        self.canvas.create_text(
+            left + 24,
+            y + 24,
+            text="THE LIGHT ORACLE SAYS",
+            fill=self.GREEN,
+            font=("Consolas", 10, "bold"),
+            anchor="w",
+        )
+        self.canvas.create_text(
+            (left + right) / 2,
+            y + height / 2 + 4,
+            text=self.pattern_var.get(),
+            fill=self.MUTED,
+            font=("Segoe UI", 15, "bold"),
+            justify="center",
+            width=max(240, right - left - 56),
+            anchor="center",
+        )
+        swatch_y = y + height - 24
+        colors = sanitized_colors(self.preview_colors)
+        spacing = 26
+        start = (left + right) / 2 - spacing
+        for index, color in enumerate(colors):
+            x = start + index * spacing
+            self.canvas.create_oval(
+                x - 7,
+                swatch_y - 7,
+                x + 7,
+                swatch_y + 7,
+                fill=rgb_to_hex(color),
+                outline="",
+            )
+
+    def _remember_pin_from_event(self, _event: tk.Event[Any]) -> str:
+        self.remember_pin(show=True)
+        return "break"
+
+    def remember_pin(self, show: bool = False) -> bool:
         device_id = self.pin_var.get().strip()
         if not device_id:
+            if show:
+                self.status_var.set("Enter a pin ID first.")
+            return False
+        if device_id != self.settings.device_id:
+            self.settings.device_id = device_id
+            if show:
+                self.status_var.set("Pin ID saved.")
+        elif show:
+            self.status_var.set("Pin ID ready.")
+        self._refresh_connection_text()
+        return True
+
+    def _refresh_connection_text(self) -> None:
+        pin = self.settings.device_id
+        short_pin = f"{pin[:8]}..." if len(pin) > 11 else pin
+        self.connection_var.set(f"Pin {short_pin or '-'}")
+
+    def save_pin(self) -> None:
+        if not self.remember_pin(show=True):
             messagebox.showwarning(APP_NAME, "Please enter a pin ID.")
             return
-        self.settings.device_id = device_id
-        self._refresh_connection_text()
+        device_id = self.settings.device_id
         self._run_background(
-            "Registering pin...",
+            "Checking Firebase pin...",
             lambda: self.firebase.add_pin(device_id),
-            lambda _result: self._log(f"Pin saved and checked in Firebase: {device_id}"),
+            lambda _result: self._log(f"Pin checked in Firebase: {device_id}"),
         )
 
     def save_wled(self) -> None:
-        host = WledClient.normalize_host(self.wled_var.get())
-        if not host:
-            messagebox.showwarning(APP_NAME, "Please enter a WLED host or IP.")
-            return
-        self.settings.wled_host = host
-        self.wled_var.set(host)
-        self._refresh_connection_text()
-        self._log(f"WLED node saved: {host}")
-        self.status_var.set("WLED node saved.")
+        host = WledClient.normalize_host(self.settings.wled_host)
+        if host:
+            self.settings.wled_host = host
+            self._log(f"WLED node saved: {host}")
 
     def clear_wled(self) -> None:
         self.settings.wled_host = ""
-        self.wled_var.set("")
-        self._refresh_connection_text()
         self._log("Advanced WLED node cleared.")
-        self.status_var.set("WLED cleared.")
 
     def read_pin(self) -> None:
         device_id = self.pin_var.get().strip() or self.settings.device_id
         if not device_id:
-            messagebox.showwarning(APP_NAME, "Save a pin ID before reading Firebase.")
+            messagebox.showwarning(APP_NAME, "Enter a pin ID before reading Firebase.")
             return
         self.settings.device_id = device_id
         self._refresh_connection_text()
 
         def done(snapshot: dict[str, Any] | None) -> None:
             if not snapshot:
-                self.pattern_var.set("Firebase readback: no node exists for this pin ID.")
+                self.pattern_var.set("No Firebase node exists yet for this pin ID.")
                 self._log(f"Firebase readback: no node for {device_id}")
                 return
             summary = describe_pin_snapshot(snapshot)
-            self.pattern_var.set(summary)
+            self.pattern_var.set("Firebase hears the pin. The next click will send light.")
             self._log("Firebase readback: " + summary)
             desired = snapshot.get("desired_settings")
             pattern = led_pattern_from_settings(desired if isinstance(desired, dict) else {})
             if pattern:
                 self.current_pattern = pattern
-                self._draw_pattern(
-                    LocalLightDecision(
-                        pattern=pattern,
-                        message=summary,
-                        label="FIREBASE READBACK",
-                    )
-                )
+                self._draw_pattern(LocalLightDecision(pattern=pattern, message=summary, label="FIREBASE READBACK"))
 
         self._run_background(
             "Reading Firebase pin...",
@@ -796,7 +1061,7 @@ class SyndiodePinApp(tk.Tk):
     def reset_wifi(self) -> None:
         device_id = self.pin_var.get().strip() or self.settings.device_id
         if not device_id:
-            messagebox.showwarning(APP_NAME, "Save a pin ID before sending reset WiFi.")
+            messagebox.showwarning(APP_NAME, "Enter a pin ID before sending reset WiFi.")
             return
         if not messagebox.askyesno(APP_NAME, "Send WiFi reset to this pin?"):
             return
@@ -807,46 +1072,44 @@ class SyndiodePinApp(tk.Tk):
         )
 
     def send_swarm_signal(self) -> None:
+        if self.busy:
+            return
         force = 13 + (self.pulse_count % 4)
         self.send_pulse(force)
 
     def send_pulse(self, shake_force: float) -> None:
         device_id = self.pin_var.get().strip() or self.settings.device_id
-        wled_host = self.wled_var.get().strip() or self.settings.wled_host
-        if not device_id and not wled_host:
-            messagebox.showwarning(APP_NAME, "Save a pin ID or WLED host first.")
+        if not device_id:
+            messagebox.showwarning(APP_NAME, "Please enter your pin ID first.")
+            self.status_var.set("Pin ID missing.")
             return
-        if device_id:
-            self.settings.device_id = device_id
-        if wled_host:
-            self.settings.wled_host = WledClient.normalize_host(wled_host)
-            self.wled_var.set(self.settings.wled_host)
+        self.settings.device_id = device_id
         self._refresh_connection_text()
+        wled_host = self.settings.wled_host
 
         def work() -> tuple[LocalLightDecision, list[str], list[str]]:
             self.pulse_count += 1
             decision = self.engine.generate(
-                device_id=device_id or wled_host,
+                device_id=device_id,
                 shake_force=shake_force,
                 pulse_count=self.pulse_count,
                 previous_pattern=self.current_pattern,
             )
             delivered: list[str] = []
             errors: list[str] = []
-            if device_id:
-                try:
-                    self.firebase.send_pattern(device_id, decision.pattern)
-                    delivered.append("pin")
-                except Exception as exc:
-                    errors.append(f"pin: {short_error(exc)}")
+            try:
+                self.firebase.send_pattern(device_id, decision.pattern)
+                delivered.append("pin")
+            except Exception as exc:
+                errors.append(f"pin: {short_error(exc)}")
             if wled_host:
                 try:
                     self.wled.send_pattern(wled_host, decision.pattern)
                     delivered.append("WLED")
                 except Exception as exc:
                     errors.append(f"WLED: {short_error(exc)}")
-            if not delivered:
-                raise RuntimeError("The light was chosen, but no registered node accepted it. " + "; ".join(errors))
+            if "pin" not in delivered:
+                raise RuntimeError("The light was chosen, but Firebase did not accept it. " + "; ".join(errors))
             return decision, delivered, errors
 
         def done(result: tuple[LocalLightDecision, list[str], list[str]]) -> None:
@@ -858,7 +1121,12 @@ class SyndiodePinApp(tk.Tk):
             if errors:
                 self._log("Partial delivery issue: " + "; ".join(errors))
 
-        self._run_background("Sending swarm light...", work, done)
+        self._run_background("Signal forming...", work, done)
+
+    def _draw_pattern(self, decision: LocalLightDecision) -> None:
+        self.preview_label = decision.label
+        self.preview_colors = sanitized_colors(decision.pattern.colors)
+        self._schedule_redraw()
 
     def _run_background(
         self,
@@ -866,7 +1134,9 @@ class SyndiodePinApp(tk.Tk):
         work: Callable[[], Any],
         done: Callable[[Any], None],
     ) -> None:
+        self.busy = True
         self.status_var.set(label)
+        self._schedule_redraw()
 
         def target() -> None:
             try:
@@ -880,18 +1150,20 @@ class SyndiodePinApp(tk.Tk):
 
     def _finish_success(self, done: Callable[[Any], None], result: Any) -> None:
         done(result)
+        self.busy = False
         self.status_var.set("Ready.")
+        self._schedule_redraw()
 
     def _show_error(self, exc: Exception) -> None:
+        self.busy = False
         self.status_var.set("Operation failed.")
         self._log(f"Error: {short_error(exc)}")
+        self._schedule_redraw()
         messagebox.showerror(APP_NAME, short_error(exc))
 
     def _log(self, message: str) -> None:
-        self.log.configure(state="normal")
-        self.log.insert("end", f"{time.strftime('%H:%M:%S')}  {message}\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
+        self.log_lines.append(f"{time.strftime('%H:%M:%S')}  {message}")
+        self.log_lines = self.log_lines[-40:]
 
 
 def short_error(exc: Exception) -> str:

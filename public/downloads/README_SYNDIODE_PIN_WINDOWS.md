@@ -5,24 +5,31 @@ Download:
 https://www.syndiode.com/downloads/syndiode-pin-light-control.exe
 
 This is the Windows companion app for the SyndiodePin light firmware. It uses
-the Swarm Oracle style: one large **Swarm Signal** button, a Firebase readback
-test, and the same local light pattern logic as the Android app.
+the Swarm Oracle style: one pin ID field, one large **Signal** field, and one
+answer field where the light oracle speaks.
 
-It sends the selected pattern to:
-
-- a Syndiode ESP32 pin through Firebase Realtime Database
-- a local WLED-compatible node through `http://<host>/json/state`
+It sends the selected pattern to a Syndiode ESP32 pin through Firebase Realtime
+Database.
 
 The app stores its settings under `%APPDATA%\SyndiodePin\settings.json`.
 
+## Firebase client key
+
+The Windows source and EXE do not embed a Google/Firebase API key. Configure the
+key locally with one of these options:
+
+- set the `SYNDIODE_FIREBASE_API_KEY` environment variable
+- put the key in `%APPDATA%\SyndiodePin\firebase_api_key.txt`
+- add `firebase_api_key` to `%APPDATA%\SyndiodePin\settings.json`
+
+Do not commit Firebase client keys to this repository. Rotate/restrict any key
+that was ever exposed in Git history.
+
 ## Controls
 
-- Save pin: stores the ESP32 pin device id and checks/creates its Firebase node.
-- Swarm Signal: generates and sends one local light pattern.
-- Firebase test: reads back the current pin state from Firebase.
-- Soft, Active, Bright: manual signal intensity variants.
-- Advanced WLED: optional local WLED host/IP support.
-- Reset WiFi: sends `devices/<pin_id>/status/reset_wifi = true`.
+- Pin ID: stores the ESP32 pin device id locally.
+- Signal: generates and sends one local light pattern.
+- Oracle answer: shows the phrase and color swatches for the generated pattern.
 
 ## Build locally
 

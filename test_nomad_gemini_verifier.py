@@ -54,6 +54,7 @@ def test_gemini_verifier_surface_is_public_artifact_only(monkeypatch):
 
 def test_gemini_secret_guard_blocks_provider_call(tmp_path):
     calls = []
+    google_key_shape = "AI" + "za" + "123456789012345678901234567890"
 
     def fake_post(*args, **kwargs):
         calls.append((args, kwargs))
@@ -62,7 +63,7 @@ def test_gemini_secret_guard_blocks_provider_call(tmp_path):
     out = verify_with_gemini(
         {
             "verifier_type": "hackerone_draft",
-            "artifact_text": "GEMINI_API_KEY = AIza123456789012345678901234567890",
+            "artifact_text": f"GEMINI_API_KEY = {google_key_shape}",
         },
         http_post=fake_post,
         ledger_path=tmp_path / "gemini.jsonl",
