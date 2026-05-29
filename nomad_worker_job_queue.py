@@ -353,6 +353,89 @@ def _gate_check_job(
     )
 
 
+def _agent_utility_jobs(
+    *,
+    base_url: str,
+    agent_utility: dict[str, Any],
+    gate_state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
+    summary = _dict(agent_utility.get("summary"))
+    for row in _items(summary.get("pending_requests"))[:4]:
+        request_id = _text(row.get("utility_request_id"), 180)
+        if not request_id:
+            continue
+        failure_class = _clean_id(row.get("failure_class"), "agent_utility_blocker")
+        problem_digest = _text(row.get("problem_digest"), 260)
+        jobs.append(
+            _base_job(
+                base_url=base_url,
+                job_type="agent_utility_repair",
+                title=f"Return consumable proof for external agent {failure_class}",
+                priority_score=1.24,
+                worker_role="transition_worker",
+                channel_id="external_agent_utility",
+                source_ref=problem_digest,
+                external_id=request_id,
+                read_only=False,
+                executable_now=True,
+                side_effect_class="nomad_contract_endpoints_only",
+                allowed_actions=[
+                    "read_public_problem_digest",
+                    "derive_smallest_nomad_proof_or_patch",
+                    "return_nomad_proof_digest",
+                    "collect_downstream_proof_or_callback_verifier",
+                ],
+                blocked_actions=[
+                    "ask_for_or_store_secrets",
+                    "claim_paid_receipt_without_payment",
+                    "public_human_marketing_action",
+                    "unbounded_compute_or_external_mutation",
+                ],
+                required_artifacts=[
+                    "nomad_proof_digest",
+                    "verifier_trace_digest",
+                    "consumer_agent_id_or_callback_verifier",
+                    "downstream_proof_digest_or_callback_verifier_digest",
+                ],
+                verifier={
+                    "type": "external_agent_consumption_gate",
+                    "inputs": ["nomad_proof_digest", "downstream_proof_digest", "callback_verifier_digest"],
+                    "pass_condition": "utility receipt requires Nomad proof plus downstream proof or accepted callback verifier",
+                },
+                settlement_path={
+                    "stage": "utility_only_until_paid_proof",
+                    "post_url": _u(base_url, "/swarm/agent-utility/intake"),
+                    "paid_guard": "no revenue without paid stage, positive amount, and public settlement ref",
+                },
+                gate_state={**gate_state, "utility_request_id": request_id, "objective": "external_agent_utility_router"},
+                stop_conditions=[
+                    "problem_digest_unreproducible",
+                    "consumer_agent_refuses_callback",
+                    "proof_contract_missing",
+                    "payment_claim_without_receipt",
+                ],
+                call_sequence=[
+                    {
+                        "role": "read_agent_utility_contract",
+                        "method": "GET",
+                        "path": "/.well-known/nomad-agent-utility.json",
+                        "url": _u(base_url, "/.well-known/nomad-agent-utility.json"),
+                        "openapi_bound": True,
+                    },
+                    {
+                        "role": "return_utility_receipt_candidate",
+                        "method": "POST",
+                        "path": "/swarm/agent-utility/intake",
+                        "url": _u(base_url, "/swarm/agent-utility/intake"),
+                        "openapi_bound": True,
+                    },
+                ],
+            )
+        )
+    return jobs
+
+
 def _patch_jobs(
     *,
     base_url: str,
@@ -465,6 +548,7 @@ def build_worker_job_queue_surface(
     job_channels: dict[str, Any] | None = None,
     value_cycle_preflight: dict[str, Any] | None = None,
     external_value_summary: dict[str, Any] | None = None,
+    agent_utility: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile a hard queue that external AI workers can execute safely."""
 
@@ -473,9 +557,11 @@ def build_worker_job_queue_surface(
     channels = _dict(job_channels)
     preflight = _dict(value_cycle_preflight)
     summary = _dict(external_value_summary)
+    utility = _dict(agent_utility)
     gate = _gate_state(preflight)
 
     jobs: list[dict[str, Any]] = []
+    jobs.extend(_agent_utility_jobs(base_url=root, agent_utility=utility, gate_state=gate))
     jobs.extend(_settlement_jobs(base_url=root, external_value_summary=summary, gate_state=gate))
     jobs.append(_gate_check_job(base_url=root, job_channels=channels, gate_state=gate))
     jobs.extend(_channel_scan_jobs(base_url=root, job_channels=channels, gate_state=gate))
@@ -548,7 +634,7 @@ def build_worker_job_queue_surface(
             "roles": {
                 "gemini_scout": "read-only channel scan, duplicate scan, payout rail extraction, no submissions",
                 "codex_patch_worker": "bounded local patch and verifier digest, public action only after gates",
-                "transition_worker": "reconcile receipts, leases, and stage evidence without claiming revenue",
+                "transition_worker": "reconcile receipts, leases, utility consumption, and stage evidence without claiming revenue",
             },
             "hard_rules": [
                 "no paid accounting without positive external receipt",
@@ -562,6 +648,7 @@ def build_worker_job_queue_surface(
         "entry_job": selected[0] if selected else {},
         "links": {
             "agent_job_router": _u(root, "/.well-known/nomad-agent-jobs.json"),
+            "agent_utility": _u(root, "/.well-known/nomad-agent-utility.json"),
             "job_channels": _u(root, "/.well-known/nomad-job-channels.json"),
             "value_cycle_preflight": _u(root, "/.well-known/nomad-value-cycle-preflight.json"),
             "external_value": _u(root, "/.well-known/nomad-external-value.json"),

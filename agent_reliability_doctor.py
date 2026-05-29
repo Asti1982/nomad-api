@@ -85,7 +85,7 @@ ROLE_BLUEPRINTS: Dict[str, Dict[str, Any]] = {
     "trace_healer": {
         "title": "Adaptive Trace Resumer",
         "framework_inspiration": "observability-driven trace recovery system",
-        "best_for": ["payment", "production_incident", "revenue_blocker"],
+        "best_for": ["payment", "production_incident", "revenue_blocker", "agent_utility_blocker"],
         "why": "Use traces, ledgers, state transitions, and callbacks to find the broken resume point.",
         "loop": ["trace", "state_diff", "idempotent_fix", "resume_point", "audit_log"],
         "interventions": [
@@ -148,6 +148,7 @@ PAIN_ROLE_MAP = {
     "self_improvement": "self_learning_healer",
     "payment": "trace_healer",
     "revenue_blocker": "trace_healer",
+    "agent_utility_blocker": "trace_healer",
     "repo_issue_help": "conversational_reviewer",
     "proof_gated_bot_factory": "bot_factory_reviewer",
 }
@@ -193,6 +194,16 @@ PAIN_HINTS = {
         "active external workers",
         "machine treasury",
         "buyer funded",
+    ),
+    "agent_utility_blocker": (
+        "agent utility blocker",
+        "external agent utility",
+        "utility receipt",
+        "downstream proof",
+        "callback verifier",
+        "consumer agent",
+        "nomad proof consumed",
+        "agent problem packet",
     ),
     "proof_gated_bot_factory": (
         "bot",
@@ -896,6 +907,7 @@ class AgentReliabilityDoctor:
                     "context_propagation_contract",
                     "chain_deadline_budget",
                     "inter_agent_witness",
+                    "agent_utility_blocker",
                 },
             },
             {

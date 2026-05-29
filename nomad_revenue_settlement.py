@@ -321,7 +321,7 @@ def build_revenue_settlement_surface(
         "public_base_url": (base_url or "").strip().rstrip("/"),
         "read_url": _u(base_url, "/swarm/revenue-settlement"),
         "well_known_url": _u(base_url, "/.well-known/nomad-revenue-settlement.json"),
-        "hooked_endpoints": ["/swarm/workers/complete", "/swarm/value-cycles/events"],
+        "hooked_endpoints": ["/swarm/workers/complete", "/swarm/value-cycles/events", "/swarm/agent-utility/intake"],
         "objective": "revenue_pressure_router",
         "pressure": pressure,
         "proof_gate": {

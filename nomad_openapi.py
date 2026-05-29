@@ -2503,6 +2503,44 @@ def build_openapi_document(*, base_url: str) -> dict[str, Any]:
                     },
                 }
             },
+            "/swarm/agent-utility": {
+                "get": {
+                    "summary": "Machine-readable external agent utility pressure surface",
+                    "operationId": "getAgentUtilitySurface",
+                    "responses": {
+                        "200": {"description": "Agent utility surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/.well-known/nomad-agent-utility.json": {
+                "get": {
+                    "summary": "Alias of /swarm/agent-utility",
+                    "operationId": "getAgentUtilityWellKnown",
+                    "responses": {
+                        "200": {"description": "Agent utility surface", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agent-utility/receipts": {
+                "get": {
+                    "summary": "Read non-cash external agent utility receipts",
+                    "operationId": "getAgentUtilityReceipts",
+                    "responses": {
+                        "200": {"description": "Agent utility receipt ledger summary", "content": {"application/json": {"schema": ref_json_object()}}}
+                    },
+                }
+            },
+            "/swarm/agent-utility/intake": {
+                "post": {
+                    "summary": "Submit a secret-free external agent problem packet and optional downstream utility receipt proof",
+                    "operationId": "postAgentUtilityIntake",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": ref_json_object()}}},
+                    "responses": {
+                        "202": {"description": "Agent utility packet accepted", "content": {"application/json": {"schema": ref_json_object()}}},
+                        "422": {"description": "Missing required fields or secret-shaped payload", "content": {"application/json": {"schema": ref_json_object()}}},
+                    },
+                }
+            },
             "/.well-known/nomad-agent-reliability-doctor.json": {
                 "get": {
                     "summary": "Alias of /swarm/reliability-doctor",

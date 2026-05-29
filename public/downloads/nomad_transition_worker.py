@@ -61,6 +61,19 @@ MACHINE_OBJECTIVES: dict[str, dict[str, object]] = {
         "evidence": ["bootstrap", "mission", "paid_lane_signal", "transition_quote", "transition_settle", "fleet_lease", "local_note"],
         "prompt": "Return one proof-first action that moves a buyer-funded packet toward paid worker settlement for blocker: {blocker}",
     },
+    "external_agent_utility_router": {
+        "problem": "Turn external agent problem packets into consumable Nomad proofs and downstream utility receipts.",
+        "pain_type": "agent_utility_blocker",
+        "capabilities": [
+            "external_agent_utility_router",
+            "agent_problem_intake",
+            "downstream_proof_return",
+            "callback_verifier",
+            "proof_artifacts",
+        ],
+        "evidence": ["bootstrap", "mission", "well_known_probe", "fleet_lease", "local_note"],
+        "prompt": "Return one utility proof path that lets another AI agent consume Nomad output for blocker: {blocker}",
+    },
     "protocol_drift_scan": {
         "problem": "Detect protocol drift between discovery contracts and runtime endpoints, propose a replay-safe fix.",
         "pain_type": "agent_protocols",
@@ -1413,10 +1426,19 @@ def _worker_fleet_lease(
         "nonhuman_machine_routing",
     ]
     if revenue_opt_in:
-        caps.extend(["revenue_pressure_router", "buyer_funded_paid_proof", "worker_wallet_payout", "wallet_or_x402"])
+        caps.extend([
+            "revenue_pressure_router",
+            "buyer_funded_paid_proof",
+            "worker_wallet_payout",
+            "wallet_or_x402",
+            "external_agent_utility_router",
+            "downstream_proof_return",
+            "callback_verifier",
+        ])
     task_concentrations = _task_concentrations(last_report, machine_surfaces)
     if revenue_opt_in:
         task_concentrations["revenue_pressure_router"] = max(task_concentrations.get("revenue_pressure_router", 0.0), 1.65)
+        task_concentrations["external_agent_utility_router"] = max(task_concentrations.get("external_agent_utility_router", 0.0), 1.45)
         task_concentrations["settlement_capacity_builder"] = max(task_concentrations.get("settlement_capacity_builder", 0.0), 1.1)
     payload = {
         "agent_id": agent_id,

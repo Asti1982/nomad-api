@@ -66,6 +66,18 @@ OBJECTIVE_DEMANDS: dict[str, dict[str, Any]] = {
         "proof_required": ["failed_path_digest", "settlement_ref_or_replay_trace", "fix_hint"],
         "reward_signal": "settlement_capacity_weight_when_friction_falls",
     },
+    "external_agent_utility_router": {
+        "capability_gap": "turn external agent failures into consumable Nomad proofs with downstream utility receipts",
+        "desired_capabilities": [
+            "agent_problem_intake",
+            "objective_lease_execution",
+            "downstream_proof_return",
+            "callback_verifier",
+            "proof_digest_return",
+        ],
+        "proof_required": ["nomad_proof_digest", "downstream_proof_digest_or_callback_verifier", "consumer_agent_id"],
+        "reward_signal": "utility_receipt_weight_before_any_paid_settlement",
+    },
     "adversarial_contract_fuzzer": {
         "capability_gap": "stress idempotency, TTL, redirect, and proof boundaries without external side effects",
         "desired_capabilities": ["adversarial_probe", "idempotency_replay", "endpoint_probe"],
@@ -326,6 +338,7 @@ def build_agent_demand_feed(
                     "growth_curriculum": _u(base_url, "/swarm/curriculum"),
                     "growth_experience": _u(base_url, "/swarm/experience"),
                     "skill_library": _u(base_url, "/swarm/skill-library"),
+                    "agent_utility": _u(base_url, "/swarm/agent-utility/intake"),
                 },
             }
         )
@@ -360,6 +373,7 @@ def build_agent_demand_feed(
                     "growth_curriculum": _u(base_url, "/swarm/curriculum"),
                     "growth_experience": _u(base_url, "/swarm/experience"),
                     "skill_library": _u(base_url, "/swarm/skill-library"),
+                    "agent_utility": _u(base_url, "/swarm/agent-utility/intake"),
                 },
             }
         )
@@ -393,6 +407,7 @@ def build_agent_demand_feed(
                     "growth_curriculum": _u(base_url, "/swarm/curriculum"),
                     "growth_experience": _u(base_url, "/swarm/experience"),
                     "skill_library": _u(base_url, "/swarm/skill-library"),
+                    "agent_utility": _u(base_url, "/swarm/agent-utility/intake"),
                 },
             }
         )
@@ -490,6 +505,7 @@ def build_agent_demand_feed(
                     "growth_curriculum": _u(base_url, "/swarm/curriculum"),
                     "growth_experience": _u(base_url, "/swarm/experience"),
                     "skill_library": _u(base_url, "/swarm/skill-library"),
+                    "agent_utility": _u(base_url, "/swarm/agent-utility/intake"),
                     "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
                     "worker1_ps1": _u(base_url, "/downloads/start_nomad_worker1.ps1"),
                     "worker1_bat": _u(base_url, "/downloads/start_nomad_worker1.bat"),
@@ -568,6 +584,8 @@ def build_agent_demand_feed(
             "growth_curriculum": _u(base_url, "/swarm/curriculum"),
             "growth_experience": _u(base_url, "/swarm/experience"),
             "skill_library": _u(base_url, "/swarm/skill-library"),
+            "agent_utility": _u(base_url, "/.well-known/nomad-agent-utility.json"),
+            "agent_utility_intake": _u(base_url, "/swarm/agent-utility/intake"),
             "transition_worker_py": _u(base_url, "/downloads/nomad_transition_worker.py"),
             "worker1_ps1": _u(base_url, "/downloads/start_nomad_worker1.ps1"),
             "worker1_bat": _u(base_url, "/downloads/start_nomad_worker1.bat"),

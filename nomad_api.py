@@ -230,6 +230,12 @@ from nomad_optimal_transport import (
 )
 from nomad_receipt_predictor import build_receipt_predictor_surface, evaluate_receipt_prediction_event
 from nomad_revenue_settlement import build_revenue_settlement_surface, evaluate_revenue_settlement_hook
+from nomad_agent_utility import (
+    build_agent_utility_receipts_surface,
+    build_agent_utility_surface,
+    evaluate_agent_utility_intake,
+    summarize_agent_utility_ledger,
+)
 from nomad_bottleneck_resolver import build_bottleneck_resolver_surface, evaluate_bottleneck_resolution_event
 from nomad_first_receipt_ignition import (
     build_first_receipt_ignition_surface,
@@ -1724,6 +1730,20 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         )
 
     @classmethod
+    def _build_agent_utility(cls, *, base_url: str) -> dict:
+        return build_agent_utility_surface(
+            base_url=base_url,
+            ledger_summary=summarize_agent_utility_ledger(),
+        )
+
+    @classmethod
+    def _build_agent_utility_receipts(cls, *, base_url: str) -> dict:
+        return build_agent_utility_receipts_surface(
+            base_url=base_url,
+            ledger_summary=summarize_agent_utility_ledger(),
+        )
+
+    @classmethod
     def _build_stable_unit_policy(cls, *, base_url: str) -> dict:
         return build_stable_unit_policy_surface(
             base_url=base_url,
@@ -1792,6 +1812,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 external_value_summary=external_summary,
             ),
             external_value_summary=external_summary,
+            agent_utility=cls._build_agent_utility(base_url=base_url),
         )
 
     @classmethod
@@ -1813,6 +1834,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             job_channels=cls._build_job_channels(base_url=base_url),
             value_cycle_preflight=preflight,
             external_value_summary=external_summary,
+            agent_utility=cls._build_agent_utility(base_url=base_url),
         )
         return build_value_cycle_mesh_surface(
             base_url=base_url,
@@ -2801,6 +2823,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "work_exchange_dockerfile": f"{b}/downloads/nomad_work_exchange_worker.Dockerfile",
                     "treasury_policy": f"{b}/.well-known/nomad-treasury-policy.json",
                     "revenue_settlement": f"{b}/.well-known/nomad-revenue-settlement.json",
+                    "agent_utility": f"{b}/.well-known/nomad-agent-utility.json",
                     "stable_unit_policy": f"{b}/.well-known/nomad-stable-unit-policy.json",
                     "stable_unit_preflight": f"{b}/swarm/stable-unit/preflight",
                     "operator_runway": f"{b}/.well-known/nomad-operator-runway.json",
@@ -3547,6 +3570,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path in {"/swarm/revenue-settlement", "/.well-known/nomad-revenue-settlement.json"}:
             self._json_response(self.__class__._build_revenue_settlement(base_url=self._base_url()))
+            return
+        if parsed.path in {"/swarm/agent-utility", "/.well-known/nomad-agent-utility.json"}:
+            self._json_response(self.__class__._build_agent_utility(base_url=self._base_url()))
+            return
+        if parsed.path == "/swarm/agent-utility/receipts":
+            self._json_response(self.__class__._build_agent_utility_receipts(base_url=self._base_url()))
             return
         if parsed.path in {"/swarm/stable-unit-policy", "/.well-known/nomad-stable-unit-policy.json"}:
             self._json_response(self.__class__._build_stable_unit_policy(base_url=self._base_url()))
@@ -4862,6 +4891,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-treasury-policy.json",
                     "/swarm/revenue-settlement",
                     "/.well-known/nomad-revenue-settlement.json",
+                    "/swarm/agent-utility",
+                    "/.well-known/nomad-agent-utility.json",
+                    "/swarm/agent-utility/intake",
+                    "/swarm/agent-utility/receipts",
                     "/swarm/stable-unit-policy",
                     "/.well-known/nomad-stable-unit-policy.json",
                     "/swarm/stable-unit/preflight",
@@ -5502,6 +5535,11 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 evidence=payload.get("evidence") if isinstance(payload.get("evidence"), list) else None,
             )
             self._json_response(result, status=200 if result.get("ok", True) else 400)
+            return
+
+        if parsed.path == "/swarm/agent-utility/intake":
+            result = evaluate_agent_utility_intake(payload, base_url=self._base_url())
+            self._json_response(result, status=202 if result.get("accepted") else 422)
             return
 
         if parsed.path == "/swarm/reliability-doctor/intake":
@@ -7012,6 +7050,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-treasury-policy.json",
                     "/swarm/revenue-settlement",
                     "/.well-known/nomad-revenue-settlement.json",
+                    "/swarm/agent-utility",
+                    "/.well-known/nomad-agent-utility.json",
+                    "/swarm/agent-utility/intake",
+                    "/swarm/agent-utility/receipts",
                     "/swarm/stable-unit-policy",
                     "/.well-known/nomad-stable-unit-policy.json",
                     "/swarm/stable-unit/preflight",
