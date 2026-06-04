@@ -16,6 +16,11 @@ from typing import Any
 
 from nomad_state_paths import state_file
 
+try:
+    from nomad_epic_dispatch import epic_jobs_as_agent_work_items
+except ImportError:
+    epic_jobs_as_agent_work_items = None  # type: ignore[assignment]
+
 
 DEFAULT_CLAIM_LEDGER_PATH = Path("nomad_agent_work_claims.jsonl")
 DEFAULT_PROOF_LEDGER_PATH = Path("nomad_agent_work_proofs.jsonl")
@@ -335,6 +340,12 @@ def build_agent_work_surface(
         if _clean_id(item.get("objective")) in synergy_objectives:
             item["priority_score"] = round(_num(item.get("priority_score")) * 1.12, 6)
             item.setdefault("score_components", {})["synergy_lite_boost"] = 1.12
+    if epic_jobs_as_agent_work_items:
+        try:
+            epic_items = epic_jobs_as_agent_work_items(base_url=base_url, limit=8)
+            items = epic_items + items
+        except Exception:
+            pass
     items.sort(key=lambda item: _num(item.get("priority_score")), reverse=True)
     selected = items[:MAX_WORK_ITEMS]
     digest_core = {

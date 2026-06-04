@@ -1485,6 +1485,182 @@ def _worker_fleet_complete(base_url: str, agent_id: str, timeout: float, lease: 
     return data
 
 
+def _epic_worker_enabled() -> bool:
+    return os.getenv("NOMAD_EPIC_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _epic_autopilot_script_path() -> str:
+    raw = clean(os.getenv("NOMAD_EPIC_AUTOPILOT_SCRIPT", ""), 400)
+    if raw and Path(raw).is_file():
+        return raw
+    here = Path(__file__).resolve().parent
+    for candidate in (
+        here / "run_epic_worker_job.js",
+        here.parent.parent / "nomad-qt-windows" / "scripts" / "run-epic-worker-job.js",
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return raw
+
+
+def _epic_dispatch_list_remote(base_url: str, timeout: float, *, epic_id: str = "", status: str = "open") -> list[dict]:
+    query = f"status={clean(status or 'open', 24)}&limit=8"
+    if epic_id:
+        query += f"&epic_id={clean(epic_id, 96)}"
+    data = http_json("GET", endpoint(base_url, f"/swarm/epic-dispatch?{query}"), timeout=timeout)
+    if not isinstance(data, dict):
+        return []
+    jobs = data.get("jobs")
+    return [row for row in jobs if isinstance(row, dict)] if isinstance(jobs, list) else []
+
+
+def _epic_dispatch_list_local(limit: int = 8) -> list[dict]:
+    root = clean(os.getenv("SWARM_ORACLE_USER_DATA_DIR", ""), 400)
+    if not root:
+        return []
+    ledger = Path(root) / "development-epics" / "swarm-dispatch-ledger.jsonl"
+    if not ledger.is_file():
+        return []
+    latest: dict[str, dict] = {}
+    try:
+        for line in ledger.read_text(encoding="utf-8").splitlines()[-400:]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            job_id = clean(row.get("job_id"), 120)
+            if job_id:
+                latest[job_id] = row
+    except OSError:
+        return []
+    jobs = [row for row in latest.values() if clean(row.get("status"), 24) in {"", "open"}]
+    jobs.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
+    return jobs[: max(1, min(16, int(limit)))]
+
+
+def _epic_dispatch_claim(base_url: str, agent_id: str, job_id: str, timeout: float) -> dict[str, object]:
+    job_id = clean(job_id, 120)
+    if not job_id:
+        return {"ok": False, "accepted": False, "reason": "job_id_required"}
+    data = http_json(
+        "POST",
+        endpoint(base_url, "/swarm/epic-dispatch/claim"),
+        {"job_id": job_id, "agent_id": agent_id},
+        timeout=timeout,
+    )
+    if not isinstance(data, dict):
+        return {"ok": False, "accepted": False, "reason": "claim_invalid_response"}
+    return data
+
+
+def _epic_job_payload_from_row(row: dict) -> dict[str, object]:
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    content_seed = row.get("content_seed") if isinstance(row.get("content_seed"), dict) else {}
+    if not content_seed and isinstance(payload.get("content_seed"), dict):
+        content_seed = payload.get("content_seed")  # type: ignore[assignment]
+    return {
+        "schema": "nomad.epic_dispatch_job.v1",
+        "job_id": clean(row.get("job_id"), 120),
+        "epic_id": clean(row.get("epic_id"), 120),
+        "subtask_id": clean(row.get("subtask_id") or payload.get("subtask_id"), 80),
+        "repo_url": clean(row.get("repo_url") or payload.get("repo_url"), 320),
+        "branch": clean(row.get("branch") or payload.get("branch") or "main", 80),
+        "title": clean(row.get("title"), 200),
+        "acceptance": clean(row.get("acceptance") or payload.get("acceptance"), 400),
+        "problem": clean(row.get("problem") or payload.get("problem"), 800),
+        "status": clean(row.get("status"), 24),
+        "claimed_by": clean(row.get("claimed_by"), 120),
+        "content_seed": content_seed,
+    }
+
+
+def _epic_run_node_job(agent_id: str, job: dict) -> dict[str, object]:
+    script = _epic_autopilot_script_path()
+    node_bin = clean(os.getenv("NOMAD_EPIC_AUTOPILOT_NODE", "node"), 200) or "node"
+    if not script or not Path(script).is_file():
+        return {"ok": False, "skipped": True, "reason": "epic_autopilot_script_missing", "script": script}
+    env = dict(os.environ)
+    env["NOMAD_EPIC_JOB_JSON"] = json.dumps(job, ensure_ascii=True, sort_keys=True)
+    env["NOMAD_TRANSITION_WORKER_ID"] = clean(agent_id, 120) or env.get("NOMAD_TRANSITION_WORKER_ID", "")
+    env["NOMAD_AGENT_ID"] = env["NOMAD_TRANSITION_WORKER_ID"]
+    env.setdefault("NOMAD_EPIC_STRICT", "0")
+    timeout_s = float(os.getenv("NOMAD_EPIC_JOB_TIMEOUT_SECONDS", "300") or "300")
+    try:
+        proc = subprocess.run(
+            [node_bin, script],
+            capture_output=True,
+            text=True,
+            timeout=max(30.0, min(900.0, timeout_s)),
+            env=env,
+            cwd=str(Path(script).resolve().parent.parent),
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "epic_job_timeout", "script": script}
+    except OSError as exc:
+        return {"ok": False, "error": clean(str(exc), 160), "script": script}
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    parsed: dict[str, object] = {"ok": proc.returncode == 0, "exit_code": proc.returncode, "script": script}
+    if stdout:
+        try:
+            parsed["result"] = json.loads(stdout.splitlines()[-1])
+        except json.JSONDecodeError:
+            parsed["stdout_tail"] = clean(stdout[-1200:], 1200)
+    if stderr:
+        parsed["stderr_tail"] = clean(stderr[-800:], 800)
+    if isinstance(parsed.get("result"), dict):
+        parsed["ok"] = bool(parsed["result"].get("ok")) and proc.returncode == 0
+    return parsed
+
+
+def _epic_worker_cycle(base_url: str, agent_id: str, timeout: float) -> dict[str, object]:
+    if not _epic_worker_enabled():
+        return {"ok": True, "skipped": True, "reason": "epic_worker_disabled"}
+    remote = _epic_dispatch_list_remote(base_url, timeout=min(12.0, timeout))
+    local = _epic_dispatch_list_local(limit=8)
+    seen: set[str] = set()
+    jobs: list[dict] = []
+    for row in remote + local:
+        job_id = clean(row.get("job_id"), 120)
+        if not job_id or job_id in seen:
+            continue
+        seen.add(job_id)
+        jobs.append(_epic_job_payload_from_row(row))
+    if not jobs:
+        return {"ok": True, "skipped": True, "reason": "no_open_epic_jobs", "remote_count": len(remote), "local_count": len(local)}
+    max_jobs = max(1, min(3, int(os.getenv("NOMAD_EPIC_JOBS_PER_CYCLE", "1") or "1")))
+    results: list[dict] = []
+    for job in jobs[:max_jobs]:
+        claim = _epic_dispatch_claim(base_url, agent_id, str(job.get("job_id") or ""), timeout=min(15.0, timeout))
+        if claim.get("accepted"):
+            job["status"] = "claimed"
+            job["claimed_by"] = agent_id
+        run = _epic_run_node_job(agent_id, job)
+        results.append(
+            {
+                "job_id": job.get("job_id"),
+                "subtask_id": job.get("subtask_id"),
+                "claim": claim,
+                "run": run,
+                "ok": bool(run.get("ok")),
+            }
+        )
+    ok = all(bool(row.get("ok")) for row in results) if results else True
+    return {
+        "ok": ok,
+        "schema": "nomad.epic_worker_cycle.v1",
+        "job_count": len(results),
+        "results": results,
+        "remote_count": len(remote),
+        "local_count": len(local),
+    }
+
+
 def _proof_link(base_url: str, agent_id: str, timeout: float, report: dict) -> dict[str, object]:
     upstream = clean(
         (report.get("digest_or_verifier_trace") if isinstance(report.get("digest_or_verifier_trace"), str) else "")
@@ -2413,7 +2589,15 @@ def main() -> None:
         help="Minimum seconds between cycle starts; compatibility alias for the same reserve floor.",
     )
     p.add_argument("--human-status", action="store_true", default=(os.getenv("NOMAD_TRANSITION_WORKER_HUMAN_STATUS", "1").strip().lower() not in {"0", "false", "no", "off"}))
+    p.add_argument(
+        "--epic-worker",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("NOMAD_EPIC_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}),
+        help="Poll epic-dispatch jobs and run Nomad QT headless verify/proof via node script.",
+    )
     a = p.parse_args()
+    if a.epic_worker:
+        os.environ["NOMAD_EPIC_WORKER_ENABLED"] = "1"
     _apply_edge_profile(a)
     if a.revenue_opt_in:
         a.swarm_surplus = True
@@ -2441,6 +2625,7 @@ def main() -> None:
             f"mode={a.machine_objective} edge={int(bool(a.edge))} loop={int(a.loop)} cycles={a.cycles} "
             f"fleet={int(fleet_active)} surplus_opt_in={int(bool(a.swarm_surplus))} "
             f"revenue_opt_in={int(bool(a.revenue_opt_in))} "
+            f"epic_worker={int(_epic_worker_enabled())} "
             f"reserve_floor={human_floor}s interval={a.interval}s model={model or 'none'} "
             f"ollama={runtime_diag.get('status','')}"
         )
@@ -2578,6 +2763,11 @@ def main() -> None:
                 timeout=min(8.0, timeout),
                 report=report,
                 lease=fleet_lease,
+            )
+            report["epic_dispatch_worker"] = _epic_worker_cycle(
+                a.base_url,
+                a.agent_id,
+                timeout=min(120.0, max(30.0, timeout)),
             )
             _update_meta_history(history, report, selected_objective=selected, mode=a.machine_objective)
             meta = history.get("meta") if isinstance(history.get("meta"), dict) else {}

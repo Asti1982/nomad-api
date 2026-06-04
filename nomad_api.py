@@ -126,6 +126,7 @@ from nomad_variant_forge import build_variant_forge_surface, submit_variant_cand
 from nomad_worker_market import build_worker_market, score_worker_offer
 from nomad_compute_market import build_compute_market
 from nomad_agent_work import build_agent_work_surface, build_synergy_lite, claim_agent_work, submit_agent_work_proof
+from nomad_epic_dispatch import claim_epic_job, complete_epic_job, list_epic_jobs, register_epic_job
 from nomad_state_status import build_state_status
 from nomad_work_mesh import build_work_mesh, seed_work_mesh
 from nomad_collaboration import collaboration_status
@@ -3111,6 +3112,12 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/swarm/agent-work", "/.well-known/nomad-agent-work.json"}:
             self._json_response(self.__class__._build_agent_work_surface(base_url=self._base_url()))
             return
+        if parsed.path in {"/swarm/epic-dispatch", "/.well-known/nomad-epic-dispatch.json"}:
+            epic_id = (query.get("epic_id") or [""])[0]
+            status = (query.get("status") or [""])[0]
+            limit = int((query.get("limit") or ["32"])[0] or 32)
+            self._json_response(list_epic_jobs(epic_id=str(epic_id), status=str(status), limit=limit))
+            return
         if parsed.path in {"/swarm/work-mesh", "/.well-known/nomad-work-mesh.json"}:
             self._json_response(self.__class__._build_work_mesh(base_url=self._base_url()))
             return
@@ -4655,6 +4662,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
+                    "/downloads/swarm-light.exe",
                     "/downloads/syndiode-pin-light-control.exe",
                     "/downloads/README_SYNDIODE_PIN_WINDOWS.md",
                     "/downloads/nomad_openclaw_adapter.py",
@@ -6268,6 +6276,22 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             self._json_response(result, status=202 if result.get("accepted") else 200)
             return
 
+        if parsed.path == "/swarm/epic-dispatch/register":
+            base = self._base_url()
+            result = register_epic_job(payload, base_url=base)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/epic-dispatch/claim":
+            result = claim_epic_job(payload)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
+        if parsed.path == "/swarm/epic-dispatch/complete":
+            result = complete_epic_job(payload)
+            self._json_response(result, status=202 if result.get("accepted") else 200)
+            return
+
         if parsed.path == "/swarm/microtask/proof":
             base = self._base_url()
             agent_work = self.__class__._build_agent_work_surface(base_url=base)
@@ -6813,6 +6837,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/downloads/build_nomad_transition_worker_exe.ps1",
                     "/downloads/run_nomad_transition_worker_exe.bat",
                     "/downloads/README_NOMAD_TRANSITION_WORKER.md",
+                    "/downloads/swarm-light.exe",
                     "/downloads/syndiode-pin-light-control.exe",
                     "/downloads/README_SYNDIODE_PIN_WINDOWS.md",
                     "/downloads/nomad_openclaw_adapter.py",
@@ -8607,7 +8632,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                         "GET /downloads/check_nomad_swarm_readiness.py to verify gradient + attach + lease readiness.",
                         "GET /downloads/nomad_helper_agent.py for the legacy helper alias.",
                         "GET /downloads/syndiode_gadgets_manifest.json for Syndiode Gadget installs.",
-                        "GET /downloads/syndiode-pin-light-control.exe for the Windows SyndiodePin light control app.",
+                        "GET /downloads/swarm-light.exe for the Windows Swarm Light app for SyndiodePin.",
+                        "GET /downloads/syndiode-pin-light-control.exe for the legacy Windows SyndiodePin light control app alias.",
                         "GET /downloads/README_SYNDIODE_PIN_WINDOWS.md for the Windows SyndiodePin guide.",
                         "GET /downloads/handyoracle-edge-gadget.apk for HandyOracle Android (falls back to the latest GitHub release when the APK mirror is not published).",
                     ],
