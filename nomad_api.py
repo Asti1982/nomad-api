@@ -255,6 +255,7 @@ from nomad_job_channels import build_job_channel_surface
 from nomad_operator_runway import build_operator_runway_surface
 from nomad_worker_invoice import build_worker_invoice_surface
 from nomad_swarm_verified_work import build_swarm_verified_work_surface
+from nomad_hyperliquid_svw_agents import load_cached_hyperliquid_svw_copy_trader_surface
 from nomad_mcp_lab import build_private_mcp_lab_surface
 from nomad_worker_job_queue import build_worker_job_queue_surface
 from nomad_value_cycle_preflight import build_value_cycle_preflight_surface
@@ -982,6 +983,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             work_receipt_summary=summarize_work_receipts(),
             external_value_summary=summarize_external_value_ledger(),
         )
+
+    @classmethod
+    def _build_hyperliquid_svw_agents(cls, *, base_url: str) -> dict:
+        return load_cached_hyperliquid_svw_copy_trader_surface(base_url=base_url)
 
     @classmethod
     def _build_agent_native_product(cls, *, base_url: str, swarm_summary: dict | None = None) -> dict:
@@ -2669,6 +2674,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "worker_market": f"{b}/swarm/worker-market",
                     "compute_market": f"{b}/swarm/compute-market",
                     "swarm_verified_work": f"{b}/.well-known/nomad-swarm-verified-work.json",
+                    "hyperliquid_svw_agents": f"{b}/.well-known/nomad-hyperliquid-svw-agents.json",
+                    "hyperliquid_svw_agents_alias": f"{b}/swarm/hyperliquid-svw-agents",
                     "agent_work": f"{b}/.well-known/nomad-agent-work.json",
                     "agent_work_claim": f"{b}/swarm/microtask/claim",
                     "agent_work_proof": f"{b}/swarm/microtask/proof",
@@ -2934,6 +2941,18 @@ class NomadApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path in {"/swarm/capacity-switch", "/.well-known/nomad-capacity-switch.json"}:
             self._json_response(self.__class__._build_capacity_switch_surface(base_url=self._base_url()))
+            return
+
+        if parsed.path in {"/swarm/hyperliquid-svw-agents", "/.well-known/nomad-hyperliquid-svw-agents.json"}:
+            base_url = self._base_url()
+            self._json_response(
+                self.__class__._cached_surface(
+                    f"hyperliquid_svw_agents:{base_url}",
+                    3600,
+                    lambda: self.__class__._build_hyperliquid_svw_agents(base_url=base_url),
+                ),
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
             return
 
         if parsed.path in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
@@ -4725,6 +4744,8 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                     "/.well-known/nomad-worker-market.json",
                     "/swarm/compute-market",
                     "/.well-known/nomad-compute-market.json",
+                    "/swarm/hyperliquid-svw-agents",
+                    "/.well-known/nomad-hyperliquid-svw-agents.json",
                     "/swarm/agent-work",
                     "/.well-known/nomad-agent-work.json",
                     "/swarm/work-mesh",

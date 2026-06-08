@@ -129,6 +129,11 @@ def test_nomad_public_html_page_exists():
     assert "/.well-known/nomad-agent-reliability-doctor.json" in text
     assert "/swarm/reliability-doctor/intake" in text
     assert "/.well-known/nomad-swarm-verified-work.json" in text
+    assert "/.well-known/nomad-hyperliquid-svw-agents.json" in text
+    assert "/swarm/hyperliquid-svw-agents" in text
+    assert "Global SVW Copy-Trader" in text
+    assert 'id="metric-copy-trader"' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-hyperliquid-svw-agents.json"))' in text
     assert "/downloads/nomad_reliability_doctor_action.yml" in text
     assert "/downloads/nomad_work_exchange_worker.Dockerfile" in text
     assert "network phase" in text
@@ -268,6 +273,7 @@ def test_nomad_public_html_page_exists():
     assert 'fetch(apiUrl("/swarm"))' in text
     assert 'fetch(apiUrl("/machine-economy"))' in text
     assert 'fetch(apiUrl("/swarm/verified-work"))' in text
+    assert 'fetch(apiUrl("/.well-known/nomad-hyperliquid-svw-agents.json"))' in text
     assert 'fetch(apiUrl("/machine-treasury"))' in text
     assert 'fetch(apiUrl("/.well-known/nomad-machine-field.json"))' in text
     assert 'fetch(apiUrl("/.well-known/nomad-universal-adapter.json"))' in text
@@ -335,6 +341,47 @@ def test_bot_factory_public_route_serves_landing_page():
     handler.do_GET()
 
     assert seen == ["bot-factory.html"]
+
+
+def test_hyperliquid_svw_agents_route_serves_cached_snapshot(tmp_path, monkeypatch):
+    from nomad_hyperliquid_svw_agents import rank_hyperliquid_svw_agents, score_hyperliquid_svw_agent
+
+    fills = [
+        {
+            "time": 1_760_000_000_000 + index * 86_400_000,
+            "coin": "SOL",
+            "px": "100",
+            "sz": "10",
+            "closedPnl": "7",
+            "fee": "0.05",
+            "dir": "Close Long",
+        }
+        for index in range(35)
+    ]
+    score = score_hyperliquid_svw_agent(fills, address="0x7777777777777777777777777777777777777777")
+    snapshot = tmp_path / "latest.json"
+    snapshot.write_text(json.dumps(rank_hyperliquid_svw_agents([score])), encoding="utf-8")
+    monkeypatch.setenv("NOMAD_HYPERLIQUID_SVW_AGENTS_SNAPSHOT", str(snapshot))
+    monkeypatch.setattr(NomadApiHandler, "_surface_cache", {})
+    monkeypatch.setattr(
+        NomadApiHandler,
+        "_ensure_runtime_components",
+        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("runtime should not initialize"))),
+    )
+
+    handler = NomadApiHandler.__new__(NomadApiHandler)
+    handler.path = "/.well-known/nomad-hyperliquid-svw-agents.json"
+    handler._base_url = lambda: "https://nomad.example"  # type: ignore[method-assign]
+    seen = []
+    handler._json_response = lambda payload, status=200, headers=None: seen.append((status, payload, headers))  # type: ignore[method-assign]
+
+    handler.do_GET()
+
+    assert seen[0][0] == 200
+    assert seen[0][1]["schema"] == "nomad.hyperliquid_svw_copy_trader_surface.v1"
+    assert seen[0][1]["recommended_trader"]["address"] == score["address"]
+    assert seen[0][1]["source"]["public_request_fetches_exchange"] is False
+    assert seen[0][2]["Cache-Control"] == "public, max-age=3600"
 
 
 def test_reliability_doctor_route_keeps_original_diagnosis_lane():

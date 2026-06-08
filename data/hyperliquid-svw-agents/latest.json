@@ -1,0 +1,379 @@
+{
+  "exchange_order_submitted": false,
+  "generated_at": "2026-06-08T01:29:29.049433+00:00",
+  "global_svw_thesis": {
+    "active_assets": [
+      {
+        "asset": "SOL",
+        "weight": 0.9
+      },
+      {
+        "asset": "NVDA",
+        "weight": 0.88
+      },
+      {
+        "asset": "TAO",
+        "weight": 0.84
+      },
+      {
+        "asset": "ETH",
+        "weight": 0.82
+      },
+      {
+        "asset": "RNDR",
+        "weight": 0.8
+      },
+      {
+        "asset": "RENDER",
+        "weight": 0.8
+      },
+      {
+        "asset": "HYPE",
+        "weight": 0.78
+      },
+      {
+        "asset": "TSLA",
+        "weight": 0.78
+      },
+      {
+        "asset": "AKT",
+        "weight": 0.78
+      },
+      {
+        "asset": "PLTR",
+        "weight": 0.76
+      },
+      {
+        "asset": "GOOG",
+        "weight": 0.72
+      },
+      {
+        "asset": "GOOGL",
+        "weight": 0.72
+      },
+      {
+        "asset": "FET",
+        "weight": 0.72
+      },
+      {
+        "asset": "MSFT",
+        "weight": 0.7
+      },
+      {
+        "asset": "ICP",
+        "weight": 0.68
+      },
+      {
+        "asset": "AMZN",
+        "weight": 0.66
+      }
+    ],
+    "asset_weights": {
+      "AKT": 0.78,
+      "AMD": 0.64,
+      "AMZN": 0.66,
+      "AR": 0.62,
+      "BTC": 0.48,
+      "ETH": 0.82,
+      "FET": 0.72,
+      "GOOG": 0.72,
+      "GOOGL": 0.72,
+      "HYPE": 0.78,
+      "ICP": 0.68,
+      "JUP": 0.56,
+      "LINK": 0.6,
+      "META": 0.62,
+      "MSFT": 0.7,
+      "NEAR": 0.64,
+      "NVDA": 0.88,
+      "PLTR": 0.76,
+      "PYTH": 0.58,
+      "RENDER": 0.8,
+      "RNDR": 0.8,
+      "SOL": 0.9,
+      "TAO": 0.84,
+      "TSLA": 0.78
+    },
+    "editable_weights_path": "C:\\Users\\shoeg\\Desktop\\Handorakel\\nomad-api\\data\\hyperliquid-svw-agents\\global_svw_asset_weights.json",
+    "schema": "nomad.global_svw_thesis.v1",
+    "summary": "Express the global SVW thesis through public trader agents that repeatedly convert market risk into realized, copyable receipts on assets tied to useful compute, AI, infrastructure, and settlement capacity.",
+    "weights_source": "editable_json"
+  },
+  "latest_path": "data\\hyperliquid-svw-agents\\latest.json",
+  "links": {
+    "alias": "/swarm/hyperliquid-svw-agents",
+    "self": "/.well-known/nomad-hyperliquid-svw-agents.json"
+  },
+  "live_gate": {
+    "live_copy_trading_enabled": false,
+    "reason": "Public SVW signal only; Nomad does not submit exchange orders from this surface.",
+    "requirements_for_future_live_gate": [
+      "explicit operator approval",
+      "dedicated low-permission trading wallet or subaccount",
+      "max notional, leverage, daily loss, and kill switch",
+      "paper-copy observation window"
+    ],
+    "status": "paper_only_watchlist"
+  },
+  "paper_only": true,
+  "ranking": [
+    {
+      "address": "0x0ddf9bae2af4b874b96d287a5ad42eb47138a902",
+      "agent_svw_score": 90.9549,
+      "copy_svw_score": 56.038,
+      "exchange_order_submitted": false,
+      "final_copy_score": 81.6522,
+      "global_asset_alignment_score": 67.7619,
+      "interpretation": "Strong SVW-agent candidate for watchlist or paper-copy.",
+      "observed_assets": [
+        {
+          "asset": "ETH",
+          "global_svw_weight": 0.82,
+          "notional": 45940833.4296
+        },
+        {
+          "asset": "BTC",
+          "global_svw_weight": 0.48,
+          "notional": 33099733.4166
+        }
+      ],
+      "paper_only": true,
+      "risk": {
+        "liquidation_fill_count": 0,
+        "open_position_count": 0,
+        "profit_factor": 6.0,
+        "realized_net_pnl_usd": 1258295.7199,
+        "retry_loss": 0.0007
+      },
+      "status": "scored_public_fills",
+      "timeframe": {
+        "closed_receipt_count": 1697,
+        "fill_count": 2000,
+        "first_fill_time_ms": 1779874491069,
+        "last_fill_time_ms": 1780477067280
+      }
+    },
+    {
+      "address": "0x7fdafde5cfb5465924316eced2d3715494c517d1",
+      "agent_svw_score": 58.9081,
+      "copy_svw_score": 39.6197,
+      "exchange_order_submitted": false,
+      "final_copy_score": 55.1937,
+      "global_asset_alignment_score": 60.3411,
+      "interpretation": "Mixed evidence; monitor but do not prioritize.",
+      "observed_assets": [
+        {
+          "asset": "BTC",
+          "global_svw_weight": 0.48,
+          "notional": 1671077.5221
+        },
+        {
+          "asset": "HYPE",
+          "global_svw_weight": 0.78,
+          "notional": 851942.714
+        },
+        {
+          "asset": "ETH",
+          "global_svw_weight": 0.82,
+          "notional": 212108.5594
+        },
+        {
+          "asset": "SOL",
+          "global_svw_weight": 0.9,
+          "notional": 118468.1756
+        },
+        {
+          "asset": "ZEC",
+          "global_svw_weight": 0.42,
+          "notional": 109549.3523
+        },
+        {
+          "asset": "LIT",
+          "global_svw_weight": 0.42,
+          "notional": 17826.5152
+        }
+      ],
+      "paper_only": true,
+      "risk": {
+        "liquidation_fill_count": 0,
+        "open_position_count": 0,
+        "profit_factor": 2.0512,
+        "realized_net_pnl_usd": 14190.6706,
+        "retry_loss": 0.189
+      },
+      "status": "scored_public_fills",
+      "timeframe": {
+        "closed_receipt_count": 681,
+        "fill_count": 2000,
+        "first_fill_time_ms": 1780779391009,
+        "last_fill_time_ms": 1780784089654
+      }
+    },
+    {
+      "address": "0x4e14fc11f58b64740e66e4b1aa188a4b007c0eab",
+      "agent_svw_score": 7.795,
+      "copy_svw_score": 73.6381,
+      "exchange_order_submitted": false,
+      "final_copy_score": 28.3841,
+      "global_asset_alignment_score": 82.0,
+      "interpretation": "Too few closed receipts; useful watchlist candidate only.",
+      "observed_assets": [
+        {
+          "asset": "ETH",
+          "global_svw_weight": 0.82,
+          "notional": 800000.0
+        }
+      ],
+      "paper_only": true,
+      "risk": {
+        "liquidation_fill_count": 0,
+        "open_position_count": 0,
+        "profit_factor": 0.0,
+        "realized_net_pnl_usd": -215924.0,
+        "retry_loss": 0.5676
+      },
+      "status": "scored_public_fills",
+      "timeframe": {
+        "closed_receipt_count": 5,
+        "fill_count": 5,
+        "first_fill_time_ms": 1779977943139,
+        "last_fill_time_ms": 1779977943413
+      }
+    },
+    {
+      "address": "0xecb63caa47c7c4e77f60f1ce858cf28dc2b82b00",
+      "agent_svw_score": 20.4366,
+      "copy_svw_score": 32.766,
+      "exchange_order_submitted": false,
+      "final_copy_score": 26.3682,
+      "global_asset_alignment_score": 55.0938,
+      "interpretation": "High retry loss; avoid copying unless later evidence improves.",
+      "observed_assets": [
+        {
+          "asset": "BTC",
+          "global_svw_weight": 0.48,
+          "notional": 2538722.034
+        },
+        {
+          "asset": "ETH",
+          "global_svw_weight": 0.82,
+          "notional": 692531.7909
+        },
+        {
+          "asset": "HYPE",
+          "global_svw_weight": 0.78,
+          "notional": 285933.7791
+        },
+        {
+          "asset": "SOL",
+          "global_svw_weight": 0.9,
+          "notional": 142744.9788
+        },
+        {
+          "asset": "@142",
+          "global_svw_weight": 0.42,
+          "notional": 135840.1614
+        },
+        {
+          "asset": "@107",
+          "global_svw_weight": 0.42,
+          "notional": 108426.3804
+        }
+      ],
+      "paper_only": true,
+      "risk": {
+        "liquidation_fill_count": 0,
+        "open_position_count": 0,
+        "profit_factor": 0.3301,
+        "realized_net_pnl_usd": -18199.2685,
+        "retry_loss": 0.4619
+      },
+      "status": "scored_public_fills",
+      "timeframe": {
+        "closed_receipt_count": 943,
+        "fill_count": 2000,
+        "first_fill_time_ms": 1780872491287,
+        "last_fill_time_ms": 1780873994519
+      }
+    },
+    {
+      "address": "0x87f9cd15f5050a9283b8896300f7c8cf69ece2cf",
+      "agent_svw_score": 0.0,
+      "copy_svw_score": 0.0,
+      "exchange_order_submitted": false,
+      "final_copy_score": 0.0,
+      "global_asset_alignment_score": 0.0,
+      "interpretation": "",
+      "observed_assets": [],
+      "paper_only": true,
+      "risk": {
+        "liquidation_fill_count": 0,
+        "open_position_count": 0,
+        "profit_factor": 0.0,
+        "realized_net_pnl_usd": 0.0,
+        "retry_loss": 0.0
+      },
+      "status": "insufficient_public_fills",
+      "timeframe": {
+        "closed_receipt_count": 0,
+        "fill_count": 0,
+        "first_fill_time_ms": 0,
+        "last_fill_time_ms": 0
+      }
+    }
+  ],
+  "ranking_digest": "sha256:3b9e28f554252eb2a1c31a80818dc758bcd5207919b89d0d54506d5adb3e2584",
+  "receipt_path": "data\\hyperliquid-svw-agents\\20260608T012929Z_hyperliquid_svw_copy_trader_surface.json",
+  "recommended_trader": {
+    "address": "0x0ddf9bae2af4b874b96d287a5ad42eb47138a902",
+    "agent_svw_score": 90.9549,
+    "copy_mode": "watchlist_or_paper_only",
+    "copy_svw_score": 56.038,
+    "final_copy_score": 81.6522,
+    "global_asset_alignment_score": 67.7619,
+    "observed_assets": [
+      {
+        "asset": "ETH",
+        "global_svw_weight": 0.82,
+        "notional": 45940833.4296
+      },
+      {
+        "asset": "BTC",
+        "global_svw_weight": 0.48,
+        "notional": 33099733.4166
+      }
+    ],
+    "timeframe": {
+      "closed_receipt_count": 1697,
+      "fill_count": 2000,
+      "first_fill_time_ms": 1779874491069,
+      "last_fill_time_ms": 1780477067280
+    },
+    "watchlist_action": "paper_copy_candidate",
+    "why": "Strong SVW-agent candidate for watchlist or paper-copy."
+  },
+  "schema": "nomad.hyperliquid_svw_copy_trader_surface.v1",
+  "source": {
+    "cached_snapshot_path": "data\\hyperliquid-svw-agents\\latest.json",
+    "public_request_fetches_exchange": false,
+    "ranking_source": {
+      "address_count": 5,
+      "api": "https://api.hyperliquid.xyz/info",
+      "days": 30,
+      "include_open_positions": false,
+      "leaderboard_api": "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard",
+      "leaderboard_limit": 5,
+      "leaderboard_sort": "pnl",
+      "leaderboard_used": true,
+      "leaderboard_window": "month",
+      "method": "POST /info userFillsByTime",
+      "min_account_value": 10000.0,
+      "min_leaderboard_volume": 100000.0,
+      "secret_free": true,
+      "venue": "hyperliquid"
+    },
+    "venue": "hyperliquid"
+  },
+  "status": "cached_watchlist_ready",
+  "wallet_signature_used": false
+}

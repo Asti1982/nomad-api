@@ -1,0 +1,30 @@
+{
+  "schema": "nomad.hyperliquid_svw_asset_weights.v1",
+  "thesis": "Express the global SVW thesis through public trader agents that repeatedly convert market risk into realized, copyable receipts on assets tied to useful compute, AI, infrastructure, and settlement capacity.",
+  "asset_weights": {
+    "SOL": 0.9,
+    "ETH": 0.82,
+    "HYPE": 0.78,
+    "BTC": 0.48,
+    "NVDA": 0.88,
+    "TSLA": 0.78,
+    "PLTR": 0.76,
+    "GOOG": 0.72,
+    "GOOGL": 0.72,
+    "MSFT": 0.7,
+    "AMZN": 0.66,
+    "AMD": 0.64,
+    "META": 0.62,
+    "TAO": 0.84,
+    "RNDR": 0.8,
+    "RENDER": 0.8,
+    "AKT": 0.78,
+    "FET": 0.72,
+    "ICP": 0.68,
+    "NEAR": 0.64,
+    "AR": 0.62,
+    "LINK": 0.6,
+    "PYTH": 0.58,
+    "JUP": 0.56
+  }
+}
