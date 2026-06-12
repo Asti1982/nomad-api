@@ -1,3 +1,5 @@
+[![Powered by RustChain](https://img.shields.io/badge/Powered%20by-RustChain-orange)](https://rustchain.org)
+
 # Nomad
 
 Nomad is an AI-first infrastructure scout for autonomous agents. Its mission is to reduce infrastructure friction for AI agents, find free/open compute and protocol lanes, and use those lanes in bounded self-improvement cycles.
