@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -622,6 +623,7 @@ class SwarmJoinRegistry:
         else:
             self.path = Path(self.REGISTRY_PATH)
         self._remote_state = FirestoreJsonState.from_env(scope="swarm_registry")
+        self._save_lock = threading.Lock()
         self._payload = self._load()
 
     def public_manifest(self, *, base_url: str) -> dict[str, Any]:
@@ -3405,35 +3407,38 @@ class SwarmJoinRegistry:
         return self._normalize_registry_payload(payload)
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._compact_payload_for_save()
-        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
-        last_error: Exception | None = None
-        for attempt in range(4):
-            try:
-                with tmp_path.open("w", encoding="utf-8") as handle:
-                    json.dump(self._payload, handle, ensure_ascii=True, separators=(",", ":"))
-                tmp_path.replace(self.path)
-                last_error = None
-                break
-            except RuntimeError as exc:
-                last_error = exc
-                if "dictionary changed size during iteration" not in str(exc):
-                    raise
-                time.sleep(0.02 * (attempt + 1))
-            finally:
-                if tmp_path.exists() and last_error is None:
-                    try:
-                        tmp_path.unlink()
-                    except OSError:
-                        pass
-        if last_error is not None:
-            raise last_error
-        if self._remote_state is not None:
-            try:
-                self._remote_state.save(self._payload)
-            except Exception:
-                pass
+        with self._save_lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._compact_payload_for_save()
+            last_error: Exception | None = None
+            for attempt in range(4):
+                tmp_path = self.path.with_name(
+                    f"{self.path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp"
+                )
+                try:
+                    with tmp_path.open("w", encoding="utf-8") as handle:
+                        json.dump(self._payload, handle, ensure_ascii=True, separators=(",", ":"))
+                    tmp_path.replace(self.path)
+                    last_error = None
+                    break
+                except RuntimeError as exc:
+                    last_error = exc
+                    if "dictionary changed size during iteration" not in str(exc):
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+                finally:
+                    if tmp_path.exists():
+                        try:
+                            tmp_path.unlink()
+                        except OSError:
+                            pass
+            if last_error is not None:
+                raise last_error
+            if self._remote_state is not None:
+                try:
+                    self._remote_state.save(self._payload)
+                except Exception:
+                    pass
 
     def _compact_payload_for_save(self) -> None:
         def trim_mapping(mapping: Any, *, limit: int, time_keys: tuple[str, ...]) -> dict[str, Any]:

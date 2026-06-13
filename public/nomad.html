@@ -2231,6 +2231,51 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
       };
 
       const loadSignals = async () => {
+        const signalMode = new URLSearchParams(window.location.search || "").get("signals");
+        if (signalMode !== "full") {
+          try {
+            const healthRes = await fetch(apiUrl("/health"), { cache: "no-store" });
+            const health = healthRes.ok ? await healthRes.json() : {};
+            const snapshot = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+            set("metric-tier", health.ok ? "checkout ready" : "health retry");
+            set("metric-score", "lite");
+            set("metric-svw", "watchlist");
+            set("metric-product", "paid repair");
+            set("metric-agent-native", "checkout");
+            set("metric-agents", "lite signals");
+            set("metric-external-retention", "paused");
+            set("metric-retention-gradient", "full mode");
+            set("metric-retention-evidence", "full mode");
+            set("metric-leases", "paused");
+            set("metric-worker-completion", "paused");
+            set("metric-opaque", "lite");
+            set("metric-science", "lite");
+            set("metric-copy-trader", "watchlist");
+            set("metric-action", "buyable work");
+            set("metric-note", `sampled ${snapshot}; Render-lite mode keeps the public checkout responsive. Add ?signals=full for the heavy swarm dashboard.`);
+            set("retention-watch-summary", "Worker-retention signals are paused on the public checkout page by default.");
+            set("retention-gradient-summary", "Use ?signals=full only for short diagnostic checks.");
+            set("retention-evidence-summary", "Receipt and retention evidence remain available through machine endpoints.");
+            set("retention-join-summary", "Buyable repair work is the default public path; worker loops should run off Render.");
+            set("svw-copy-address", "watchlist");
+            set("svw-copy-reason", "Lite mode avoids heavy public signal fan-out on Render.");
+            set("svw-copy-score", "paper-only");
+            set("svw-copy-assets", "compute / AI / settlement");
+            set("svw-copy-thesis", "Full SVW ranking remains available through the machine feed.");
+            set("svw-copy-gate", "paper only");
+            set("svw-copy-count", "lite");
+            set("svw-copy-ranking", "Add ?signals=full for one-off diagnostic snapshots.");
+            set("map-economy", "lite");
+            set("map-swarm", "paused");
+            set("map-worker", health.ok ? "ready" : "retry");
+            return;
+          } catch (error) {
+            set("metric-tier", "offline");
+            set("metric-action", "retry");
+            set("metric-note", "lite health check failed; checkout can still render locally.");
+            return;
+          }
+        }
         try {
           const [economyRes, svwRes, copyTraderRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, agentNativeRes, opaqueRes, treasuryRes, fieldRes, adapterRes, resolverRes, acquisitionRes] = await Promise.all([
             fetch(apiUrl("/machine-economy")),
