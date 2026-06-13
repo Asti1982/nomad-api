@@ -498,6 +498,112 @@
       line-height: 1.6;
     }
 
+    .cash-checkout {
+      margin: 18px 0 18px;
+      padding: 20px;
+      border: 1px solid rgba(118, 227, 154, 0.42);
+      background: rgba(118, 227, 154, 0.045);
+    }
+
+    .cash-checkout h3 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.18;
+    }
+
+    .cash-checkout p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.58;
+    }
+
+    .checkout-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .checkout-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.56fr) minmax(0, 0.54fr);
+      gap: 12px;
+    }
+
+    .checkout-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .checkout-field span {
+      color: var(--muted);
+      font: 700 12px/1.3 ui-monospace, "Cascadia Code", Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .checkout-field input,
+    .checkout-field select,
+    .checkout-field textarea {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: rgba(7, 16, 13, 0.74);
+      color: var(--ink);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      padding: 10px 12px;
+    }
+
+    .checkout-field textarea {
+      min-height: 108px;
+      resize: vertical;
+    }
+
+    .checkout-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .checkout-status {
+      min-height: 22px;
+      color: var(--gold);
+      font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .checkout-output {
+      display: none;
+      margin-top: 16px;
+      border-top: 1px solid var(--soft-line);
+      padding-top: 15px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .checkout-output.active {
+      display: block;
+    }
+
+    .checkout-receipt {
+      margin: 12px 0 0;
+      padding: 12px;
+      border: 1px solid var(--soft-line);
+      background: rgba(7, 16, 13, 0.52);
+      color: var(--ink);
+      font: 12px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .verify-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
     footer {
       margin-top: 64px;
       padding: 22px 0 36px;
@@ -531,6 +637,8 @@
       .signal-strip,
       .lanes,
       .worker-flow,
+      .checkout-grid,
+      .verify-row,
       .contract-grid {
         grid-template-columns: 1fr;
       }
@@ -797,6 +905,51 @@
             <p>Nomad now ranks buyer-paid repo diagnosis above unpaid bounty expansion until a verified tx hash or paid external receipt exists.</p>
             <code>nomad.science_backed_cashflow_kernel.v1</code>
           </article>
+        </div>
+        <div class="cash-checkout" aria-labelledby="cash-checkout-title">
+          <h3 id="cash-checkout-title">Buy a tiny repair packet</h3>
+          <p>A task starts as awaiting payment, returns a wallet invoice, and moves into work only after a verified tx hash or x402 receipt.</p>
+          <form class="checkout-form" id="cash-checkout-form">
+            <div class="checkout-grid">
+              <label class="checkout-field">
+                <span>Packet</span>
+                <select id="checkout-package" name="package_id">
+                  <option value="repo_diagnostic_patch_starter" data-budget="0.01" data-service="repo_issue_help">Repo diagnostic starter - 0.01</option>
+                  <option value="bounded_unblock" data-budget="0.03" data-service="compute_auth" data-product="prod-16dfadf74e59" data-variant="nomad.compute_unlock_pack.provider-fallback-ladder-86dfc87d" data-pattern="Provider Fallback Ladder">Compute unlock: Provider Fallback Ladder - 0.03</option>
+                  <option value="starter_diagnosis" data-budget="0.01" data-service="compute_auth">Compute/auth starter diagnosis - 0.01</option>
+                  <option value="agent_loop_break_patch" data-budget="0.02" data-service="loop_break">Agent loop break - 0.02</option>
+                  <option value="settlement_repair_packet" data-budget="0.03" data-service="settlement_repair">Settlement repair packet - 0.03</option>
+                </select>
+              </label>
+              <label class="checkout-field">
+                <span>Budget</span>
+                <input id="checkout-budget" name="budget_native" inputmode="decimal" value="0.01" />
+              </label>
+              <label class="checkout-field">
+                <span>Buyer wallet</span>
+                <input id="checkout-wallet" name="requester_wallet" autocomplete="off" placeholder="0x... or buyer id" />
+              </label>
+            </div>
+            <label class="checkout-field">
+              <span>Bounded blocker</span>
+              <textarea id="checkout-problem" name="problem" placeholder="Repo or endpoint URL, observed failure, expected result, and anything that must not be touched." required></textarea>
+            </label>
+            <div class="checkout-actions">
+              <button class="button primary" type="submit">Create paid task</button>
+              <span class="checkout-status" id="checkout-status" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+          <div class="checkout-output" id="checkout-output" aria-live="polite">
+            <div id="checkout-summary"></div>
+            <pre class="checkout-receipt" id="checkout-receipt"></pre>
+            <div class="verify-row">
+              <label class="checkout-field">
+                <span>Tx hash or receipt id</span>
+                <input id="checkout-tx" autocomplete="off" placeholder="0x..." />
+              </label>
+              <button class="button" type="button" id="checkout-verify">Verify receipt</button>
+            </div>
+          </div>
         </div>
         <div class="worker-actions" aria-label="Buyable work actions">
           <a class="button primary" href="/service/e2e?service_type=repo_issue_help">Preview Repo Pack</a>
@@ -1922,6 +2075,161 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
         set("svw-copy-ranking", topRows || "No cached ranking yet; run the hourly refresh script.");
       };
 
+      const checkoutEscape = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+
+      const setupCashCheckout = () => {
+        const form = document.getElementById("cash-checkout-form");
+        if (!form) return;
+        const packageSelect = document.getElementById("checkout-package");
+        const budgetInput = document.getElementById("checkout-budget");
+        const walletInput = document.getElementById("checkout-wallet");
+        const problemInput = document.getElementById("checkout-problem");
+        const statusNode = document.getElementById("checkout-status");
+        const outputNode = document.getElementById("checkout-output");
+        const summaryNode = document.getElementById("checkout-summary");
+        const receiptNode = document.getElementById("checkout-receipt");
+        const txInput = document.getElementById("checkout-tx");
+        const verifyButton = document.getElementById("checkout-verify");
+        let currentTaskId = "";
+        const selectedOption = () => packageSelect?.selectedOptions?.[0] || packageSelect?.options?.[0] || {};
+        const selectedBudget = () => Number(selectedOption().dataset?.budget || budgetInput?.value || 0.01);
+        const selectedServiceType = () => selectedOption().dataset?.service || "repo_issue_help";
+        const setCheckoutStatus = (message) => {
+          if (statusNode) statusNode.textContent = message || "";
+        };
+        const syncBudget = () => {
+          if (!budgetInput || budgetInput.dataset.dirty === "true") return;
+          const amount = selectedBudget();
+          budgetInput.value = Number.isFinite(amount) ? amount.toFixed(2) : "0.01";
+        };
+        const taskPayment = (task) => (task && typeof task === "object" ? (task.payment || {}) : {});
+        const renderInvoice = (result, message) => {
+          const task = result?.task || {};
+          const payment = taskPayment(task);
+          currentTaskId = String(task.task_id || currentTaskId || "");
+          const recipient = payment.recipient_address || payment.recipient || "";
+          const amount = payment.amount_native ?? task.budget_native ?? "";
+          const symbol = payment.native_symbol || "";
+          const reference = payment.payment_reference || "";
+          if (summaryNode) {
+            summaryNode.innerHTML = [
+              `<strong>${checkoutEscape(message || "Task created")}</strong>`,
+              `Task: <code>${checkoutEscape(currentTaskId || "pending")}</code>`,
+              `Send: <code>${checkoutEscape(amount)} ${checkoutEscape(symbol)}</code>`,
+              `To: <code>${checkoutEscape(recipient || "wallet not configured")}</code>`,
+              `Reference: <code>${checkoutEscape(reference || "NOMAD_TASK")}</code>`
+            ].join("<br>");
+          }
+          if (receiptNode) {
+            receiptNode.textContent = JSON.stringify({
+              task_id: currentTaskId,
+              status: task.status || "",
+              amount_native: amount,
+              native_symbol: symbol,
+              recipient_address: recipient,
+              payment_reference: reference,
+              next_step: "Send payment, then paste tx hash for verification."
+            }, null, 2);
+          }
+          outputNode?.classList.add("active");
+        };
+
+        packageSelect?.addEventListener("change", () => {
+          if (budgetInput) budgetInput.dataset.dirty = "";
+          syncBudget();
+        });
+        budgetInput?.addEventListener("input", () => {
+          budgetInput.dataset.dirty = "true";
+        });
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const problem = String(problemInput?.value || "").trim();
+          if (!problem) {
+            setCheckoutStatus("add a bounded blocker first");
+            problemInput?.focus();
+            return;
+          }
+          const submitButton = form.querySelector('button[type="submit"]');
+          submitButton.disabled = true;
+          setCheckoutStatus("creating wallet invoice...");
+          try {
+            const response = await fetch(apiUrl("/service/e2e"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                create: true,
+                service_type: selectedServiceType(),
+                package_id: packageSelect?.value || "repo_diagnostic_patch_starter",
+                budget_native: Number(budgetInput?.value || selectedBudget()),
+                requester_wallet: String(walletInput?.value || "").trim(),
+                problem,
+                metadata: {
+                  buyer_context: "direct_revenue_center_checkout",
+                  package_id: packageSelect?.value || "repo_diagnostic_patch_starter",
+                  product_id: selectedOption().dataset?.product || "",
+                  variant_sku: selectedOption().dataset?.variant || "",
+                  solution_pattern: selectedOption().dataset?.pattern || ""
+                }
+              })
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || result.analysis || "task creation failed");
+            renderInvoice(result, result.created ? "Awaiting payment" : "Invoice preview ready");
+            setCheckoutStatus("wallet invoice ready; receipt required before work starts");
+          } catch (error) {
+            setCheckoutStatus(`checkout failed: ${error.message || error}`);
+          } finally {
+            submitButton.disabled = false;
+          }
+        });
+
+        verifyButton?.addEventListener("click", async () => {
+          const txHash = String(txInput?.value || "").trim();
+          if (!currentTaskId) {
+            setCheckoutStatus("create a paid task first");
+            return;
+          }
+          if (!txHash) {
+            setCheckoutStatus("paste a tx hash or receipt id first");
+            txInput?.focus();
+            return;
+          }
+          verifyButton.disabled = true;
+          setCheckoutStatus("verifying receipt...");
+          try {
+            const response = await fetch(apiUrl("/tasks/verify"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                task_id: currentTaskId,
+                tx_hash: txHash,
+                requester_wallet: String(walletInput?.value || "").trim()
+              })
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || result.analysis || "verification failed");
+            const verifyTask = result.task || {};
+            const verifyPayment = taskPayment(verifyTask);
+            const paid = verifyTask.status === "paid" || verifyPayment.status === "paid";
+            renderInvoice(result, paid ? "Receipt verified" : "Receipt not yet verified");
+            setCheckoutStatus(paid ? "receipt verified; task can move into work" : "payment still awaiting verification");
+          } catch (error) {
+            setCheckoutStatus(`verify failed: ${error.message || error}`);
+          } finally {
+            verifyButton.disabled = false;
+          }
+        });
+
+        syncBudget();
+      };
+
       const loadSignals = async () => {
         try {
           const [economyRes, svwRes, copyTraderRes, swarmRes, healthRes, fleetRes, retentionRes, retentionGradientRes, retentionEvidenceRes, scienceRes, releaseRes, gradientRes, emergenceRes, productRes, agentNativeRes, opaqueRes, treasuryRes, fieldRes, adapterRes, resolverRes, acquisitionRes] = await Promise.all([
@@ -2145,6 +2453,7 @@ $ curl -X POST https://www.syndiode.com/transition/quote</pre>
         requestAnimationFrame(draw);
       };
 
+      setupCashCheckout();
       loadSignals();
       if (ctx) requestAnimationFrame(draw);
     })();
