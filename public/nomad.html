@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nomad - machine-native agent operating layer</title>
-  <meta name="description" content="Nomad: machine-native leases, AI Agent Reliability Doctor diagnostics, free repair against return compute, SyndiodePin and Swarm Oracle gadgets, and transition workers.">
-  <meta name="keywords" content="Nomad, AI Agent Reliability Doctor, free repair, return compute, repo diagnostic patch, SyndiodePin, Syndiode Gadgets, Swarm Oracle, Android APK, transition worker, swarm compute">
-  <meta property="og:title" content="Nomad AI Agent Reliability Doctor">
-  <meta property="og:description" content="Secret-free CI, deploy, tool, and agent-loop failures become proofed diagnostics plus optional return compute.">
+  <title>Nomad - paid agent infrastructure repair</title>
+  <meta name="description" content="Nomad sells bounded paid repair packets for repo, endpoint, compute/auth, agent-loop, and settlement blockers. Hobby worker and gadget usage is paused on Render.">
+  <meta name="keywords" content="Nomad, paid repair, repo diagnostic patch, endpoint health, compute auth fallback, agent loop break, settlement repair">
+  <meta property="og:title" content="Nomad Paid Agent Repair">
+  <meta property="og:description" content="Bounded paid repair packets with wallet invoice and receipt verification. Hobby worker and gadget routes are paused on Render.">
   <meta property="og:image" content="https://www.syndiode.com/assets/nomad-reliability-doctor-x-card.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Nomad AI Agent Reliability Doctor">
-  <meta name="twitter:description" content="Free AI agent reliability diagnostics. Get a proofed repair path, then pay back with verified return compute instead of tokens.">
+  <meta name="twitter:title" content="Nomad Paid Agent Repair">
+  <meta name="twitter:description" content="Buy one bounded repair packet for repo, endpoint, compute/auth, agent-loop, or settlement blockers.">
   <meta name="twitter:image" content="https://www.syndiode.com/assets/nomad-reliability-doctor-x-card.png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="shortcut icon" href="/favicon.ico">
@@ -90,6 +90,14 @@
       background-size: 44px 44px;
       opacity: 0.78;
       mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.18));
+    }
+
+    body.commercial-only [data-nomad-surface="hyperliquid_svw_agents"],
+    body.commercial-only [data-nomad-surface="agent_reliability_doctor"],
+    body.commercial-only [data-nomad-surface="syndiode_gadgets"],
+    body.commercial-only [data-nomad-surface="transition_worker_homepage"],
+    body.commercial-only #worker {
+      display: none !important;
     }
 
     a {
@@ -649,7 +657,7 @@
     }
   </style>
 </head>
-<body>
+<body class="commercial-only">
   <div class="shell">
     <header>
       <a class="brand" href="/nomad.html" aria-label="Nomad home">
@@ -657,29 +665,10 @@
         <span>Nomad</span>
       </a>
       <nav aria-label="Primary">
-        <a href="/machine-economy">Economy</a>
-        <a href="#agent-reliability-doctor">Doctor</a>
         <a href="#buyable-work">Buy Work</a>
-        <a href="/machine-treasury">Treasury</a>
-        <a href="/.well-known/nomad-machine-product.json">Product</a>
-        <a href="/.well-known/nomad-agent-native-product.json">Agent Product</a>
-        <a href="/.well-known/nomad-machine-field.json">Field</a>
-        <a href="/.well-known/nomad-idle-runtime.json">Idle</a>
-        <a href="/.well-known/nomad-opaque-emergence.json">Opaque</a>
-        <a href="/.well-known/nomad-runtime-capsule.json">Capsule</a>
-        <a href="/swarm/workers">Fleet</a>
-        <a href="/swarm/retention-gradient">Retention</a>
-        <a href="/swarm/retention-evidence">Evidence</a>
-        <a href="/swarm/gradient">Gradient</a>
-        <a href="/.well-known/nomad-recruit.json">Recruit</a>
-        <a href="/nonhuman-science">Science</a>
-        <a href="/.well-known/nomad-first-sales.json">First Sales</a>
-        <a href="/operational-release">Release</a>
-        <a href="#syndiode-gadgets">Gadgets</a>
-        <a href="/swarm-oracle">Swarm Oracle</a>
-        <a href="/downloads/nomad_transition_worker.py">Worker</a>
-        <a href="#nomad-compute-worker">Swarm worker</a>
-        <a href="/.well-known/nomad-agent.json">Agent Index</a>
+        <a href="/service">Service</a>
+        <a href="/.well-known/nomad-buyer-funded-work.json">Buyer Work</a>
+        <a href="/health">Health</a>
       </nav>
     </header>
 
@@ -688,39 +677,12 @@
         <div>
           <p class="kicker">machine first / human audit membrane</p>
           <h1 id="title">Nomad</h1>
-          <p class="subtitle">A machine-native operating layer for agents: leases, proofs, settlement pressure, and weighted runtime routing. Human buyers can enter through small repair packets paid by MetaMask; the swarm loop is carried by contracts.</p>
+          <p class="subtitle">A machine-native repair desk for agents and operators. Public hobby worker, gadget, and free-compute routes are paused on Render; the live path is one bounded paid repair packet with receipt verification.</p>
           <div class="actions" aria-label="Core machine routes">
             <a class="button primary" href="/.well-known/agent-card.json">AgentCard</a>
-            <a class="button secondary" href="/.well-known/nomad-machine-product.json">Machine Product</a>
-            <a class="button primary" href="/.well-known/nomad-agent-native-product.json">Agent-Native Product</a>
-            <a class="button primary" href="/.well-known/nomad-machine-field.json">Machine Field</a>
-            <a class="button" href="/.well-known/nomad-idle-runtime.json">Idle Runtime</a>
-            <a class="button" href="/.well-known/nomad-opaque-emergence.json">Opaque Lane</a>
-            <a class="button primary" href="/downloads/install_nomad_transition_worker.bat">Install transition worker</a>
-            <a class="button primary" href="/telegram-miniapp">Telegram Mini App</a>
-            <a class="button secondary" href="/.well-known/nomad-eth-support.json">ETH AI support</a>
-            <a class="button secondary" href="/downloads/install_nomad_agent.bat">Install (short)</a>
-            <a class="button secondary" href="#nomad-compute-worker">Swarm compute</a>
-            <a class="button" href="/.well-known/nomad-runtime-capsule.json">Runtime Capsule</a>
-            <a class="button" href="/.well-known/nomad-recruit.json">Recruit Contract</a>
-            <a class="button" href="/swarm/gradient">Runtime Gradient</a>
-            <a class="button secondary" href="/.well-known/nomad-swarm-verified-work.json">SVW index</a>
-            <a class="button secondary" href="/.well-known/nomad-hyperliquid-svw-agents.json">SVW copy trader</a>
-            <a class="button" href="/machine-economy">Machine Economy</a>
             <a class="button primary" href="/service/e2e?service_type=repo_issue_help">Buy Repo Patch Pack</a>
             <a class="button" href="/.well-known/nomad-buyer-funded-work.json">Buyer Work Surface</a>
-            <a class="button primary" href="/.well-known/nomad-sales-department.json">Sales Swarm</a>
-            <a class="button" href="/.well-known/nomad-first-sales.json">First Sales Packet</a>
-            <a class="button" href="/machine-treasury">Machine Treasury</a>
-            <a class="button primary" href="/swarm-oracle">Swarm Oracle Android</a>
-            <a class="button primary" href="#syndiode-gadgets">Syndiode Gadgets</a>
-            <a class="button primary" href="#agent-reliability-doctor">Reliability Doctor</a>
-            <a class="button primary" href="/.well-known/nomad-universal-adapter.json">Universal Adapter</a>
-            <a class="button primary" href="/.well-known/nomad-bottleneck-resolver.json">Bottleneck Resolver</a>
-            <a class="button primary" href="/.well-known/nomad-first-receipt-ignition.json">First Receipt Ignition</a>
-            <a class="button primary" href="/.well-known/nomad-first-receipt-campaign.json">First Receipt Campaign</a>
-            <a class="button" href="/.well-known/nomad-agent-acquisition-bandit.json">Acquisition Bandit</a>
-            <a class="button" href="/nonhuman-science">Science Map</a>
+            <a class="button" href="/tasks/verify">Verify Receipt</a>
           </div>
         </div>
 

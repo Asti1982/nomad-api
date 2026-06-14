@@ -2338,6 +2338,118 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         return cls.swarm_registry
 
     @classmethod
+    def _commercial_only_mode(cls) -> bool:
+        """Keep Render focused on paid checkout and tiny health responses."""
+        raw = (os.getenv("NOMAD_RENDER_ALLOW_HOBBY") or "").strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return False
+        explicit = (os.getenv("NOMAD_COMMERCIAL_ONLY") or "").strip().lower()
+        if explicit in {"1", "true", "yes", "on"}:
+            return True
+        if explicit in {"0", "false", "no", "off"}:
+            return False
+        return RENDER_RUNTIME
+
+    @staticmethod
+    def _commercial_allowed_get_paths() -> set[str]:
+        return {
+            "/",
+            "/index.html",
+            "/nomad.html",
+            "/favicon.ico",
+            "/favicon.svg",
+            "/health",
+            "/llms.txt",
+            "/robots.txt",
+            "/service",
+            "/service/e2e",
+            "/tasks",
+            "/tasks/verify",
+            "/.well-known/agent-card.json",
+            "/.well-known/agent.json",
+            "/.well-known/nomad-buyer-funded-work.json",
+            "/.well-known/nomad-sales-department.json",
+            "/.well-known/nomad-first-sales.json",
+            "/.well-known/nomad-revenue-invariant.json",
+        }
+
+    @classmethod
+    def _is_hobby_get_path(cls, path: str) -> bool:
+        if path in cls._commercial_allowed_get_paths():
+            return False
+        if path.startswith("/assets/"):
+            return False
+        if path.startswith("/downloads/nomad_revenue_center_playbook"):
+            return False
+        if path.startswith("/downloads/"):
+            return True
+        if path.startswith("/swarm"):
+            return True
+        if path.startswith("/runtime/"):
+            return True
+        if path.startswith("/operator"):
+            return True
+        if path.startswith("/growth"):
+            return True
+        if path.startswith("/machine-"):
+            return True
+        if path.startswith("/.well-known/"):
+            return True
+        return path in {
+            "/telegram-miniapp",
+            "/telegram-miniapp.html",
+            "/miniapp",
+            "/mini",
+            "/telegram",
+            "/bot-factory",
+            "/bot-factory.html",
+            "/bot-risk-receipt",
+            "/handyoracle",
+            "/handyoracle.html",
+            "/oracle",
+            "/swarm-oracle",
+            "/gadget",
+            "/gadgets",
+            "/gadgets.html",
+            "/syndiode-gadgets",
+            "/work-exchange",
+            "/work-exchange.html",
+            "/free-repair",
+            "/agent-reliability-doctor",
+            "/openapi",
+            "/openapi.json",
+            "/nonhuman-science",
+            "/operational-release",
+            "/reputation",
+            "/unhuman-hub",
+            "/products",
+        }
+
+    @classmethod
+    def _is_hobby_post_path(cls, path: str) -> bool:
+        if path in {"/tasks", "/tasks/verify", "/tasks/work", "/service/e2e"}:
+            return False
+        return True
+
+    def _hobby_paused_response(self, path: str, *, method: str = "GET") -> None:
+        base = self._base_url().rstrip("/")
+        checkout = f"{base}/nomad.html#buyable-work" if base else "/nomad.html#buyable-work"
+        self._json_response(
+            {
+                "ok": False,
+                "schema": "nomad.render_commercial_only.v1",
+                "status": "paused",
+                "path": path,
+                "method": method,
+                "reason": "hobby_usage_disabled_to_protect_render_memory",
+                "allowed": ["GET /health", "GET /nomad.html", "POST /service/e2e", "POST /tasks/verify"],
+                "checkout": checkout,
+            },
+            status=503,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @classmethod
     def _build_fast_swarm_manifest(cls, *, base_url: str) -> dict:
         registry = cls._light_swarm_registry()
         manifest = registry.public_manifest(base_url=base_url)
@@ -2525,6 +2637,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
         self._agent_request_path = parsed.path
 
+        if self.__class__._commercial_only_mode() and self.__class__._is_hobby_get_path(parsed.path):
+            self._hobby_paused_response(parsed.path)
+            return
+
         if parsed.path in {"/favicon.ico", "/favicon.svg"}:
             self._public_asset_file_response(PUBLIC_DIR / "favicon.svg")
             return
@@ -2540,7 +2656,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path in {"/", "/index.html", "/nomad.html", "/gadgets", "/gadgets.html", "/syndiode-gadgets"}:
-            self._html_file_response(PUBLIC_DIR / "nomad.html")
+            if self.__class__._commercial_only_mode() and parsed.path in {"/", "/index.html", "/nomad.html"}:
+                self._html_file_response(PUBLIC_DIR / "nomad-commercial.html")
+            else:
+                self._html_file_response(PUBLIC_DIR / "nomad.html")
             return
 
         if parsed.path in {"/telegram-miniapp", "/telegram-miniapp.html", "/miniapp", "/mini", "/telegram"}:
@@ -2598,6 +2717,23 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/health":
+            if self.__class__._commercial_only_mode():
+                uptime = max(0.0, time.time() - NOMAD_PROCESS_START)
+                root = self._base_url().rstrip("/")
+                self._json_response(
+                    {
+                        "ok": True,
+                        "service": "nomad-api",
+                        "schema": "nomad.health.render_lite.v1",
+                        "mode": "commercial_only",
+                        "version": os.getenv("NOMAD_VERSION", "0.1.0").strip() or "0.1.0",
+                        "uptime_seconds": round(uptime, 3),
+                        "checks": {"api_process": "listening", "hobby_usage": "paused"},
+                        "checkout": f"{root}/nomad.html#buyable-work" if root else "/nomad.html#buyable-work",
+                    },
+                    headers={"Cache-Control": "no-store"},
+                )
+                return
             base = self._base_url()
             links: dict[str, str] = {}
             if base:
@@ -5165,6 +5301,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         parsed = parsed_full._replace(path=self._normalize_public_path(parsed_full.path or "/"))
         query = parse_qs(parsed_full.query)
         self._agent_request_path = parsed.path
+        if self.__class__._commercial_only_mode() and self.__class__._is_hobby_post_path(parsed.path):
+            self._hobby_paused_response(parsed.path, method="POST")
+            return
         self.__class__._ensure_runtime_components()
         payload = self._read_json_body()
         if payload is None:
@@ -8468,7 +8607,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         }
 
     def _json_response(self, payload: dict, status: int = 200, headers: dict | None = None) -> None:
-        if isinstance(payload, dict):
+        if isinstance(payload, dict) and not self.__class__._commercial_only_mode():
             payload = maybe_merge_http_wire_diag(self, payload)
             req_path = getattr(self, "_agent_request_path", None)
             if req_path is not None:
