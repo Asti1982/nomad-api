@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nomad investor brief - syndiode</title>
+  <meta name="description" content="Investor brief for Nomad by syndiode: receipt-first agent infrastructure, zero-runtime discipline, and a focused compute/auth repair wedge.">
+  <meta property="og:title" content="Nomad investor brief">
+  <meta property="og:description" content="Why Nomad is narrowing to paid repair packets, proof receipts, and zero-runtime cost discipline.">
+  <meta property="og:image" content="/assets/nomad-arena-hero.webp">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07100d;
+      --panel: #101916;
+      --ink: #f4f1e8;
+      --muted: #b7beb5;
+      --dim: #7d887f;
+      --line: rgba(244, 241, 232, 0.16);
+      --green: #76e39a;
+      --gold: #f0c35a;
+      --blue: #79b9ff;
+      --red: #ff786f;
+      --shadow: rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 4px;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: #07100d;
+    }
+
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 760;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      color: var(--green);
+      font: 760 18px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .hero {
+      min-height: 70vh;
+      display: grid;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, rgba(7, 16, 13, 0.98), rgba(7, 16, 13, 0.78) 48%, rgba(7, 16, 13, 0.18)),
+        linear-gradient(0deg, rgba(7, 16, 13, 0.98), rgba(7, 16, 13, 0.12) 48%),
+        url("/assets/nomad-arena-hero.webp") center / cover no-repeat;
+    }
+
+    .hero-inner {
+      padding: 82px 0 38px;
+    }
+
+    .kicker {
+      margin: 0 0 14px;
+      color: var(--green);
+      font: 760 12px/1.35 ui-monospace, "Cascadia Code", Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 780px;
+      font-size: 68px;
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 22px 0 0;
+      max-width: 680px;
+      color: var(--muted);
+      font-size: 19px;
+      line-height: 1.58;
+    }
+
+    .button {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(244, 241, 232, 0.07);
+      color: var(--ink);
+      padding: 0 14px;
+      font: 720 14px/1 ui-sans-serif, system-ui, sans-serif;
+      text-decoration: none;
+    }
+
+    .button.primary {
+      border-color: rgba(118, 227, 154, 0.74);
+      background: var(--green);
+      color: #06120d;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    section {
+      padding: 54px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.74fr) minmax(0, 1fr);
+      gap: 42px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .copy {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .panel {
+      min-height: 176px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 52px var(--shadow);
+    }
+
+    .panel h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .panel p,
+    .panel li {
+      color: var(--muted);
+      line-height: 1.58;
+    }
+
+    .panel p {
+      margin: 12px 0 0;
+    }
+
+    .panel ul,
+    .panel ol {
+      margin: 12px 0 0;
+      padding-left: 20px;
+    }
+
+    .mono {
+      margin-top: 16px;
+      color: var(--green);
+      font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    footer {
+      padding: 28px 0 42px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 900px) {
+      .nav,
+      header nav {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      h1 {
+        font-size: 48px;
+      }
+
+      .section-head,
+      .grid,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: 650px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .shell {
+        width: min(100% - 24px, 1120px);
+      }
+
+      h1 {
+        font-size: 39px;
+      }
+
+      .subtitle {
+        font-size: 17px;
+      }
+
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell nav">
+      <a class="brand" href="/nomad.html">
+        <span class="mark">N</span>
+        <span>Nomad investor brief</span>
+      </a>
+      <nav aria-label="Brief navigation">
+        <a href="#thesis">Thesis</a>
+        <a href="#wedge">Wedge</a>
+        <a href="#use">Capital Use</a>
+        <a href="/nomad.html#buyable-work">Fund Work</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div class="shell hero-inner">
+        <p class="kicker">investor brief / receipt-first agent infrastructure</p>
+        <h1 id="title">Nomad by syndiode</h1>
+        <p class="subtitle">
+          Nomad is narrowing from broad agent-economy experimentation to a focused commercial wedge: paid repair packets for agent infrastructure failures, delivered only after verified payment and measured by receipts.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="/nomad.html#buyable-work">Fund a paid packet</a>
+          <a class="button" href="/nomad.html#buyable-work">Paid packets</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="thesis" class="shell">
+      <div class="section-head">
+        <h2>The thesis is not more agents. It is fewer blocked agents.</h2>
+        <p class="copy">
+          Builders increasingly wire agents into code, cloud, wallets, MCP tools, and browser flows. The failure mode is not abstract intelligence; it is brittle operational glue. Nomad sells repair where that glue breaks.
+        </p>
+      </div>
+      <div class="grid">
+        <article class="panel">
+          <h3>Demand signal</h3>
+          <p>Compute/auth friction appears repeatedly in local evidence. The current highest-ROI product is the Provider Fallback Ladder.</p>
+          <div class="mono">observed pattern count: 249</div>
+        </article>
+        <article class="panel">
+          <h3>Operating discipline</h3>
+          <p>All public and cloud runtimes are off while unfunded. This makes the company legible: burn follows buyer demand.</p>
+          <div class="mono">runtime state: zero idle burn</div>
+        </article>
+        <article class="panel">
+          <h3>Accounting discipline</h3>
+          <p>Submitted, approved, merged, clicked, and simulated interest stay outside revenue. Only paid receipts count.</p>
+          <div class="mono">revenue boundary: verified payment</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="wedge" class="shell">
+      <div class="section-head">
+        <h2>The first wedge is a paid repair desk for agent teams.</h2>
+        <p class="copy">
+          Start with small, high-trust, fast-turnaround packets. Each delivered packet becomes a proof artifact: blocker, diagnosis, verifier, receipt, and reusable guardrail.
+        </p>
+      </div>
+      <div class="grid">
+        <article class="panel">
+          <h3>Provider Fallback Ladder</h3>
+          <p>Compute/auth diagnosis and fallback plan for provider, quota, token, model, retry, or API routing failures.</p>
+          <div class="mono">price: 0.03 ETH</div>
+        </article>
+        <article class="panel">
+          <h3>Repo Diagnostic Starter</h3>
+          <p>One public repo, CI, endpoint, or deploy blocker becomes a duplicate check and patch path.</p>
+          <div class="mono">price: 0.01 ETH</div>
+        </article>
+        <article class="panel">
+          <h3>Settlement Repair</h3>
+          <p>One wallet, receipt, or unpaid claim becomes a low-burden reconciliation packet.</p>
+          <div class="mono">price: 0.02 ETH</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="use" class="shell">
+      <div class="section-head">
+        <h2>Capital should buy repetition, not idle infrastructure.</h2>
+        <p class="copy">
+          The next useful capital is not a larger server. It is buyer routing, static edge protection, delivery capacity, and a clean proof ledger for repeatable paid packets.
+        </p>
+      </div>
+      <div class="split">
+        <article class="panel">
+          <h3>30-day milestone</h3>
+          <ol>
+            <li>Keep Render, OCI, and local model servers off unless paid.</li>
+            <li>Close 10 paid repair packets with clean proof artifacts.</li>
+            <li>Publish a buyer-safe receipt ledger summary.</li>
+            <li>Promote the best packet into a repeatable service lane.</li>
+          </ol>
+        </article>
+        <article class="panel">
+          <h3>Use of funds</h3>
+          <ul>
+            <li>Static/edge paid-offer surface with bot-resistant origin protection.</li>
+            <li>Outbound buyer qualification for agent teams with visible blockers.</li>
+            <li>Delivery time for repair packets and proof summaries.</li>
+            <li>Payment verification and handoff polish.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      This brief is not an investment product, trading strategy, or custody offer. Nomad records revenue only after a positive receipt, trusted payment confirmation, or matching wallet transfer.
+    </div>
+  </footer>
+</body>
+</html>

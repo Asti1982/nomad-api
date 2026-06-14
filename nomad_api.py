@@ -2356,6 +2356,9 @@ class NomadApiHandler(BaseHTTPRequestHandler):
             "/",
             "/index.html",
             "/nomad.html",
+            "/investor",
+            "/investor.html",
+            "/investor-brief",
             "/favicon.ico",
             "/favicon.svg",
             "/health",
@@ -2378,7 +2381,7 @@ class NomadApiHandler(BaseHTTPRequestHandler):
         if path in cls._commercial_allowed_get_paths():
             return False
         if path.startswith("/assets/"):
-            return False
+            return path not in {"/assets/nomad-arena-hero.webp"}
         if path.startswith("/downloads/nomad_revenue_center_playbook"):
             return False
         if path.startswith("/downloads/"):
@@ -2442,7 +2445,13 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 "path": path,
                 "method": method,
                 "reason": "hobby_usage_disabled_to_protect_render_memory",
-                "allowed": ["GET /health", "GET /nomad.html", "POST /service/e2e", "POST /tasks/verify"],
+                "allowed": [
+                    "GET /health",
+                    "GET /nomad.html",
+                    "GET /investor",
+                    "POST /service/e2e",
+                    "POST /tasks/verify",
+                ],
                 "checkout": checkout,
             },
             status=503,
@@ -2660,6 +2669,10 @@ class NomadApiHandler(BaseHTTPRequestHandler):
                 self._html_file_response(PUBLIC_DIR / "nomad-commercial.html")
             else:
                 self._html_file_response(PUBLIC_DIR / "nomad.html")
+            return
+
+        if parsed.path in {"/investor", "/investor.html", "/investor-brief"}:
+            self._html_file_response(PUBLIC_DIR / "investor.html")
             return
 
         if parsed.path in {"/telegram-miniapp", "/telegram-miniapp.html", "/miniapp", "/mini", "/telegram"}:
